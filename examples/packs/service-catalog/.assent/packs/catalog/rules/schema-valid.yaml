@@ -1,0 +1,23 @@
+# Schema validity — block on invalid catalog JSON (P1-E2 schema-validity).
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: catalog-schema-valid
+spec:
+  entries:
+    catalog-service:
+      mode: list
+      root: /services
+      identity:
+        pointer: /name
+  rules:
+    - name: catalog-v1
+      match:
+        files:
+          paths: ["catalog/**/*.json"]
+      prove:
+        obligation: schema-valid
+        when: "facts.schema.valid"
+      onFailure:
+        effect: block
+        code: schema.invalid

@@ -1,0 +1,23 @@
+# Context freshness — oncall rotation must resolve and be unexpired (P1-E2 freshness).
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: catalog-context-fresh
+spec:
+  entries:
+    catalog-service:
+      mode: list
+      root: /services
+      identity:
+        pointer: /name
+  rules:
+    - name: oncall-exists
+      match:
+        files:
+          paths: ["catalog/**/*.json"]
+      prove:
+        obligation: context-fresh
+        when: 'facts.oncall[entry.oncall].status == "resolved"'
+      onFailure:
+        effect: block
+        code: context.expired

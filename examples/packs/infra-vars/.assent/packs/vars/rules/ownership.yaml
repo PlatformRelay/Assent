@@ -1,0 +1,21 @@
+# Ownership — same obligation/effect as S01 declarative ownership example.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: vars-ownership
+spec:
+  entries:
+    infra-vars:
+      mode: map
+      root: /workloads
+  rules:
+    - name: author-owns-entry
+      match:
+        files:
+          paths: ["envs/**/*.tfvars"]
+      prove:
+        obligation: ownership
+        when: "entry.owner in facts.author.groups"
+      onFailure:
+        effect: require-review
+        code: ownership.unauthorized

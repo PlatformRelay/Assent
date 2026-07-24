@@ -1,0 +1,7 @@
+# partitions 12 -> 48 exceeds quota 24
+decision: REVIEW
+findings:
+  - rule: partition-change-bounds
+    obligation: bounded-change
+    effect: challenge
+    path: "/partitions"

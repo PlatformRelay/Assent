@@ -1,0 +1,5 @@
+# Reorder-only: size unchanged → non-destructive proves; subjects stay name-keyed.
+decision: APPROVE
+findings: []
+absent:
+  - no-entry-removal

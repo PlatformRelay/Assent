@@ -1,0 +1,44 @@
+{
+  "apiVersion": "catalog/v1",
+  "services": [
+    {
+      "name": "orders-api",
+      "owner": "orders-team",
+      "tier": 1,
+      "oncall": "orders-rotation",
+      "endpoints": [
+        "https://orders.example.com/api",
+        "https://orders.example.com/v2"
+      ],
+      "tags": [
+        "checkout-path",
+        "public"
+      ]
+    },
+    {
+      "name": "payments-gateway",
+      "owner": "payments-team",
+      "tier": 1,
+      "oncall": "payments-rotation",
+      "endpoints": [
+        "https://pay.example.com/api"
+      ],
+      "tags": [
+        "checkout-path",
+        "pci-scope"
+      ]
+    },
+    {
+      "name": "storefront-web",
+      "owner": "storefront-team",
+      "tier": 2,
+      "oncall": "storefront-rotation",
+      "endpoints": [
+        "https://www.example.com"
+      ],
+      "tags": [
+        "public"
+      ]
+    }
+  ]
+}

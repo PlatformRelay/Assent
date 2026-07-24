@@ -1,0 +1,9 @@
+# Reorder-only head: identity.pointer=/name keeps subjects stable (REQ-P3-E3-S02-02 adversarial).
+author:
+  login: alice
+  groups: [orders-team, payments-team, storefront-team]
+oncall:
+  orders-rotation: { status: resolved }
+  payments-rotation: { status: resolved }
+  storefront-rotation: { status: resolved }
+schema: { valid: true }

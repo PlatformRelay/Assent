@@ -1,0 +1,21 @@
+# Starter pack for examples/repos/service-catalog (assent init --sample service-catalog).
+# Keyed list: packs/catalog declares entries.mode=list with identity.pointer=/name
+# (never unkeyed — ADR-0017 §5). Reordering entries must not change EntryRef subjects.
+apiVersion: assent.dev/v1alpha1
+kind: Config
+environments:
+  - name: prod
+    match: { paths: ["catalog/prod/**"] }
+  - name: dev
+    match: { paths: ["catalog/**"] }
+classes:
+  - name: catalog-service
+    match: { paths: ["catalog/**/*.json"] }
+providers:
+  author:
+    type: builtin/gitlab-groups
+    failure: closed
+  oncall:
+    type: http
+    url: https://oncall.example.com/api/v1/rotations
+    failure: closed

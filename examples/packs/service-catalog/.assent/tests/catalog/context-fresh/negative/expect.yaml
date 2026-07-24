@@ -1,0 +1,6 @@
+decision: REVIEW
+findings:
+  - rule: oncall-exists
+    obligation: context-fresh
+    effect: block
+    path: "/oncall"

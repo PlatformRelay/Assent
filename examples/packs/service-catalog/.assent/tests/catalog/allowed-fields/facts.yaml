@@ -1,0 +1,6 @@
+author:
+  login: alice
+  groups: [orders-team]
+oncall:
+  orders-rotation: { status: resolved, observedAt: "2026-07-21T10:00:00Z", expiresAt: "2026-07-22T10:00:00Z" }
+schema: { valid: true }

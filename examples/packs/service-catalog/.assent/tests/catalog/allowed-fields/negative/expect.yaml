@@ -1,0 +1,7 @@
+# /owner changed (not on allow-list; ownership transfer)
+decision: REVIEW
+findings:
+  - rule: only-safe-fields
+    obligation: allowed-fields
+    effect: require-review
+    path: "/owner"

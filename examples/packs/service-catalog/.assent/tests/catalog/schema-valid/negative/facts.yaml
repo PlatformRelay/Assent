@@ -1,0 +1,6 @@
+author:
+  login: alice
+  groups: [orders-team]
+schema:
+  valid: false
+  id: catalog/v1

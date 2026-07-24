@@ -1,0 +1,5 @@
+# Modify-only MR — no fileEvents.delete; non-destructive prove not failed.
+decision: APPROVE
+findings: []
+absent:
+  - no-topic-deletion

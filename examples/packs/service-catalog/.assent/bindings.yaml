@@ -1,0 +1,13 @@
+apiVersion: assent.dev/v1alpha1
+kind: RulesetBinding
+bindings:
+  - class: catalog-service
+    environment: dev
+    packs: [catalog]
+    risk: { threshold: 10 }
+    require: [allowed-fields, ownership, schema-valid, context-fresh, non-destructive]
+  - class: catalog-service
+    environment: prod
+    packs: [catalog]
+    risk: { threshold: 4 }
+    require: [allowed-fields, ownership, schema-valid, context-fresh, non-destructive]

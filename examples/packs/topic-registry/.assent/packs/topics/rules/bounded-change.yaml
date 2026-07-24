@@ -1,0 +1,31 @@
+# Bounded-change — reused from examples/policies/declarative/bounded-change.yaml (S01).
+# Over-quota is acknowledgement (challenge), not authorization.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: topics-bounded-change
+spec:
+  entries:
+    kafka-topic:
+      mode: document
+      root: ""
+      identity:
+        pointer: /name
+  rules:
+    - name: partition-change-bounds
+      match:
+        valueChanges:
+          pointers: ["/partitions"]
+          kinds: [modify]
+      prove:
+        obligation: bounded-change
+        when:
+          all:
+            - cel: new >= old
+              message: "partitions may not decrease ({{ old }} -> {{ new }})"
+            - cel: new <= facts.quota.max_partitions
+              message: "partitions {{ new }} exceeds quota {{ facts.quota.max_partitions }}"
+      points: 1
+      onFailure:
+        effect: challenge
+        code: bounded-change.out-of-band

@@ -1,0 +1,20 @@
+# Starter pack for examples/repos/topic-registry (assent init --sample topic-registry).
+# Class kafka-topic: one YAML document per topic; entry identity is /name (document mode).
+apiVersion: assent.dev/v1alpha1
+kind: Config
+environments:
+  - name: prod
+    match: { paths: ["topics/prod/**"] }
+  - name: dev
+    match: { paths: ["topics/**"] } # last match wins as default
+classes:
+  - name: kafka-topic
+    match: { paths: ["topics/**/*.yaml"] }
+providers:
+  author:
+    type: builtin/gitlab-groups
+    failure: closed
+  quota:
+    type: http
+    url: https://quota.example.com/api/v1/lookup
+    failure: closed

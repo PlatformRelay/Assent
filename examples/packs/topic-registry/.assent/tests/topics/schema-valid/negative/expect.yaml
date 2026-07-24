@@ -1,0 +1,7 @@
+# Head missing required owner — schema.invalid → block.
+decision: BLOCK
+findings:
+  - rule: topic-schema-v1
+    obligation: schema-valid
+    effect: block
+    path: "/name"

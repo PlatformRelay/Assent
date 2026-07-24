@@ -1,0 +1,25 @@
+# No-destruction — obligation non-destructive (P1-E2 / S01 no-destruction archetype).
+# File delete never auto-merges; require-review (not challenge-as-authorization).
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: topics-non-destructive
+spec:
+  entries:
+    kafka-topic:
+      mode: document
+      root: ""
+      identity:
+        pointer: /name
+  rules:
+    - name: no-topic-deletion
+      match:
+        fileEvents:
+          paths: ["topics/**/*.yaml"]
+          kinds: [delete]
+      prove:
+        obligation: non-destructive
+        when: "false"
+      onFailure:
+        effect: require-review
+        code: destruction.forbidden

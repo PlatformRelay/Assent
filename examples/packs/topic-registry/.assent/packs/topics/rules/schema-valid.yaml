@@ -1,0 +1,23 @@
+# Schema validity — obligation schema-valid (P1-E2 schema-validity archetype).
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: topics-schema-valid
+spec:
+  entries:
+    kafka-topic:
+      mode: document
+      root: ""
+      identity:
+        pointer: /name
+  rules:
+    - name: topic-schema-v1
+      match:
+        files:
+          paths: ["topics/**/*.yaml"]
+      prove:
+        obligation: schema-valid
+        when: "facts.schema.valid"
+      onFailure:
+        effect: block
+        code: schema.invalid

@@ -1,0 +1,13 @@
+apiVersion: assent.dev/v1alpha1
+kind: RulesetBinding
+bindings:
+  - class: infra-vars
+    environment: dev
+    packs: [vars]
+    risk: { threshold: 10 }
+    require: [ownership, bounded-change]
+  - class: infra-vars
+    environment: prod
+    packs: [vars]
+    risk: { threshold: 4 }
+    require: [ownership, bounded-change]

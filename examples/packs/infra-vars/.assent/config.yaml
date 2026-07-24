@@ -1,0 +1,25 @@
+# Starter pack for examples/repos/infra-vars (assent init --sample infra-vars).
+#
+# Opaque-change fallback (ADR-0003): when the HCL parser cannot classify a construct
+# (parse failure or unmodeled shape), the change is opaque → REVIEW — never silently
+# proved/vouched. There is no opaque-change archetype under examples/archetypes/ yet
+# (P1-E2 inventory gap); this pack documents the fallback here instead of inventing
+# an obligation the inventory does not name (REQ-P3-E3-S02-03).
+apiVersion: assent.dev/v1alpha1
+kind: Config
+environments:
+  - name: prod
+    match: { paths: ["envs/prod/**"] }
+  - name: dev
+    match: { paths: ["envs/**"] }
+classes:
+  - name: infra-vars
+    match: { paths: ["envs/**/*.tfvars"] }
+providers:
+  author:
+    type: builtin/gitlab-groups
+    failure: closed
+  band:
+    type: http
+    url: https://sizing.example.com/api/v1/bands
+    failure: closed

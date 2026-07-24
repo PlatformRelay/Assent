@@ -1,0 +1,3 @@
+# partitions 12 -> 16 (<= quota 24). Satisfied bounded-change prove → no finding.
+decision: APPROVE
+findings: []

@@ -1,0 +1,7 @@
+author:
+  login: bob
+  groups: [payments-team]
+band:
+  memory_mb: { min: 512, max: 4096 }
+  min_replicas: { min: 1, max: 8 }
+  max_replicas: { min: 1, max: 24 }

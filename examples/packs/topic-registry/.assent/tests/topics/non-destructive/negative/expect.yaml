@@ -1,0 +1,7 @@
+# topics/prod/payments.transactions.v1.yaml deleted.
+decision: REVIEW
+findings:
+  - rule: no-topic-deletion
+    obligation: non-destructive
+    effect: require-review
+    path: "/name"

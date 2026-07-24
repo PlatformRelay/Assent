@@ -1,0 +1,13 @@
+# Governed entry: one topic per file. Owner team is authoritative for changes.
+name: orders.events.v1
+owner: orders-team
+partitions: 16
+replication_factor: 3
+retention_hours: 168
+cleanup_policy: delete
+schema:
+  format: avro
+  subject: orders.events.v1-value
+description: >
+  Order lifecycle events (created, paid, shipped, cancelled) published by the
+  order service for downstream consumers.

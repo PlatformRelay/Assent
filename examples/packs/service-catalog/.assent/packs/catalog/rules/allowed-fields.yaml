@@ -1,0 +1,25 @@
+# Allow-listed fields — only oncall/endpoints/tags may change for automerge.
+# Sensitive pointers (/owner, /tier) escalate to require-review (P1-E2 inventory).
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: catalog-allowed-fields
+spec:
+  entries:
+    catalog-service:
+      mode: list
+      root: /services
+      identity:
+        pointer: /name
+  rules:
+    - name: only-safe-fields
+      match:
+        valueChanges:
+          pointers: ["/owner", "/tier"]
+          kinds: [modify]
+      prove:
+        obligation: allowed-fields
+        when: "false"
+      onFailure:
+        effect: require-review
+        code: allowed-fields.sensitive

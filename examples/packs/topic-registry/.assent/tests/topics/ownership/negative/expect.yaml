@@ -1,0 +1,7 @@
+# bob is not in orders-team — require-review (not challenge / not self-resolve).
+decision: REVIEW
+findings:
+  - rule: author-owns-entry
+    obligation: ownership
+    effect: require-review
+    path: "/owner"
