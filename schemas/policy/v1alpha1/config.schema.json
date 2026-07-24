@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://assent.dev/schemas/policy/v1alpha1/config.schema.json",
   "title": "Config",
-  "description": "Repo wiring: environments, change classes, and fact providers (ADR-0010 config.yaml). Safety-bearing: unknown fields/enum values reject at every level (ADR-0017 §9).",
+  "description": "Repo wiring: environments, change classes, fact providers (ADR-0010 config.yaml), and the optional profile precedence table (P3-E4-S02). Safety-bearing: unknown fields/enum values reject at every level (ADR-0017 §9).",
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "kind", "environments", "classes"],
@@ -23,6 +23,13 @@
       "x-uniqueKeys": ["name"],
       "description": "Change-class classifier; MergePolicy packs are routed to classes via RulesetBinding."
     },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/profileRef" },
+      "x-uniqueKeys": ["name"],
+      "description": "Ordered profile precedence table (schema-level artifact). Declares which PolicyProfile resources are active and their equal-specificity tie-break order. Not a second match/routing block — ADR-0008 RulesetBinding still routes packs; this only selects profile × (environment, class) interaction. Resolution algorithm + worked examples: docs/planning/policy-lifecycle-profiles.md. When present, assent lint enforces single-writer-profile across the referenced profiles."
+    },
     "providers": {
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/provider" },
@@ -30,6 +37,18 @@
     }
   },
   "$defs": {
+    "profileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "References a PolicyProfile metadata.name (schemas/policy/v1alpha1/profile.schema.json)."
+        }
+      }
+    },
     "namedMatch": {
       "type": "object",
       "additionalProperties": false,

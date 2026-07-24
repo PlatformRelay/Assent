@@ -26,6 +26,9 @@ var mergePolicySchemaJSON []byte
 //go:embed policy/v1alpha1/pack.schema.json
 var packSchemaJSON []byte
 
+//go:embed policy/v1alpha1/profile.schema.json
+var profileSchemaJSON []byte
+
 //go:embed decision/v1alpha1/evaluation-input.schema.json
 var evaluationInputSchemaJSON []byte
 
@@ -51,6 +54,9 @@ var (
 	// PackSchema validates schemas/policy/v1alpha1/pack.schema.json instances
 	// (pack.yaml manifest; phase is a ceiling — P3-E4-S01 / D-017 B2).
 	PackSchema = mustCompile("pack.schema.json", packSchemaJSON)
+	// ProfileSchema validates schemas/policy/v1alpha1/profile.schema.json
+	// instances (named PolicyProfile; required writes boolean — P3-E4-S02).
+	ProfileSchema = mustCompile("profile.schema.json", profileSchemaJSON)
 )
 
 // decisionSchemaID is the $id of one of the five decision/v1alpha1 runtime

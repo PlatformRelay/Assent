@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assent.dev/schemas/policy/v1alpha1/profile.schema.json",
+  "title": "PolicyProfile",
+  "description": "Named policy profile (P3-E4-S02 / D-017 B3): a coherent activation of packs distinct from the enforcing route. `spec.writes` is required — true holds forge write authority (approve/merge/block) for bindings in scope; false is recorder-only (counterfactual evaluation, never Reconcile). Single-writer invariant: for any given (environment, class) binding, exactly one active profile must resolve writes:true — zero or more than one is an assent lint hard error (`single-writer-profile`), never last-one-wins. Scope fields compose with ADR-0008 routing via the Config.profiles precedence table; profiles are not a second match/routing block.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "assent.dev/v1alpha1" },
+    "kind": { "const": "PolicyProfile" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["writes", "environments", "classes"],
+      "properties": {
+        "writes": {
+          "type": "boolean",
+          "description": "true = this profile authorizes forge writes for bindings in its scope; false = recorder-only. Required — no default. Lint hard-errors if zero or more than one writes:true profile covers the same (environment, class) binding (docs/planning/lint-hard-errors.md → single-writer-profile)."
+        },
+        "environments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "description": "Environment names this profile covers (Config environments[].name), or \"*\" for all environments."
+        },
+        "classes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "description": "Change-class names this profile covers (Config classes[].name), or \"*\" for all classes."
+        },
+        "packs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true,
+          "description": "Optional coherent pack activation under this profile. When set, evaluation for covered bindings uses these packs; RulesetBinding remains the routing source of truth for which packs bind to (class, environment) — this field names the profile's activation set for comparison, not a parallel route."
+        }
+      }
+    }
+  }
+}
