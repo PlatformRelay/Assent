@@ -1,16 +1,15 @@
 # Reconciliation state table + numbered protocol
 
-**Status**: frozen (P3-E5-S02). **Scope**: this document freezes the nine-step reconciliation
-protocol and the state table that the Reconcile port (ADR-0017 §7
-`Reconcile(DesiredReviewState, Preconditions) -> PublicationReceipt`) and the finding-lifecycle
-state machine (ADR-0011 amendment 2 `UpsertComment`/`SyncThreads`, ADR-0012 amendment 2) already
-assume, so that "rerun idempotence" (the P4-E1 exit gate) has something precise to implement
-against. It builds on the four marker concepts (`slot`/`occurrence`/`decision`/`artifact`) frozen
-in [`marker-grammar.md`](marker-grammar.md) — read that document first for vocabulary. The
-duplicate-repair rule, the one-publisher-per-MR topology, and the `doctor` guarantee-reporting
-field are **out of scope here** — they are P3-E5-S03's contract (a sibling section or file under
-this same directory). Non-goals: authoring ADR-0019 itself; implementing the Reconcile port,
-`assent doctor`, or `serve`'s keyed lock — see the epic header in
+**Status**: frozen (P3-E5-S02 + P3-E5-S03). **Scope**: this document freezes the nine-step
+reconciliation protocol, the state table, the deterministic duplicate-repair rule, the
+one-publisher-per-MR topology, and the `doctor` duplicate-prevention guarantee field that the
+Reconcile port (ADR-0017 §7 `Reconcile(DesiredReviewState, Preconditions) -> PublicationReceipt`)
+and the finding-lifecycle state machine (ADR-0011 amendment 2 `UpsertComment`/`SyncThreads`,
+ADR-0012 amendment 2) already assume, so that "rerun idempotence" (the P4-E1 exit gate) has
+something precise to implement against. It builds on the four marker concepts
+(`slot`/`occurrence`/`decision`/`artifact`) frozen in [`marker-grammar.md`](marker-grammar.md) —
+read that document first for vocabulary. Non-goals: authoring ADR-0019 itself; implementing the
+Reconcile port, `assent doctor`, or `serve`'s keyed lock — see the epic header in
 [`openspec/specs/p3-e5-publication-protocol/spec.md`](../../../openspec/specs/p3-e5-publication-protocol/spec.md).
 
 ## The nine-step protocol
@@ -64,12 +63,14 @@ finish": the protocol is idempotent by construction, not by detecting its own pr
    safe precisely because step 1's trust boundary holds.
 8. **Deterministically repair pre-existing duplicates.** When two or more bot-authored artifacts
    are found occupying the same slot (seeded by a race, a prior bug, or a crash — never expected
-   from a correctly serialized publisher), reconciliation repairs them by a fixed rule (lowest
-   forge ID canonical) rather than first-seen-by-scan-order. The full repair rule, its
-   `PublicationReceipt.repairs` shape, and its fixture are **P3-E5-S03's contract**; this step is
-   listed here only to fix its position in the sequence. Invariant protected: **determinism**. A
-   repair rule that depended on scan order would make the outcome of a duplicate incident
-   dependent on pagination timing rather than a fixed, replayable tiebreak.
+   from a correctly serialized publisher), reconciliation repairs them by a fixed rule: the
+   **lowest forge ID** is canonical (numeric comparison of the forge-assigned note/discussion ID,
+   independent of scan/pagination order); every other duplicate is resolved/removed against that
+   canonical; each repair is recorded in `PublicationReceipt.repairs` as
+   `{repairedForgeId, canonicalForgeId, action: resolve}`. See
+   [`fixtures/duplicate-repair.yaml`](fixtures/duplicate-repair.yaml). Invariant protected:
+   **determinism**. A repair rule that depended on scan order would make the outcome of a
+   duplicate incident dependent on pagination timing rather than a fixed, replayable tiebreak.
 9. **Rescan after publication before reporting success.** After every write in steps 3–8 has been
    issued, reconciliation re-lists bot-authored artifacts (repeating step 2's listing, not
    trusting its own in-memory record of what it just wrote) and only reports success once that
@@ -107,13 +108,59 @@ receive a fresh challenge, or supersede findings that should instead be closed o
 
 Pre-existing duplicates (two-or-more artifacts occupying one slot) are not a sixth row of this
 table — they are a precondition-violation the table assumes step 8 has already repaired down to
-one canonical artifact per slot before rows 1–5 are evaluated. See P3-E5-S03 for the repair rule
-itself.
+one canonical artifact per slot before rows 1–5 are evaluated. The repair rule itself is frozen
+above (step 8) and pinned by [`fixtures/duplicate-repair.yaml`](fixtures/duplicate-repair.yaml).
+
+## One-publisher-per-MR topology (P3-E5-S03)
+
+Strict duplicate *prevention* (as opposed to step 8's post-hoc *repair*) requires exactly one
+publisher process per MR at a time. Two supported serialization mechanisms; choose by mode:
+
+| Mode | Serialization mechanism | Key |
+| --- | --- | --- |
+| One-shot CI (`assent run` in a pipeline job) | GitLab CI `resource_group` keyed **per MR IID** (e.g. `assent-mr-$CI_MERGE_REQUEST_IID`) | Exactly one job for that MR runs at a time across the project |
+| Long-lived `serve` | A keyed per-MR lock held for the duration of one Reconcile call | Exactly one in-process (or lock-backed) publisher mutates that MR at a time |
+
+**Multi-replica HA is unsupported.** Running multiple concurrent unserialized publishers against
+the same MR (e.g. several `serve` replicas without the keyed lock, or CI jobs missing
+`resource_group`) is not a supported topology. Duplicates created under concurrent unserialized
+publishers converge **only on the next reconciliation** (step 8's repair), never immediately —
+adopters must not treat "eventual repair" as equivalent to "never duplicated."
+
+This topology text is written so a later impl lane can lift it verbatim into ADR-0019, the setup
+walkthrough's CI step, and the doctor checklist (P3-E5-S04).
+
+## Doctor duplicate-prevention guarantee (P3-E5-S03)
+
+A deployment's actual serialization cannot always be verified from inside the process (e.g.
+`resource_group` misconfigured on the CI job, or `serve` running without its keyed lock).
+`assent doctor` MUST emit a typed report field naming which duplicate-prevention guarantee the
+deployment **actually** provides:
+
+```text
+duplicate_prevention: single-writer-serialized | unserialized-best-effort
+```
+
+| Value | Meaning | When doctor may emit it |
+| --- | --- | --- |
+| `single-writer-serialized` | The deployment's serialization mechanism is verified present (CI job has a per-MR-IID `resource_group`, or `serve` has a configured keyed-lock backend) | Only when doctor can positively verify the mechanism |
+| `unserialized-best-effort` | Serialization is absent, misconfigured, or unverifiable; step 8 repair is the only duplicate handling | The **safe default on any ambiguity** |
+
+**Adversarial case**: doctor must **never** claim `single-writer-serialized` when it cannot verify
+the serialization mechanism is actually configured. Ambiguity → `unserialized-best-effort`. A
+silent upgrade from "best effort" to "serialized" would give adopters a false sense of safety
+exactly when races are most likely.
+
+Evidence sources a later doctor-checklist row (P3-E5-S04) will cite: the CI job's
+`resource_group` config, or the `serve` lock-backend configuration. Failure consequence on
+unverifiable evidence: `warn` (emit `unserialized-best-effort`), never a silent
+`single-writer-serialized` claim.
 
 ## Fixtures
 
-Two fixtures under [`fixtures/`](fixtures/) exercise this protocol end to end and are the
-exit-gate artifact P4-E1 consumes for its rerun-idempotence case:
+Three fixtures under [`fixtures/`](fixtures/) exercise this protocol end to end. The first two
+are the exit-gate artifact P4-E1 consumes for its rerun-idempotence case; the third pins step 8's
+deterministic repair:
 
 - [`fixtures/rerun-idempotence.yaml`](fixtures/rerun-idempotence.yaml) — a plain rerun (no source
   change between run 1 and run 2) exercising rows 2 and 3 of the state table: run 2 creates zero
@@ -122,3 +169,7 @@ exit-gate artifact P4-E1 consumes for its rerun-idempotence case:
   step 3 but before step 9, exercising step 2's listing as the mechanism that makes the following
   rerun idempotent: run 2 creates nothing new for slots run 1 already covered, and completes the
   rescan run 1 never reached.
+- [`fixtures/duplicate-repair.yaml`](fixtures/duplicate-repair.yaml) — seeded multi-artifact-per-slot
+  (three finding-threads for one slot, listing order deliberately not ascending by forge ID);
+  step 8 keeps the lowest forge ID as canonical, resolves the others, and records each repair in
+  `PublicationReceipt.repairs`.

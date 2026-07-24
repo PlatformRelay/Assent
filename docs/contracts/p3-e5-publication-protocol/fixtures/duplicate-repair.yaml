@@ -1,0 +1,112 @@
+# Fixture: duplicate repair (P3-E5-S03, REQ-P3-E5-S03-01).
+#
+# Scope: two or more pre-existing bot-authored artifacts occupying the same slot (seeded by a
+# race between unserialized publishers, or a prior bug). Step 8 of the numbered protocol
+# (../reconciliation-state-table.md) repairs them deterministically: the lowest forge ID is
+# canonical; every other duplicate is resolved/removed; each repair is recorded in
+# PublicationReceipt.repairs. Repair is NOT first-seen-wins by scan/pagination order.
+#
+# Vocabulary (slot/occurrence/decision/artifact) is frozen in ../marker-grammar.md; the
+# numbered protocol and state-table rows are frozen in ../reconciliation-state-table.md.
+#
+# This is a documentation fixture (Level: doc) — it is illustrative, not schema-validated; no
+# reconciliation engine exists yet (Phase 5). It exists so a later Reconcile implementation
+# (and ADR-0019) has a precise before/after shape to assert against.
+
+fixture: duplicate-repair
+mr:
+  project: platform/orders-service
+  iid: "612"
+
+# Seed: a race (two concurrent one-shot publishers without resource_group serialization)
+# posted three finding-threads for the SAME slot. The step-2 listing returns them in
+# pagination order that is deliberately NOT ascending-by-forge-ID, so a first-seen-wins
+# implementation would pick the wrong canonical artifact.
+seed:
+  cause: "race between two concurrent unserialized CI publishers (resource_group misconfigured)"
+  desiredReviewState:
+    slots:
+      - slot: { rule: topic-safety/retention-shrink-challenge, entryRef: "topic-registry:orders.events.v1", effect: challenge }
+        occurrence: "sha256:dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444"
+      - slot: { rule: ownership/entry-owner-required, entryRef: "topic-registry:orders.events.v1", effect: comment }
+        occurrence: "sha256:eeee5555eeee5555eeee5555eeee5555eeee5555eeee5555eeee5555eeee5555"
+  step2ExistingArtifacts:
+    # Pagination order (page 1 then page 2) — deliberately not ascending by forge ID.
+    - forgeId: "note/8005"
+      kind: finding-thread
+      slot: { rule: topic-safety/retention-shrink-challenge, entryRef: "topic-registry:orders.events.v1", effect: challenge }
+      occurrence: "sha256:dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444"
+      resolved: false
+    - forgeId: "note/8001"
+      kind: finding-thread
+      slot: { rule: topic-safety/retention-shrink-challenge, entryRef: "topic-registry:orders.events.v1", effect: challenge }
+      occurrence: "sha256:dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444"
+      resolved: false
+    - forgeId: "note/8003"
+      kind: finding-thread
+      slot: { rule: topic-safety/retention-shrink-challenge, entryRef: "topic-registry:orders.events.v1", effect: challenge }
+      occurrence: "sha256:dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444dddd4444"
+      resolved: false
+    - forgeId: "note/8002"
+      kind: finding-thread
+      slot: { rule: ownership/entry-owner-required, entryRef: "topic-registry:orders.events.v1", effect: comment }
+      occurrence: "sha256:eeee5555eeee5555eeee5555eeee5555eeee5555eeee5555eeee5555eeee5555"
+      resolved: false
+    - forgeId: "note/8000"
+      kind: summary-comment
+
+run:
+  stepsExecuted: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+  # Step 8: group by slot; for any slot with ≥2 bot artifacts, pick the lowest forge ID as
+  # canonical (numeric comparison of the forge-assigned note ID: 8001 < 8003 < 8005). Scan
+  # order is irrelevant — first-seen would have wrongly kept note/8005.
+  step8DuplicateRepair:
+    rule: lowest-forge-id-canonical
+    slotsRepaired:
+      - slot: { rule: topic-safety/retention-shrink-challenge, entryRef: "topic-registry:orders.events.v1", effect: challenge }
+        canonicalForgeId: "note/8001" # lowest forge ID among the three duplicates
+        repairedForgeIds: ["note/8003", "note/8005"] # resolved against the canonical
+  stateTableRowsHitAfterRepair:
+    - row: 2 # after repair, exactly one artifact matches current occurrence, unresolved
+      forgeId: "note/8001"
+      action: leave-untouched
+    - row: 2
+      forgeId: "note/8002"
+      action: leave-untouched
+  artifactsCreated: [] # zero — repair resolves duplicates; it does not create a replacement
+  summaryUpdated: true
+  publicationReceipt:
+    # Expected PublicationReceipt.repairs list — each repaired (non-canonical) artifact's
+    # forge ID, and the canonical ID it was resolved against. Deterministic, not scan-order.
+    repairs:
+      - repairedForgeId: "note/8003"
+        canonicalForgeId: "note/8001"
+        action: resolve # resolved/removed; body notes "duplicate of note/8001"
+      - repairedForgeId: "note/8005"
+        canonicalForgeId: "note/8001"
+        action: resolve
+  postRunRescan:
+    matchesDesiredReviewState: true
+    artifactsRemaining:
+      - forgeId: "note/8000"
+        kind: summary-comment
+      - forgeId: "note/8001"
+        slot: { rule: topic-safety/retention-shrink-challenge, entryRef: "topic-registry:orders.events.v1", effect: challenge }
+        resolved: false
+      - forgeId: "note/8002"
+        slot: { rule: ownership/entry-owner-required, entryRef: "topic-registry:orders.events.v1", effect: comment }
+        resolved: false
+      # note/8003 and note/8005 are resolved (repaired) — no longer open occupants of the slot
+
+expected:
+  canonicalForgeId: "note/8001" # lowest forge ID wins — not first-seen (note/8005)
+  repairedCount: 2
+  repairs:
+    - { repairedForgeId: "note/8003", canonicalForgeId: "note/8001" }
+    - { repairedForgeId: "note/8005", canonicalForgeId: "note/8001" }
+  duplicateSlotOccupancyAfter: 0 # every slot has exactly one open bot artifact
+  newArtifactsCreated: 0
+  invariant: >-
+    Pre-existing multi-artifact-per-slot duplicates are repaired deterministically: the lowest
+    forge ID is canonical; every other duplicate is resolved against it; PublicationReceipt.repairs
+    records each repair. Scan/pagination order must never change which artifact survives.
