@@ -44,6 +44,12 @@ var presentationModelSchemaJSON []byte
 //go:embed decision/v1alpha1/publication-receipt.schema.json
 var publicationReceiptSchemaJSON []byte
 
+//go:embed comparison/v1alpha1/comparison-record.schema.json
+var comparisonRecordSchemaJSON []byte
+
+//go:embed comparison/v1alpha1/comparison-suite.schema.json
+var comparisonSuiteSchemaJSON []byte
+
 var (
 	// ConfigSchema validates schemas/policy/v1alpha1/config.schema.json instances.
 	ConfigSchema = mustCompile("config.schema.json", configSchemaJSON)
@@ -70,6 +76,8 @@ const (
 	replayBundleSchemaID       = "https://assent.dev/schemas/decision/v1alpha1/replay-bundle.schema.json"
 	presentationModelSchemaID = "https://assent.dev/schemas/decision/v1alpha1/presentation-model.schema.json"
 	publicationReceiptSchemaID = "https://assent.dev/schemas/decision/v1alpha1/publication-receipt.schema.json"
+	comparisonRecordSchemaID   = "https://assent.dev/schemas/comparison/v1alpha1/comparison-record.schema.json"
+	comparisonSuiteSchemaID    = "https://assent.dev/schemas/comparison/v1alpha1/comparison-suite.schema.json"
 )
 
 var decisionSchemas = mustCompileCrossReferenced(map[string][]byte{
@@ -78,6 +86,11 @@ var decisionSchemas = mustCompileCrossReferenced(map[string][]byte{
 	replayBundleSchemaID:       replayBundleSchemaJSON,
 	presentationModelSchemaID: presentationModelSchemaJSON,
 	publicationReceiptSchemaID: publicationReceiptSchemaJSON,
+})
+
+var comparisonSchemas = mustCompileCrossReferenced(map[string][]byte{
+	comparisonRecordSchemaID: comparisonRecordSchemaJSON,
+	comparisonSuiteSchemaID:  comparisonSuiteSchemaJSON,
 })
 
 var (
@@ -91,6 +104,11 @@ var (
 	PresentationModelSchema = decisionSchemas[presentationModelSchemaID]
 	// PublicationReceiptSchema validates schemas/decision/v1alpha1/publication-receipt.schema.json instances.
 	PublicationReceiptSchema = decisionSchemas[publicationReceiptSchemaID]
+	// ComparisonRecordSchema validates schemas/comparison/v1alpha1/comparison-record.schema.json instances.
+	ComparisonRecordSchema = comparisonSchemas[comparisonRecordSchemaID]
+	// ComparisonSuiteSchema validates schemas/comparison/v1alpha1/comparison-suite.schema.json instances
+	// (PolicyComparisonSuite — closed promotion-gate table + immutable corpus).
+	ComparisonSuiteSchema = comparisonSchemas[comparisonSuiteSchemaID]
 )
 
 // newCompiler returns a compiler with this package's vendor vocabularies

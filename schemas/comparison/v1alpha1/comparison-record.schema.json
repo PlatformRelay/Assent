@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assent.dev/schemas/comparison/v1alpha1/comparison-record.schema.json",
+  "title": "ComparisonRecord",
+  "description": "Semantic comparison of a baseline profile's DecisionRecord against a candidate profile's DecisionRecord over the same ReplayBundle/ChangeSet (P3-E4-S03 / ADR-0018). Every difference is classified into exactly one member of the closed delta taxonomy — there is no \"other\"/free-text kind; a difference matching none of the six is a hard classification error (fail-closed, never silently dropped). A wording-only change to a rule's message template (no predicate/effect/phase/obligation change) MUST classify as explanation-only so rendered-message changes never enter semantic promotion gates (ADR-0014 amendment split). Top-level additionalProperties are allowed (ADR-0017 §9 additive-tolerant reports); nested delta shapes stay closed.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["apiVersion", "kind", "baselineProfile", "candidateProfile", "caseId", "deltas"],
+  "properties": {
+    "apiVersion": { "const": "assent.dev/v1alpha1" },
+    "kind": { "const": "ComparisonRecord" },
+    "baselineProfile": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Baseline PolicyProfile identity (name and/or revision), e.g. \"prod-strict@6\"."
+    },
+    "candidateProfile": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Candidate PolicyProfile identity under comparison, e.g. \"prod-strict@7\"."
+    },
+    "caseId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable PolicyComparisonSuite caseId this record was produced for."
+    },
+    "deltas": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/delta" },
+      "x-uniqueKeys": ["kind", "rule", "subject"],
+      "description": "Named collection of classified differences. Empty when baseline and candidate agree on every semantic outcome. Per-delta identity is the (kind, rule, subject) triple — optional obligation further qualifies obligation-proving rules."
+    }
+  },
+  "$defs": {
+    "deltaKind": {
+      "type": "string",
+      "enum": [
+        "stricter-intervention-added",
+        "destructive-or-authorization-intervention-missed",
+        "subject-or-obligation-uncovered",
+        "newly-auto-mergeable",
+        "score-threshold-change",
+        "explanation-only"
+      ],
+      "description": "Closed six-member delta taxonomy (P3-E4-S03). No open string / \"other\". Fail-closed: classification that matches none of these six is a hard error for assent compare. explanation-only covers wording-only message-template changes and any other non-semantic presentation drift — never a promotion-gate failure by itself."
+    },
+    "outcomeSide": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Baseline or candidate outcome slice for the identified rule/subject. present=false means the side produced no finding/decision contribution for that identity.",
+      "properties": {
+        "decision": { "enum": ["APPROVE", "REVIEW", "BLOCK"] },
+        "effect": {
+          "enum": ["comment", "challenge", "block", "require-review"],
+          "description": "Finding effect when a finding is present on this side."
+        },
+        "points": { "type": "integer", "minimum": 0 },
+        "present": {
+          "type": "boolean",
+          "description": "Whether this side contributed a finding/outcome for the delta identity."
+        }
+      }
+    },
+    "delta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "rule", "subject", "baseline", "candidate"],
+      "description": "One classified difference. Identity fields (rule, optional obligation, subject) plus baseline vs candidate outcome sides — the per-delta identity used by acceptedDeltas allowlists (never kind alone).",
+      "properties": {
+        "kind": { "$ref": "#/$defs/deltaKind" },
+        "rule": {
+          "type": "string",
+          "minLength": 1,
+          "description": "MergePolicy rule name the delta concerns (identity)."
+        },
+        "obligation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Present when the delta concerns an obligation-proving rule; absent otherwise (identity)."
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Governed-subject EntryRef, e.g. \"topic-registry:orders.events.v1\" (identity)."
+        },
+        "baseline": { "$ref": "#/$defs/outcomeSide" },
+        "candidate": { "$ref": "#/$defs/outcomeSide" }
+      }
+    }
+  }
+}

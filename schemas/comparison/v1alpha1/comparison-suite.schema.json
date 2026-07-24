@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assent.dev/schemas/comparison/v1alpha1/comparison-suite.schema.json",
+  "title": "PolicyComparisonSuite",
+  "description": "Versioned, promotion-gated comparison corpus (P3-E4-S03 / ADR-0018). Each case pins a stable caseId to an immutable ReplayBundle content hash — adding a case never mutates an existing caseId's ReplayBundle. The adversarial revision that edits an existing caseId's fixture in place is forbidden: represent it as a new caseId so historical promotion-gate results stay reproducible. promotionGates is a schema-level pass/fail table keyed by delta kind (consumed by assent compare / E6, never by prose alone). acceptedDeltas is an explicit allowlist keyed by caseId + delta identity (rule/subject[/obligation]) + kind — never by kind alone, closing the \"accept all deltas of this kind\" footgun. explanation-only deltas are structurally excluded from every failOnKinds list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "assent.dev/v1alpha1" },
+    "kind": { "const": "PolicyComparisonSuite" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Suite revision label. Bumping version does not authorize mutating an existing caseId's digest — mint a new caseId instead (immutable corpus)."
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cases", "promotionGates"],
+      "properties": {
+        "baselineProfile": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Default baseline PolicyProfile ref for suite runs (overridable per compare invocation)."
+        },
+        "candidateProfile": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Default candidate PolicyProfile ref for suite runs."
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/case" },
+          "x-uniqueKeys": ["caseId"],
+          "description": "Immutable corpus entries. caseId is stable forever; replayBundleDigest must not change under that caseId."
+        },
+        "promotionGates": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": { "$ref": "#/$defs/promotionGate" },
+          "x-uniqueKeys": ["gateId"],
+          "description": "Exactly the five machine-enforceable promotion gates (zero missed destructive; zero missed authorization/ownership; no unexpected obligation removal; bounded auto-merge widening; explicitly accepted deltas). Each gate is a deterministic pass/fail function of delta kind + the suite's acceptedDeltas allowlist."
+        },
+        "acceptedDeltas": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/acceptedDelta" },
+          "x-uniqueKeys": ["caseId", "kind", "rule", "subject"],
+          "description": "Explicit per-delta allowlist. Keys are caseId + kind + identity (rule/subject[/obligation]) — never kind alone. A destructive-or-authorization-intervention-missed delta always fails its gate unless individually listed here."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "replayBundleDigest"],
+      "properties": {
+        "caseId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable corpus identity. Never reuse a caseId for a different ReplayBundle."
+        },
+        "replayBundleDigest": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Content hash of the pinned ReplayBundle (P3-E1). Immutable corpus invariant: under a fixed caseId this digest MUST NOT change across suite revisions — revise by adding a new caseId."
+        },
+        "replayBundleRef": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional path or URI of the pinned ReplayBundle fixture whose content hashes to replayBundleDigest."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-facing case summary; not used by promotion-gate evaluation."
+        }
+      }
+    },
+    "deltaKind": {
+      "$ref": "https://assent.dev/schemas/comparison/v1alpha1/comparison-record.schema.json#/$defs/deltaKind"
+    },
+    "promotionGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gateId", "failOnKinds", "defaultVerdict", "acceptance"],
+      "description": "One row of the schema-level promotion pass/fail table. explanation-only is never listed in failOnKinds.",
+      "properties": {
+        "gateId": {
+          "enum": [
+            "zero-missed-destructive",
+            "zero-missed-authorization-ownership",
+            "no-unexpected-obligation-removal",
+            "bounded-auto-merge-widening",
+            "explicitly-accepted-deltas"
+          ],
+          "description": "Closed gate identity. The first two both key off destructive-or-authorization-intervention-missed (taxonomy combines destructive + authorization/ownership misses); gateId distinguishes the reporting axis."
+        },
+        "failOnKinds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/deltaKind" },
+          "description": "Delta kinds that fail this gate unless individually present in acceptedDeltas (when acceptance is per-delta-identity)."
+        },
+        "defaultVerdict": {
+          "enum": ["fail", "pass"],
+          "description": "Verdict when a matching delta is present and not allowlisted. Semantic gates use fail."
+        },
+        "acceptance": {
+          "enum": ["none", "per-delta-identity"],
+          "description": "none: matching deltas always fail (no allowlist escape). per-delta-identity: an acceptedDeltas entry keyed by caseId + identity (+ kind) may pass that specific delta — never a kind-wide accept."
+        }
+      }
+    },
+    "acceptedDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "kind", "rule", "subject", "rationale"],
+      "description": "One explicitly accepted delta. rule + subject (optional obligation) are the mandatory delta identity so authors cannot accept \"all deltas of kind X\".",
+      "properties": {
+        "caseId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Must name an existing suite caseId."
+        },
+        "kind": { "$ref": "#/$defs/deltaKind" },
+        "rule": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Delta identity: MergePolicy rule name."
+        },
+        "obligation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Delta identity: obligation name when applicable."
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Delta identity: governed-subject EntryRef."
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why this specific delta is accepted for promotion."
+        }
+      }
+    }
+  }
+}

@@ -34,6 +34,10 @@ var contractSchemasByKind = map[string]*jsonschema.Schema{
 	// against its owning schema too, instead of tripping the !known hard-error
 	// branch (decide-and-log, P3-E1-S07: strictly widens sweep coverage).
 	"ApprovalEvidence": ApprovalEvidenceSchema,
+	// Comparison kinds (P3-E4-S03) — registered so future examples/contracts
+	// fixtures validate against the closed taxonomy / suite schemas.
+	"ComparisonRecord":       ComparisonRecordSchema,
+	"PolicyComparisonSuite":  ComparisonSuiteSchema,
 }
 
 const contractAPIVersion = "assent.dev/v1alpha1"
