@@ -1,7 +1,8 @@
-# DRAFT — Rego as the escape-hatch predicate backend inside the YAML envelope
-# (ADR-0002 v2): the envelope owns match/effect/points; the module only computes
-# violations over PolicyInput. Shown standalone here for readability; the same
-# archetype in pure envelope syntax lives in ../declarative/bounded-change.yaml.
+# locked: D-012 — contract unlocked (D-017/E11), implementation gated until the Phase-4 adoption gate; do not wire into assent test or the schema-validation CI job before then
+# Rego as the escape-hatch predicate backend inside the YAML envelope (ADR-0002 v2): the
+# envelope owns match/effect/points; the module only computes violations over PolicyInput.
+# Shown standalone here for readability; the same archetype in pure envelope syntax lives
+# in ../declarative/bounded-change.yaml.
 package policies.bounded_change
 
 import rego.v1

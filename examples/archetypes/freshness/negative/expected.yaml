@@ -1,12 +1,10 @@
-# DRAFT — pre-schema
+# Controlling context fact expired — one-shot must not arm auto-merge
+# (ADR-0017 §4); re-resolve or stay REVIEW.
 decision: REVIEW
-firing:
-  - rule_intent: freshness / oncall-exists
+findings:
+  - rule: oncall-exists
     obligation: context-fresh
-    outcome: failed
-    onFailure:
-      effect: block
-      code: context.expired
-    detail: >
-      Controlling context fact expired — one-shot must not arm auto-merge
-      (ADR-0017 §4); re-resolve or stay REVIEW.
+    effect: block
+    subject: catalog-service:orders-api
+    points: 0
+    code: context.expired

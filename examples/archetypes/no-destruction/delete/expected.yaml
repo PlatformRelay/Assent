@@ -1,12 +1,10 @@
-# DRAFT — pre-schema
+# topics/prod/payments.transactions.v1.yaml deleted.
+# Author thread resolution does not authorize destruction (ADR-0017 §3).
 decision: BLOCK
-firing:
-  - rule_intent: no-destruction / no-topic-deletion
+findings:
+  - rule: no-topic-deletion
     obligation: non-destructive
-    outcome: failed
-    onFailure:
-      effect: block
-      code: destruction.forbidden
-    detail: "topics/prod/payments.transactions.v1.yaml deleted"
-notes: >
-  Author thread resolution does not authorize destruction (ADR-0017 §3).
+    effect: block
+    subject: topic-registry:payments.transactions.v1
+    points: 0
+    code: destruction.forbidden

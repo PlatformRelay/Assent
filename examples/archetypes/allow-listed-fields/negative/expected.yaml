@@ -1,10 +1,9 @@
-# DRAFT — pre-schema
+# /owner changed (not on allow-list; ownership transfer)
 decision: REVIEW
-firing:
-  - rule_intent: allow-listed-fields / only-safe-fields
+findings:
+  - rule: only-safe-fields
     obligation: allowed-fields
-    outcome: failed
-    onFailure:
-      effect: require-review
-      code: allowed-fields.sensitive
-    detail: "/owner changed (not on allow-list; ownership transfer)"
+    effect: require-review
+    subject: topic-registry:orders.events.v1
+    points: 0
+    code: allowed-fields.sensitive

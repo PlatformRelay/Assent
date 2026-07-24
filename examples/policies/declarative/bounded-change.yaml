@@ -1,6 +1,7 @@
-# DRAFT — envelope rule (ADR-0010/0013): one predicate, both outcomes via onFail
-# (ADR-0007 amendment 2) — no negation-pair twin rules, and the quota-exceeded case
-# gets an explanation instead of a silent "uncovered change".
+# Bounded-change envelope rule (ADR-0010/0013 / ADR-0017 §2/§5): one prove predicate,
+# both outcomes via onFailure — no negation-pair twin rules. Over-quota is
+# acknowledgement (challenge), not an authorization gap.
+# Partition increases within quota are safe; decreases are not possible in Kafka.
 apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
 metadata:
@@ -9,19 +10,18 @@ spec:
   rules:
     - name: partition-change-bounds
       match:
-        changes:
-          - path: "**/partitions"
-            kind: modify
-      assert:
-        all:
-          - cel: new >= old
-            message: "partitions may not decrease ({{ old }} -> {{ new }})"
-          - cel: new <= facts.quota.max_partitions
-            message: "partitions {{ new }} exceeds quota {{ facts.quota.max_partitions }}"
-      effect: vouch          # predicate true -> automerge-eligible
+        valueChanges:
+          pointers: ["/partitions"]
+          kinds: [modify]
+      prove:
+        obligation: bounded-change
+        when:
+          all:
+            - cel: new >= old
+              message: "partitions may not decrease ({{ old }} -> {{ new }})"
+            - cel: new <= facts.quota.max_partitions
+              message: "partitions {{ new }} exceeds quota {{ facts.quota.max_partitions }}"
       points: 1              # accrues PER FIRING: many bumps in one MR add up (bulk guard)
-      onFail:
+      onFailure:
         effect: challenge    # predicate false -> the failing leaf's message explains why
-      docs:
-        url: https://example.com/policies/partitions
-        summary: "Partition increases within quota are safe; decreases are not possible in Kafka."
+        code: bounded-change.out-of-band

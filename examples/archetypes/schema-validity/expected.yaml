@@ -1,7 +1,3 @@
-# DRAFT — pre-schema
+# core-services.json validates; tags append only. Satisfied prove → no finding.
 decision: APPROVE
-firing:
-  - rule_intent: schema-validity / catalog-v1
-    obligation: schema-valid
-    outcome: satisfied
-    detail: "core-services.json validates; tags append only"
+findings: []

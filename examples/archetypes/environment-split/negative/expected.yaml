@@ -1,11 +1,10 @@
-# DRAFT — pre-schema
+# binding: env=prod pack
+# prod env: partitions 12 -> 28 exceeds prod quota 16 (would pass under dev band 48)
 decision: REVIEW
-firing:
-  - rule_intent: environment-split / prod-bounded-partitions
+findings:
+  - rule: prod-bounded-partitions
     obligation: bounded-change
-    outcome: failed
-    onFailure:
-      effect: challenge
-      code: env.prod.bounded-change.out-of-band
-    detail: "prod env: partitions 12 -> 28 exceeds prod quota 16 (would pass under dev band 48)"
-binding: env=prod pack
+    effect: challenge
+    subject: topic-registry:orders.events.v1
+    points: 1
+    code: env.prod.bounded-change.out-of-band

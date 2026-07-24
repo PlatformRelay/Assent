@@ -1,7 +1,3 @@
-# DRAFT — pre-schema
+# orders-rotation resolved and within maxAge. Satisfied prove → no finding.
 decision: APPROVE
-firing:
-  - rule_intent: freshness / oncall-exists
-    obligation: context-fresh
-    outcome: satisfied
-    detail: "orders-rotation resolved and within maxAge"
+findings: []

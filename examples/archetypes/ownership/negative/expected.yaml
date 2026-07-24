@@ -1,13 +1,11 @@
-# DRAFT — pre-schema
+# bob is not in orders-team. Author self-resolving a discussion thread must NOT
+# satisfy ownership — forge ApprovalEvidence of an eligible orders-team (or
+# CODEOWNERS) principal is required (P1-E3-S02).
 decision: REVIEW
-firing:
-  - rule_intent: ownership / author-owns-entry
+findings:
+  - rule: author-owns-entry
     obligation: ownership
-    outcome: failed
-    onFailure:
-      effect: require-review
-      code: ownership.unauthorized
-notes: >
-  bob is not in orders-team. Author self-resolving a discussion thread must NOT
-  satisfy ownership — forge ApprovalEvidence of an eligible orders-team (or
-  CODEOWNERS) principal is required (P1-E3-S02).
+    effect: require-review
+    subject: topic-registry:orders.events.v1
+    points: 0
+    code: ownership.unauthorized

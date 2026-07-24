@@ -1,9 +1,5 @@
-# DRAFT — pre-schema
+# Author alice is in orders-team; partitions bump on orders.events.v1 is within
+# other obligations' bands in the full pack (shown here for ownership alone).
+# Satisfied prove emits no finding (ADR-0017 §2) — DecisionRecord has no success effect.
 decision: APPROVE
-firing:
-  - rule_intent: ownership / author-owns-entry
-    obligation: ownership
-    outcome: satisfied
-notes: >
-  Author alice is in orders-team; partitions bump on orders.events.v1 is within
-  other obligations' bands in the full pack (shown here for ownership alone).
+findings: []

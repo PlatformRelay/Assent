@@ -1,12 +1,10 @@
-# DRAFT — pre-schema
+# Mixed MR: routine partitions bump PLUS .assent pack edit. Meta-class wins —
+# never APPROVE; the topic change does not dilute the policy-integrity failure.
 decision: BLOCK
-firing:
-  - rule_intent: assent-policy / meta-class
+findings:
+  - rule: meta-class
     obligation: policy-integrity
-    outcome: failed
-    onFailure:
-      effect: block
-      code: assent-policy.changed
-    detail: >
-      Mixed MR: routine partitions bump PLUS .assent pack edit. Meta-class wins —
-      never APPROVE; the topic change does not dilute the policy-integrity failure.
+    effect: block
+    subject: file:.assent/packs/ownership.yaml
+    points: 0
+    code: assent-policy.changed

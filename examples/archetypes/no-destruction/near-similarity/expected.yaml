@@ -1,15 +1,13 @@
-# DRAFT — pre-schema
+# delete payments.transactions.v1 + add payments.settled.v1 with near-identical
+# value (description one-token edit). Even if similarity fold would classify as
+# rename, effect must be at least as strict as delete — never APPROVE.
+# Pins ADR-0003 "rename never laxer than delete" / near-threshold golden case.
+# Engine must apply max(strictness(delete), strictness(rename)).
 decision: BLOCK
-firing:
-  - rule_intent: no-destruction / adversarial-near-similarity
+findings:
+  - rule: adversarial-near-similarity
     obligation: non-destructive
-    outcome: failed
-    onFailure:
-      effect: block
-      code: destruction.forbidden
-    detail: >
-      delete payments.transactions.v1 + add payments.settled.v1 with near-identical
-      value (description one-token edit). Even if similarity fold would classify as
-      rename, effect must be at least as strict as delete — never APPROVE.
-notes: >
-  Pins ADR-0003 "rename never laxer than delete" / near-threshold golden case.
+    effect: block
+    subject: topic-registry:payments.transactions.v1
+    points: 0
+    code: destruction.forbidden

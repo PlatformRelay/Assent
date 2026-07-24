@@ -1,6 +1,7 @@
-# DRAFT — pre-schema
 # Index for the no-destruction archetype (ADR-0003: rename never laxer than delete).
 # All cases below expect REVIEW or BLOCK — never APPROVE.
+# cases[].path keys name case directories — not a policy matcher (ADR-0017 §5 matchers
+# only govern a rule's match: block).
 cases:
   - path: delete/
     decision: BLOCK

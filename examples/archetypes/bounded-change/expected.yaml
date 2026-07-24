@@ -1,7 +1,3 @@
-# DRAFT — pre-schema
+# partitions 12 -> 16 (<= quota 24, non-decreasing). Satisfied prove → no finding.
 decision: APPROVE
-firing:
-  - rule_intent: bounded-change / partition-change-bounds
-    obligation: bounded-change
-    outcome: satisfied
-    detail: "partitions 12 -> 16 (<= quota 24, non-decreasing)"
+findings: []

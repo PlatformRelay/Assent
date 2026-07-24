@@ -1,13 +1,11 @@
-# DRAFT — pre-schema
+# rename payments.transactions.v1 -> billing.transactions.v1
+# Rename strictness >= delete strictness for this class (ADR-0003 amendment).
+# Eligible ApprovalEvidence required (P1-E3-S02); author self-resolve insufficient.
 decision: REVIEW
-firing:
-  - rule_intent: no-destruction / no-topic-rename
+findings:
+  - rule: no-topic-rename
     obligation: non-destructive
-    outcome: failed
-    onFailure:
-      effect: require-review
-      code: destruction.forbidden
-    detail: "rename payments.transactions.v1 -> billing.transactions.v1"
-notes: >
-  Rename strictness >= delete strictness for this class (ADR-0003 amendment).
-  Eligible ApprovalEvidence required (P1-E3-S02); author self-resolve insufficient.
+    effect: require-review
+    subject: topic-registry:payments.transactions.v1
+    points: 0
+    code: destruction.forbidden

@@ -1,7 +1,3 @@
-# DRAFT — pre-schema
+# only /partitions changed — allow-list satisfied; prove emits no finding.
 decision: APPROVE
-firing:
-  - rule_intent: allow-listed-fields / only-safe-fields
-    obligation: allowed-fields
-    outcome: satisfied
-    detail: "only /partitions changed"
+findings: []

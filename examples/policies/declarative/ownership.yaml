@@ -1,6 +1,12 @@
-# DRAFT — archetype "ownership" as ONE rule with onFail (ADR-0007 amendment 2).
+# Ownership archetype — one obligation-proving rule (ADR-0017 §2/§3).
 # Membership arrives as a fact from a permission provider (ADR-0004): Keycloak, LDAP,
 # GitLab/GitHub groups, or an ownership file — the rule doesn't care.
+#
+# Authorization is proven only by forge ApprovalEvidence (P3-E1-S04) for an eligible
+# principal — never by the affected author resolving a discussion thread.
+# Adversarial: an author who is not in the owning group must not be able to satisfy
+# this obligation by any forge action they themselves can take (self-resolve,
+# self-approve, or self-ack of a challenge thread).
 apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
 metadata:
@@ -9,11 +15,11 @@ spec:
   rules:
     - name: author-owns-entry
       match:
-        classes: [kafka-topic]
-      assert: "entry.owner in facts.author.groups"
-      effect: vouch
-      onFail:
-        effect: challenge
-        message: "You are not in the owning group `{{ entry.owner }}` — owner must resolve this thread."
-      docs:
-        url: https://example.com/policies/ownership
+        files:
+          paths: ["topics/**/*.yaml"]
+      prove:
+        obligation: ownership
+        when: "entry.owner in facts.author.groups"
+      onFailure:
+        effect: require-review
+        code: ownership.unauthorized
