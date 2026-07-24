@@ -10,8 +10,8 @@ entries, so a single merge request routinely touches several entries at once.
    changing its tier, or rotating the on-call rotation reference.
 2. They open a merge request; CI runs the merge gate against the policy set.
 3. Changes limited to the **allow-listed fields** (`oncall`, `endpoints`, `tags`) on
-   entries the author's team owns are vouched and auto-merged. Tier changes, ownership
-   transfers, and entry deletions always get a human.
+   entries the author's team owns prove their obligations and auto-merge. Tier changes,
+   ownership transfers, and entry deletions always get a human.
 
 Entry semantics: `owner` names the owning team; `tier` (1–3) drives alerting and is *not*
 self-service; `oncall` must reference a rotation that exists (fact-provider lookup).
@@ -33,3 +33,5 @@ catalog/
 - **No destruction** — removing an entry from a file requires human review.
 - **Environment split** — `catalog/prod/**` vs `catalog/dev/**`.
 - **Freshness/context facts** — `oncall` must resolve in the rotation system.
+
+Starter pack (runnable `.assent/` policy + fixtures): [`examples/packs/service-catalog/`](../../packs/service-catalog/).

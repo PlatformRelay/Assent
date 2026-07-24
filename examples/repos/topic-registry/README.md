@@ -9,7 +9,7 @@ is one YAML file and teams request changes via merge request.
 1. A team edits (or adds) *their* topic file under `topics/<env>/<topic-name>.yaml`.
 2. They open a merge request; CI runs the merge gate against the policy set.
 3. Routine changes — a partition bump within quota on a topic the author's team owns —
-   are vouched and auto-merged. Everything else gets an explained review thread.
+   prove their obligations and auto-merge. Everything else gets an explained review thread.
 
 Entry semantics: `owner` names the owning team (resolved against a permission provider);
 `partitions` may only grow, within quota; `retention_hours` is bounded per environment;
@@ -31,3 +31,5 @@ topics/
 - **No destruction** — removing a topic file (or a whole entry) requires human review.
 - **Environment split** — `topics/prod/**` vs `topics/dev/**` paths.
 - **Schema validity** — every file must keep the topic schema valid.
+
+Starter pack (runnable `.assent/` policy + fixtures): [`examples/packs/topic-registry/`](../../packs/topic-registry/).

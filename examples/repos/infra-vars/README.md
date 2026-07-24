@@ -10,8 +10,8 @@ the result.
 1. A team edits the entry for its workload in `envs/<env>/*.tfvars` — e.g. raising
    `memory_mb` or `max_replicas` inside the approved band.
 2. They open a merge request; CI runs the merge gate against the policy set.
-3. Sizing changes within band on entries the author's team owns are vouched and
-   auto-merged. New workloads, band-exceeding values, and removals get a human.
+3. Sizing changes within band on entries the author's team owns prove their obligations
+   and auto-merge. New workloads, band-exceeding values, and removals get a human.
 
 Entry semantics: each workload is a keyed object with an `owner` attribute; numeric
 attributes carry per-environment bands (prod bands are tighter); anything the HCL parser
@@ -34,3 +34,5 @@ envs/
 - **Ownership** — `owner` attribute per workload entry.
 - **Opaque-change fallback** — HCL constructs outside the modeled shape never automerge.
 - **No destruction** — removing a workload entry requires human review.
+
+Starter pack (runnable `.assent/` policy + fixtures): [`examples/packs/infra-vars/`](../../packs/infra-vars/).

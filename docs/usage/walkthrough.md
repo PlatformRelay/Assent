@@ -30,6 +30,8 @@ created .assent/tests/topics/      (passing fixtures for every starter rule)
 next: assent test && assent scan --since 90d
 ```
 
+Committed starter pack (runnable policy content): [`examples/packs/topic-registry/`](../../examples/packs/topic-registry/).
+
 ## Step 2 — make a rule yours
 
 Edit the starter pack (`.assent/packs/topics/rules/safety.yaml`), e.g. cap partitions via
@@ -46,7 +48,7 @@ providers:
 ```console
 $ assent test
 PACK topics
-  ✓ partition-increase-ok            APPROVE            (2 vouched, score 1/10)
+  ✓ partition-increase-ok            APPROVE            (2 obligations proved, score 1/10)
   ✓ partition-decrease-challenged    REVIEW: challenge  retention-shrink-challenge
   ✓ topic-delete-blocked             BLOCK              no-topic-deletion
   ✗ foreign-topic-edit               expected REVIEW, got APPROVE
@@ -90,7 +92,7 @@ assent:
 ## Step 6 — the contributor experience
 
 A dev bumps `partitions: 12 -> 24` on their own topic in dev: pipeline runs, the MR gets a
-summary comment ("APPROVE — 1 change vouched, score 1/10"), approval, and merges. Nobody was
+summary comment ("APPROVE — 1 obligation proved, score 1/10"), approval, and merges. Nobody was
 interrupted.
 
 The same dev shrinks retention on a prod topic: assent opens a **resolvable thread** —
@@ -108,8 +110,11 @@ Something weird? Anyone can ask locally:
 $ assent explain --mr 481
 change topics/prod/orders.yaml /retentionMs modify 604800000 -> 86400000
   class kafka-topic · env prod · binding -> packs [topics, topics-strict] threshold 4
-  ✓ matched retention-shrink-challenge   assert "new < old" = true -> effect challenge
-  ✗ not matched partition-increase      (path mismatch)
+  ✓ matched retention-shrink-challenge
+      prove: {obligation: bounded-change, when: "new < old"} = true
+      onFailure: {effect: challenge, code: bounded-change.out-of-band}
+  ✗ not matched partition-increase
+      (valueChanges pointer /partitions did not match this change)
 aggregation: no block · 1 unresolved challenge -> REVIEW
 ```
 
