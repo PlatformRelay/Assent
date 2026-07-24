@@ -1,20 +1,35 @@
 {
   "apiVersion": "assent.dev/v1alpha1",
   "kind": "MergePolicy",
-  "metadata": {"name": "topic-safety"},
+  "metadata": {
+    "name": "topic-safety"
+  },
   "spec": {
     "entries": {
-      "kafka-topic": {"mode": "map", "root": "/topics"}
+      "kafka-topic": {
+        "mode": "map",
+        "root": "/topics"
+      }
     },
     "rules": [
       {
         "name": "partition-increase-within-quota",
-        "match": {"values": {"pointers": ["/partitions"]}},
+        "match": {
+          "values": {
+            "pointers": [
+              "/partitions"
+            ]
+          }
+        },
         "prove": {
           "obligation": "non-destructive",
           "when": "new >= old && new <= facts.quota.max_partitions"
         },
-        "onFailure": {"effect": "challenge", "code": "partition-quota-exceeded"}
+        "onFailure": {
+          "effect": "challenge",
+          "code": "partition-quota-exceeded"
+        },
+        "phase": "enforce"
       }
     ]
   }

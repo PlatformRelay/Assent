@@ -23,6 +23,9 @@ var rulesetBindingSchemaJSON []byte
 //go:embed policy/v1alpha1/merge-policy.schema.json
 var mergePolicySchemaJSON []byte
 
+//go:embed policy/v1alpha1/pack.schema.json
+var packSchemaJSON []byte
+
 //go:embed decision/v1alpha1/evaluation-input.schema.json
 var evaluationInputSchemaJSON []byte
 
@@ -45,6 +48,9 @@ var (
 	RulesetBindingSchema = mustCompile("ruleset-binding.schema.json", rulesetBindingSchemaJSON)
 	// MergePolicySchema validates schemas/policy/v1alpha1/merge-policy.schema.json instances.
 	MergePolicySchema = mustCompile("merge-policy.schema.json", mergePolicySchemaJSON)
+	// PackSchema validates schemas/policy/v1alpha1/pack.schema.json instances
+	// (pack.yaml manifest; phase is a ceiling — P3-E4-S01 / D-017 B2).
+	PackSchema = mustCompile("pack.schema.json", packSchemaJSON)
 )
 
 // decisionSchemaID is the $id of one of the five decision/v1alpha1 runtime

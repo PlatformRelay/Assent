@@ -70,16 +70,19 @@ func TestDecisionRuntimeRecordsFixtureRoundTrip(t *testing.T) {
 		"apiVersion": "assent.dev/v1alpha1",
 		"kind": "DecisionRecord",
 		"decision": "APPROVE",
-		"findings": [
-			{
-				"rule": "partition-increase-within-quota",
-				"obligation": "non-destructive",
-				"effect": "comment",
-				"subject": "topic-registry:orders.events.v1",
-				"points": 0,
-				"code": "partition-quota-ok"
-			}
-		],
+		"findings": {
+			"observed": [],
+			"enforcing": [
+				{
+					"rule": "partition-increase-within-quota",
+					"obligation": "non-destructive",
+					"effect": "comment",
+					"subject": "topic-registry:orders.events.v1",
+					"points": 0,
+					"code": "partition-quota-ok"
+				}
+			]
+		},
 		"pins": ` + pins + `
 	}`
 

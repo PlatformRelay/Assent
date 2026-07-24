@@ -1,14 +1,29 @@
 {
   "apiVersion": "assent.dev/v1alpha1",
   "kind": "MergePolicy",
-  "metadata": {"name": "topic-safety"},
+  "metadata": {
+    "name": "topic-safety"
+  },
   "spec": {
     "rules": [
       {
         "name": "partition-increase-within-quota",
-        "match": {"values": {"pointers": ["/partitions"]}},
-        "prove": {"obligation": "non-destructive", "when": "new >= old"},
-        "onFailure": {"effect": "vouch", "code": "x"}
+        "match": {
+          "values": {
+            "pointers": [
+              "/partitions"
+            ]
+          }
+        },
+        "prove": {
+          "obligation": "non-destructive",
+          "when": "new >= old"
+        },
+        "onFailure": {
+          "effect": "vouch",
+          "code": "x"
+        },
+        "phase": "enforce"
       }
     ]
   }

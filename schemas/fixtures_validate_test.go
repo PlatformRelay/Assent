@@ -22,6 +22,7 @@ var contractSchemasByKind = map[string]*jsonschema.Schema{
 	"Config":             ConfigSchema,
 	"RulesetBinding":     RulesetBindingSchema,
 	"MergePolicy":        MergePolicySchema,
+	"Pack":               PackSchema,
 	"EvaluationInput":    EvaluationInputSchema,
 	"DecisionRecord":     DecisionRecordSchema,
 	"ReplayBundle":       ReplayBundleSchema,

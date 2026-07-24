@@ -2,16 +2,19 @@
   "apiVersion": "assent.dev/v1alpha1",
   "kind": "DecisionRecord",
   "decision": "APPROVE",
-  "findings": [
-    {
-      "rule": "topic-owner-must-approve",
-      "obligation": "ownership",
-      "effect": "require-review",
-      "subject": "topic-registry:orders.events.v1",
-      "points": 0,
-      "code": "ownership-approved"
-    }
-  ],
+  "findings": {
+    "observed": [],
+    "enforcing": [
+      {
+        "rule": "topic-owner-must-approve",
+        "obligation": "ownership",
+        "effect": "require-review",
+        "subject": "topic-registry:orders.events.v1",
+        "points": 0,
+        "code": "ownership-approved"
+      }
+    ]
+  },
   "pins": {
     "toolVersion": "0.1.0",
     "toolDigest": "sha256:00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
@@ -19,6 +22,8 @@
     "sourceSha": "2a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f7",
     "targetSha": "b5c6d7e8f9001122334455667788990011aabbcc",
     "mergeResultDigest": "sha256:8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f",
-    "factsResolvedAt": { "owner": "2026-07-24T09:00:00Z" }
+    "factsResolvedAt": {
+      "owner": "2026-07-24T09:00:00Z"
+    }
   }
 }

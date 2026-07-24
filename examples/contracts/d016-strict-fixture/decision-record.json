@@ -2,32 +2,35 @@
   "apiVersion": "assent.dev/v1alpha1",
   "kind": "DecisionRecord",
   "decision": "BLOCK",
-  "findings": [
-    {
-      "rule": "topic-owner-must-approve",
-      "obligation": "ownership",
-      "effect": "require-review",
-      "subject": "topic-registry:orders.events.v1",
-      "points": 0,
-      "code": "ownership-approval-missing"
-    },
-    {
-      "rule": "partitions-must-not-shrink",
-      "obligation": "non-destructive",
-      "effect": "block",
-      "subject": "topic-registry:orders.events.v1",
-      "points": 10,
-      "code": "partition-count-shrunk"
-    },
-    {
-      "rule": "topic-owner-must-approve",
-      "obligation": "ownership",
-      "effect": "require-review",
-      "subject": "topic-registry:payments.settled.v2",
-      "points": 0,
-      "code": "ownership-approval-missing"
-    }
-  ],
+  "findings": {
+    "observed": [],
+    "enforcing": [
+      {
+        "rule": "topic-owner-must-approve",
+        "obligation": "ownership",
+        "effect": "require-review",
+        "subject": "topic-registry:orders.events.v1",
+        "points": 0,
+        "code": "ownership-approval-missing"
+      },
+      {
+        "rule": "partitions-must-not-shrink",
+        "obligation": "non-destructive",
+        "effect": "block",
+        "subject": "topic-registry:orders.events.v1",
+        "points": 10,
+        "code": "partition-count-shrunk"
+      },
+      {
+        "rule": "topic-owner-must-approve",
+        "obligation": "ownership",
+        "effect": "require-review",
+        "subject": "topic-registry:payments.settled.v2",
+        "points": 0,
+        "code": "ownership-approval-missing"
+      }
+    ]
+  },
   "pins": {
     "toolVersion": "0.1.0",
     "toolDigest": "sha256:00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",

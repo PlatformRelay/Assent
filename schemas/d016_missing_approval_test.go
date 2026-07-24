@@ -28,7 +28,8 @@ func TestD016MissingApprovalNeverApproves(t *testing.T) {
 	})
 
 	t.Run("a require-review finding names the missing approval via its code", func(t *testing.T) {
-		findings := dr["findings"].([]any)
+		findingsObj := dr["findings"].(map[string]any)
+		findings := findingsObj["enforcing"].([]any)
 		named := false
 		for _, f := range findings {
 			fm := f.(map[string]any)

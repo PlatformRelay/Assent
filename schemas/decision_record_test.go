@@ -3,21 +3,26 @@ package schemas
 import "testing"
 
 // REQ-P3-E1-S02-02: decision-record.schema.json requires decision: enum
-// [APPROVE, REVIEW, BLOCK], a findings[] list (rule, obligation or none,
-// effect, subject as EntryRef, points), and a pins object requiring
+// [APPROVE, REVIEW, BLOCK], findings.{observed,enforcing} (P3-E4-S01 phase
+// split; each entry: rule, obligation or none, effect, subject as EntryRef,
+// points), and a pins object requiring
 // toolVersion, toolDigest, policySha, sourceSha, targetSha,
 // mergeResultDigest (nullable only when the forge capability is absent —
 // ADR-0017 §1), and per-provider factsResolvedAt. No field may carry a raw
 // fact value for a sensitive fact (there is no such field at all).
+// Only findings.enforcing feeds aggregation; observed is structurally excluded.
 func TestDecisionRecordSchema(t *testing.T) {
 	t.Run("APPROVE with pinned mergeResultDigest is valid", func(t *testing.T) {
 		const doc = `{
 			"apiVersion": "assent.dev/v1alpha1",
 			"kind": "DecisionRecord",
 			"decision": "APPROVE",
-			"findings": [
-				{"rule": "partition-increase-within-quota", "obligation": "non-destructive", "effect": "comment", "subject": "topic-registry:orders.events.v1", "points": 0, "code": "partition-quota-ok"}
-			],
+			"findings": {
+				"observed": [],
+				"enforcing": [
+					{"rule": "partition-increase-within-quota", "obligation": "non-destructive", "effect": "comment", "subject": "topic-registry:orders.events.v1", "points": 0, "code": "partition-quota-ok"}
+				]
+			},
 			"pins": {
 				"toolVersion": "0.1.0",
 				"toolDigest": "sha256:aaaa",
@@ -38,9 +43,12 @@ func TestDecisionRecordSchema(t *testing.T) {
 			"apiVersion": "assent.dev/v1alpha1",
 			"kind": "DecisionRecord",
 			"decision": "REVIEW",
-			"findings": [
-				{"rule": "no-approval-evidence", "obligation": "reviewed", "effect": "require-review", "subject": "topic-registry:orders.events.v1", "points": 5}
-			],
+			"findings": {
+				"observed": [],
+				"enforcing": [
+					{"rule": "no-approval-evidence", "obligation": "reviewed", "effect": "require-review", "subject": "topic-registry:orders.events.v1", "points": 5}
+				]
+			},
 			"pins": {
 				"toolVersion": "0.1.0",
 				"toolDigest": "sha256:aaaa",
@@ -62,7 +70,7 @@ func TestDecisionRecordSchema(t *testing.T) {
 			"apiVersion": "assent.dev/v1alpha1",
 			"kind": "DecisionRecord",
 			"decision": "APPROVE",
-			"findings": [],
+			"findings": {"observed": [], "enforcing": []},
 			"pins": {
 				"toolVersion": "0.1.0",
 				"toolDigest": "sha256:aaaa",
@@ -83,7 +91,7 @@ func TestDecisionRecordSchema(t *testing.T) {
 			"apiVersion": "assent.dev/v1alpha1",
 			"kind": "DecisionRecord",
 			"decision": "REVIEW",
-			"findings": [],
+			"findings": {"observed": [], "enforcing": []},
 			"pins": {
 				"toolVersion": "0.1.0",
 				"toolDigest": "sha256:aaaa",
@@ -104,7 +112,7 @@ func TestDecisionRecordSchema(t *testing.T) {
 			"apiVersion": "assent.dev/v1alpha1",
 			"kind": "DecisionRecord",
 			"decision": "APPROVE",
-			"findings": [],
+			"findings": {"observed": [], "enforcing": []},
 			"pins": {
 				"toolVersion": "0.1.0",
 				"toolDigest": "sha256:aaaa",
@@ -126,7 +134,7 @@ func TestDecisionRecordSchema(t *testing.T) {
 			"apiVersion": "assent.dev/v1alpha1",
 			"kind": "DecisionRecord",
 			"decision": "AUTO_MERGE",
-			"findings": [],
+			"findings": {"observed": [], "enforcing": []},
 			"pins": {
 				"toolVersion": "0.1.0", "toolDigest": "sha256:aaaa", "policySha": "sha256:bbbb",
 				"sourceSha": "cccc", "targetSha": "dddd", "mergeResultDigest": "sha256:eeee", "factsResolvedAt": {}
@@ -142,7 +150,7 @@ func TestDecisionRecordSchema(t *testing.T) {
 			"apiVersion": "assent.dev/v1alpha1",
 			"kind": "DecisionRecord",
 			"decision": "BLOCK",
-			"findings": [],
+			"findings": {"observed": [], "enforcing": []},
 			"pins": {
 				"toolVersion": "0.1.0", "policySha": "sha256:bbbb",
 				"sourceSha": "cccc", "targetSha": "dddd", "mergeResultDigest": "sha256:eeee", "factsResolvedAt": {}
@@ -158,9 +166,12 @@ func TestDecisionRecordSchema(t *testing.T) {
 			"apiVersion": "assent.dev/v1alpha1",
 			"kind": "DecisionRecord",
 			"decision": "BLOCK",
-			"findings": [
-				{"rule": "x", "effect": "block", "subject": "file:x", "points": 10, "value": "raw-sensitive-value"}
-			],
+			"findings": {
+				"observed": [],
+				"enforcing": [
+					{"rule": "x", "effect": "block", "subject": "file:x", "points": 10, "value": "raw-sensitive-value"}
+				]
+			},
 			"pins": {
 				"toolVersion": "0.1.0", "toolDigest": "sha256:aaaa", "policySha": "sha256:bbbb",
 				"sourceSha": "cccc", "targetSha": "dddd", "mergeResultDigest": "sha256:eeee", "factsResolvedAt": {}
@@ -176,7 +187,7 @@ func TestDecisionRecordSchema(t *testing.T) {
 			"apiVersion": "assent.dev/v1alpha1",
 			"kind": "DecisionRecord",
 			"decision": "BLOCK",
-			"findings": []
+			"findings": {"observed": [], "enforcing": []}
 		}`
 		if err := validateJSON(DecisionRecordSchema, doc); err == nil {
 			t.Fatal("expected missing pins to fail validation")

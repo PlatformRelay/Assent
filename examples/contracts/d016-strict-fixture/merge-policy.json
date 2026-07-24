@@ -1,33 +1,60 @@
 {
   "apiVersion": "assent.dev/v1alpha1",
   "kind": "MergePolicy",
-  "metadata": { "name": "topic-safety" },
+  "metadata": {
+    "name": "topic-safety"
+  },
   "spec": {
     "entries": {
       "topic-registry": {
         "mode": "document",
         "root": "",
-        "identity": { "pointer": "/metadata/name" }
+        "identity": {
+          "pointer": "/metadata/name"
+        }
       }
     },
     "rules": [
       {
         "name": "topic-owner-must-approve",
-        "match": { "files": { "paths": ["topics/prod/**.yaml"] } },
+        "match": {
+          "files": {
+            "paths": [
+              "topics/prod/**.yaml"
+            ]
+          }
+        },
         "prove": {
           "obligation": "ownership",
           "when": "facts.owner.team.state == 'resolved'"
         },
-        "onFailure": { "effect": "require-review", "code": "ownership-approval-missing" }
+        "onFailure": {
+          "effect": "require-review",
+          "code": "ownership-approval-missing"
+        },
+        "phase": "enforce"
       },
       {
         "name": "partitions-must-not-shrink",
-        "match": { "valueChanges": { "pointers": ["/partitions"], "kinds": ["modify"] } },
+        "match": {
+          "valueChanges": {
+            "pointers": [
+              "/partitions"
+            ],
+            "kinds": [
+              "modify"
+            ]
+          }
+        },
         "prove": {
           "obligation": "non-destructive",
           "when": "input.new >= input.old"
         },
-        "onFailure": { "effect": "block", "code": "partition-count-shrunk" }
+        "onFailure": {
+          "effect": "block",
+          "code": "partition-count-shrunk"
+        },
+        "phase": "enforce"
       }
     ]
   }

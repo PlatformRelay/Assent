@@ -210,7 +210,8 @@ func TestD016StrictFixture(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(d016FixtureDir, "approval-evidence.json")); err == nil {
 			t.Fatal("strict fixture must NOT carry an ApprovalEvidence — the required approval is missing by construction")
 		}
-		findings := fixtureObj(t, "decision-record.json")["findings"].([]any)
+		findingsObj := fixtureObj(t, "decision-record.json")["findings"].(map[string]any)
+		findings := findingsObj["enforcing"].([]any)
 		found := false
 		for _, f := range findings {
 			if f.(map[string]any)["effect"] == "require-review" {

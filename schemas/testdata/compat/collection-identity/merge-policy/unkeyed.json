@@ -1,12 +1,24 @@
 {
   "apiVersion": "assent.dev/v1alpha1",
   "kind": "MergePolicy",
-  "metadata": {"name": "topic-safety"},
+  "metadata": {
+    "name": "topic-safety"
+  },
   "spec": {
     "rules": [
       {
-        "match": {"fileEvents": {"paths": ["topics/**"], "kinds": ["delete"]}},
-        "effect": "block"
+        "match": {
+          "fileEvents": {
+            "paths": [
+              "topics/**"
+            ],
+            "kinds": [
+              "delete"
+            ]
+          }
+        },
+        "effect": "block",
+        "phase": "enforce"
       }
     ]
   }

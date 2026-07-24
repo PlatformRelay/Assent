@@ -80,9 +80,13 @@
     "rule": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "match"],
+      "required": ["name", "phase", "match"],
       "properties": {
         "name": { "type": "string", "minLength": 1 },
+        "phase": {
+          "enum": ["off", "observe", "enforce"],
+          "description": "Rollout phase (D-017 B2 / P3-E4-S01): off = parsed and linted but never evaluated; observe = evaluated and recorded in findings.observed but structurally excluded from aggregation; enforce = contributes to decision/blocks/requiredReviews/score via findings.enforcing. Required — no default (no-implicit-enforce-phase)."
+        },
         "match": { "$ref": "#/$defs/match" },
         "prove": { "$ref": "#/$defs/prove" },
         "onFailure": { "$ref": "#/$defs/onFailure" },

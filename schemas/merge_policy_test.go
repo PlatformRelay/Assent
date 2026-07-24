@@ -24,6 +24,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "partition-increase-within-quota",
+						"phase": "enforce",
 						"match": {"values": {"pointers": ["/partitions"]}},
 						"prove": {
 							"obligation": "non-destructive",
@@ -48,6 +49,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "no-topic-deletion",
+						"phase": "enforce",
 						"match": {"fileEvents": {"paths": ["topics/**"], "kinds": ["delete", "rename"]}},
 						"effect": "block",
 						"message": "Topic deletion is never auto-mergeable."
@@ -69,6 +71,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "cross-field-consistency",
+						"phase": "enforce",
 						"match": {"values": {"pointers": ["/config/cleanup.policy", "/retentionMs"]}},
 						"prove": {
 							"obligation": "consistent-retention",
@@ -104,6 +107,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "no-topic-deletion",
+						"phase": "enforce",
 						"match": {"files": {"paths": ["topics/**"]}},
 						"effect": "comment"
 					}
@@ -124,6 +128,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "ambiguous-match",
+						"phase": "enforce",
 						"match": {"files": {"paths": ["topics/**"]}, "values": {"pointers": ["/partitions"]}},
 						"effect": "comment"
 					}
@@ -144,6 +149,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "legacy-path-match",
+						"phase": "enforce",
 						"match": {"path": "**/partitions"},
 						"effect": "comment"
 					}
@@ -164,6 +170,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "partition-increase-within-quota",
+						"phase": "enforce",
 						"match": {"values": {"pointers": ["/partitions"]}},
 						"prove": {"obligation": "non-destructive", "when": "new >= old"},
 						"effect": "vouch"
@@ -185,6 +192,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "legacy-vouch",
+						"phase": "enforce",
 						"match": {"values": {"pointers": ["/partitions"]}},
 						"effect": "vouch"
 					}
@@ -205,6 +213,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "no-outcome",
+						"phase": "enforce",
 						"match": {"values": {"pointers": ["/partitions"]}}
 					}
 				]
@@ -224,6 +233,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "partition-increase-within-quota",
+						"phase": "enforce",
 						"match": {"values": {"pointers": ["/partitions"]}},
 						"prove": {"obligation": "non-destructive", "when": "new >= old"},
 						"onFailure": {"effect": "vouch", "code": "x"}
@@ -248,6 +258,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "no-topic-deletion",
+						"phase": "enforce",
 						"match": {"files": {"paths": ["topics/**"]}},
 						"effect": "comment"
 					}
@@ -271,6 +282,7 @@ func TestMergePolicySchema(t *testing.T) {
 				"rules": [
 					{
 						"name": "no-topic-deletion",
+						"phase": "enforce",
 						"match": {"files": {"paths": ["topics/**"]}},
 						"effect": "comment"
 					}

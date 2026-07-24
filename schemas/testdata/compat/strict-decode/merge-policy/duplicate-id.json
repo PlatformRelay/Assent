@@ -1,19 +1,41 @@
 {
   "apiVersion": "assent.dev/v1alpha1",
   "kind": "MergePolicy",
-  "metadata": {"name": "topic-safety"},
+  "metadata": {
+    "name": "topic-safety"
+  },
   "spec": {
     "rules": [
       {
         "name": "partition-increase-within-quota",
-        "match": {"values": {"pointers": ["/partitions"]}},
-        "prove": {"obligation": "non-destructive", "when": "new >= old"},
-        "onFailure": {"effect": "challenge", "code": "partition-quota-exceeded"}
+        "match": {
+          "values": {
+            "pointers": [
+              "/partitions"
+            ]
+          }
+        },
+        "prove": {
+          "obligation": "non-destructive",
+          "when": "new >= old"
+        },
+        "onFailure": {
+          "effect": "challenge",
+          "code": "partition-quota-exceeded"
+        },
+        "phase": "enforce"
       },
       {
         "name": "partition-increase-within-quota",
-        "match": {"files": {"paths": ["topics/**"]}},
-        "effect": "comment"
+        "match": {
+          "files": {
+            "paths": [
+              "topics/**"
+            ]
+          }
+        },
+        "effect": "comment",
+        "phase": "enforce"
       }
     ]
   }

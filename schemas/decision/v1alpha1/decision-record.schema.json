@@ -11,10 +11,24 @@
     "kind": { "const": "DecisionRecord" },
     "decision": { "enum": ["APPROVE", "REVIEW", "BLOCK"] },
     "findings": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/finding" },
-      "x-uniqueKeys": ["rule", "subject"],
-      "description": "Named collection keyed by (rule, subject) — mandatory unique ID composite; source order carries no meaning without an explicit priority (ADR-0017 §9)."
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observed", "enforcing"],
+      "description": "Phase-split finding collections (D-017 B2 / P3-E4-S01). Observe-phase findings land in observed; enforce-phase findings land in enforcing. Only enforcing is eligible as input to aggregation fields (decision/blocks/requiredReviews/score.total) — observe is structurally excluded, not merely by convention. Each array is a named collection keyed by (rule, subject).",
+      "properties": {
+        "observed": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/finding" },
+          "x-uniqueKeys": ["rule", "subject"],
+          "description": "Findings from phase:observe rules — the outcome the rule would have had, recorded but unread by aggregation."
+        },
+        "enforcing": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/finding" },
+          "x-uniqueKeys": ["rule", "subject"],
+          "description": "Findings from phase:enforce rules — the only findings that feed decision/blocks/requiredReviews/score (ADR-0007)."
+        }
+      }
     },
     "pins": { "$ref": "#/$defs/pins" }
   },

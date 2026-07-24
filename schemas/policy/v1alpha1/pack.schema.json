@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assent.dev/schemas/policy/v1alpha1/pack.schema.json",
+  "title": "Pack",
+  "description": "Pack manifest (pack.yaml, ADR-0010): shareable metadata for a rule pack. `spec.phase` is a rollout-phase **ceiling** over contained MergePolicy rules (D-017 B2 / P3-E4-S01) — never additive: pack off evaluates none of its rules regardless of each rule's phase; pack observe caps every contained rule at observe even if the rule declares enforce; pack enforce lets each rule's own declared phase stand. Required — no default (no-implicit-enforce-phase).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "assent.dev/v1alpha1" },
+    "kind": { "const": "Pack" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase"],
+      "properties": {
+        "phase": {
+          "enum": ["off", "observe", "enforce"],
+          "description": "Ceiling over every rule in this pack. Adversarial: a rule declared phase:enforce inside a pack declared phase:observe must never contribute to decision/blocks/score.total — same exclusion guarantee as DecisionRecord findings.observed, composed one level up."
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Pack version string (ADR-0010 pack metadata)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable pack summary (ADR-0010 pack metadata)."
+        }
+      }
+    }
+  }
+}
