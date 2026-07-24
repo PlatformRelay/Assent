@@ -1,0 +1,63 @@
+{
+  "algorithm": "sha256",
+  "canonicalization": "assent-jcs-v1",
+  "domainSeparation": "assent.canonical-json.v1\\n{schemaVersion}\\n{canonicalJSON}",
+  "vectors": [
+    {
+      "name": "stable_key_order_a",
+      "group": "stable",
+      "schemaVersion": "v1alpha1",
+      "input": "{\"b\":2,\"a\":1,\"nested\":{\"y\":true,\"x\":null}}",
+      "expectedHash": "1ace3fabe478a49b018a1debe830ab2bbc0c3ae92748a47935a187dc6ee2171c"
+    },
+    {
+      "name": "stable_key_order_b",
+      "group": "stable",
+      "schemaVersion": "v1alpha1",
+      "input": "{\"a\":1,\"b\":2,\"nested\":{\"x\":null,\"y\":true}}",
+      "expectedHash": "1ace3fabe478a49b018a1debe830ab2bbc0c3ae92748a47935a187dc6ee2171c"
+    },
+    {
+      "name": "stable_whitespace",
+      "group": "stable",
+      "schemaVersion": "v1alpha1",
+      "input": "{\n  \"a\" : 1 ,\n  \"b\" : 2 ,\n  \"nested\" : {\n    \"x\" : null ,\n    \"y\" : true\n  }\n}",
+      "expectedHash": "1ace3fabe478a49b018a1debe830ab2bbc0c3ae92748a47935a187dc6ee2171c"
+    },
+    {
+      "name": "stable_numeric_formatting",
+      "group": "stable",
+      "schemaVersion": "v1alpha1",
+      "input": "{\"a\":1.0,\"b\":2.00,\"nested\":{\"x\":null,\"y\":true}}",
+      "expectedHash": "1ace3fabe478a49b018a1debe830ab2bbc0c3ae92748a47935a187dc6ee2171c"
+    },
+    {
+      "name": "noncanonical_input",
+      "group": "stable",
+      "schemaVersion": "v1alpha1",
+      "input": "{ \"nested\" : { \"y\": true, \"x\": null }, \"b\": 2.0, \"a\": 1.00 }",
+      "expectedHash": "1ace3fabe478a49b018a1debe830ab2bbc0c3ae92748a47935a187dc6ee2171c"
+    },
+    {
+      "name": "domain_v1alpha1",
+      "group": "domain_separation",
+      "schemaVersion": "v1alpha1",
+      "input": "{\"id\":\"doc-1\",\"entries\":[{\"id\":\"e1\",\"n\":10}]}",
+      "expectedHash": "a11ce614bd6c8321848ce909c3783586fd57eb1b7f00cf5846d4970f07005f77"
+    },
+    {
+      "name": "domain_v1alpha2",
+      "group": "domain_separation",
+      "schemaVersion": "v1alpha2",
+      "input": "{\"id\":\"doc-1\",\"entries\":[{\"id\":\"e1\",\"n\":10}]}",
+      "expectedHash": "f16d2a803dabc1f3c0f82752da6a7ff07e329895ac6339c00cb8862f853814d7"
+    },
+    {
+      "name": "array_order_significant",
+      "group": "distinct",
+      "schemaVersion": "v1alpha1",
+      "input": "{\"id\":\"doc-1\",\"entries\":[{\"id\":\"e2\",\"n\":20},{\"id\":\"e1\",\"n\":10}]}",
+      "expectedHash": "0bfc1fe9c462874e61e28467fcc5f7e98e7087a5b79fe4c32357222830812bc6"
+    }
+  ]
+}
