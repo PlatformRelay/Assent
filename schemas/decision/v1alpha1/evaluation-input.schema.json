@@ -2,13 +2,22 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://assent.dev/schemas/decision/v1alpha1/evaluation-input.schema.json",
   "title": "EvaluationInput",
-  "description": "Everything a rule's predicate may see for one class slice: the canonical ChangeSet (EntryRef subjects, old/new values, positions), the resolved facts map, MR metadata, and the binding's require: obligation list (ADR-0017 §§2/5/6). Backend-neutral by construction: no field here names a predicate backend (cel, rego, or similar) — a future Rego-backed rule (E11) is representable in the identical input record a CEL-backed rule uses.",
+  "description": "Everything a rule's predicate may see for one class slice: the canonical ChangeSet (EntryRef subjects, old/new values, positions), the resolved facts map, MR metadata, and the binding's require: obligation list (ADR-0017 §§2/5/6). Optional phase + profile identity fields (P3-E4-S05 / D-017) are typed here — never inferred from rule names, labels, or message text. Backend-neutral by construction: no field here names a predicate backend (cel, rego, or similar) — a future Rego-backed rule (E11) is representable in the identical input record a CEL-backed rule uses.",
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "kind", "changeSet", "facts", "mr", "require"],
   "properties": {
     "apiVersion": { "const": "assent.dev/v1alpha1" },
     "kind": { "const": "EvaluationInput" },
+    "phase": {
+      "type": "string",
+      "enum": ["off", "observe", "enforce"],
+      "description": "Rollout phase under which this evaluation is recorded (P3-E4-S01/S05). Optional so pre-lifecycle fixtures remain valid; when present must be the closed off|observe|enforce enum — never a free-text or prose-inferred value."
+    },
+    "profile": {
+      "$ref": "#/$defs/profileRef",
+      "description": "PolicyProfile identity for this evaluation (P3-E4-S02/S05). Typed structured field — never derived from a label or rule name."
+    },
     "changeSet": { "$ref": "#/$defs/changeSet" },
     "facts": { "$ref": "#/$defs/facts" },
     "mr": { "$ref": "#/$defs/mr" },
@@ -108,6 +117,20 @@
         "sourceBranch": { "type": "string", "minLength": 1 },
         "targetBranch": { "type": "string", "minLength": 1 },
         "labels": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "profileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "description": "Structured PolicyProfile reference (name + optional revision). Matches the named-consumer signal shape; never a free-text string.",
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Optional profile revision pin for comparison/replay."
+        }
       }
     }
   }

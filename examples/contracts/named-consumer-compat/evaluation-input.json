@@ -1,6 +1,11 @@
 {
   "apiVersion": "assent.dev/v1alpha1",
   "kind": "EvaluationInput",
+  "phase": "enforce",
+  "profile": {
+    "name": "prod-strict",
+    "revision": 7
+  },
   "changeSet": {
     "changes": [
       {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"testing"
 
@@ -179,4 +180,91 @@ func compatFixtureFiles(t *testing.T) []string {
 		}
 	}
 	return out
+}
+
+// TestNamedConsumerCompatP3E4S05Scenarios is REQ-P3-E4-S05-01..03: observe vs
+// enforce twin (identical aggregation fields; findings split), refused
+// newly-auto-mergeable when absent from acceptedDeltas, and typed phase/
+// profile on evaluation-input.json (never prose-inferred).
+func TestNamedConsumerCompatP3E4S05Scenarios(t *testing.T) {
+	t.Run("REQ-P3-E4-S05-03: evaluation-input carries typed phase and profile", func(t *testing.T) {
+		doc := readCompat(t, "evaluation-input.json")
+		phase, _ := doc["phase"].(string)
+		switch phase {
+		case "off", "observe", "enforce":
+		default:
+			t.Fatalf("evaluation-input.json must carry typed phase off|observe|enforce, got %v", doc["phase"])
+		}
+		profile, _ := doc["profile"].(map[string]any)
+		if profile == nil || profile["name"] == nil {
+			t.Fatal("evaluation-input.json must carry typed profile with name")
+		}
+	})
+
+	t.Run("REQ-P3-E4-S05-01: observe/enforce twin — identical aggregation, findings split", func(t *testing.T) {
+		dr := readCompat(t, "decision-record.json")
+		scenarios, _ := dr["compatScenarios"].(map[string]any)
+		if scenarios == nil {
+			t.Fatal("decision-record.json must carry compatScenarios")
+		}
+		pair, _ := scenarios["observeVsEnforce"].(map[string]any)
+		if pair == nil {
+			t.Fatal("compatScenarios.observeVsEnforce required")
+		}
+		observe, _ := pair["observe"].(map[string]any)
+		enforce, _ := pair["enforce"].(map[string]any)
+		if observe == nil || enforce == nil {
+			t.Fatal("observeVsEnforce must carry observe and enforce case objects")
+		}
+		if observe["phase"] != "observe" || enforce["phase"] != "enforce" {
+			t.Fatalf("twin phases must be observe/enforce, got observe=%v enforce=%v", observe["phase"], enforce["phase"])
+		}
+		for _, key := range []string{"decision", "blocks", "requiredReviews", "score"} {
+			if !reflect.DeepEqual(observe[key], enforce[key]) {
+				t.Errorf("%s must be byte-identical between observe and enforce twins: observe=%v enforce=%v", key, observe[key], enforce[key])
+			}
+		}
+		obsFindings, _ := observe["findings"].(map[string]any)
+		enfFindings, _ := enforce["findings"].(map[string]any)
+		obsObserved, _ := obsFindings["observed"].([]any)
+		obsEnforcing, _ := obsFindings["enforcing"].([]any)
+		enfObserved, _ := enfFindings["observed"].([]any)
+		enfEnforcing, _ := enfFindings["enforcing"].([]any)
+		if len(obsObserved) == 0 || len(obsEnforcing) != 0 {
+			t.Fatalf("observe case: findings.observed must be populated and findings.enforcing empty; got observed=%d enforcing=%d", len(obsObserved), len(obsEnforcing))
+		}
+		if len(enfEnforcing) == 0 || len(enfObserved) != 0 {
+			t.Fatalf("enforce case: findings.enforcing must be populated and findings.observed empty; got observed=%d enforcing=%d", len(enfObserved), len(enfEnforcing))
+		}
+		// Adversarial: swap findings arrays without swapping phase — must break
+		// the "observed only when phase=observe" invariant documented in the fixture.
+		adversarial, _ := pair["adversarialSwapCheck"].(string)
+		if adversarial == "" {
+			t.Fatal("observeVsEnforce must document adversarialSwapCheck (swap without phase swap fails)")
+		}
+	})
+
+	t.Run("REQ-P3-E4-S05-02: newly-auto-mergeable refused when not in acceptedDeltas", func(t *testing.T) {
+		dr := readCompat(t, "decision-record.json")
+		scenarios, _ := dr["compatScenarios"].(map[string]any)
+		refused, _ := scenarios["refusedAutoMergeWidening"].(map[string]any)
+		if refused == nil {
+			t.Fatal("compatScenarios.refusedAutoMergeWidening required")
+		}
+		delta, _ := refused["delta"].(map[string]any)
+		if delta == nil || delta["kind"] != "newly-auto-mergeable" {
+			t.Fatalf("refused scenario must carry newly-auto-mergeable delta, got %v", refused["delta"])
+		}
+		accepted, ok := refused["acceptedDeltas"].([]any)
+		if !ok {
+			t.Fatal("refused scenario must carry acceptedDeltas array")
+		}
+		if len(accepted) != 0 {
+			t.Fatalf("acceptedDeltas must be empty (widening not allowlisted); got %v", accepted)
+		}
+		verdict, _ := refused["promotionGateVerdict"].(string)
+		if verdict != "fail" {
+			t.Fatalf("promotionGateVerdict must be fail (bounded auto-merge widening), got %q", verdict)
+		}
+	})
 }

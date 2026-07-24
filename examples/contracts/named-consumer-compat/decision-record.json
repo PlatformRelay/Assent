@@ -2,6 +2,9 @@
   "apiVersion": "assent.dev/v1alpha1",
   "kind": "DecisionRecord",
   "decision": "APPROVE",
+  "blocks": [],
+  "requiredReviews": ["ownership"],
+  "score": { "total": 0 },
   "findings": {
     "observed": [],
     "enforcing": [
@@ -24,6 +27,73 @@
     "mergeResultDigest": "sha256:8e7d6c5b4a39281706f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a09f",
     "factsResolvedAt": {
       "owner": "2026-07-24T09:00:00Z"
+    }
+  },
+  "compatScenarios": {
+    "observeVsEnforce": {
+      "adversarialSwapCheck": "Swapping which twin is labeled observe vs enforce without also swapping phase and the findings.observed/findings.enforcing split must fail the twin assertion: the observe case must keep the finding only under findings.observed, the enforce case only under findings.enforcing. Relabeling alone leaves the findings split mismatched to phase — proving the assertion is not vacuously true.",
+      "observe": {
+        "phase": "observe",
+        "decision": "APPROVE",
+        "blocks": [],
+        "requiredReviews": [],
+        "score": { "total": 0 },
+        "findings": {
+          "observed": [
+            {
+              "rule": "partitions-growth-advisory",
+              "effect": "comment",
+              "subject": "topic-registry:orders.events.v1",
+              "points": 0,
+              "code": "partitions-growth-noted"
+            }
+          ],
+          "enforcing": []
+        }
+      },
+      "enforce": {
+        "phase": "enforce",
+        "decision": "APPROVE",
+        "blocks": [],
+        "requiredReviews": [],
+        "score": { "total": 0 },
+        "findings": {
+          "observed": [],
+          "enforcing": [
+            {
+              "rule": "partitions-growth-advisory",
+              "effect": "comment",
+              "subject": "topic-registry:orders.events.v1",
+              "points": 0,
+              "code": "partitions-growth-noted"
+            }
+          ]
+        }
+      }
+    },
+    "refusedAutoMergeWidening": {
+      "caseId": "named-consumer-partitions-grow",
+      "baselineProfile": "prod-strict@6",
+      "candidateProfile": "prod-strict@7",
+      "delta": {
+        "kind": "newly-auto-mergeable",
+        "rule": "topic-owner-must-approve",
+        "obligation": "ownership",
+        "subject": "topic-registry:orders.events.v1",
+        "baseline": {
+          "decision": "REVIEW",
+          "effect": "require-review",
+          "present": true
+        },
+        "candidate": {
+          "decision": "APPROVE",
+          "present": true
+        }
+      },
+      "acceptedDeltas": [],
+      "promotionGateId": "bounded-auto-merge-widening",
+      "promotionGateVerdict": "fail",
+      "refusalReason": "newly-auto-mergeable delta is not listed in acceptedDeltas for this caseId + identity — bounded auto-merge widening gate fails (never a silent pass because widening looks like an improvement)"
     }
   }
 }

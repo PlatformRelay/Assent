@@ -160,4 +160,54 @@ func TestEvaluationInputSchema(t *testing.T) {
 			}
 		}
 	})
+
+	// REQ-P3-E4-S05-03: phase + profile are typed EvaluationInput fields
+	// (optional so pre-lifecycle fixtures remain valid; never prose-inferred).
+	t.Run("REQ-P3-E4-S05-03: phase and profile typed fields are valid", func(t *testing.T) {
+		const doc = `{
+			"apiVersion": "assent.dev/v1alpha1",
+			"kind": "EvaluationInput",
+			"phase": "enforce",
+			"profile": {"name": "prod-strict", "revision": 7},
+			"changeSet": {"changes": [{"subject": "file:x", "file": "x", "path": "", "kind": "add"}]},
+			"facts": {},
+			"mr": {"author": "alice", "sourceBranch": "x", "targetBranch": "main"},
+			"require": []
+		}`
+		if err := validateJSON(EvaluationInputSchema, doc); err != nil {
+			t.Fatalf("expected phase+profile EvaluationInput valid, got: %v", err)
+		}
+	})
+
+	t.Run("adversarial: unknown phase enum on EvaluationInput is invalid", func(t *testing.T) {
+		const doc = `{
+			"apiVersion": "assent.dev/v1alpha1",
+			"kind": "EvaluationInput",
+			"phase": "shadow",
+			"profile": {"name": "prod-strict"},
+			"changeSet": {"changes": [{"subject": "file:x", "file": "x", "path": "", "kind": "add"}]},
+			"facts": {},
+			"mr": {"author": "alice", "sourceBranch": "x", "targetBranch": "main"},
+			"require": []
+		}`
+		if err := validateJSON(EvaluationInputSchema, doc); err == nil {
+			t.Fatal("expected unknown phase enum to fail validation")
+		}
+	})
+
+	t.Run("adversarial: profile missing name is invalid", func(t *testing.T) {
+		const doc = `{
+			"apiVersion": "assent.dev/v1alpha1",
+			"kind": "EvaluationInput",
+			"phase": "observe",
+			"profile": {"revision": 1},
+			"changeSet": {"changes": [{"subject": "file:x", "file": "x", "path": "", "kind": "add"}]},
+			"facts": {},
+			"mr": {"author": "alice", "sourceBranch": "x", "targetBranch": "main"},
+			"require": []
+		}`
+		if err := validateJSON(EvaluationInputSchema, doc); err == nil {
+			t.Fatal("expected profile without name to fail validation")
+		}
+	})
 }
