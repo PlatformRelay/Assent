@@ -82,6 +82,7 @@ block arming when the refuse-to-arm set is green.
 | D12 | Residual gate on `.assent/**` | Approval rule or CODEOWNERS covering `.assent/**` with human eligible approvers | `GET .../approval_rules` / CODEOWNERS parse; ensure bot not sole eligible approver | **warn** if missing (ADR-0015 §5 recommended); **refuse-to-arm** only if product policy later makes it mandatory |
 | D13 | Merge-train enforcement (optional) | Enforce for all users / Owner override | Settings surface / API when available (C15) | **warn** if humans can "Merge immediately" around the train (human ≠ assent write path) |
 | D14 | External status checks | Ultimate-only optional defense | `only_allow_merge_if_all_status_checks_passed` | **warn** if absent (C18 — not a v1 gap) |
+| D15 | `duplicate_prevention` serialization | One-publisher-per-MR: CI job has per-MR-IID `resource_group` (e.g. `assent-mr-$CI_MERGE_REQUEST_IID`), or `serve` has a configured keyed-lock backend (ADR-0019 §3) | Inspect resolved CI job for `resource_group` matching the MR-IID key pattern; or probe `serve` lock-backend config. When unverifiable → emit `duplicate_prevention: unserialized-best-effort` | **warn** when unverifiable / misconfigured — never a silent `single-writer-serialized` claim (safe default: `unserialized-best-effort`) |
 
 Typed doctor report fields (draft for Phase 4/5): `precondition_id`, `status:
 ok|warn|fail`, `evidence` (endpoint + relevant JSON fields), `consequence:

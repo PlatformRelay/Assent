@@ -77,9 +77,13 @@ would-have-automerged: 61% · median score 2 · 0 nondeterministic re-runs
 # included from a PROTECTED source (compliance pipeline / protected include) — the assent
 # job definition must not be editable from the MR branch (ADR-0015 §4); `assent doctor`
 # verifies this and the required forge settings (all-threads-resolved merge gate) at setup.
+# One-publisher-per-MR (ADR-0019 §3): resource_group keyed per MR IID serializes concurrent
+# assent jobs for the same MR. Without it, duplicates converge only on the next reconcile.
+# (serve mode: use a keyed per-MR lock instead — multi-replica HA is unsupported.)
 assent:
   image: ghcr.io/<org>/assent:v0
   rules: [{ if: $CI_MERGE_REQUEST_IID }]
+  resource_group: assent-mr-$CI_MERGE_REQUEST_IID
   script: [assent run]        # MR context from CI env; least-privilege token from CI variable
 ```
 

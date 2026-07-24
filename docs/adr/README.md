@@ -29,3 +29,4 @@ supersessions by ADR-0016/0017 are noted on each ADR's status line (not full
 | [0015](0015-trust-boundaries-merge-integrity.md) | Trust boundaries and merge-time integrity (from the 2026-07-21 adversarial review) | Accepted (partial: ADR-0017 §1/§4/§6) |
 | [0016](0016-presentation-theming.md) | Presentation theming: config knobs, slots, CEL messages, render contract | Accepted |
 | [0017](0017-contract-model-obligations.md) | Contract model: governed subjects, required obligations, typed facts, preconditioned reconciliation | Accepted |
+| [0019](0019-publication-marker-reconciliation-protocol.md) | Publication marker + reconciliation protocol (database-free) | Proposed |
