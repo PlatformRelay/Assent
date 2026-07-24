@@ -5,10 +5,11 @@ import "testing"
 // REQ-P3-E1-S02-03: replay-bundle.schema.json requires the full unredacted
 // EvaluationInput plus every resolved fact value (hermetic replay);
 // presentation-model.schema.json mirrors DecisionRecord's findings without
-// any raw fact value and without rendered markdown; publication-receipt.
-// schema.json records forge operations performed (kind, target ids,
-// timestamps) and carries no secrets, no raw policy expressions, and no
-// user-controlled Markdown.
+// any raw fact value; rendered markdown is not a declared property (renderers
+// ignore unknown top-level fields under ADR-0017 §9 additive tolerance);
+// publication-receipt.schema.json records forge operations performed (kind,
+// target ids, timestamps) and nested operation shapes carry no secrets, no
+// raw policy expressions, and no user-controlled Markdown.
 func TestReplayPresentationReceiptSchemas(t *testing.T) {
 	const validEvaluationInput = `{
 		"apiVersion": "assent.dev/v1alpha1",
@@ -123,7 +124,10 @@ func TestReplayPresentationReceiptSchemas(t *testing.T) {
 			}
 		})
 
-		t.Run("adversarial: rendered markdown field is invalid", func(t *testing.T) {
+		t.Run("top-level unknown field is additive-tolerant (ADR-0017 §9)", func(t *testing.T) {
+			// Rendered markdown is not a declared property (ADR-0016 §4);
+			// under additive-tolerant reports an unknown top-level field is
+			// preserved rather than rejected — renderers must ignore it.
 			const doc = `{
 				"apiVersion": "assent.dev/v1alpha1",
 				"kind": "PresentationModel",
@@ -131,8 +135,8 @@ func TestReplayPresentationReceiptSchemas(t *testing.T) {
 				"findings": [],
 				"markdown": "**bold**"
 			}`
-			if err := validateJSON(PresentationModelSchema, doc); err == nil {
-				t.Fatal("expected a rendered markdown field to fail validation")
+			if err := validateJSON(PresentationModelSchema, doc); err != nil {
+				t.Fatalf("expected unknown top-level field to be additive-tolerant, got: %v", err)
 			}
 		})
 

@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://assent.dev/schemas/decision/v1alpha1/publication-receipt.schema.json",
   "title": "PublicationReceipt",
-  "description": "Forge state + operations performed (ADR-0016 §3, ADR-0017 §7 Reconcile): records what was actually written to the forge (thread/approval/merge, target ids, timestamps) for reconciliation/debugging. Carries no secrets, no raw policy expressions, and no user-controlled Markdown — additionalProperties: false leaves no field for any of those.",
+  "description": "Forge state + operations performed (ADR-0016 §3, ADR-0017 §7 Reconcile): records what was actually written to the forge (thread/approval/merge, target ids, timestamps) for reconciliation/debugging. Nested operation shapes stay closed (no secrets, raw policy, or user-controlled Markdown). Top-level additionalProperties are allowed (ADR-0017 §9 additive-tolerant reports).",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": ["apiVersion", "kind", "operations"],
   "properties": {
     "apiVersion": { "const": "assent.dev/v1alpha1" },
@@ -12,7 +12,9 @@
     "operations": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/operation" }
+      "items": { "$ref": "#/$defs/operation" },
+      "x-uniqueKeys": ["targetId"],
+      "description": "Named collection keyed by targetId — mandatory unique ID; source order carries no meaning without an explicit priority (ADR-0017 §9)."
     }
   },
   "$defs": {

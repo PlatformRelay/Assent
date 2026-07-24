@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://assent.dev/schemas/decision/v1alpha1/decision-record.schema.json",
   "title": "DecisionRecord",
-  "description": "Redacted, stable outcome + evidence digests (ADR-0016 §3): the audit/stats/report artifact. Findings carry no field capable of holding a raw fact value — redacted by construction, not by convention (OQ-8/OQ-9).",
+  "description": "Redacted, stable outcome + evidence digests (ADR-0016 §3): the audit/stats/report artifact. Findings carry no field capable of holding a raw fact value — redacted by construction, not by convention (OQ-8/OQ-9). Top-level additionalProperties are allowed (ADR-0017 §9 additive-tolerant reports); nested finding/pins shapes stay closed.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": ["apiVersion", "kind", "decision", "findings", "pins"],
   "properties": {
     "apiVersion": { "const": "assent.dev/v1alpha1" },
@@ -12,7 +12,9 @@
     "decision": { "enum": ["APPROVE", "REVIEW", "BLOCK"] },
     "findings": {
       "type": "array",
-      "items": { "$ref": "#/$defs/finding" }
+      "items": { "$ref": "#/$defs/finding" },
+      "x-uniqueKeys": ["rule", "subject"],
+      "description": "Named collection keyed by (rule, subject) — mandatory unique ID composite; source order carries no meaning without an explicit priority (ADR-0017 §9)."
     },
     "pins": { "$ref": "#/$defs/pins" }
   },

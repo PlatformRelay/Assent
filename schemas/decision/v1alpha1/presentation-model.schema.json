@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://assent.dev/schemas/decision/v1alpha1/presentation-model.schema.json",
   "title": "PresentationModel",
-  "description": "Redacted, renderer-only view of findings/trace (ADR-0016 §3): what templates/explain/report.md consume. Mirrors DecisionRecord's findings exactly (same finding shape, reused by $ref) — no raw fact value (the finding shape has no such field) and no rendered markdown (rendering stays a separate concern, ADR-0016 §4; additionalProperties: false leaves no room for one).",
+  "description": "Redacted, renderer-only view of findings/trace (ADR-0016 §3): what templates/explain/report.md consume. Mirrors DecisionRecord's findings exactly (same finding shape, reused by $ref) — no raw fact value (the finding shape has no such field). Rendered markdown is not a declared property (ADR-0016 §4); top-level additionalProperties are allowed for forward/additive tolerance (ADR-0017 §9) — renderers must ignore unknown fields rather than treat them as contract.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": ["apiVersion", "kind", "decision", "findings"],
   "properties": {
     "apiVersion": { "const": "assent.dev/v1alpha1" },
@@ -12,7 +12,9 @@
     "decision": { "enum": ["APPROVE", "REVIEW", "BLOCK"] },
     "findings": {
       "type": "array",
-      "items": { "$ref": "https://assent.dev/schemas/decision/v1alpha1/decision-record.schema.json#/$defs/finding" }
+      "items": { "$ref": "https://assent.dev/schemas/decision/v1alpha1/decision-record.schema.json#/$defs/finding" },
+      "x-uniqueKeys": ["rule", "subject"],
+      "description": "Named collection keyed by (rule, subject) — mandatory unique ID composite; source order carries no meaning without an explicit priority (ADR-0017 §9)."
     }
   }
 }
