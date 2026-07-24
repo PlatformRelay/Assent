@@ -1,0 +1,21 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "PresentationModel",
+  "decision": "BLOCK",
+  "findings": [
+    {
+      "rule": "partitions-must-not-shrink",
+      "effect": "block",
+      "subject": "topic-registry:orders.events.v1",
+      "points": 10,
+      "code": "partition-count-shrunk"
+    },
+    {
+      "rule": "partitions-must-not-shrink",
+      "effect": "block",
+      "subject": "topic-registry:orders.events.v1",
+      "points": 5,
+      "code": "partition-count-shrunk-alt"
+    }
+  ]
+}

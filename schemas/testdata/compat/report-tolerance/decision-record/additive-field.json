@@ -1,0 +1,25 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "DecisionRecord",
+  "decision": "APPROVE",
+  "findings": [
+    {
+      "rule": "partition-increase-within-quota",
+      "obligation": "non-destructive",
+      "effect": "comment",
+      "subject": "topic-registry:orders.events.v1",
+      "points": 0,
+      "code": "partition-quota-ok"
+    }
+  ],
+  "pins": {
+    "toolVersion": "0.1.0",
+    "toolDigest": "sha256:aaaa",
+    "policySha": "sha256:bbbb",
+    "sourceSha": "cccc",
+    "targetSha": "dddd",
+    "mergeResultDigest": "sha256:eeee",
+    "factsResolvedAt": {"quota": "2026-07-21T10:00:00Z"}
+  },
+  "futureExtension": {"phase": "observe"}
+}

@@ -1,0 +1,10 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "PublicationReceipt",
+  "operations": [
+    {
+      "kind": "thread",
+      "performedAt": "2026-07-21T10:00:00Z"
+    }
+  ]
+}

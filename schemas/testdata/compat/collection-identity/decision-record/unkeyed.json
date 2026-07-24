@@ -1,0 +1,21 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "DecisionRecord",
+  "decision": "BLOCK",
+  "findings": [
+    {
+      "effect": "block",
+      "subject": "topic-registry:orders.events.v1",
+      "points": 10
+    }
+  ],
+  "pins": {
+    "toolVersion": "0.1.0",
+    "toolDigest": "sha256:aaaa",
+    "policySha": "sha256:bbbb",
+    "sourceSha": "cccc",
+    "targetSha": "dddd",
+    "mergeResultDigest": "sha256:eeee",
+    "factsResolvedAt": {}
+  }
+}

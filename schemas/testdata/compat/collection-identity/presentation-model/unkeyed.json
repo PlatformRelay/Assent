@@ -1,0 +1,12 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "PresentationModel",
+  "decision": "BLOCK",
+  "findings": [
+    {
+      "effect": "block",
+      "subject": "topic-registry:orders.events.v1",
+      "points": 10
+    }
+  ]
+}

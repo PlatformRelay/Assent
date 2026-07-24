@@ -1,0 +1,12 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "PublicationReceipt",
+  "operations": [
+    {
+      "kind": "thread",
+      "targetId": "note/123",
+      "performedAt": "2026-07-21T10:00:00Z"
+    }
+  ],
+  "futureExtension": {"phase": "observe"}
+}
