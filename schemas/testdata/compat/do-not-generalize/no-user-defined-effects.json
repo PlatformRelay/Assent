@@ -1,0 +1,15 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "MergePolicy",
+  "metadata": {"name": "user-defined-effect"},
+  "spec": {
+    "rules": [
+      {
+        "name": "score-as-effect",
+        "match": {"values": {"pointers": ["/partitions"]}},
+        "effect": "score",
+        "points": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "MergePolicy",
+  "metadata": {"name": "entry-selector-query"},
+  "spec": {
+    "rules": [
+      {
+        "name": "query-match",
+        "match": {"query": "path matches 'topics/**' AND kind == 'modify'"},
+        "effect": "block",
+        "message": "generic query language is out of scope"
+      }
+    ]
+  }
+}

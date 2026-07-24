@@ -1,0 +1,14 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "Config",
+  "environments": [
+    {"name": "prod", "match": {"paths": ["**"]}}
+  ],
+  "classes": [
+    {"name": "kafka-topic", "match": {"paths": ["topics/**/*.yaml"]}}
+  ],
+  "forge": {
+    "api": "lcd",
+    "capabilities": ["comment", "approve", "merge"]
+  }
+}
