@@ -4,18 +4,29 @@
 # fixture under examples/contracts/** (this epic's own strict-fixture and
 # named-consumer-compat directories, P3-E1-S07) against its matching schema —
 # failing the PR, not merely warning, on any drift.
+#
+# P3-E3-S04 — migration-invariant guard runs *before* schema validation so a
+# DRAFT/rego-quarantine regression fails by name, not as an opaque schema error.
 name: schemas
 on:
   pull_request:
     paths:
       - "schemas/**"
       - "examples/contracts/**"
+      - "examples/policies/**"
+      - "examples/archetypes/**"
+      - "examples/packs/**"
+      - "hack/check-migration-invariants.sh"
       - ".github/workflows/schemas.yml"
   push:
     branches: [main]
     paths:
       - "schemas/**"
       - "examples/contracts/**"
+      - "examples/policies/**"
+      - "examples/archetypes/**"
+      - "examples/packs/**"
+      - "hack/check-migration-invariants.sh"
       - ".github/workflows/schemas.yml"
 permissions:
   contents: read
@@ -24,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: migration invariants (P3-E3-S04)
+        run: bash hack/check-migration-invariants.sh
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
