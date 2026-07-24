@@ -22,14 +22,14 @@ in a way lint could have caught before any MR triggered evaluation.
 | **Tests-per-rule** | A rule has zero cases exercising it under `assent test --coverage` (directory-form `.assent/tests/**` or inline `cases.yaml`). | ADR-0010 ("`assent lint` fails packs without tests"); `schemas/testfixture/v1alpha1/test-expectation.schema.json` |
 | **Unkeyed lists** | A class's `entries: {mode: list}` declaration has no `identity.pointer` — an unkeyed list collection, rejected at lint rather than guessed. | ADR-0017 §5; REQ-P3-E1-S01-03 (`merge-policy.schema.json`'s `entriesSpec.allOf` already enforces this at the schema level — lint surfaces the same rule with an actionable message before evaluation) |
 | **Undeclared predicate-scope fields** | An `assert`/`when`/`cel` leaf references a top-level identifier outside the closed set frozen in [`docs/planning/predicate-scope.md`](predicate-scope.md) (`old`, `new`, `path`, `kind`, `file`, `entry`, `oldEntry`, `changes`, `facts`, `mr`, `env`). | ADR-0016 §2 (unknown fields are load-time errors, never `<no value>`); `docs/planning/predicate-scope.md` |
-| **`no-implicit-enforce-phase`** | A rule or pack manifest (`pack.yaml`) omits an explicit `phase` field (`observe`/`enforce`/`off`) — rollout phase has no default, so an undecorated rule/pack is rejected rather than silently defaulting to one phase or the other. Named specifically so an author who edits `effect`/`onFailure` to approximate a rollout instead of using `phase` gets pointed at the sanctioned mechanism. | P3-E4 (rollout phase / policy profiles), D-017 (B2); schema-level enforcement lands with P3-E4-S01, this row is the lint-documentation cross-reference REQ-P3-E4-S01-04 requires |
+| **`no-implicit-enforce-phase`** | A rule or pack manifest (`pack.yaml`) omits an explicit `phase` field (`off`/`observe`/`enforce`) — rollout phase has no default, so an undecorated rule/pack is rejected rather than silently defaulting to one phase or the other. Named specifically so an author who edits `effect`/`onFailure` to approximate a rollout instead of using `phase` gets pointed at the sanctioned mechanism. | D-017 (B2); P3-E4-S01; `schemas/policy/v1alpha1/merge-policy.schema.json` (`rule.phase` required); `schemas/policy/v1alpha1/pack.schema.json` (`spec.phase` required ceiling); `docs/planning/policy-lifecycle-phase.md` |
 
 ## Notes
 
 - This table is additive: a later epic that introduces a new safety-bearing construct adds its
   hard error here (with a citation) rather than starting a second list — P3-E4's
-  `no-implicit-enforce-phase` row above is the first example of that pattern, added by this
-  story per the dependency P3-E4-S01 declares on `docs/planning/lint-hard-errors.md`.
+  `no-implicit-enforce-phase` row above is the first example of that pattern (schema-level
+  enforcement in merge-policy + pack schemas; this row is the lint cross-reference).
 - Hard errors are distinct from `assent lint` *advisories* (e.g. missing `docs.url` on a
   `challenge`/`block` rule) — advisories are out of scope for this table; only errors that fail
   the run belong here.
