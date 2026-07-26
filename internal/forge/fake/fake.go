@@ -105,6 +105,21 @@ func (f *Forge) CurrentHeads(_, _ string) (source, target, digest string, err er
 	return src, tgt, dg, nil
 }
 
+// ResolveThread marks the bot thread with the given forge id resolved in place —
+// the duplicate-repair action (S12-03). It creates nothing and records nothing
+// new; it only flips Resolved on the existing thread. Resolving is idempotent
+// (an already-resolved or unknown id is a no-op that returns no error), so a
+// re-run of the repair produces zero new writes.
+func (f *Forge) ResolveThread(_, _, id string) error {
+	for i := range f.threads {
+		if f.threads[i].ID == id {
+			f.threads[i].Resolved = true
+			return nil
+		}
+	}
+	return nil
+}
+
 // CreateThread records a new bot-authored thread with a fresh forge id.
 func (f *Forge) CreateThread(_, _ string, marker forge.Marker, _ string) (forge.Thread, error) {
 	f.seq++
@@ -161,6 +176,31 @@ func (f *Forge) BotThreadCount() int {
 		}
 	}
 	return n
+}
+
+// OpenBotThreadCount returns the number of UNRESOLVED bot-authored threads — the
+// assertion surface proving duplicate-repair left exactly one OPEN occupant per
+// slot (the canonical), the resolved duplicates no longer occupying it.
+func (f *Forge) OpenBotThreadCount() int {
+	n := 0
+	for _, t := range f.threads {
+		if t.Author == f.BotAuthor && !t.Resolved {
+			n++
+		}
+	}
+	return n
+}
+
+// IsResolved reports whether the thread with the given forge id is resolved —
+// lets a test assert the exact set of repaired (resolved) vs. canonical (open)
+// duplicates after repair.
+func (f *Forge) IsResolved(id string) bool {
+	for _, t := range f.threads {
+		if t.ID == id {
+			return t.Resolved
+		}
+	}
+	return false
 }
 
 // static assertion that the fake implements the port.

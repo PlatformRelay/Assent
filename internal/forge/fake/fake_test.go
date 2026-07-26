@@ -127,6 +127,48 @@ func TestMergeCASAcceptsExactPins(t *testing.T) {
 	}
 }
 
+// TestResolveThreadIdempotentAndCounts proves the duplicate-repair fake hooks
+// (S12-03): ResolveThread flips Resolved in place, is idempotent (unknown or
+// already-resolved id is a no-op that never errors and creates nothing), and the
+// OpenBotThreadCount / IsResolved assertion surfaces reflect the resolved state.
+func TestResolveThreadIdempotentAndCounts(t *testing.T) {
+	f := fake.New(bot, "s", "t", "d")
+	f.SeedThread("note/8001", bot, marker(), false)
+	f.SeedThread("note/8003", bot, marker(), false)
+
+	before := f.ThreadCount()
+	if f.OpenBotThreadCount() != 2 {
+		t.Fatalf("two open bot threads expected, got %d", f.OpenBotThreadCount())
+	}
+
+	if err := f.ResolveThread("p", "1", "note/8003"); err != nil {
+		t.Fatalf("ResolveThread: %v", err)
+	}
+	if !f.IsResolved("note/8003") || f.IsResolved("note/8001") {
+		t.Fatalf("only note/8003 must be resolved; got 8003=%v 8001=%v",
+			f.IsResolved("note/8003"), f.IsResolved("note/8001"))
+	}
+	if f.OpenBotThreadCount() != 1 {
+		t.Fatalf("one open bot thread must remain after resolve, got %d", f.OpenBotThreadCount())
+	}
+
+	// Idempotent: resolving the same id again, or an unknown id, is a no-op with
+	// no error and no new thread.
+	if err := f.ResolveThread("p", "1", "note/8003"); err != nil {
+		t.Fatalf("re-resolve must be a no-op, got %v", err)
+	}
+	if err := f.ResolveThread("p", "1", "note/does-not-exist"); err != nil {
+		t.Fatalf("resolving an unknown id must be a no-op, got %v", err)
+	}
+	if f.ThreadCount() != before {
+		t.Fatalf("resolve must never create a thread: before=%d after=%d", before, f.ThreadCount())
+	}
+	// IsResolved on an unknown id reports false (not an occupant).
+	if f.IsResolved("note/does-not-exist") {
+		t.Fatal("IsResolved on an unknown id must be false")
+	}
+}
+
 // TestMergeCASRejectsEachMovedAxis proves each of the three CAS axes is checked
 // independently: moving source, target, or digest alone rejects with ErrSHAMoved.
 func TestMergeCASRejectsEachMovedAxis(t *testing.T) {

@@ -26,6 +26,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -195,6 +197,12 @@ type Forge interface {
 	// authored by the bot, and returns its forge-assigned id.
 	CreateThread(project, mr string, marker Marker, body string) (Thread, error)
 
+	// ResolveThread resolves (removes as an open occupant) the bot thread with the
+	// given forge id — the duplicate-repair action (S12-03). It marks the thread
+	// resolved in place; it creates NOTHING. Resolving is idempotent (resolving an
+	// already-resolved thread is a no-op).
+	ResolveThread(project, mr, id string) error
+
 	// Approve records an approval on the MR and returns its forge-assigned id.
 	Approve(project, mr string) (string, error)
 
@@ -223,17 +231,34 @@ type Operation struct {
 	PerformedAt string `json:"performedAt"`
 }
 
+// Repair is one recorded duplicate-repair in the PublicationReceipt (S12-03,
+// P3-E5-S03-01). When two+ bot artifacts occupy the SAME (slot, occurrence) — a
+// race between unserialized publishers — Reconcile keeps the LOWEST-forge-ID
+// artifact as canonical and resolves every other against it. Each resolution is
+// recorded here: the repaired (non-canonical) forge id, the canonical id it was
+// resolved against, and the fixed action ("resolve"). Deterministic: the
+// canonical is the numeric-minimum forge id, INDEPENDENT of scan/pagination
+// order (never first-seen-wins).
+type Repair struct {
+	RepairedForgeID  string `json:"repairedForgeId"`
+	CanonicalForgeID string `json:"canonicalForgeId"`
+	Action           string `json:"action"`
+}
+
 // PublicationReceipt records what was actually written to the forge (ADR-0017
 // §7). It validates against
 // schemas/decision/v1alpha1/publication-receipt.schema.json — operations[] each
 // {kind, targetId, performedAt}, keyed unique by targetId, minItems:1 (a
 // zero-write reconciliation returns a typed error, never an empty receipt).
-// Top-level additionalProperties:true, so a later slice (S12) may ADD a
-// top-level `repairs` property without a schema change — this lane emits none.
+// Top-level additionalProperties:true, so this slice (S12) ADDS a top-level
+// `repairs` property WITHOUT a schema change; `omitempty` keeps every prior
+// receipt (which performs no repair) byte-identical — no `"repairs":null` leaks
+// into the goldens.
 type PublicationReceipt struct {
 	APIVersion string      `json:"apiVersion"`
 	Kind       string      `json:"kind"`
 	Operations []Operation `json:"operations"`
+	Repairs    []Repair    `json:"repairs,omitempty"`
 }
 
 const (
@@ -243,6 +268,11 @@ const (
 	kindThread   = "thread"
 	kindApproval = "approval"
 	kindMerge    = "merge"
+
+	// repairActionResolve is the fixed action recorded for every duplicate-repair
+	// (P3-E5-S03-01 / duplicate-repair.yaml): the non-canonical duplicate is
+	// resolved against the canonical.
+	repairActionResolve = "resolve"
 )
 
 // Reconcile publishes the DesiredReviewState to the forge and returns a
@@ -278,17 +308,33 @@ func reconcileThread(f Forge, clock Clock, desired DesiredReviewState) (Publicat
 	}
 
 	want := desired.Thread.Marker.key()
+
+	// Collect ALL bot threads that occupy the desired (slot, occurrence) — not
+	// just the first seen. A race between unserialized publishers can leave two+
+	// artifacts on one slot; a first-match-wins loop would (a) miss the duplicate
+	// and (b) pick a scan-order-dependent survivor. Collecting all of them lets
+	// the repair pick a canonical by a FIXED rule (lowest forge id) below.
+	var occupants []Thread
 	for _, t := range existing {
 		if t.Marker.key() == want {
-			// Idempotent: the slot/occurrence already has a bot thread. Create
-			// nothing; report the existing id so the receipt still records the
-			// thread op (validates), while the fake proves zero new writes.
-			return receiptOf(Operation{
-				Kind:        kindThread,
-				TargetID:    t.ID,
-				PerformedAt: rfc3339(clock),
-			}), nil
+			occupants = append(occupants, t)
 		}
+	}
+
+	switch {
+	case len(occupants) >= 2:
+		// Duplicate-repair path (S12-03): keep the lowest-forge-id artifact as
+		// canonical, resolve every other against it, and record each repair.
+		return repairDuplicates(f, clock, desired, occupants)
+	case len(occupants) == 1:
+		// Idempotent: the slot/occurrence already has exactly one bot thread.
+		// Create nothing; report the existing id so the receipt still records the
+		// thread op (validates), while the fake proves zero new writes.
+		return receiptOf(Operation{
+			Kind:        kindThread,
+			TargetID:    occupants[0].ID,
+			PerformedAt: rfc3339(clock),
+		}), nil
 	}
 
 	created, err := f.CreateThread(desired.Project, desired.MR, desired.Thread.Marker, desired.Thread.Body)
@@ -300,6 +346,77 @@ func reconcileThread(f Forge, clock Clock, desired DesiredReviewState) (Publicat
 		TargetID:    created.ID,
 		PerformedAt: rfc3339(clock),
 	}), nil
+}
+
+// repairDuplicates deterministically repairs two+ bot artifacts occupying the
+// same (slot, occurrence) slot (S12-03, P3-E5-S03-01). The FIXED rule is
+// lowest-forge-id-canonical: the numeric-minimum forge id (NOT the first seen in
+// scan/pagination order) is canonical; every other duplicate is resolved against
+// it and recorded in PublicationReceipt.repairs.
+//
+// Determinism guarantees (independent of ListBotThreads' return order):
+//   - the canonical is chosen by NUMERIC forge-id comparison (note/8001 < note/8003
+//     < note/8005), so reversing the scan order yields the SAME canonical — never
+//     first-seen-wins;
+//   - the repairs slice is sorted by numeric repaired-id ascending, so the
+//     receipt is byte-stable regardless of the order occupants were discovered;
+//   - it creates NOTHING (zero new artifacts); it only resolves duplicates.
+func repairDuplicates(f Forge, clock Clock, desired DesiredReviewState, occupants []Thread) (PublicationReceipt, error) {
+	// Canonical = the numeric-minimum forge id. forgeIDNum parses the integer
+	// after the last '/'; comparing those integers (not the lexical strings) is
+	// what makes note/999 < note/1000 order correctly.
+	canonical := occupants[0]
+	for _, t := range occupants[1:] {
+		if forgeIDNum(t.ID) < forgeIDNum(canonical.ID) {
+			canonical = t
+		}
+	}
+
+	var repairs []Repair
+	for _, t := range occupants {
+		if t.ID == canonical.ID {
+			continue
+		}
+		if err := f.ResolveThread(desired.Project, desired.MR, t.ID); err != nil {
+			return PublicationReceipt{}, fmt.Errorf("forge: resolve duplicate %s: %w", t.ID, err)
+		}
+		repairs = append(repairs, Repair{
+			RepairedForgeID:  t.ID,
+			CanonicalForgeID: canonical.ID,
+			Action:           repairActionResolve,
+		})
+	}
+
+	// Sort repairs by numeric repaired-id ascending so the receipt is
+	// scan-order-independent and byte-stable (matches the fixture's
+	// [note/8003, note/8005] order).
+	sort.Slice(repairs, func(i, j int) bool {
+		return forgeIDNum(repairs[i].RepairedForgeID) < forgeIDNum(repairs[j].RepairedForgeID)
+	})
+
+	receipt := receiptOf(Operation{
+		Kind:        kindThread,
+		TargetID:    canonical.ID,
+		PerformedAt: rfc3339(clock),
+	})
+	receipt.Repairs = repairs
+	return receipt, nil
+}
+
+// forgeIDNum parses the numeric suffix after the last '/' of a forge id
+// (e.g. "note/8001" -> 8001) for NUMERIC canonical selection. A forge id without
+// a parseable numeric suffix sorts as the maximum int so it can never silently
+// win the canonical (lowest-id) selection — an unparseable id is never made
+// canonical over a well-formed one.
+func forgeIDNum(id string) int {
+	if i := strings.LastIndex(id, "/"); i >= 0 {
+		id = id[i+1:]
+	}
+	n, err := strconv.Atoi(id)
+	if err != nil {
+		return int(^uint(0) >> 1) // max int: unparseable ids never win min-selection.
+	}
+	return n
 }
 
 // reconcileApproveMerge approves and SHA-pinned-merges the MR — but ONLY when

@@ -395,21 +395,65 @@ func TestSortFindingsTotalKey(t *testing.T) {
 }
 
 // TestDeterminismDoubleRun is the named double-run gate subject (REQ-P4-E1-S12-01):
-// the aggregator over a fixed input is byte-stable across two executions.
+// the aggregator over a fixed input is byte-stable across repeated executions.
+//
+// A MULTI-FINDING binding is used (not the original single-finding one) so the
+// gate has a multi-element Findings slice to be stable over — the strongest form
+// of the byte-diff gate, and the general defence against ANY output-affecting
+// nondeterminism (map iteration or otherwise). N runs are byte-diffed against the
+// first; any divergence fails the job.
+//
+// On the spec's adversarial framing ("injecting a map-iteration-order dependence
+// into aggregation makes the double-run diff fail"): in THIS implementation that
+// dependence is not reachable — Aggregate builds Findings by ranging the
+// deterministic `Require` slice (and the per-obligation rule slices), and the
+// `rulesByObligation` map is lookup-only, never an output-ordering source. So Go's
+// per-range map randomization cannot leak into the result, which is a positive
+// property, not a hole (a `-count` run with sortFindings removed still passes,
+// because finding order already comes from `Require`, not the map). `sortFindings`
+// is defence-in-depth; INPUT-order independence over the meaningful perturbation
+// (shuffling the rule slice) is separately gated by TestAggregationOrderIndependent
+// (20 shuffles, byte-identical). Together those two are the S12-01 determinism gate.
 func TestDeterminismDoubleRun(t *testing.T) {
-	b := nonDestructiveBinding("int(new) < int(old)", EffectBlock)
-	r1, err := Aggregate(b, oneChange(), "")
+	// Multiple failing obligations -> a multi-element Findings set whose order is
+	// the only place map-iteration nondeterminism could leak.
+	b := Binding{
+		Require: []string{"o-block", "o-comment", "o-review", "o-ok"},
+		Subject: "file:topics/prod/orders.events.v1.yaml",
+		Rules: []Rule{
+			{Name: "r-block", Obligation: "o-block", When: "int(new) < int(old)",
+				OnFailure: OnFailure{Effect: EffectBlock, Code: "b"}},
+			{Name: "r-comment", Obligation: "o-comment", When: "int(new) < int(old)",
+				OnFailure: OnFailure{Effect: EffectComment, Code: "c"}},
+			{Name: "r-review", Obligation: "o-review", When: "int(new) < int(old)",
+				OnFailure: OnFailure{Effect: EffectRequireReview, Code: "r"}},
+			{Name: "r-ok", Obligation: "o-ok", When: "int(new) >= int(old)",
+				OnFailure: OnFailure{Effect: EffectBlock, Code: "d"}},
+		},
+	}
+
+	first, err := Aggregate(b, oneChange(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	r2, err := Aggregate(b, oneChange(), "")
-	if err != nil {
-		t.Fatal(err)
+	// More than one finding is emitted, so map-order really can perturb output.
+	if len(first.Findings) < 2 {
+		t.Fatalf("determinism gate needs a multi-finding result to exercise map order, got %d", len(first.Findings))
 	}
-	j1, _ := json.Marshal(r1)
-	j2, _ := json.Marshal(r2)
-	if !bytes.Equal(j1, j2) {
-		t.Fatalf("double-run diverged:\n %s\n %s", j1, j2)
+	want, _ := json.Marshal(first)
+
+	// N runs: Go re-randomizes map iteration each range, so repeated runs sample
+	// distinct rulesByObligation orderings. Every one must be byte-identical.
+	const runs = 50
+	for i := 0; i < runs; i++ {
+		r, err := Aggregate(b, oneChange(), "")
+		if err != nil {
+			t.Fatalf("Aggregate run %d: %v", i, err)
+		}
+		got, _ := json.Marshal(r)
+		if !bytes.Equal(got, want) {
+			t.Fatalf("double-run diverged at run %d (map-iteration-order leak):\n want: %s\n got:  %s", i, want, got)
+		}
 	}
 }
 
