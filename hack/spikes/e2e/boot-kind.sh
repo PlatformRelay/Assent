@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Spike B (P2-E2-S01) — boot GitLab CE inside a kind cluster ("kind" profile).
 #
-# Uses the existing hack/kind/kind-config.yaml scaffold (cluster `assent`, NodePort 30080
-# mapped to host port 8929) and a plain CE-in-pod manifest — no Helm, to keep the two
-# profiles comparable (same image, same Omnibus config as boot-testcontainer.sh).
+# Measurement harness (always cold-boot). For the long-lived local/demo lab use
+# `task kind-up` / `hack/kind/setup.sh` instead (Spike B: kind stays local; CI = testcontainer).
+#
+# Uses hack/kind/kind-config.yaml (cluster `assent`, NodePort 30080 → host 8929) and a
+# plain CE-in-pod manifest — no Helm, to keep the two profiles comparable (same image,
+# same Omnibus config as boot-testcontainer.sh).
 #
 # Idempotent: tears down any previous instance before booting. `--teardown` deletes the
 # kind cluster. On success prints exactly one machine-readable line:
