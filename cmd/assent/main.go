@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/PlatformRelay/assent/internal/forge/gitlab"
 )
 
 var version = "0.0.0-dev"
@@ -42,6 +44,17 @@ func run(args []string) int {
 		fmt.Printf("assembled EvaluationInput for project=%s mr=%s (source=%s target=%s)\n",
 			pins.ProjectID, pins.MergeRequestIID, pins.SourceSHA, pins.TargetSHA)
 		return 0
+	}
+	if len(args) > 0 && args[0] == "run" {
+		// The walking-skeleton end-to-end path (P4-E1-S10): read the MR, load the
+		// policy from the TARGET ref, diff → classify → aggregate → build+validate
+		// the DecisionRecord → Reconcile against the live GitLab, emit the record.
+		// The GitLab PAT is read from GITLAB_TOKEN at this boundary (never a flag),
+		// and the clock is bound to time.Now here and threaded down as data.
+		return runRun(args[1:], os.Getenv, time.Now, os.Stdout, os.Stderr,
+			func(endpoint, token, botAuthor string) forgePort {
+				return gitlab.New(endpoint, token, botAuthor)
+			})
 	}
 	if len(args) > 0 && args[0] == "doctor" {
 		// Precondition/arming report (ADR-0015 §4/§8, ADR-0017 §9). The env
