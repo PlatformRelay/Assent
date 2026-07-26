@@ -1,0 +1,14 @@
+{
+  "_comment": "P3-P1-3 PERMANENT NEGATIVE fixture — hack/validate-schemas-stock.sh asserts this is REJECTED. It is a well-formed PresentationModel except its finding has effect 'NOT-A-REAL-EFFECT'. That effect enum lives ONLY in decision-record.schema.json#/$defs/finding, reached via PresentationModel's cross-file $ref — so rejection proves BOTH non-vacuity AND that offline cross-file $ref resolution worked. If you 'fix' this to pass, you break the self-test. (Top-level additionalProperties:true means this _comment is ignored.)",
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "PresentationModel",
+  "decision": "BLOCK",
+  "findings": [
+    {
+      "rule": "topic-owner-must-approve",
+      "effect": "NOT-A-REAL-EFFECT",
+      "subject": "topic-registry:orders.events.v1",
+      "points": 0
+    }
+  ]
+}

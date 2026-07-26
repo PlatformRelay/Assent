@@ -7,6 +7,13 @@
 #
 # P3-E3-S04 — migration-invariant guard runs *before* schema validation so a
 # DRAFT/rego-quarantine regression fails by name, not as an opaque schema error.
+#
+# P3-P1-3 (D-027 Option A) — a stock / off-the-shelf Draft 2020-12 validator
+# (ajv-cli) runs the same schemas + examples/contracts fixtures *outside the Go
+# compiler*, so a structural / $ref-bundling bug that santhosh-tekuri tolerates
+# but the wider ecosystem rejects fails here instead of shipping. Logic lives in
+# hack/validate-schemas-stock.sh (runnable locally); the vendor keyword
+# x-uniqueKeys stays Go-enforced and is ignored by the stock tool.
 name: schemas
 on:
   pull_request:
@@ -17,6 +24,8 @@ on:
       - "examples/archetypes/**"
       - "examples/packs/**"
       - "hack/check-migration-invariants.sh"
+      - "hack/validate-schemas-stock.sh"
+      - "hack/testdata/stock-validator-negative/**"
       - ".github/workflows/schemas.yml"
   push:
     branches: [main]
@@ -27,6 +36,8 @@ on:
       - "examples/archetypes/**"
       - "examples/packs/**"
       - "hack/check-migration-invariants.sh"
+      - "hack/validate-schemas-stock.sh"
+      - "hack/testdata/stock-validator-negative/**"
       - ".github/workflows/schemas.yml"
 permissions:
   contents: read
@@ -42,3 +53,10 @@ jobs:
           go-version: stable
       - name: compile schemas + validate examples/contracts fixtures
         run: go test -race ./schemas/...
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "22"
+      - name: install stock Draft 2020-12 validator (ajv-cli)
+        run: npm install -g ajv-cli@5.0.0 ajv-formats@3.0.1
+      - name: stock validator over schemas + contract fixtures (P3-P1-3)
+        run: bash hack/validate-schemas-stock.sh
