@@ -131,9 +131,14 @@ Requirements:
 - **REQ-P4-E1-S01-01** — Given a GitLab CI environment (`CI_PROJECT_ID`,
   `CI_MERGE_REQUEST_IID`, `CI_MERGE_REQUEST_SOURCE_BRANCH_SHA`,
   `CI_MERGE_REQUEST_TARGET_BRANCH_SHA`/ref), when `assent` runs, then `cmd/assent` assembles an
-  `EvaluationInput` carrying those values as `mr` metadata and pinned SHAs, and it validates
-  against `schemas/decision/v1alpha1/evaluation-input.schema.json`. The clock used for any
-  freshness field is **injected** (a `--now`/interface seam), never `time.Now()` inside core.
+  `EvaluationInput` carrying the MR branch names + author as `mr` metadata (the frozen
+  `evaluation-input.schema.json` is `additionalProperties:false` at both top level and under
+  `mr`, so it has **no** SHA/project/IID field), and it validates against
+  `schemas/decision/v1alpha1/evaluation-input.schema.json`. The pinned source/target (and,
+  later, merge-result) SHAs plus project/MR identity are captured at the CI-env edge and travel
+  **out-of-band** — a `cmd/assent`-level pins value destined for `DecisionRecord.pins` (S04) —
+  **never inside** the `EvaluationInput` document (D-033). The clock used for any freshness
+  field is **injected** (a `--now`/interface seam), never `time.Now()` inside core.
   - Test: `cmd/assent/eval_input_test.go`
   - Verify: `go test ./cmd/assent/... -run TestAssembleEvaluationInput`
   - Level: L1
