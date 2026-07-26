@@ -1,7 +1,8 @@
 # Naming candidates (OQ-1)
 
-> **Decision 2026-07-21: assent** (#4) — see D-009. Table kept for the record. Before going
-> public: verify GitHub org/repo availability and the `assent.dev` domain.
+> **Decision 2026-07-21: assent** (#4) — see D-009. Table kept for the record.
+> GitHub repo live (D-014). **Domain (D-028):** `assent.dev` is owned by a third party —
+> apiVersion/`$id` group rename required; replacement TBD (see OQ-1).
 
 Criteria: short CLI-friendly command, evokes judging/gating/merging, no strong collision in
 the dev-tools space, available-ish on GitHub. Collision notes are quick checks, not clearance —

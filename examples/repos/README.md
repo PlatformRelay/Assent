@@ -5,13 +5,19 @@ serve three purposes: e2e seeds (created in the test GitLab, see `test/e2e/`), a
 documentation, and fixtures for the policy test harness.
 
 Planned shapes (built in meta-plan Phase 1.1, refined as the operator provides real-world
-repo shapes to generalize):
+repo shapes to generalize). **Committed now:** the three rows below. **Deferred (D-029):**
+further private-shape generalization (shapes 4–5) — kept in the corpus plan, not cancelled;
+does not block Phase 4.
 
 | Sample | Format | Exercises |
 | --- | --- | --- |
 | `topic-registry/` | YAML (one file per topic: name, owner, partitions, retention) | ownership, bounded change, no-destruction |
 | `service-catalog/` | JSON (single catalog file, many entries) | allow-listed fields, schema validity, multi-entry diffs |
 | `infra-vars/` | tfvars/HCL (per-env variable files) | environment split, HCL parsing, opaque-change fallback |
+
+| Deferred (corpus plan) | Notes |
+| --- | --- |
+| Shapes 4–5 (D-008/D-019/D-029) | Additional generalized private self-service shapes when the operator provides sources; sanitize per D-002; not near-term |
 
 ## Open-source corpus candidates (OQ-16)
 

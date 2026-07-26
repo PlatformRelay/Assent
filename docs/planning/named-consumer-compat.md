@@ -26,9 +26,9 @@ generic core as packs/providers.
 | # | Proposal | Disposition | Where | When |
 | --- | --- | --- | --- | --- |
 | B1 | Complex pure rule backend (multi-pass / cross-manifest / graph checks) | **Accept contract unlock**; implementation stays post-skeleton | E11 flips Locked → Unlocked (D-017); Phase-3 schemas stay backend-neutral | contract: Phase 3 · impl: named-consumer expansion |
-| B2 | First-class rollout phase `off`/`observe`/`enforce` | **Accept** — reverses the OQ-21 lean | new [P3-E4](../../openspec/specs/later-phases.md) (ADR-0018) | Phase 3 (schema) |
-| B3 | Policy profiles + counterfactual comparison | **Accept records/schema**; `compare` CLI later | P3-E4 | Phase 3 (schema) · impl Phase 5+ |
-| B4 | Corpus snapshots + machine-enforceable promotion gates | **Accept** as versioned PolicyComparisonSuite | P3-E4 (format) + E6 (runner) | Phase 3 (format) · Phase 5 (runner) |
+| B2 | First-class rollout phase `off`/`observe`/`enforce` | **Accept** — reverses the OQ-21 lean | new [P3-E4](../../openspec/specs/later-phases.md) · [ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md) (Accepted, D-030) | Phase 3 (schema) |
+| B3 | Policy profiles + counterfactual comparison | **Accept records/schema**; `compare` CLI later | P3-E4 · [ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md) (Accepted, D-030) | Phase 3 (schema) · impl Phase 5+ |
+| B4 | Corpus snapshots + machine-enforceable promotion gates | **Accept** as versioned PolicyComparisonSuite | P3-E4 (format) + E6 (runner) · [ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md) (Accepted, D-030) | Phase 3 (format) · Phase 5 (runner) |
 | B5 | Typed ApprovalEvidence contract | **Accept** — resolves OQ-23 | P3-E1 schema slice (dossier P1-E3-S02 feeds it) | Phase 3 |
 | B6 | Database-free marker/reconciliation protocol + per-MR serialization | **Accept** — preserves D-007 | new [P3-E5](../../openspec/specs/later-phases.md) (ADR-0019); P4-E1 exit gate extended | Phase 3 (freeze) · Phase 4 (minimal impl) |
 | B7 | Merge caps / rate budgets | **Seam now, implement later**; guarantees scoped honestly (see below) | E12 (rescoped service tier) | post-Phase-4 |

@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Proposed |
+| **Status** | Accepted (D-030 — Phase-3 freeze review) |
 | **Date** | 2026-07-24 |
 | **Deciders** | Konrad Heimel |
 | **Context links** | [ADR-0007](0007-rule-effects-decision-aggregation.md) (aggregation) · [ADR-0008](0008-change-classification-routing-scope.md) (routing) · [ADR-0010](0010-config-files-repo-layout.md) (pack / config layout) · [ADR-0014](0014-adopter-test-format.md) (presentation-split amendment) · [ADR-0017](0017-contract-model-obligations.md) §2–4, §7, §9 · D-017 (B2–B4) · OQ-21 (reversed) · [named-consumer-compat.md](../planning/named-consumer-compat.md) B2–B4 · schemas under `schemas/policy/v1alpha1/` + `schemas/comparison/v1alpha1/` · planning docs `docs/planning/policy-lifecycle-*.md` |
@@ -117,9 +117,8 @@ reporting still lists all gate results in the report):
 
 ## Consequences
 
-- Phase-3 freeze review accepts or rejects this ADR as a unit; until then Status stays
-  **Proposed** and must match the ADR index row. Accepted flip + named-consumer-compat.md
-  B2–B4 link updates are a later operator/freeze story (REQ-P3-E4-S04-02).
+- Phase-3 freeze review **accepted** this ADR (D-030); Status is **Accepted** and matches the
+  ADR index row. Named-consumer-compat.md B2–B4 may link here as the accepted ADR.
 - Engine impl (`assent compare`, profile evaluation, phase-aware aggregation) implements
   against the frozen schemas + this ADR; superseding any one of the three numbered decisions
   does not require rewriting the other two.
