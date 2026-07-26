@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PlatformRelay/assent/internal/change"
 	"github.com/PlatformRelay/assent/schemas"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -35,14 +36,17 @@ func TestAssembleEvaluationInput(t *testing.T) {
 	// The differ (S02) fills changeSet/facts/require later; the adapter takes
 	// them as parameters. Supply a one-entry fixture so the doc validates
 	// (changeSet.changes has minItems: 1).
+	// The differ (S02) emits canonical change.Change values whose Old/New are
+	// TAG-DISCRIMINATING STRINGS (an int 6 renders "6", not the number 6); the
+	// adapter synthesizes subject = "file:"+File. A one-entry fixture keeps the
+	// doc valid (changeSet.changes has minItems: 1).
 	fixture := AssemblyInputs{
-		Changes: []Change{{
-			Subject: "file:topics/prod/orders.events.v1.yaml",
-			File:    "topics/prod/orders.events.v1.yaml",
-			Path:    "/partitions",
-			Kind:    "modify",
-			Old:     6,
-			New:     12,
+		Changes: []change.Change{{
+			File: "topics/prod/orders.events.v1.yaml",
+			Path: "/partitions",
+			Kind: change.KindModify,
+			Old:  "6",
+			New:  "12",
 		}},
 		Require: []string{"non-destructive"},
 		Labels:  []string{"kafka"},
@@ -83,6 +87,20 @@ func TestAssembleEvaluationInput(t *testing.T) {
 		t.Errorf("apiVersion/kind = %q/%q, want assent.dev/v1alpha1/EvaluationInput", input.APIVersion, input.Kind)
 	}
 
+	// --- The adapter synthesizes the schema-required subject as the documented
+	// "file:<path>" entryRef, and preserves the differ's canonical string
+	// old/new (constraint b: change.Change has no subject; the projection adds it). ---
+	if len(input.ChangeSet.Changes) != 1 {
+		t.Fatalf("changeSet.changes len = %d, want 1", len(input.ChangeSet.Changes))
+	}
+	got := input.ChangeSet.Changes[0]
+	if got.Subject != "file:topics/prod/orders.events.v1.yaml" {
+		t.Errorf("change.subject = %q, want synthesized file: entryRef", got.Subject)
+	}
+	if got.Old != "6" || got.New != "12" {
+		t.Errorf("change old/new = %q/%q, want canonical strings 6/12", got.Old, got.New)
+	}
+
 	// --- Pinned SHAs + project/MR identity are carried out-of-band (for pins). ---
 	if pins.SourceSHA != env.SourceBranchSHA {
 		t.Errorf("pins.SourceSHA = %q, want %q", pins.SourceSHA, env.SourceBranchSHA)
@@ -120,7 +138,7 @@ func TestAssembleEvaluationInputRejectsMissingPin(t *testing.T) {
 		Author:          "alice",
 	}
 	fixture := AssemblyInputs{
-		Changes: []Change{{Subject: "file:x", File: "x", Path: "", Kind: "modify", Old: 1, New: 2}},
+		Changes: []change.Change{{File: "x", Path: "", Kind: change.KindModify, Old: "1", New: "2"}},
 		Require: []string{},
 	}
 	clock := func() time.Time { return time.Date(2026, 7, 26, 10, 0, 0, 0, time.UTC) }

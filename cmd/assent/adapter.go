@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"time"
+
+	"github.com/PlatformRelay/assent/internal/change"
 )
 
 // CIEnv is the GitLab CI environment cmd/assent reads (the ONLY place env/CI
@@ -48,27 +50,48 @@ func readCIEnv() CIEnv {
 // time.Now (or a --now override) and threads the resolved value down as data.
 type Clock func() time.Time
 
-// Change is one canonical ChangeSet entry as the frozen EvaluationInput schema
-// requires (schemas/decision/v1alpha1/evaluation-input.schema.json #/$defs/change).
-// The S02 differ produces these; at S01 the adapter accepts them as input.
-type Change struct {
+// changeProjection is the schema-shaped JSON projection of one canonical
+// change.Change (S02) into the frozen EvaluationInput #/$defs/change object
+// (schemas/decision/v1alpha1/evaluation-input.schema.json). The differ's
+// change.Change has File/Path/Kind/Old/New but NO subject; the schema REQUIRES
+// subject (an entryRef). The adapter synthesizes subject = "file:"+File (the
+// schema's documented "file:<path>" entryRef form) — this projection is the
+// only place the raw canonical change is reshaped for the wire.
+//
+// Old/New are the differ's CANONICAL, TAG-DISCRIMINATING STRING forms (see
+// change.Change doc: an int "12" renders "12", a string "12" renders "\"12\"",
+// "016" stays "016"). They carry no omitempty: a modify to a zero-value must
+// still serialize both sides; the schema leaves old/new unconstrained so the
+// canonical strings validate.
+type changeProjection struct {
 	Subject string `json:"subject"`
 	File    string `json:"file"`
 	Path    string `json:"path"`
 	Kind    string `json:"kind"`
-	// Old/New carry no omitempty: a real modify of a zero-value (replicas 3->0,
-	// enabled true->false, "x"->"") must serialize the field, not drop it — an
-	// absent new: 0 would read downstream as "no new value" (fail-open). For
-	// modify entries both are always present; the schema permits any value.
-	Old any `json:"old"`
-	New any `json:"new"`
+	Old     string `json:"old"`
+	New     string `json:"new"`
+}
+
+// projectChange maps one canonical change.Change into its schema-shaped
+// projection, synthesizing the required subject as the "file:<path>" entryRef.
+func projectChange(c change.Change) changeProjection {
+	return changeProjection{
+		Subject: "file:" + c.File,
+		File:    c.File,
+		Path:    c.Path,
+		Kind:    string(c.Kind),
+		Old:     c.Old,
+		New:     c.New,
+	}
 }
 
 // AssemblyInputs are the non-environment inputs to EvaluationInput assembly:
-// the differ's ChangeSet, resolved facts, the binding's require list, and MR
-// labels. Kept separate from CIEnv so the environment/CI boundary is explicit.
+// the differ's canonical ChangeSet entries, resolved facts, the binding's
+// require list, and MR labels. Kept separate from CIEnv so the environment/CI
+// boundary is explicit. Changes are the raw canonical change.Change values from
+// the S02 differ; the adapter projects each into the schema shape.
 type AssemblyInputs struct {
-	Changes []Change
+	Changes []change.Change
 	Require []string
 	Labels  []string
 }
@@ -83,7 +106,7 @@ type mrMeta struct {
 
 // changeSet is the schema's #/$defs/changeSet object.
 type changeSet struct {
-	Changes []Change `json:"changes"`
+	Changes []changeProjection `json:"changes"`
 }
 
 // EvaluationInput is the Go projection of the frozen
@@ -136,10 +159,14 @@ func AssembleEvaluationInput(env CIEnv, in AssemblyInputs, now Clock) (*Evaluati
 	}
 
 	facts := in.Facts()
+	projected := make([]changeProjection, len(in.Changes))
+	for i, c := range in.Changes {
+		projected[i] = projectChange(c)
+	}
 	input := &EvaluationInput{
 		APIVersion: "assent.dev/v1alpha1",
 		Kind:       "EvaluationInput",
-		ChangeSet:  changeSet{Changes: in.Changes},
+		ChangeSet:  changeSet{Changes: projected},
 		Facts:      facts,
 		MR: mrMeta{
 			Author:       env.Author,
