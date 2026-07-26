@@ -110,7 +110,7 @@ fixture.
 
 ## Phase 4 — Walking skeleton
 
-### P4-E1 — Walking skeleton with trust boundaries from day one — Planned
+### P4-E1 — Walking skeleton with trust boundaries from day one — Done (autonomous slices + live adoption, 2026-07-27)
 Thinnest real slice, TDD: CLI in a GitLab CI job on the Spike-B-chosen e2e profile → parses
 a one-field YAML change on a generated sample repo → evaluates one `assert` rule proving one
 obligation → posts one resolvable thread or approves + SHA-pinned merges → emits the
@@ -121,8 +121,7 @@ golden, SHA-guard rejection on target/source movement (merge-result precondition
 run (no token near evaluation). **Exit gate**: the L3 skeleton e2e green + replayable;
 determinism double-run gate active in CI; **rerun idempotence (D-017/P3-E5): a rerun and a
 crash-then-rerun produce zero duplicate comments/threads under the serialized topology, and
-seeded pre-existing duplicates are repaired deterministically**; **adoption gate (D-012):
-one real repository has run assent on live MRs** — a synthetic fixture does not count. Story seeds: CLI+CI env
+seeded pre-existing duplicates are repaired deterministically**; **adoption gate (D-012): SATISFIED** — a real gitlab.com repository (`konrad.heimel/assent-lab`, D-037) ran assent on live MRs (REVIEW→thread + APPROVE→SHA-pinned merge; D-042); a synthetic fixture does not count. **Exit gate CLOSED; Phase 5 unblocked.** Story seeds: CLI+CI env
 adapter; minimal differ (modify only); minimal obligations aggregation; minimal Reconcile
 (thread, approve, pinned merge); report artifact; doctor preconditions; e2e harness reuse
 from Spike B.
