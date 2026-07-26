@@ -161,7 +161,7 @@ const (
 //   - any yaml.v3 decode error (malformed bytes)
 //
 // It returns the DocumentNode's single content node (the mapping root). Deeper fail-safe checks
-// — non-string keys, duplicate keys, aliases/anchors/merge keys, sequences, dangerous alias
+// — non-string keys, duplicate keys, aliases, anchors, and merge keys, sequences, dangerous alias
 // expansion — are enforced during the walk, because decoding into *yaml.Node (unlike decoding
 // into `any`) does NOT itself reject them: aliases are recorded unexpanded and duplicate keys
 // are kept, so this differ must re-assert those guards explicitly.
