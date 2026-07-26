@@ -43,6 +43,27 @@ func run(args []string) int {
 			pins.ProjectID, pins.MergeRequestIID, pins.SourceSHA, pins.TargetSHA)
 		return 0
 	}
+	if len(args) > 0 && args[0] == "doctor" {
+		// Precondition/arming report (ADR-0015 §4/§8, ADR-0017 §9). The env
+		// boundary lives here (readPipelineDescription); Doctor is pure and
+		// receives the resolved description as data. Default-deny: the run is
+		// advisory-only unless a protected-source config is verified — no
+		// approve/merge write path exists yet (S06/S08), and it will gate on
+		// report.ArmEligible.
+		report := Doctor(readPipelineDescription())
+		if report.ArmEligible {
+			fmt.Println("assent doctor: arming precondition MET — auto-merge may be armed")
+			return 0
+		}
+		// Exit 1 = "not armed" (arming-gate semantics): a not-armed/advisory run
+		// is a non-zero gate result, not a soft warning. A bare informational run
+		// on an unprotected pipeline therefore exits non-zero by design.
+		fmt.Fprintln(os.Stderr, "assent doctor: advisory-only — auto-merge NOT armed:")
+		for _, r := range report.Reasons {
+			fmt.Fprintf(os.Stderr, "  - [%s] %s\n", r.Code, r.Detail)
+		}
+		return 1
+	}
 	fmt.Fprintln(os.Stderr, "assent (pre-alpha): no commands implemented yet — see docs/planning/meta-plan.md")
 	return 2
 }
