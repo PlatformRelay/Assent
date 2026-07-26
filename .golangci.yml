@@ -9,9 +9,7 @@ linters:
     - misspell
     - revive
     - gosec
-
-issues:
-  exclude-dirs:
-    - .worktrees
-    - .claude
-
+  exclusions:
+    paths:
+      - \.worktrees/
+      - \.claude/
