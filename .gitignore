@@ -27,3 +27,6 @@ agent-context/
 .claude/*
 !.claude/settings.json
 /assent
+
+# Session worktrees (agent-loop-local lanes)
+.worktrees/
