@@ -17,6 +17,7 @@ jobs:
         with:
           go-version: stable # go.mod stays the minimum; CI runs latest stable (govulncheck needs it)
       - run: go vet ./...
+      - run: go vet -tags e2e ./... # compile+vet e2e-tagged wiring (test/e2e, P4-E1-S09)
       - name: golangci-lint (incl. gosec)
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
