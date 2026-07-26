@@ -61,18 +61,3 @@ tasks:
     desc: Serve the docs site locally
     cmds:
       - mkdocs serve
-
-  kind-up:
-    desc: "Local kind lab — create/ensure assent cluster + GitLab CE (long-lived)"
-    cmds:
-      - bash hack/kind/setup.sh
-
-  kind-down:
-    desc: "Local kind lab — delete the assent kind cluster"
-    cmds:
-      - bash hack/kind/teardown.sh
-
-  kind-status:
-    desc: "Local kind lab — cluster / deploy / readiness"
-    cmds:
-      - bash hack/kind/status.sh

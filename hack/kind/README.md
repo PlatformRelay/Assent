@@ -1,51 +1,24 @@
-# Local kind lab — GitLab for assent
+# Local kind cluster for e2e / demo
 
-Long-lived **local/demo** GitLab CE inside kind (Spike B / OQ-6: CI stays on the
-**testcontainer** profile; kind is paid once for interactive work).
+Hosts the test GitLab instance ([test/e2e](../../test/e2e/README.md), path 1).
+Spike B / OQ-6: **CI default remains the testcontainer profile**; kind is the long-lived
+local/demo path.
 
-Cluster name: `assent` · GitLab HTTP: `http://localhost:8929` · SSH host port: `2224`.
+## Status (D-038)
 
-## Quick start
+**Authorized, not implemented yet.** Operator approved adding a durable local kind lab
+(`task kind-up` / setup·status·teardown, CE-in-pod from Spike B’s `boot-kind.sh`) when a
+lane picks it up — **do not treat the missing scripts as a gap to rush**. Until then:
 
-```sh
-task kind-up       # create cluster if needed, load image, apply GitLab, wait ready
-task kind-status   # deploy + readiness probe
-task kind-down     # delete the kind cluster
+```bash
+# Spike measurement harness only (cold-boot; tears down each run):
+bash hack/spikes/e2e/boot-kind.sh
+bash hack/spikes/e2e/boot-kind.sh --teardown
 ```
 
-Requires `kind`, `docker`, `kubectl`, and `curl` on `PATH`. First boot pulls
-`gitlab/gitlab-ce:19.2.0-ce.0` (~minutes); later `kind-up` is idempotent.
+Scaffold already here: `kind-config.yaml` (cluster `assent`, host HTTP `8929` / SSH `2224`).
 
-Overrides (optional):
-
-| Env | Default | Purpose |
-| --- | --- | --- |
-| `ASSENT_KIND_CLUSTER` | `assent` | kind cluster name |
-| `ASSENT_GITLAB_IMAGE` | `gitlab/gitlab-ce:19.2.0-ce.0` | CE image pin (Spike B) |
-| `ASSENT_GITLAB_HTTP_PORT` | `8929` | host port (must match `kind-config.yaml`) |
-| `ASSENT_KIND_READY_TIMEOUT` | `900` | readiness wait (seconds) |
-
-## Layout
-
-| Path | Role |
-| --- | --- |
-| `kind-config.yaml` | kind cluster + NodePort host mappings |
-| `common.sh` | shared helpers (preflight, load, apply, wait) |
-| `setup.sh` / `teardown.sh` / `status.sh` | lab lifecycle |
-| `config_test.go` | contract tests (scripts present, ports pinned) |
-
-Product-surface smoke against this lab (after `kind-up`):
-
-```sh
-ASSENT_SPIKE_HTTP_PORT=8929 bash hack/spikes/e2e/smoke.sh
-```
-
-(`smoke.sh` was written for the testcontainer default port `8980`; point it at `8929` here.)
-
-## vs testcontainer / gitlab.com
-
-| Profile | When |
-| --- | --- |
-| **kind lab** (`task kind-up`) | Local/demo, repeated L3 runs, E7 conformance host |
-| **testcontainer** (`hack/spikes/e2e/boot-testcontainer.sh`) | CI default (Spike B) |
-| **gitlab.com `assent-lab`** | D-012 / P4-E1-S11 real-repo adoption (`agent-context/LOCAL-INFRA.md`) |
+Planned lab contents (when implemented): promote Spike-B CE-in-pod into idempotent
+`setup.sh` / `status.sh` / `teardown.sh` + Task targets; optional `seed/` for
+`examples/repos/` projects and fixture MRs. Reuse Omnibus slim config +
+`kind load image-archive` (not `kind load docker-image`) from Spike B.

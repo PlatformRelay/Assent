@@ -70,6 +70,13 @@ runs early/parallel. **Infra-gated (park for operator)**: S10 (L3 e2e green) the
 **Do first: S02** — the pure differ both aggregation and the report consume.
 
 
+
+## Phase-4 operator/infra residuals
+
+| ID | Item | Status | Needs operator | Notes |
+| --- | --- | --- | --- | --- |
+| **P4-KIND-LAB** | Durable local kind GitLab lab (`task kind-up`, etc.) | **OPEN — authorized, deferred** (D-038) | no (agent lane when claimed) | Promote Spike-B `boot-kind.sh`; CI stays testcontainer |
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
