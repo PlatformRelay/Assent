@@ -42,6 +42,34 @@ REQ ID format: `REQ-<epic>-S<story>-<nn>` (e.g. `REQ-P1-E2-S01-01`).
 | **P3-OQ1** | Replace `assent.dev` apiVersion/`$id` group | **OPEN** (D-028/D-031 — path A: own a domain; **exact domain TBD**) | **yes — name the domain** | Then rename lane across consts/`$id`s/docs/fixtures |
 | P3-ADR-freeze | Accept ADR-0018 + ADR-0019 (Proposed → Accepted) | **DONE** (D-030) | — | Phase-3 freeze ADRs Accepted |
 
+## Phase 4 — P4-E1 walking-skeleton stories
+
+Full INVEST stories in [p4-e1-walking-skeleton/spec.md](p4-e1-walking-skeleton/spec.md).
+The first engine code (D-016 lifts): thinnest real slice, trust boundaries exercised, not
+deferred. REQ IDs `REQ-P4-E1-S0n-nn`. **Execution** tags what an autonomous coding session
+(no live infra) can build+gate versus what needs a live GitLab / real repo.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| P4-E1-S01 | CLI + CI-env adapter (EvaluationInput assembly; env read only in `cmd/assent`) | **[autonomous]** | none | feeds every slice; target-ref policy load |
+| P4-E1-S02 | Modify-only YAML differ (pure `internal/change`; opaque → REVIEW) | **[autonomous]** | none | foundation ChangeSet; **do first** |
+| P4-E1-S03 | Minimal obligations aggregation (one obligation, order-independent, fail-safe) | **[autonomous]** | S02 | APPROVE/REVIEW/BLOCK core |
+| P4-E1-S04 | DecisionRecord report artifact (schema-valid, pinned, redacted) | **[autonomous]** | S03, S01 | the report the exit gate emits |
+| P4-E1-S05 | doctor preconditions (protected-pipeline arming refusal) | **[autonomous]** | S01 | ADR-0015 §4/§8 arming guard |
+| P4-E1-S06 | Minimal Reconcile: post one resolvable thread (fake forge, idempotent) | **[autonomous]** | S04 | REVIEW publication path |
+| P4-E1-S07 | Trust-boundary goldens (`.assent/**` BLOCK · SHA-guard · provider-less) | **[autonomous]** | S03/S04/S06/S08 | the three boundaries in real code |
+| P4-E1-S08 | Minimal Reconcile: approve + SHA-pinned merge (fake forge) | **[autonomous]** | S04/S05 | APPROVE publication path |
+| P4-E1-S09 | E2E harness wiring (Spike-B reuse; compiles+vets, no green-run) | **[autonomous]** | S06/S08 | makes S10 one operator command away |
+| P4-E1-S10 | L3 skeleton e2e green + replayable (+ live crash-then-rerun) | **[infra-gated: needs live GitLab / real repo]** | S09, S01–S08 | **exit gate**: L3 green + replayable |
+| P4-E1-S11 | D-012 adoption gate: one real repo on live MRs | **[infra-gated: needs live GitLab / real repo]** | S10 | **exit gate**: D-012 (synthetic doesn't count) |
+| P4-E1-S12 | Determinism double-run + rerun-idempotence CI gate (fakes/frozen fixtures) | **[autonomous]** | S03/S04/S06/S08 | **exit gate**: determinism + rerun idempotence (autonomous half) |
+
+**Dependency order** (autonomous): S02 differ → S03 aggregation → S04 report → {S05 doctor,
+S06 thread, S07 goldens, S08 approve+merge} → S12 determinism/rerun gate; S01 CLI+CI adapter
+runs early/parallel. **Infra-gated (park for operator)**: S10 (L3 e2e green) then S11 (D-012).
+**Do first: S02** — the pure differ both aggregation and the report consume.
+
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
