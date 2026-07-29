@@ -172,10 +172,14 @@ type treeProducer func(data []byte) (*vnode, string)
 // producer (E1-S03); `.yaml`/`.yml` and every other extension route to the YAML producer (the
 // default is deliberately YAML so an unknown extension keeps the pre-S03 behaviour).
 func producerFor(file string) treeProducer {
-	if strings.HasSuffix(file, ".json") {
+	switch {
+	case strings.HasSuffix(file, ".json"):
 		return parseJSON
+	case strings.HasSuffix(file, ".tfvars"):
+		return parseHCL
+	default:
+		return parseYAML
 	}
-	return parseYAML
 }
 
 // sortChanges orders changes canonically by (File, Path) so a ChangeSet is byte-stable
