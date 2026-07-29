@@ -114,6 +114,49 @@ func TestRenameFoldNeverLaxerThanDelete(t *testing.T) {
 	}
 }
 
+// REQ-E1-S02-02 (co-occurrence) — an UNRELATED change (a modify) present alongside a foldable
+// rename pair must SURVIVE the fold untouched: the fold replaces only the delete+add it folds and
+// passes everything else through. Guards the "surviving change" filter branch against a future
+// refactor silently dropping co-occurring changes.
+func TestRenameFoldPreservesUnrelatedChanges(t *testing.T) {
+	cs := renameCS(t, "old_name: 1\np: 3\n", "new_name: 1\np: 4\n")
+	got := FoldRenames(cs, RenameDetect)
+	if countKind(got, KindRename) != 1 {
+		t.Fatalf("expected the pair to fold to one rename, got %+v", got.Changes)
+	}
+	if countKind(got, KindModify) != 1 {
+		t.Fatalf("the unrelated modify at /p must survive the fold, got %+v", got.Changes)
+	}
+	var mod Change
+	for _, c := range got.Changes {
+		if c.Kind == KindModify {
+			mod = c
+		}
+	}
+	if mod.Path != "/p" || mod.Old != "3" || mod.New != "4" {
+		t.Errorf("surviving modify wrong: %+v", mod)
+	}
+}
+
+// F1 regression — a rename is a move WITHIN one file. A delete in file A and an add in file B that
+// happen to share a value must NEVER fold into one rename (which would mis-attribute the move and
+// silently drop A's delete — a "never laxer than delete" violation). Keying the fold on (File,
+// value) closes this before a multi-file union (E1-S08) makes it reachable.
+func TestRenameFoldNeverFoldsAcrossFiles(t *testing.T) {
+	// A hand-built cross-file union: one delete in a.yaml, one add in b.yaml, same value "1".
+	cs := ChangeSet{Changes: []Change{
+		{File: "a.yaml", Path: "/x", Kind: KindDelete, Old: "1", OldPos: &Position{Line: 1, Column: 4}},
+		{File: "b.yaml", Path: "/y", Kind: KindAdd, New: "1", NewPos: &Position{Line: 1, Column: 4}},
+	}}
+	got := FoldRenames(cs, RenameDetect)
+	if countKind(got, KindRename) != 0 {
+		t.Fatalf("a cross-file delete+add must NOT fold into a rename, got %+v", got.Changes)
+	}
+	if countKind(got, KindDelete) != 1 || countKind(got, KindAdd) != 1 {
+		t.Errorf("both the cross-file delete and add must survive unfolded, got %+v", got.Changes)
+	}
+}
+
 // REQ-E1-S02-04 — the fold is order-independent: shuffling the input ChangeSet's entry order
 // yields a byte-identical folded result after canonical sort. (Purity of the package is proven by
 // TestCorePurity over internal/change/**.)

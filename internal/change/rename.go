@@ -42,23 +42,29 @@ func FoldRenames(cs ChangeSet, mode RenameMode) ChangeSet {
 		return cs
 	}
 
-	// Index delete/add positions by their rendered value. Only a value that appears in EXACTLY
-	// one delete and EXACTLY one add is an unambiguous fold candidate.
+	// Index delete/add positions by (File, rendered value). Keying on the FILE too — not the
+	// value alone — is load-bearing: a rename is a move WITHIN one file, so a delete in file A
+	// must never pair with an add in file B (which would mis-attribute the rename and silently
+	// drop A's delete — a "never laxer than delete" violation). A single-file ChangeSet is the
+	// only shape Diff emits today, but a multi-file union is coming (E1-S08), so this is closed
+	// now rather than left latent. Only a (file,value) appearing in EXACTLY one delete and
+	// EXACTLY one add is an unambiguous fold candidate.
+	key := func(file, val string) string { return file + "\x00" + val }
 	delByVal := map[string][]int{}
 	addByVal := map[string][]int{}
 	for i, c := range cs.Changes {
 		switch c.Kind {
 		case KindDelete:
-			delByVal[c.Old] = append(delByVal[c.Old], i)
+			delByVal[key(c.File, c.Old)] = append(delByVal[key(c.File, c.Old)], i)
 		case KindAdd:
-			addByVal[c.New] = append(addByVal[c.New], i)
+			addByVal[key(c.File, c.New)] = append(addByVal[key(c.File, c.New)], i)
 		}
 	}
 
 	folded := make(map[int]bool)
 	var renames []Change
-	for val, dIdx := range delByVal {
-		aIdx, ok := addByVal[val]
+	for k, dIdx := range delByVal {
+		aIdx, ok := addByVal[k]
 		if !ok || len(dIdx) != 1 || len(aIdx) != 1 {
 			continue // absent on the add side, or ambiguous on either side -> leave raw
 		}
