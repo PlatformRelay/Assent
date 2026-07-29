@@ -56,6 +56,10 @@ const (
 	KindAdd Kind = "add"
 	// KindDelete marks a scalar value present only in base (E1-S01).
 	KindDelete Kind = "delete"
+	// KindRename marks a delete+add pair with an IDENTICAL value that an opt-in fold collapsed
+	// into one move (E1-S02). Its Path is the new (head) path and OldPath the old (base) path;
+	// Old == New is the unchanged shared value. Only emitted under RenameDetect (never by default).
+	KindRename Kind = "rename"
 )
 
 // Position is a 1-indexed source location (line/column) within a file's byte stream, as
@@ -72,8 +76,12 @@ type Position struct {
 // Classes/Environment are populated later by the classifier (ADR-0008) and are empty here.
 type Change struct {
 	File string `json:"file"`
-	Path string `json:"path"` // RFC-6901 JSON pointer within the file
+	Path string `json:"path"` // RFC-6901 JSON pointer within the file (the NEW path for a rename)
 	Kind Kind   `json:"kind"`
+
+	// OldPath is set ONLY on a KindRename: the base-side (old) pointer the value moved FROM.
+	// Path holds the head-side (new) pointer. Empty/omitted for add/delete/modify.
+	OldPath string `json:"oldPath,omitempty"`
 
 	// Old and New are the CANONICAL, TAG-DISCRIMINATING string forms of the base and head
 	// scalar values, produced by render(): !!int/!!float render as their RAW literal ("12",
@@ -142,13 +150,19 @@ func Diff(file string, base, head []byte) (ChangeSet, error) {
 	if reason := walkMap(file, "", baseRoot, headRoot, &changes); reason != "" {
 		return opaque(reason)
 	}
+	sortChanges(changes)
+	return ChangeSet{Changes: changes}, nil
+}
+
+// sortChanges orders changes canonically by (File, Path) so a ChangeSet is byte-stable
+// regardless of map iteration order. Shared by Diff and the rename fold (E1-S02).
+func sortChanges(changes []Change) {
 	sort.Slice(changes, func(i, j int) bool {
 		if changes[i].File != changes[j].File {
 			return changes[i].File < changes[j].File
 		}
 		return changes[i].Path < changes[j].Path
 	})
-	return ChangeSet{Changes: changes}, nil
 }
 
 // YAML node kinds (gopkg.in/yaml.v3 does not export named constants for these).
