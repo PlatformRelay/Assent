@@ -72,27 +72,124 @@ func TestModifyOnlyYAMLDiff(t *testing.T) {
 		t.Errorf("New = %q, want 24", c.New)
 	}
 
-	const golden = `{"changes":[{"file":"orders.events.v1.yaml","kind":"modify","new":"24","old":"12","path":"/partitions"}],"opaque":false}`
+	// REQ-E1-S01-03 — the shipped modify golden now carries a position for BOTH Old and New
+	// pointing at the `partitions:` value (line 3, column 13) in each byte stream. File / Path /
+	// Kind / Old / New are UNCHANGED from the P4-E1 golden; only oldPos/newPos are added.
+	const golden = `{"changes":[{"file":"orders.events.v1.yaml","kind":"modify","new":"24","newPos":{"column":13,"line":3},"old":"12","oldPos":{"column":13,"line":3},"path":"/partitions"}],"opaque":false}`
 	got := canonicalJSON(t, cs)
 	if string(got) != golden {
 		t.Errorf("golden mismatch:\n got: %s\nwant: %s", got, golden)
 	}
+	if c.OldPos == nil || c.NewPos == nil {
+		t.Fatalf("modify must carry a position on both sides, got oldPos=%v newPos=%v", c.OldPos, c.NewPos)
+	}
+	if c.OldPos.Line != 3 || c.NewPos.Line != 3 {
+		t.Errorf("positions should point at the partitions line (3), got old=%+v new=%+v", c.OldPos, c.NewPos)
+	}
 }
 
-// REQ-P4-E1-S02-02 — double-run byte-stable.
+// REQ-E1-S01-01 — a key present in head but absent in base emits one Kind:add Change with the
+// head value, an empty Old, and a non-nil position on the HEAD side only (no longer opaque).
+func TestAddedKeyEmitsAddChange(t *testing.T) {
+	base := "a: 1\n"
+	head := "a: 1\nb: 2\n"
+	cs, err := Diff("f.yaml", []byte(base), []byte(head))
+	if err != nil {
+		t.Fatalf("Diff returned error: %v", err)
+	}
+	if cs.Opaque {
+		t.Fatalf("added key must be decidable now, got opaque: %s", cs.OpaqueReason)
+	}
+	if len(cs.Changes) != 1 {
+		t.Fatalf("expected exactly one add change, got %d: %+v", len(cs.Changes), cs.Changes)
+	}
+	c := cs.Changes[0]
+	if c.Kind != KindAdd {
+		t.Errorf("Kind = %q, want %q", c.Kind, KindAdd)
+	}
+	if c.Path != "/b" {
+		t.Errorf("Path = %q, want /b", c.Path)
+	}
+	if c.New != "2" {
+		t.Errorf("New = %q, want 2", c.New)
+	}
+	if c.Old != "" {
+		t.Errorf("Old = %q, want empty for an add", c.Old)
+	}
+	if c.NewPos == nil {
+		t.Fatalf("add must carry a non-nil position on the head side")
+	}
+	if c.OldPos != nil {
+		t.Errorf("add must have a nil position on the base side, got %+v", c.OldPos)
+	}
+	if c.NewPos.Line != 2 {
+		t.Errorf("added key position should be line 2, got %+v", c.NewPos)
+	}
+}
+
+// REQ-E1-S01-02 — a key present in base but absent in head emits one Kind:delete Change with the
+// base value in Old, an empty New, and a non-nil position on the BASE side only. Adversarial: an
+// add, a delete, and an unrelated modify in the SAME document are reported independently (never
+// merged/conflated), proven by a byte-stable golden of all three.
+func TestRemovedKeyEmitsDeleteChange(t *testing.T) {
+	base := "keep: 1\ngone: 2\nmod: 3\n"
+	head := "keep: 1\nmod: 4\nadded: 5\n"
+	cs, err := Diff("f.yaml", []byte(base), []byte(head))
+	if err != nil {
+		t.Fatalf("Diff returned error: %v", err)
+	}
+	if cs.Opaque {
+		t.Fatalf("add+delete+modify doc must be decidable, got opaque: %s", cs.OpaqueReason)
+	}
+	if len(cs.Changes) != 3 {
+		t.Fatalf("expected exactly 3 changes (add, delete, modify), got %d: %+v", len(cs.Changes), cs.Changes)
+	}
+	// Canonical order is by (File, Path): /added, /gone, /mod.
+	const golden = `{"changes":[{"file":"f.yaml","kind":"add","new":"5","newPos":{"column":8,"line":3},"old":"","path":"/added"},{"file":"f.yaml","kind":"delete","new":"","old":"2","oldPos":{"column":7,"line":2},"path":"/gone"},{"file":"f.yaml","kind":"modify","new":"4","newPos":{"column":6,"line":2},"old":"3","oldPos":{"column":6,"line":3},"path":"/mod"}],"opaque":false}`
+	got := canonicalJSON(t, cs)
+	if string(got) != golden {
+		t.Errorf("golden mismatch:\n got: %s\nwant: %s", got, golden)
+	}
+	// The delete entry specifically: value in Old, empty New, base-side position only.
+	var del Change
+	for _, c := range cs.Changes {
+		if c.Kind == KindDelete {
+			del = c
+		}
+	}
+	if del.Path != "/gone" || del.Old != "2" || del.New != "" {
+		t.Errorf("delete entry wrong: %+v", del)
+	}
+	if del.OldPos == nil || del.NewPos != nil {
+		t.Errorf("delete must carry a base-side position only, got old=%v new=%v", del.OldPos, del.NewPos)
+	}
+}
+
+// REQ-P4-E1-S02-02 / REQ-E1-S01-05 — double-run byte-stable, now covering add and delete
+// (not just modify): the new add/delete/position code must be as deterministic as the modify path.
 func TestDiffDoubleRunStable(t *testing.T) {
-	cs1, err := Diff("orders.events.v1.yaml", []byte(baseYAML), []byte(headYAML))
-	if err != nil {
-		t.Fatalf("run 1: %v", err)
+	cases := []struct{ name, base, head string }{
+		{"modify", baseYAML, headYAML},
+		{"add", "a: 1\n", "a: 1\nb: 2\n"},
+		{"delete", "a: 1\nb: 2\n", "a: 1\n"},
+		{"add+delete+modify", "keep: 1\ngone: 2\nmod: 3\n", "keep: 1\nmod: 4\nadded: 5\n"},
 	}
-	cs2, err := Diff("orders.events.v1.yaml", []byte(baseYAML), []byte(headYAML))
-	if err != nil {
-		t.Fatalf("run 2: %v", err)
-	}
-	g1 := canonicalJSON(t, cs1)
-	g2 := canonicalJSON(t, cs2)
-	if !bytes.Equal(g1, g2) {
-		t.Errorf("double-run diverged:\n run1: %s\n run2: %s", g1, g2)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cs1, err := Diff("f.yaml", []byte(tc.base), []byte(tc.head))
+			if err != nil {
+				t.Fatalf("run 1: %v", err)
+			}
+			cs2, err := Diff("f.yaml", []byte(tc.base), []byte(tc.head))
+			if err != nil {
+				t.Fatalf("run 2: %v", err)
+			}
+			g1 := canonicalJSON(t, cs1)
+			g2 := canonicalJSON(t, cs2)
+			if !bytes.Equal(g1, g2) {
+				t.Errorf("double-run diverged:\n run1: %s\n run2: %s", g1, g2)
+			}
+		})
 	}
 }
 
@@ -142,25 +239,18 @@ func TestOpaqueInputFailsSafe(t *testing.T) {
 	}
 }
 
-// REQ-P4-E1-S02-03 (structural-delta arm) — an add/delete/type-flip must surface as
-// opaque, NEVER be silently dropped (fail-open guard, GUIDELINES §2). Modify-only is a
-// fence on what we EMIT, not license to under-report a real structural change.
+// REQ-E1-S01-04 — a genuinely-undecidable STRUCTURAL delta must surface as opaque, NEVER be
+// silently dropped (fail-open guard, GUIDELINES §2). E1-S01 makes a SCALAR key add/delete
+// decidable (see TestAddedKeyEmitsAddChange / TestRemovedKeyEmitsDeleteChange), so the former
+// "key added"/"key removed" scalar cases moved there; this suite now locks the shapes that MUST
+// stay opaque — type flips (map <-> scalar) and one-sided keys whose value is a COLLECTION
+// (mapping/sequence), which are E1-S05 territory, not a bare mapping-scalar add/delete.
 func TestStructuralDeltaFailsSafe(t *testing.T) {
 	cases := []struct {
 		name string
 		base string
 		head string
 	}{
-		{
-			name: "key added in head",
-			base: "a: 1\n",
-			head: "a: 1\nb: 2\n",
-		},
-		{
-			name: "key removed in head",
-			base: "a: 1\nb: 2\n",
-			head: "a: 1\n",
-		},
 		{
 			name: "scalar flips to map",
 			base: "a: 1\n",
@@ -170,6 +260,21 @@ func TestStructuralDeltaFailsSafe(t *testing.T) {
 			name: "map flips to scalar",
 			base: "a: {x: 1}\n",
 			head: "a: 1\n",
+		},
+		{
+			name: "added key with a mapping value (collection add -> E1-S05, opaque here)",
+			base: "a: 1\n",
+			head: "a: 1\nb: {x: 1}\n",
+		},
+		{
+			name: "removed key with a mapping value (collection delete -> E1-S05, opaque here)",
+			base: "a: 1\nb: {x: 1}\n",
+			head: "a: 1\n",
+		},
+		{
+			name: "added key with a sequence value (collection add -> E1-S05, opaque here)",
+			base: "a: 1\n",
+			head: "a: 1\nb: [1, 2]\n",
 		},
 	}
 	for _, tc := range cases {
@@ -609,7 +714,7 @@ func TestTwoFieldModifyGolden(t *testing.T) {
 	if cs.Changes[0].Path != "/a" || cs.Changes[1].Path != "/b" {
 		t.Fatalf("changes not in canonical /a,/b order: %+v", cs.Changes)
 	}
-	const golden = `{"changes":[{"file":"multi.yaml","kind":"modify","new":"9","old":"1","path":"/a"},{"file":"multi.yaml","kind":"modify","new":"8","old":"2","path":"/b"}],"opaque":false}`
+	const golden = `{"changes":[{"file":"multi.yaml","kind":"modify","new":"9","newPos":{"column":4,"line":1},"old":"1","oldPos":{"column":4,"line":1},"path":"/a"},{"file":"multi.yaml","kind":"modify","new":"8","newPos":{"column":4,"line":2},"old":"2","oldPos":{"column":4,"line":2},"path":"/b"}],"opaque":false}`
 	got := canonicalJSON(t, cs)
 	if string(got) != golden {
 		t.Errorf("golden mismatch:\n got: %s\nwant: %s", got, golden)

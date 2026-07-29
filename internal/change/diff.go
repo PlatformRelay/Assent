@@ -2,16 +2,21 @@
 // version of a single file into a byte-stable ChangeSet that predicates evaluate over
 // (ADR-0003, ADR-0011).
 //
-// This slice (P4-E1-S02) is deliberately thin: modify-only YAML diffing of one document.
-// Add/delete/rename folding and multi-format adapters are later epics (E1). The package is
-// PURE by construction — it reads no clock, randomness, environment, or network, so its
-// output is a deterministic function of its inputs (ADR-0011 invariant, GUIDELINES §5).
+// This slice (E1-S01, extending P4-E1-S02) diffs one YAML document into modify, add, and
+// delete Changes, each carrying a source position (ADR-0003 Amendment 2). Rename folding
+// (E1-S02) and multi-format adapters (E1-S03/S04) are later stories. The package is PURE by
+// construction — it reads no clock, randomness, environment, or network, so its output is a
+// deterministic function of its inputs (ADR-0011 invariant, GUIDELINES §5).
 //
-// Fail-safe direction (GUIDELINES §2, ADR-0015 §9): any input this thin differ cannot
-// decide — unparseable bytes, dangerous alias expansion, or a STRUCTURAL delta beyond a
-// scalar modify (a key added/removed, or a type flip) — yields an OPAQUE ChangeSet, never
-// a silent empty diff. "Modify-only" fences what the differ EMITS as a Change; it is not
-// license to under-report a real structural change as "nothing changed -> safe".
+// Fail-safe direction (GUIDELINES §2, ADR-0015 §9): any input this differ cannot decide —
+// unparseable bytes, dangerous alias expansion, a type flip, or a one-sided (added/deleted)
+// key whose value is a MAPPING or SEQUENCE rather than a scalar — yields an OPAQUE ChangeSet,
+// never a silent empty diff. Add/delete are first-class for a one-sided key with a SCALAR
+// value (or a scalar leaf reached by recursing into a two-sided mapping); a one-sided key
+// whose value is itself a collection is deferred to the value-tree era (E1-S03) and the
+// collection-mode EntryRef derivation (E1-S05), and stays opaque here rather than risk a
+// silent under-report of a whole added/removed subtree. This narrows what fails closed (a
+// scalar add/delete is now decidable); it does not license under-reporting a real change.
 //
 // INJECTIVE VALUE COMPARISON (the property that closes the fail-open class): the differ never
 // decodes YAML scalars into Go-coerced values (a lossy step — e.g. two distinct integers >= 2^64
@@ -40,18 +45,28 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Kind is the classification of a single change (ADR-0011). This slice emits only
-// KindModify; KindAdd/KindDelete are reserved for E1 and surface here as opaque instead.
+// Kind is the classification of a single change (ADR-0011). This slice (E1-S01) emits
+// KindModify, KindAdd, and KindDelete. Rename folding (KindRename) is E1-S02.
 type Kind string
 
 const (
 	// KindModify marks a scalar whose value changed between base and head.
 	KindModify Kind = "modify"
-	// KindAdd marks a value present only in head (reserved — E1).
+	// KindAdd marks a scalar value present only in head (E1-S01).
 	KindAdd Kind = "add"
-	// KindDelete marks a value present only in base (reserved — E1).
+	// KindDelete marks a scalar value present only in base (E1-S01).
 	KindDelete Kind = "delete"
 )
+
+// Position is a 1-indexed source location (line/column) within a file's byte stream, as
+// reported by the YAML parser. It anchors a Change to the exact spot a value lives so a forge
+// adapter can post an inline comment at the right line (ADR-0003 Amendment 2, "first-class
+// positions"). A Change carries a position on each side where a value EXISTS: both sides for a
+// modify, the head side only for an add, the base side only for a delete.
+type Position struct {
+	Line   int `json:"line"`
+	Column int `json:"column"`
+}
 
 // Change is one field-level delta within a file, shaped after ADR-0011's Change.
 // Classes/Environment are populated later by the classifier (ADR-0008) and are empty here.
@@ -75,6 +90,12 @@ type Change struct {
 	// this slice only guarantees a byte-stable, injective canonical string.
 	Old string `json:"old"`
 	New string `json:"new"`
+
+	// OldPos / NewPos are the source positions of the base and head values. A pointer so the
+	// absent side of an add/delete is nil (omitted from JSON), not a misleading {0,0}: NewPos is
+	// nil on a delete, OldPos is nil on an add, both are set on a modify.
+	OldPos *Position `json:"oldPos,omitempty"`
+	NewPos *Position `json:"newPos,omitempty"`
 
 	Classes     []string `json:"classes,omitempty"`
 	Environment string   `json:"environment,omitempty"`
@@ -196,10 +217,11 @@ func parseSingleMappingDoc(data []byte) (*yaml.Node, error) {
 	return root, nil
 }
 
-// walkMap compares two mapping nodes key-by-key. A key present on only one side is a structural
-// add/delete (out of modify-only scope -> opaque). Any non-string key, duplicate key, or
-// alias/anchor/merge key makes the whole diff opaque (fail-safe), because none of those can be
-// diffed as a simple modify without risking a silent miss.
+// walkMap compares two mapping nodes key-by-key. A key present on only one side is a first-class
+// add (head-only) or delete (base-only) when its value is a scalar (emitOneSided); a one-sided
+// key whose value is a mapping/sequence stays opaque (deferred to E1-S03/S05). Any non-string
+// key, duplicate key, or alias/anchor/merge key makes the whole diff opaque (fail-safe), because
+// none of those can be diffed without risking a silent miss.
 func walkMap(file, pointer string, base, head *yaml.Node, out *[]Change) string {
 	baseVals, reason := mappingEntries(pointer, base)
 	if reason != "" {
@@ -230,9 +252,13 @@ func walkMap(file, pointer string, base, head *yaml.Node, out *[]Change) string 
 		child := pointer + "/" + escapePointer(k)
 		switch {
 		case inBase && !inHead:
-			return fmt.Sprintf("key removed at %q — add/delete is out of modify-only scope", child)
+			if reason := emitOneSided(file, child, bv, KindDelete, out); reason != "" {
+				return reason
+			}
 		case !inBase && inHead:
-			return fmt.Sprintf("key added at %q — add/delete is out of modify-only scope", child)
+			if reason := emitOneSided(file, child, hv, KindAdd, out); reason != "" {
+				return reason
+			}
 		default:
 			if reason := walk(file, child, bv, hv, out); reason != "" {
 				return reason
@@ -305,9 +331,60 @@ func walk(file, pointer string, base, head *yaml.Node, out *[]Change) string {
 	// tag-qualified. render never coerces a numeric literal through a lossy Go type, so distinct
 	// literals also never collapse: the comparison can over-report but never silently miss.
 	if compareKey(base, bo) != compareKey(head, ho) {
-		*out = append(*out, Change{File: file, Path: pointer, Kind: KindModify, Old: bo, New: ho})
+		*out = append(*out, Change{
+			File: file, Path: pointer, Kind: KindModify,
+			Old: bo, New: ho,
+			OldPos: posOf(base), NewPos: posOf(head),
+		})
 	}
 	return ""
+}
+
+// emitOneSided emits an add (side == head, kind KindAdd) or a delete (side == base, kind
+// KindDelete) for a value present on exactly one side of a mapping. Only a SCALAR value is
+// decidable here: it yields one Change carrying the rendered value and a position on the present
+// side. A MAPPING or SEQUENCE value (a whole added/removed collection subtree), an alias/anchor
+// node, or an unrenderable scalar returns a non-empty reason so the diff fails closed to opaque.
+// Collection add/delete is deferred UNIFORMLY to the value-tree era and E1-S05's EntryRef
+// derivation — this story does not widen what is decidable beyond a scalar key add/delete, and
+// deliberately does not recurse into a one-sided collection (which would risk a silent miss on
+// an empty subtree, and has no single "canonical render" the way a scalar does).
+func emitOneSided(file, pointer string, node *yaml.Node, kind Kind, out *[]Change) string {
+	if node.Kind == kindAlias || node.Anchor != "" {
+		return fmt.Sprintf("alias/anchor node at %q — not decidable", pointerOrRoot(pointer))
+	}
+	if node.Kind != kindScalar {
+		// A mapping/sequence on a one-sided key: add/delete of a whole collection is E1-S05
+		// territory, so fail closed rather than under-report or partially derive it here.
+		return fmt.Sprintf(
+			"one-sided %s of a non-scalar value at %q (kind %d) — collection add/delete is out of scope (E1-S05)",
+			kind, pointerOrRoot(pointer), node.Kind,
+		)
+	}
+	r, ok := render(node)
+	if !ok {
+		return fmt.Sprintf(
+			"unrenderable scalar at %q (kind %d tag %q) — not decidable",
+			pointerOrRoot(pointer), node.Kind, node.ShortTag(),
+		)
+	}
+	ch := Change{File: file, Path: pointer, Kind: kind}
+	if kind == KindAdd {
+		ch.New, ch.NewPos = r, posOf(node)
+	} else {
+		ch.Old, ch.OldPos = r, posOf(node)
+	}
+	*out = append(*out, ch)
+	return ""
+}
+
+// posOf reads a node's 1-indexed source position. Returns nil for a nil node (the absent side of
+// an add/delete never calls this — the pointer field is simply left nil).
+func posOf(n *yaml.Node) *Position {
+	if n == nil {
+		return nil
+	}
+	return &Position{Line: n.Line, Column: n.Column}
 }
 
 // compareKey qualifies a scalar's human render with its resolved tag so the equality test is
