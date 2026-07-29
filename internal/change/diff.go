@@ -110,6 +110,12 @@ type Change struct {
 	OldPos *Position `json:"oldPos,omitempty"`
 	NewPos *Position `json:"newPos,omitempty"`
 
+	// EntryRef is the stable, identity-derived subject of a collection entry this change belongs
+	// to (E1-S05), e.g. "workload:orders-api" or "service:orders-api". It is set only by the
+	// collection-mode differ (DiffEntries, map/list mode); document-mode changes carry none. It
+	// lets a rule or a forge comment refer to the same entry across a reorder (ADR-0017 §5).
+	EntryRef string `json:"entryRef,omitempty"`
+
 	Classes     []string `json:"classes,omitempty"`
 	Environment string   `json:"environment,omitempty"`
 }
@@ -222,7 +228,19 @@ type vnode struct {
 	render string
 	cmpKey string
 	fields map[string]*vnode
-	pos    *Position
+	// elems holds a sequence's element nodes. It is populated by producers that support
+	// collection-mode list walking (the JSON producer, for E1-S05's `list` mode) and left nil by
+	// producers/paths that do not. The document-mode walker (walkNode) treats every vSequence as
+	// opaque REGARDLESS of elems, so populating this field is additive and never moves a
+	// document-mode golden — only DiffEntries `list` mode reads it (E1-S05).
+	elems []*vnode
+	// elemsProjected marks a vSequence whose elements WERE projected into elems by the producer
+	// (true for JSON, false for YAML/HCL which leave sequences as opaque leaves). It is the signal
+	// that distinguishes a genuinely EMPTY projected sequence (elems nil, elemsProjected true) from
+	// an UNPROJECTED one (elems nil, elemsProjected false): list mode fails CLOSED on the latter
+	// rather than silently reporting zero entries — the fail-open E1-S05's review caught.
+	elemsProjected bool
+	pos            *Position
 }
 
 // walkNode compares two value-tree nodes at pointer, appending a KindModify change when two

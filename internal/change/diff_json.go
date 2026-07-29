@@ -74,10 +74,11 @@ func parseJSONValue(dec *json.Decoder, data []byte) (*vnode, string) {
 		case '{':
 			return parseJSONObject(dec, data, start)
 		case '[':
-			if reason := consumeJSONArray(dec); reason != "" {
+			elems, reason := parseJSONArray(dec, data)
+			if reason != "" {
 				return nil, reason
 			}
-			return &vnode{kind: vSequence, pos: offsetToPos(data, start)}, ""
+			return &vnode{kind: vSequence, elems: elems, elemsProjected: true, pos: offsetToPos(data, start)}, ""
 		default: // '}' or ']' with no matching opener — malformed
 			return nil, fmt.Sprintf("unexpected JSON delimiter %q", t)
 		}
@@ -130,27 +131,24 @@ func parseJSONObject(dec *json.Decoder, data []byte, start int) (*vnode, string)
 	return &vnode{kind: vMapping, fields: fields, pos: offsetToPos(data, start)}, ""
 }
 
-// consumeJSONArray reads an array body to its matching ']' (the '[' already consumed), fully
-// draining nested structures so the decoder is positioned after the array. The elements are
-// discarded — an array is a vSequence leaf in this slice (E1-S05 walks elements). A decode error
-// inside the array fails closed.
-func consumeJSONArray(dec *json.Decoder) string {
-	depth := 1
-	for depth > 0 {
-		tok, err := dec.Token()
-		if err != nil {
-			return "array not closed / did not decode: " + err.Error()
+// parseJSONArray reads an array body to its matching ']' (the '[' already consumed), projecting
+// each element into a vnode (recursively, so nested objects/arrays are represented). The elements
+// populate vSequence.elems, which E1-S05's `list` mode walks; the document-mode walker still
+// treats the vSequence as opaque regardless. A decode error inside the array fails closed.
+func parseJSONArray(dec *json.Decoder, data []byte) ([]*vnode, string) {
+	var elems []*vnode
+	for dec.More() {
+		el, reason := parseJSONValue(dec, data)
+		if reason != "" {
+			return nil, reason
 		}
-		if d, ok := tok.(json.Delim); ok {
-			switch d {
-			case '[', '{':
-				depth++
-			case ']', '}':
-				depth--
-			}
-		}
+		elems = append(elems, el)
 	}
-	return ""
+	// Consume the closing ']'.
+	if _, err := dec.Token(); err != nil {
+		return nil, "array not closed: " + err.Error()
+	}
+	return elems, ""
 }
 
 // valueStart returns the offset of a value's first byte, scanning from `from` past JSON
