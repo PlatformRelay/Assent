@@ -2,35 +2,37 @@
 // version of a single file into a byte-stable ChangeSet that predicates evaluate over
 // (ADR-0003, ADR-0011).
 //
-// This slice (E1-S01, extending P4-E1-S02) diffs one YAML document into modify, add, and
-// delete Changes, each carrying a source position (ADR-0003 Amendment 2). Rename folding
-// (E1-S02) and multi-format adapters (E1-S03/S04) are later stories. The package is PURE by
-// construction — it reads no clock, randomness, environment, or network, so its output is a
-// deterministic function of its inputs (ADR-0011 invariant, GUIDELINES §5).
+// This slice (E1-S03, extending E1-S01/S02) diffs one document into modify, add, delete, and
+// (opt-in) rename Changes, each carrying a source position (ADR-0003 Amendment 2). The differ
+// no longer walks a format-specific parse tree directly: it first projects the parsed document
+// into a format-NEUTRAL value tree (vnode) and then walks that tree, so a YAML producer and a
+// JSON producer (diff_json.go) feed the SAME comparison logic and yield the SAME ChangeSet
+// shape. Diff selects the producer by file extension (.json -> JSON, everything else -> YAML).
+// The package is PURE by construction — it reads no clock, randomness, environment, or network,
+// so its output is a deterministic function of its inputs (ADR-0011 invariant, GUIDELINES §5).
 //
 // Fail-safe direction (GUIDELINES §2, ADR-0015 §9): any input this differ cannot decide —
 // unparseable bytes, dangerous alias expansion, a type flip, or a one-sided (added/deleted)
 // key whose value is a MAPPING or SEQUENCE rather than a scalar — yields an OPAQUE ChangeSet,
 // never a silent empty diff. Add/delete are first-class for a one-sided key with a SCALAR
 // value (or a scalar leaf reached by recursing into a two-sided mapping); a one-sided key
-// whose value is itself a collection is deferred to the value-tree era (E1-S03) and the
-// collection-mode EntryRef derivation (E1-S05), and stays opaque here rather than risk a
-// silent under-report of a whole added/removed subtree. This narrows what fails closed (a
-// scalar add/delete is now decidable); it does not license under-reporting a real change.
+// whose value is itself a collection is deferred to the collection-mode EntryRef derivation
+// (E1-S05), and stays opaque here rather than risk a silent under-report of a whole added or
+// removed subtree. A SEQUENCE value (a vSequence node) likewise stays opaque — list walking is
+// E1-S05 territory — so the value tree carries a sequence kind but this slice never diffs into it.
 //
 // INJECTIVE VALUE COMPARISON (the property that closes the fail-open class): the differ never
-// decodes YAML scalars into Go-coerced values (a lossy step — e.g. two distinct integers >= 2^64
+// decodes a scalar into a Go-coerced value (a lossy step — e.g. two distinct integers >= 2^64
 // both collapse to the same float64, and two distinct high-precision floats collapse likewise,
-// silently MISSING a real change). Instead it decodes into *yaml.Node, which retains each
-// scalar's TAG and RAW literal, and compares scalars by a TAG-QUALIFIED key (resolved tag +
-// canonical render — see compareKey). Two scalars are equal iff they share BOTH the tag AND the
-// render, so the equality is injective over (tag, literal): distinct literals never collapse
-// (no lossy Go coercion), and neither do distinct-typed scalars sharing a literal (an explicit
-// `!!int 1` vs `!!float 1`). A Change is emitted iff the tag-qualified keys differ; the differ
-// can therefore only ever OVER-report a change, never UNDER-report one. Over-reporting is the
-// safe direction; a silent miss is the sole forbidden outcome. (This is why numeric cross-type
-// equivalence such as int 1 == float 1.0 is intentionally NOT collapsed, and why big.Int
-// re-parsing was rejected — see render.)
+// silently MISSING a real change). Instead each scalar vnode carries a human RENDER (emitted as
+// Old/New) and a TAG-QUALIFIED comparison key built from the RAW literal, and two scalars are
+// equal iff their comparison keys match. The YAML producer builds these from *yaml.Node's tag +
+// raw literal (render/compareKey); the JSON producer builds them from json.Number raw literals
+// and JSON-quoted strings (never float64). A Change is emitted iff the comparison keys differ,
+// so the differ can only ever OVER-report a change, never UNDER-report one. Over-reporting is
+// the safe direction; a silent miss is the sole forbidden outcome. (This is why numeric
+// cross-type equivalence such as int 1 == float 1.0 is intentionally NOT collapsed, and why
+// big.Int re-parsing was rejected — see render.)
 package change
 
 import (
@@ -45,8 +47,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Kind is the classification of a single change (ADR-0011). This slice (E1-S01) emits
-// KindModify, KindAdd, and KindDelete. Rename folding (KindRename) is E1-S02.
+// Kind is the classification of a single change (ADR-0011). This slice emits KindModify,
+// KindAdd, and KindDelete; KindRename is produced only by the opt-in fold (rename.go, E1-S02).
 type Kind string
 
 const (
@@ -62,11 +64,12 @@ const (
 	KindRename Kind = "rename"
 )
 
-// Position is a 1-indexed source location (line/column) within a file's byte stream, as
-// reported by the YAML parser. It anchors a Change to the exact spot a value lives so a forge
-// adapter can post an inline comment at the right line (ADR-0003 Amendment 2, "first-class
-// positions"). A Change carries a position on each side where a value EXISTS: both sides for a
-// modify, the head side only for an add, the base side only for a delete.
+// Position is a 1-indexed source location (line/column) within a file's byte stream. It anchors
+// a Change to the exact spot a value lives so a forge adapter can post an inline comment at the
+// right line (ADR-0003 Amendment 2, "first-class positions"). A Change carries a position on each
+// side where a value EXISTS: both sides for a modify, the head side only for an add, the base
+// side only for a delete. YAML positions come from the parser; JSON positions are derived from
+// each value's byte offset (see diff_json.go).
 type Position struct {
 	Line   int `json:"line"`
 	Column int `json:"column"`
@@ -84,18 +87,20 @@ type Change struct {
 	OldPath string `json:"oldPath,omitempty"`
 
 	// Old and New are the CANONICAL, TAG-DISCRIMINATING string forms of the base and head
-	// scalar values, produced by render(): !!int/!!float render as their RAW literal ("12",
-	// "18446744073709551617"), !!bool as its raw literal ("true"), !!null as "null", and !!str
-	// values are JSON-QUOTED (the string "12" renders as "\"12\"", not "12"). Quoting keeps a
-	// bool/number/null distinct from a same-spelled string, and using the raw literal (never a
-	// Go-coerced number) keeps distinct numeric literals distinct — no lossy collapse.
+	// scalar values, produced by the producer's render step: !!int/!!float render as their RAW
+	// literal ("12", "18446744073709551617"), !!bool as its raw literal ("true"), !!null as
+	// "null", and !!str values are JSON-QUOTED (the string "12" renders as "\"12\"", not "12").
+	// Quoting keeps a bool/number/null distinct from a same-spelled string, and using the raw
+	// literal (never a Go-coerced number) keeps distinct numeric literals distinct — no lossy
+	// collapse. The JSON producer follows the same discipline (json.Number literals, JSON-quoted
+	// strings) so a JSON edit yields the same Old/New a YAML edit would.
 	//
 	// CONTRACT for downstream consumers (S03 aggregation / CEL asserts): these diverge from
 	// ADR-0011's typed `Value` — they are strings, not typed scalars, and numeric ones are the
-	// raw YAML literal (so `016` stays "016", not "14" or "16"). Any NUMERIC or boolean
-	// comparison (e.g. `new > 12`) MUST coerce Old/New at the CEL boundary; a naive string
-	// comparison is lexical and WRONG (lexically `"9" > "12"` is true). S03 owns that coercion;
-	// this slice only guarantees a byte-stable, injective canonical string.
+	// raw literal (so `016` stays "016", not "14" or "16"). Any NUMERIC or boolean comparison
+	// (e.g. `new > 12`) MUST coerce Old/New at the CEL boundary; a naive string comparison is
+	// lexical and WRONG (lexically `"9" > "12"` is true). S03 owns that coercion; this slice only
+	// guarantees a byte-stable, injective canonical string.
 	Old string `json:"old"`
 	New string `json:"new"`
 
@@ -130,28 +135,44 @@ func opaque(reason string) (ChangeSet, error) {
 	return ChangeSet{Opaque: true, OpaqueReason: reason}, fmt.Errorf("%w: %s", ErrOpaque, reason)
 }
 
-// Diff computes the modify-only ChangeSet between the base and head bytes of one YAML file.
+// Diff computes the ChangeSet between the base and head bytes of one file. It selects a value-tree
+// producer by file extension (.json -> JSON, .yaml/.yml and everything else -> YAML), projects
+// each side into a format-neutral value tree, and walks the two trees.
 //
-// It is a pure function: identical inputs always produce byte-identical output. On any input
-// it cannot decide (unparseable YAML, alias/anchor/merge expansion, a structural delta beyond
-// a scalar modify, or a non-string-keyed / duplicate-keyed mapping) it returns an opaque
-// ChangeSet plus a wrapped ErrOpaque — never a silent empty diff.
+// It is a pure function: identical inputs always produce byte-identical output. On any input it
+// cannot decide (unparseable bytes, alias/anchor/merge expansion, a structural delta beyond a
+// scalar modify or scalar add/delete, a non-string-keyed / duplicate-keyed mapping, or a
+// non-object root) it returns an opaque ChangeSet plus a wrapped ErrOpaque — never a silent
+// empty diff.
 func Diff(file string, base, head []byte) (ChangeSet, error) {
-	baseRoot, err := parseSingleMappingDoc(base)
-	if err != nil {
-		return opaque("base: " + err.Error())
+	parse := producerFor(file)
+
+	baseTree, reason := parse(base)
+	if reason != "" {
+		return opaque("base: " + reason)
 	}
-	headRoot, err := parseSingleMappingDoc(head)
-	if err != nil {
-		return opaque("head: " + err.Error())
+	headTree, reason := parse(head)
+	if reason != "" {
+		return opaque("head: " + reason)
 	}
 
 	var changes []Change
-	if reason := walkMap(file, "", baseRoot, headRoot, &changes); reason != "" {
+	if reason := walkNode(file, "", baseTree, headTree, &changes); reason != "" {
 		return opaque(reason)
 	}
 	sortChanges(changes)
 	return ChangeSet{Changes: changes}, nil
+}
+
+// treeProducer parses one file's bytes into the canonical value tree, returning a non-empty
+// reason (routed to opaque) on any input it cannot faithfully represent.
+type treeProducer func(data []byte) (*vnode, string)
+
+// producerFor selects the value-tree producer by file extension. .yaml/.yml and every other
+// extension route to the YAML producer (the default is deliberately YAML so an unknown extension
+// keeps the pre-S03 behaviour). The .json branch is added by the JSON adapter slice.
+func producerFor(_ string) treeProducer {
+	return parseYAML
 }
 
 // sortChanges orders changes canonically by (File, Path) so a ChangeSet is byte-stable
@@ -165,10 +186,153 @@ func sortChanges(changes []Change) {
 	})
 }
 
+// vkind is the classification of a value-tree node. This slice compares vScalar and recurses
+// into vMapping; a vSequence is carried in the tree (so the model is complete) but stays opaque
+// when reached — per-element list walking is E1-S05 territory.
+type vkind int
+
+const (
+	vScalar vkind = iota
+	vMapping
+	vSequence
+)
+
+// vnode is one node of the canonical, format-NEUTRAL value tree the walker compares. A YAML or
+// JSON producer projects its parsed document into this shape so the comparison logic is written
+// once, independent of source format (ADR-0011 canonical change model).
+//
+//   - vScalar carries `render` (the injective human string emitted as Old/New) and `cmpKey`
+//     (a tag-qualified comparison key, never emitted — two scalars are equal iff cmpKey matches).
+//   - vMapping carries `fields`, a string-keyed child map (the only mapping shape a field-level
+//     differ can walk; non-string keys make the producer fail closed).
+//   - vSequence is a leaf marker in this slice (no elements are projected): any sequence reached
+//     during the walk is opaque, deferred to E1-S05's list/EntryRef mode.
+//
+// `pos` is the 1-indexed source position of the value; it is emitted only for scalars (mappings
+// recurse and sequences are opaque, so their positions are never surfaced).
+type vnode struct {
+	kind   vkind
+	render string
+	cmpKey string
+	fields map[string]*vnode
+	pos    *Position
+}
+
+// walkNode compares two value-tree nodes at pointer, appending a KindModify change when two
+// scalars have different comparison keys. It recurses into two mappings; any other shape — a
+// sequence, a mapping-vs-scalar type flip — returns a non-empty reason (-> opaque), never a
+// silent drop. This is the format-neutral generalization of the pre-S03 *yaml.Node walk: the
+// guards (alias/anchor, unrenderable scalar, non-string key, duplicate key) now run when the
+// producer BUILDS the tree, so a bad node cannot reach here.
+func walkNode(file, pointer string, base, head *vnode, out *[]Change) string {
+	baseIsMap := base.kind == vMapping
+	headIsMap := head.kind == vMapping
+	switch {
+	case baseIsMap && headIsMap:
+		return walkMapping(file, pointer, base, head, out)
+	case baseIsMap != headIsMap:
+		return fmt.Sprintf("type flip at %q (map vs non-map) — structural delta is out of modify-only scope", pointerOrRoot(pointer))
+	}
+
+	// Both non-mappings: only two scalars are decidable. A sequence (vSequence) on either side
+	// is opaque — list walking is E1-S05 territory — exactly as the pre-S03 differ treated a
+	// sequence value.
+	if base.kind != vScalar || head.kind != vScalar {
+		return fmt.Sprintf("non-scalar value at %q (sequence or list) — not decidable in modify-only slice (E1-S05)", pointerOrRoot(pointer))
+	}
+
+	// A Change is emitted iff the two scalars differ by their TAG-QUALIFIED comparison key.
+	// Comparing on cmpKey — not render — is what makes the equality INJECTIVE over (tag, literal):
+	// two scalars are equal iff they share BOTH the resolved tag AND the canonical render. The
+	// EMITTED Old/New stay the human render, so goldens are unchanged — only the comparator is
+	// tag-qualified. The render never coerces a numeric literal through a lossy Go type, so
+	// distinct literals also never collapse: the comparison can over-report but never silently miss.
+	if base.cmpKey != head.cmpKey {
+		*out = append(*out, Change{
+			File: file, Path: pointer, Kind: KindModify,
+			Old: base.render, New: head.render,
+			OldPos: base.pos, NewPos: head.pos,
+		})
+	}
+	return ""
+}
+
+// walkMapping compares two mapping nodes key-by-key over the union of their keys (sorted for
+// determinism). A key present on only one side is a first-class add (head-only) or delete
+// (base-only) when its value is a scalar (emitOneSided); a one-sided key whose value is a
+// collection stays opaque (deferred to E1-S05).
+func walkMapping(file, pointer string, base, head *vnode, out *[]Change) string {
+	seen := make(map[string]struct{}, len(base.fields)+len(head.fields))
+	keys := make([]string, 0, len(base.fields)+len(head.fields))
+	for k := range base.fields {
+		seen[k] = struct{}{}
+		keys = append(keys, k)
+	}
+	for k := range head.fields {
+		if _, ok := seen[k]; !ok {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		bv, inBase := base.fields[k]
+		hv, inHead := head.fields[k]
+		child := pointer + "/" + escapePointer(k)
+		switch {
+		case inBase && !inHead:
+			if reason := emitOneSided(file, child, bv, KindDelete, out); reason != "" {
+				return reason
+			}
+		case !inBase && inHead:
+			if reason := emitOneSided(file, child, hv, KindAdd, out); reason != "" {
+				return reason
+			}
+		default:
+			if reason := walkNode(file, child, bv, hv, out); reason != "" {
+				return reason
+			}
+		}
+	}
+	return ""
+}
+
+// emitOneSided emits an add (side == head, kind KindAdd) or a delete (side == base, kind
+// KindDelete) for a value present on exactly one side of a mapping. Only a SCALAR value is
+// decidable here: it yields one Change carrying the rendered value and a position on the present
+// side. A MAPPING or SEQUENCE value (a whole added/removed collection subtree) returns a
+// non-empty reason so the diff fails closed to opaque — collection add/delete is deferred
+// UNIFORMLY to E1-S05's EntryRef derivation.
+func emitOneSided(file, pointer string, node *vnode, kind Kind, out *[]Change) string {
+	if node.kind != vScalar {
+		return fmt.Sprintf(
+			"one-sided %s of a non-scalar value at %q — collection add/delete is out of scope (E1-S05)",
+			kind, pointerOrRoot(pointer),
+		)
+	}
+	ch := Change{File: file, Path: pointer, Kind: kind}
+	if kind == KindAdd {
+		ch.New, ch.NewPos = node.render, node.pos
+	} else {
+		ch.Old, ch.OldPos = node.render, node.pos
+	}
+	*out = append(*out, ch)
+	return ""
+}
+
+// ---- YAML producer -------------------------------------------------------------------------
+//
+// The YAML producer projects a parsed *yaml.Node document into the canonical value tree, applying
+// every fail-safe guard at BUILD time (the checks the pre-S03 differ ran lazily during the walk):
+// a non-string / duplicate / alias-anchor-merge KEY, an alias/anchor VALUE node (below the root),
+// and an unrenderable/unknown-tag scalar each make the producer fail closed. The ROOT mapping's
+// OWN anchor is deliberately NOT rejected (an unused root anchor still diffs its children).
+
 // YAML node kinds (gopkg.in/yaml.v3 does not export named constants for these).
 const (
 	kindDocument = yaml.DocumentNode
 	kindMapping  = yaml.MappingNode
+	kindSequence = yaml.SequenceNode
 	kindScalar   = yaml.ScalarNode
 	kindAlias    = yaml.AliasNode
 )
@@ -183,10 +347,20 @@ const (
 	tagMerge = "!!merge" // the `<<` merge key
 )
 
-// parseSingleMappingDoc is the single CONFIDENCE GATE for the modify-only field differ. It
-// returns a non-error result ONLY when data is EXACTLY ONE fully-understood YAML document whose
-// ROOT is a string-keyed mapping — the only shape a field-level modify-only differ can
-// meaningfully diff. Everything else fails CLOSED (returns an error -> the caller emits opaque):
+// parseYAML is the YAML treeProducer: it gates the document down to a single string-keyed-mapping
+// root (parseSingleMappingDoc) and then projects it into the value tree (yamlMapping).
+func parseYAML(data []byte) (*vnode, string) {
+	root, err := parseSingleMappingDoc(data)
+	if err != nil {
+		return nil, err.Error()
+	}
+	return yamlMapping("", root)
+}
+
+// parseSingleMappingDoc is the single CONFIDENCE GATE for the YAML producer. It returns a
+// non-error result ONLY when data is EXACTLY ONE fully-understood YAML document whose ROOT is a
+// string-keyed mapping — the only shape a field-level differ can meaningfully diff. Everything
+// else fails CLOSED (returns an error -> the caller emits opaque):
 //
 //   - zero documents (empty input, only comments, or a bare "---" with nothing after it)
 //   - more than one document in the stream (`---`-separated) — decoding only the first would
@@ -197,9 +371,9 @@ const (
 //
 // It returns the DocumentNode's single content node (the mapping root). Deeper fail-safe checks
 // — non-string keys, duplicate keys, aliases, anchors, and merge keys, sequences, dangerous alias
-// expansion — are enforced during the walk, because decoding into *yaml.Node (unlike decoding
-// into `any`) does NOT itself reject them: aliases are recorded unexpanded and duplicate keys
-// are kept, so this differ must re-assert those guards explicitly.
+// expansion — are enforced by yamlMapping/yamlValue when the tree is built, because decoding into
+// *yaml.Node (unlike decoding into `any`) does NOT itself reject them: aliases are recorded
+// unexpanded and duplicate keys are kept, so this producer must re-assert those guards explicitly.
 func parseSingleMappingDoc(data []byte) (*yaml.Node, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 
@@ -231,62 +405,13 @@ func parseSingleMappingDoc(data []byte) (*yaml.Node, error) {
 	return root, nil
 }
 
-// walkMap compares two mapping nodes key-by-key. A key present on only one side is a first-class
-// add (head-only) or delete (base-only) when its value is a scalar (emitOneSided); a one-sided
-// key whose value is a mapping/sequence stays opaque (deferred to E1-S03/S05). Any non-string
-// key, duplicate key, or alias/anchor/merge key makes the whole diff opaque (fail-safe), because
-// none of those can be diffed without risking a silent miss.
-func walkMap(file, pointer string, base, head *yaml.Node, out *[]Change) string {
-	baseVals, reason := mappingEntries(pointer, base)
-	if reason != "" {
-		return reason
-	}
-	headVals, reason := mappingEntries(pointer, head)
-	if reason != "" {
-		return reason
-	}
-
-	// Union of keys, sorted for determinism.
-	seen := make(map[string]struct{}, len(baseVals)+len(headVals))
-	keys := make([]string, 0, len(baseVals)+len(headVals))
-	for k := range baseVals {
-		seen[k] = struct{}{}
-		keys = append(keys, k)
-	}
-	for k := range headVals {
-		if _, ok := seen[k]; !ok {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-
-	for _, k := range keys {
-		bv, inBase := baseVals[k]
-		hv, inHead := headVals[k]
-		child := pointer + "/" + escapePointer(k)
-		switch {
-		case inBase && !inHead:
-			if reason := emitOneSided(file, child, bv, KindDelete, out); reason != "" {
-				return reason
-			}
-		case !inBase && inHead:
-			if reason := emitOneSided(file, child, hv, KindAdd, out); reason != "" {
-				return reason
-			}
-		default:
-			if reason := walk(file, child, bv, hv, out); reason != "" {
-				return reason
-			}
-		}
-	}
-	return ""
-}
-
-// mappingEntries extracts the string keys and their value nodes from a mapping node, failing
-// closed on any construct this thin differ cannot safely diff: a non-string key, a duplicate
-// key, or an alias/anchor/merge key. A non-empty reason routes the caller to opaque.
-func mappingEntries(pointer string, m *yaml.Node) (map[string]*yaml.Node, string) {
-	vals := make(map[string]*yaml.Node, len(m.Content)/2)
+// yamlMapping projects a YAML mapping node into a vMapping node. It applies the key guards
+// (non-string, duplicate, alias/anchor/merge) and builds each value via yamlValue. It does NOT
+// check the mapping node's OWN anchor: at the root that is intentional (an unused root anchor
+// still diffs its children), and for a nested mapping the anchor was already checked by the
+// yamlValue that reached it.
+func yamlMapping(pointer string, m *yaml.Node) (*vnode, string) {
+	fields := make(map[string]*vnode, len(m.Content)/2)
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		k := m.Content[i]
 		v := m.Content[i+1]
@@ -296,108 +421,46 @@ func mappingEntries(pointer string, m *yaml.Node) (map[string]*yaml.Node, string
 		if k.Kind != kindScalar || k.ShortTag() != tagStr {
 			return nil, fmt.Sprintf("non-string mapping key (kind %d, tag %q) at %q — not decidable in modify-only slice", k.Kind, k.ShortTag(), pointerOrRoot(pointer))
 		}
-		if _, dup := vals[k.Value]; dup {
+		if _, dup := fields[k.Value]; dup {
 			return nil, fmt.Sprintf("duplicate mapping key %q at %q — not decidable in modify-only slice", k.Value, pointerOrRoot(pointer))
 		}
-		vals[k.Value] = v
+		child := pointer + "/" + escapePointer(k.Value)
+		vn, reason := yamlValue(child, v)
+		if reason != "" {
+			return nil, reason
+		}
+		fields[k.Value] = vn
 	}
-	return vals, ""
+	return &vnode{kind: vMapping, fields: fields, pos: posOf(m)}, ""
 }
 
-// walk compares base and head value nodes at pointer, appending a KindModify change when two
-// scalars render differently. It recurses into string-keyed mappings; any other shape — a
-// sequence, an alias/anchor node, a mapping-vs-scalar type flip, or an unrenderable/unknown
-// scalar tag — returns a non-empty reason (-> opaque), never a silent drop.
-func walk(file, pointer string, base, head *yaml.Node, out *[]Change) string {
-	// Aliases/anchors are never expanded (expansion re-arms alias bombs) — they are opaque.
-	if base.Kind == kindAlias || head.Kind == kindAlias || base.Anchor != "" || head.Anchor != "" {
-		return fmt.Sprintf("alias/anchor node at %q — not decidable in modify-only slice", pointerOrRoot(pointer))
+// yamlValue projects a single YAML value node into a vnode. An alias node or a node carrying an
+// anchor is opaque (expanding an alias re-arms alias bombs; an anchored value could be aliased
+// elsewhere) — this is the guard the pre-S03 walk ran on every value node BELOW the root. A
+// mapping recurses; a sequence becomes a vSequence leaf (opaque when walked); a scalar renders
+// via the injective render/compareKey (unrenderable/unknown-tag scalars fail closed).
+func yamlValue(pointer string, n *yaml.Node) (*vnode, string) {
+	if n.Kind == kindAlias || n.Anchor != "" {
+		return nil, fmt.Sprintf("alias/anchor node at %q — not decidable in modify-only slice", pointerOrRoot(pointer))
 	}
-
-	baseIsMap := base.Kind == kindMapping
-	headIsMap := head.Kind == kindMapping
-	switch {
-	case baseIsMap && headIsMap:
-		return walkMap(file, pointer, base, head, out)
-	case baseIsMap != headIsMap:
-		return fmt.Sprintf("type flip at %q (map vs non-map) — structural delta is out of modify-only scope", pointerOrRoot(pointer))
+	switch n.Kind {
+	case kindMapping:
+		return yamlMapping(pointer, n)
+	case kindSequence:
+		return &vnode{kind: vSequence, pos: posOf(n)}, ""
+	case kindScalar:
+		r, ok := render(n)
+		if !ok {
+			return nil, fmt.Sprintf("unrenderable scalar at %q (kind %d tag %q) — not decidable", pointerOrRoot(pointer), n.Kind, n.ShortTag())
+		}
+		return &vnode{kind: vScalar, render: r, cmpKey: compareKey(n, r), pos: posOf(n)}, ""
+	default:
+		return nil, fmt.Sprintf("unsupported YAML node kind %d at %q — not decidable", n.Kind, pointerOrRoot(pointer))
 	}
-
-	// Both non-mappings: they must both be renderable scalars. A sequence, or any scalar with
-	// a tag render() does not understand, fails closed.
-	bo, baseOK := render(base)
-	ho, headOK := render(head)
-	if !baseOK || !headOK {
-		return fmt.Sprintf(
-			"non-scalar or unrenderable value at %q (base kind %d tag %q, head kind %d tag %q) — not decidable in modify-only slice",
-			pointerOrRoot(pointer), base.Kind, base.ShortTag(), head.Kind, head.ShortTag(),
-		)
-	}
-
-	// A Change is emitted iff the two scalars differ by their TAG-QUALIFIED key. Comparing on
-	// (tag, render) — not render alone — is what makes the equality INJECTIVE over (tag, literal):
-	// two scalars are equal iff they share BOTH the resolved tag AND the canonical render. This
-	// closes the trio hole where an explicitly-tagged `!!int 1` and `!!float 1` (or `!!float 1`
-	// and `!!bool 1`) share the raw literal "1" and would otherwise render-equal and be silently
-	// dropped on a changed doc. `!!null` still normalizes to one key (`~` == `null`), and string
-	// quoting keeps `!!str "1"` distinct from `!!int 1`. The EMITTED Old/New stay the human
-	// render (bare "12", quoted strings) so goldens are unchanged — only the comparator is
-	// tag-qualified. render never coerces a numeric literal through a lossy Go type, so distinct
-	// literals also never collapse: the comparison can over-report but never silently miss.
-	if compareKey(base, bo) != compareKey(head, ho) {
-		*out = append(*out, Change{
-			File: file, Path: pointer, Kind: KindModify,
-			Old: bo, New: ho,
-			OldPos: posOf(base), NewPos: posOf(head),
-		})
-	}
-	return ""
 }
 
-// emitOneSided emits an add (side == head, kind KindAdd) or a delete (side == base, kind
-// KindDelete) for a value present on exactly one side of a mapping. Only a SCALAR value is
-// decidable here: it yields one Change carrying the rendered value and a position on the present
-// side. A MAPPING or SEQUENCE value (a whole added/removed collection subtree), an alias/anchor
-// node, or an unrenderable scalar returns a non-empty reason so the diff fails closed to opaque.
-// Collection add/delete is deferred UNIFORMLY to the value-tree era and E1-S05's EntryRef
-// derivation — this story does not widen what is decidable beyond a scalar key add/delete, and
-// deliberately does not recurse into a one-sided collection (which would risk a silent miss on
-// an empty subtree, and has no single "canonical render" the way a scalar does).
-func emitOneSided(file, pointer string, node *yaml.Node, kind Kind, out *[]Change) string {
-	if node.Kind == kindAlias || node.Anchor != "" {
-		return fmt.Sprintf("alias/anchor node at %q — not decidable", pointerOrRoot(pointer))
-	}
-	if node.Kind != kindScalar {
-		// A mapping/sequence on a one-sided key: add/delete of a whole collection is E1-S05
-		// territory, so fail closed rather than under-report or partially derive it here.
-		return fmt.Sprintf(
-			"one-sided %s of a non-scalar value at %q (kind %d) — collection add/delete is out of scope (E1-S05)",
-			kind, pointerOrRoot(pointer), node.Kind,
-		)
-	}
-	r, ok := render(node)
-	if !ok {
-		return fmt.Sprintf(
-			"unrenderable scalar at %q (kind %d tag %q) — not decidable",
-			pointerOrRoot(pointer), node.Kind, node.ShortTag(),
-		)
-	}
-	ch := Change{File: file, Path: pointer, Kind: kind}
-	if kind == KindAdd {
-		ch.New, ch.NewPos = r, posOf(node)
-	} else {
-		ch.Old, ch.OldPos = r, posOf(node)
-	}
-	*out = append(*out, ch)
-	return ""
-}
-
-// posOf reads a node's 1-indexed source position. Returns nil for a nil node (the absent side of
-// an add/delete never calls this — the pointer field is simply left nil).
+// posOf reads a YAML node's 1-indexed source position.
 func posOf(n *yaml.Node) *Position {
-	if n == nil {
-		return nil
-	}
 	return &Position{Line: n.Line, Column: n.Column}
 }
 
