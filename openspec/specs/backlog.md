@@ -76,6 +76,42 @@ runs early/parallel. **Infra-gated (park for operator)**: S10 (L3 e2e green) the
 | ID | Item | Status | Needs operator | Notes |
 | --- | --- | --- | --- | --- |
 | **P4-KIND-LAB** | Durable local kind GitLab lab (`task kind-up`, etc.) | **OPEN — authorized, deferred** (D-038) | no (agent lane when claimed) | Promote Spike-B `boot-kind.sh`; CI stays testcontainer |
+| **P4-CODEQL** | Enable CodeQL default setup (Go + Actions) | **OPEN** — found via cross-repo CodeQL/SonarQube sweep (2026-07-29) | no (Settings → Code security → Default, or `gh api --method PUT repos/PlatformRelay/assent/code-scanning/default-setup`) | `state: not-configured` today despite `schemas.yml`/`verify.yaml` CI; zero-cost enablement, no SonarQube config exists either (not proposing one) |
+
+## Phase 5 — E1 canonical change model stories
+
+Full INVEST stories in [p5-e1-canonical-change-model/spec.md](p5-e1-canonical-change-model/spec.md).
+E1 extends the P4-E1-shipped modify-only YAML differ (`internal/change/diff.go`) and minimal
+`assent-policy` classifier (`internal/core/classify/classify.go`) to the full canonical change
+model config.yaml describes: add/delete/rename diffs, JSON + HCL/tfvars adapters over one
+canonical value tree, `EntryRef` derivation for map/list collections, three of the four
+ADR-0017 §5 matcher domains plus a new `entryEvents` domain (the real whole-file `fileEvents` is
+explicitly deferred — see the spec's Non-goals), input resource limits, and closing the D-042
+"S10 review F1" live-adapter gap
+(`assent run` enumerating the MR's full changed-file set instead of one hardcoded governed
+subject). REQ IDs `REQ-E1-S0n-nn`. **Every story is `[autonomous]`** — pure `internal/change`
+(+ `internal/core/classify`) engine code plus the `cmd/assent` adapter, gated against fixtures
+already in `examples/repos/` and injected/fake changed-file lists, no live infra (contrast with
+P4-E1's S10/S11).
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| E1-S01 | Add/delete diffs + source positions on every Change (extends the shipped YAML differ) | **[autonomous]** | none | foundation `Kind`s + positions; **do first** |
+| E1-S02 | Opt-in rename fold (delete+add → rename, default raw, never laxer than delete) | **[autonomous]** | S01 | ADR-0003 amendment rename semantics |
+| E1-S03 | Canonical value tree + JSON format adapter | **[autonomous]** | S01 | format-agnostic differ; second-format proof |
+| E1-S04 | HCL/tfvars format adapter (literal-only) | **[autonomous]** | S03 | third-format proof over the shared tree |
+| E1-S05 | `EntryRef` derivation for map/list collections (identity-keyed, unkeyed lists rejected) | **[autonomous]** | S01, S03 | stable per-entry subjects (ADR-0017 §5) |
+| E1-S06 | Classifier matcher-domain breadth (`files`/`values.pointers`/`entryEvents`/`valueChanges`) | **[autonomous]** | S01, S02, S05 | ADR-0017 §5 matcher vocabulary (`entryEvents` in place of true `fileEvents`, deferred); preserves `assent-policy` dominance |
+| E1-S07 | Input resource limits (size/depth/entry-count/alias-expansion ceilings, fail-closed) | **[autonomous]** | S03, S04 | ADR-0003 Amendment 2 limits, generalized across formats |
+| E1-S08 | `cmd/assent`: enumerate the MR's full changed-file set (closes D-042 "S10 review F1") | **[autonomous]** | none | live-adapter self-vouch (`.assent/**` BLOCK) proof, complementing the P4-E1-S07 engine golden |
+
+**Dependency order**: S01 (add/delete + positions) → {S02 rename fold, S03 value tree + JSON
+adapter → S04 HCL adapter, S05 EntryRef (also needs S03), S07 limits (also needs S04)}; S06
+matcher domains needs S01+S02+S05. **S08 is independent and startable from day one** — it closes an
+already-logged live security gap (D-042) and does not depend on any other E1 story landing
+first. **Do first: S01** — the smallest pure extension of already-shipped code, and the
+dependency root for rename fold, the value tree, EntryRef derivation, and matcher domains.
+
 
 ## Phases 3–5
 
@@ -86,7 +122,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E9 active; E11/E12 **unlocked** (D-017, post-Phase-4); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E7 starts alongside E1 |
+| 5 — Implementation | E1–E9 active — **E1 has full INVEST stories**: [p5-e1-canonical-change-model/spec.md](p5-e1-canonical-change-model/spec.md); E11/E12 **unlocked** (D-017, post-Phase-4); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E7 starts alongside E1 |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).
