@@ -168,10 +168,13 @@ func Diff(file string, base, head []byte) (ChangeSet, error) {
 // reason (routed to opaque) on any input it cannot faithfully represent.
 type treeProducer func(data []byte) (*vnode, string)
 
-// producerFor selects the value-tree producer by file extension. .yaml/.yml and every other
-// extension route to the YAML producer (the default is deliberately YAML so an unknown extension
-// keeps the pre-S03 behaviour). The .json branch is added by the JSON adapter slice.
-func producerFor(_ string) treeProducer {
+// producerFor selects the value-tree producer by file extension. `.json` routes to the JSON
+// producer (E1-S03); `.yaml`/`.yml` and every other extension route to the YAML producer (the
+// default is deliberately YAML so an unknown extension keeps the pre-S03 behaviour).
+func producerFor(file string) treeProducer {
+	if strings.HasSuffix(file, ".json") {
+		return parseJSON
+	}
 	return parseYAML
 }
 
