@@ -34,6 +34,13 @@ type runConfig struct {
 	botAuthor string
 	arm       bool
 	emit      string
+
+	// checkout is the OPT-IN local-checkout dir (base/ + head/ subtrees) the
+	// E1-S08 changed-file-set enumeration reads (ADR-0008 §4: local checkout
+	// only, never a forge API). When empty, orchestrate diffs only the governed
+	// subject — the exact pre-E1-S08 single-file path — so existing runs and
+	// tests are unaffected.
+	checkout string
 }
 
 // forgePort is the subset of behaviour `assent run` needs from a forge: the
@@ -108,6 +115,7 @@ func parseRunFlags(args []string, stderr io.Writer) (runConfig, error) {
 	fs.StringVar(&cfg.botAuthor, "bot-author", "", "bot username for the author-identity filter (required)")
 	fs.BoolVar(&cfg.arm, "arm", false, "SANDBOX arming override (see D-034 note) — approve+merge only when set AND decision APPROVE")
 	fs.StringVar(&cfg.emit, "emit", "", "path to write the DecisionRecord JSON (default: stdout)")
+	fs.StringVar(&cfg.checkout, "checkout", "", "local checkout dir (base/ + head/ subtrees) to enumerate the MR's full changed-file set (E1-S08); when unset, only the governed subject is diffed")
 	if err := fs.Parse(args); err != nil {
 		return runConfig{}, err
 	}
@@ -152,6 +160,12 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	if governed == binding.Subject {
 		return fmt.Errorf("policy subject %q must be a file:<path> entryRef", binding.Subject)
 	}
+	// KNOWN ADR-0008 §4 GAP (pre-existing, tracked separately — NOT E1-S08's job):
+	// the governed file's content is fetched via the forge API (client.FileAtRef)
+	// rather than a local checkout. ADR-0008 §4 requires evaluation against a local
+	// checkout with no API-only file fetching. E1-S08 adds the local-checkout
+	// changed-file-set enumeration below WITHOUT inheriting or multiplying this
+	// pre-existing single-file API read; fixing this read is out of scope here.
 	base, err := client.FileAtRef(cfg.project, governed, info.TargetBranch)
 	if err != nil {
 		return fmt.Errorf("load governed base %q: %w", governed, err)
@@ -170,6 +184,33 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 
 	// 5. Classify (path-only) and aggregate.
 	subjectClass := classify.Classify(changeSet)
+
+	// 5b. E1-S08 (OPT-IN): when --checkout is set, enumerate the MR's FULL
+	//     changed-file set from the LOCAL CHECKOUT (ADR-0008 §4) and fold it into
+	//     the two safety signals the aggregator honours BEFORE any predicate:
+	//       - any `.assent/**` path dominates the class to assent-policy -> BLOCK
+	//         (a smuggled policy edit cannot vouch itself, matching the engine
+	//         golden on the adapter path);
+	//       - any opaque changed file forces the run fail-safe (never dropped).
+	//     The governed subject's own ChangeSet stays the predicate input (see
+	//     foldCheckout doc: a multi-file union would leave old/new unbound and
+	//     could leak unrelated scalars into the subject's predicate). When
+	//     --checkout is unset this whole step is skipped — exactly the pre-E1-S08
+	//     single-file path.
+	if cfg.checkout != "" {
+		fold, ferr := foldCheckout(dirCheckout{root: cfg.checkout})
+		if ferr != nil {
+			return fmt.Errorf("enumerate changed-file set: %w", ferr)
+		}
+		if fold.class == classify.ClassAssentPolicy {
+			subjectClass = classify.ClassAssentPolicy
+		}
+		if fold.opaque && !changeSet.Opaque {
+			changeSet.Opaque = true
+			changeSet.OpaqueReason = "changed-file set opaque: " + fold.opaqueReason
+		}
+	}
+
 	result, err := aggregate.Aggregate(binding, changeSet, subjectClass)
 	if err != nil {
 		return fmt.Errorf("aggregate: %w", err)
