@@ -178,6 +178,12 @@ type treeProducer func(data []byte) (*vnode, string)
 // producer (E1-S03); `.yaml`/`.yml` and every other extension route to the YAML producer (the
 // default is deliberately YAML so an unknown extension keeps the pre-S03 behaviour).
 func producerFor(file string) treeProducer {
+	return withLimits(baseProducerFor(file))
+}
+
+// baseProducerFor selects the raw value-tree producer by extension, before the shared input-limit
+// enforcement (withLimits, E1-S07) wraps it.
+func baseProducerFor(file string) treeProducer {
 	switch {
 	case strings.HasSuffix(file, ".json"):
 		return parseJSON
