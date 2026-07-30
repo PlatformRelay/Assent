@@ -76,6 +76,45 @@ func TestHCLAdapterModify(t *testing.T) {
 	})
 }
 
+// D-01 (audit follow-up) — a unary-negated numeric literal (-3, -1.5) is still a literal and must
+// diff as a first-class change with its raw literal render, not route to opaque (over-conservative).
+// A negation of a NON-literal stays opaque (literal-only). Injective: -3 vs 3 is a detected change.
+func TestHCLNegativeAndFloatLiterals(t *testing.T) {
+	t.Run("negative int literal diffs", func(t *testing.T) {
+		cs, err := Diff("f.tfvars", []byte("offset = -3\n"), []byte("offset = -4\n"))
+		if err != nil || cs.Opaque {
+			t.Fatalf("negative literal must be decidable, got err=%v opaque=%v", err, cs.OpaqueReason)
+		}
+		if len(cs.Changes) != 1 || cs.Changes[0].Old != "-3" || cs.Changes[0].New != "-4" {
+			t.Fatalf("want one modify -3 -> -4, got %+v", cs.Changes)
+		}
+	})
+	t.Run("negative float literal diffs", func(t *testing.T) {
+		cs, err := Diff("f.tfvars", []byte("t = -1.5\n"), []byte("t = -2.25\n"))
+		if err != nil || cs.Opaque {
+			t.Fatalf("negative float must be decidable, got err=%v opaque=%v", err, cs.OpaqueReason)
+		}
+		if len(cs.Changes) != 1 || cs.Changes[0].Old != "-1.5" || cs.Changes[0].New != "-2.25" {
+			t.Fatalf("want one modify -1.5 -> -2.25, got %+v", cs.Changes)
+		}
+	})
+	t.Run("sign change -3 vs 3 is detected (injective)", func(t *testing.T) {
+		cs, err := Diff("f.tfvars", []byte("n = -3\n"), []byte("n = 3\n"))
+		if err != nil || cs.Opaque {
+			t.Fatalf("sign change must be decidable, got err=%v opaque=%v", err, cs.OpaqueReason)
+		}
+		if len(cs.Changes) != 1 || cs.Changes[0].Old != "-3" || cs.Changes[0].New != "3" {
+			t.Fatalf("want one modify -3 -> 3, got %+v", cs.Changes)
+		}
+	})
+	t.Run("negation of a non-literal stays opaque", func(t *testing.T) {
+		cs, err := Diff("f.tfvars", []byte("n = 1\n"), []byte("n = -var.x\n"))
+		if !cs.Opaque || err == nil || !errors.Is(err, ErrOpaque) {
+			t.Fatalf("negation of a non-literal must stay opaque, got opaque=%v err=%v changes=%+v", cs.Opaque, err, cs.Changes)
+		}
+	})
+}
+
 // REQ-E1-S04-02 — a tfvars value expressed as a NON-LITERAL HCL expression (interpolation,
 // function call, variable reference) is opaque with a reason naming the construct — never silently
 // evaluated (which could hide the real value) and never silently dropped (fail-safe).

@@ -95,6 +95,19 @@ func hclExprToNode(expr hclsyntax.Expression, data []byte) (*vnode, string) {
 		}
 		return hclScalar(val, expr, data)
 
+	case *hclsyntax.UnaryOpExpr:
+		// A unary-negated numeric literal (e.g. -3, -1.5) is still a literal number. Render its raw
+		// source text ("-3"), which is injective. Negation of a NON-literal (e.g. -var.x) or any
+		// other unary op falls through to opaque — never partially evaluated (E1-S04 literal-only).
+		if lit, ok := e.Val.(*hclsyntax.LiteralValueExpr); ok && e.Op == hclsyntax.OpNegate && !lit.Val.IsNull() && lit.Val.Type() == cty.Number {
+			raw := rawLiteral(expr, data)
+			if raw == "" {
+				return nil, fmt.Sprintf("HCL negated numeric literal at %s has no source text — not decidable", rangeStr(expr))
+			}
+			return &vnode{kind: vScalar, render: raw, cmpKey: "n\x00" + raw, pos: rangePos(expr)}, ""
+		}
+		return nil, fmt.Sprintf("non-literal HCL expression %T at %s — not decidable (E1-S04 is literal-only)", expr, rangeStr(expr))
+
 	default:
 		// ScopeTraversalExpr (var.x), FunctionCallExpr, BinaryOpExpr, TemplateWrapExpr ("${x}"),
 		// conditional, index, etc.: every non-literal construct is opaque, naming its type so the
