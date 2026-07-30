@@ -110,7 +110,7 @@ split out and re-tagged explicitly — none currently do.
   for both size/depth/entry-count/alias-expansion caps AND a parse deadline. The caps are pure
   (comparisons against parsed structure) and belong in `internal/change` (E1-S07). A wall-clock
   parse deadline needs a clock/context and is barred from `internal/change` by the purity gate
-  (AGENTS.md rule 7, `internal/core/purity_test.go`); it is explicitly fenced OUT of E1-S07 and
+  (GUIDELINES.md §5, `internal/core/purity_test.go`); it is explicitly fenced OUT of E1-S07 and
   left to whichever `cmd/assent`-tier story wants it (not scoped here — no bullet in this
   epic's brief asked for it).
 - **`EntryRef` derivation lives in `internal/change`** (a new file alongside `diff.go`), not in
@@ -223,7 +223,7 @@ Requirements:
   - Test: `internal/change/diff_test.go`
   - Verify: `go test ./internal/change/... -run TestStructuralDeltaFailsSafe`
   - Level: L0
-- **REQ-E1-S01-05** — Given the determinism hard rule (AGENTS.md rule 7, GUIDELINES §5), when
+- **REQ-E1-S01-05** — Given the determinism hard rule (GUIDELINES.md §5), when
   `internal/core/purity_test.go`'s `TestCorePurity` scans `internal/change/**` (it already walks
   `../change` recursively from `internal/core`), then the new add/delete/position code
   introduces no `os.Getenv`/`os.Environ`, `time.Now`, `rand`, or network import, and every new

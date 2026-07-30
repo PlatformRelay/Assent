@@ -175,8 +175,11 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		return fmt.Errorf("load governed head %q: %w", governed, err)
 	}
 
-	// 4. Diff → ChangeSet. An opaque diff is fail-safe REVIEW (handled by the
-	//    aggregator, which maps Opaque → REVIEW); a differ error is a hard error.
+	// 4. Diff → ChangeSet. change.Diff returns an opaque ChangeSet ACCOMPANIED BY a wrapped
+	//    ErrOpaque, so an undecidable governed-subject diff takes this error branch and fails
+	//    CLOSED as a hard error (exit non-zero) — it never reaches the aggregator, so there is no
+	//    approve/merge. (The opaque → REVIEW-thread mapping applies on the E1-S08 checkout-fold
+	//    path, which sets changeSet.Opaque without erroring; see step 5b.)
 	changeSet, err := change.Diff(governed, base, head)
 	if err != nil {
 		return fmt.Errorf("diff governed file %q: %w", governed, err)
