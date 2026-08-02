@@ -133,8 +133,8 @@ E7 remains the next epic to claim after E2.
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
 | E2-F | Fixture-fix (two corrections) to d016 `partitions-must-not-shrink`: (1) `when` `input.new>=input.old` → `new>=old` (out-of-scope `input` vs ADR-0013/predicate-scope); (2) add missing `points: 10` (golden shows 10 but rule authors none; S06 has no engine default) | **[autonomous]** `🔴 DECIDED` (edits P3-frozen fixture) | none | unblocks a clean S10 reproduction; **land early (before/with S02)** |
-| E2-S01 | Frozen-contract policy loader (`MergePolicy`/`RulesetBinding`/`Config`/`Pack`, strict decode); retire toy `cmd/assent/policy.go` | **[autonomous]** | none | retires engine↔contract drift; **do first** |
-| E2-S02 | Evaluator re-seated on `EvaluationInput` + full frozen predicate scope (single-leaf `when`) | **[autonomous]** | S01 (+F) | real activation model; closes numeric-coercion risk |
+| E2-S01 | Frozen-contract policy loader (`MergePolicy`/`RulesetBinding`/`Config`/`Pack`, strict decode via reused frozen schemas; assertTree decoded structurally, not CEL-compiled; self-contained, no `aggregate` import) | **[autonomous]** | none | retires engine↔contract drift; **do first** |
+| E2-S02 | Evaluator re-seated on `EvaluationInput` + full frozen predicate scope (single-leaf `when`); **retires toy `cmd/assent/policy.go` + re-seats run.go** (moved from S01 — needs `EvaluationInput`'s per-change subjects) | **[autonomous]** | S01 (+F) | real activation model; closes numeric-coercion risk |
 | E2-S03 | `all`/`any`/`not` combinator walker + per-leaf message | **[autonomous]** | S02 | ADR-0013 tree backend (**off S10 critical path**) |
 | E2-S04 | Multi-obligation AND coverage across subjects (no `anyOf`) | **[autonomous]** | S02 | ADR-0017 §2 obligation coverage |
 | E2-S05 | Fact tri-state fail-safe (`unavailable`/`invalid`/`expired` never APPROVE) | **[autonomous]** | S02 | ADR-0007 F6 / §4 arming precondition (decision-side) |

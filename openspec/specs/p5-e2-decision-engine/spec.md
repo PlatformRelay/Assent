@@ -241,9 +241,20 @@ can silently diverge.
 `MergePolicy`/`RulesetBinding`/`Config`/`Pack` YAML/JSON into engine types under **strict decode**
 — unknown field, unknown enum value, and duplicate map key are all hard-rejected with a reason
 naming the offending location (mirroring `schemas/compat_strictdecode_test.go`'s discipline), never
-silently ignored — and re-seat `cmd/assent/run.go` onto it, retiring `cmd/assent/policy.go`'s
-`subject`/`require`/`rules[].when` toy shape. An authored `match.fileEvents` domain is rejected at
-load naming the deferred domain (Non-goals fence). Pure: no clock/env/network/random.
+silently ignored. Strict-decode is enforced by reusing the **frozen JSON Schemas** (the `schemas`
+package's compiled `MergePolicySchema`/`RulesetBindingSchema`/`ConfigSchema`/`PackSchema` — the
+same authority `schemas/compat_strictdecode_test.go` validates against, so `additionalProperties:
+false`/enum/`required`/`uniqueItems` are not re-implemented and cannot drift), then decoding into
+engine types. An authored `match.fileEvents` domain — allowed by the schema but deferred by E1 — is
+rejected by a **loader-level** semantic check naming the deferred domain (Non-goals fence). The
+`assertTree` in `prove.when` is decoded **structurally** (bare-string | leaf | combinator one-of,
+shape-validated) but **not** compiled to CEL — `cel.Compile` is deferred to E2-S02 — so S01 stays
+off cel-go and pure. **Design constraint: `internal/core/policy` is self-contained and does NOT
+import `internal/core/aggregate`** (S02 makes `aggregate` consume `policy`; a `policy → aggregate`
+import now would cycle) — the `Effect`/`OnFailure`/rule types live in `policy`. Pure: no
+clock/env/network/random. **The `cmd/assent/run.go` re-seat + `cmd/assent/policy.go` deletion are
+NOT in this story** — see the Not-in-scope note (they depend on `EvaluationInput`, an S02
+deliverable).
 
 **Operator input**: no.
 
@@ -254,14 +265,20 @@ load naming the deferred domain (Non-goals fence). Pure: no clock/env/network/ra
 (`spec.entries[].{mode,root,identity.pointer}`, `spec.rules[].{name,phase,match,prove.{obligation,
 when},onFailure.{effect,code},effect}`, `bindings[].{class,environment,packs,risk.threshold,
 require}`); an unknown field / unknown enum / duplicate key each fail load with a located reason; an
-authored `match.fileEvents` fails load naming the deferred domain; `cmd/assent/policy.go` is deleted
-and `run.go` compiles against the new loader with its existing `run_test.go` re-seated (or replaced)
-green; `TestCorePurity` stays green over the new package.
+authored `match.fileEvents` fails load naming the deferred domain; the `prove.when` assertTree is
+decoded structurally (not CEL-compiled); `TestCorePurity` stays green over the new package; and the
+package does not import `internal/core/aggregate`.
 
-**Not in scope**: evaluating any rule (E2-S02); `assent lint`'s human diagnostics UX (E3 — this is
-strict *decode*, structural refusal, not lint); `ApprovalEvidence` loading (E2-S07); profile/pack
-precedence resolution (E2-S08/S09 — this story decodes `Pack.spec.phase` and `Config.profiles` into
-types but does not yet apply the ceiling/precedence).
+**Not in scope**: evaluating any rule / compiling any CEL (E2-S02); **the `cmd/assent/run.go`
+re-seat + `cmd/assent/policy.go` deletion** — moved to E2-S02 (REQ-E2-S02-06), because the live run
+path selects the governed file from `binding.Subject` (`run.go:159`) and the frozen `MergePolicy`
+has **no** `subject` field: per-change governed subjects live in `EvaluationInput.changeSet.
+changes[].subject`, an S02 deliverable, so re-seating run.go before `EvaluationInput` exists would
+only preserve throwaway toy single-subject file-selection S02 immediately deletes
+(implementation-discovered refinement, folded into S01's lane); `assent lint`'s human diagnostics UX
+(E3 — this is strict *decode*, structural refusal, not lint); `ApprovalEvidence` loading (E2-S07);
+profile/pack precedence resolution (E2-S08/S09 — this story decodes `Pack.spec.phase` and
+`Config.profiles` into types but does not yet apply the ceiling/precedence).
 
 Requirements:
 
@@ -288,15 +305,7 @@ Requirements:
   - Test: `internal/core/policy/loader_test.go`
   - Verify: `go test ./internal/core/policy/... -run TestFileEventsDomainRejectedAtLoad`
   - Level: L0
-- **REQ-E2-S01-04** — Given `cmd/assent/run.go` re-seated on the new loader, when the existing
-  `cmd/assent/run_test.go` suite runs, then it passes against the frozen contracts (fixtures
-  updated from the toy `subject`/`require`/`rules[].when` shape to real `MergePolicy`/
-  `RulesetBinding` documents), and `cmd/assent/policy.go` no longer exists — proving the toy loader
-  is retired, not left as a shadow path.
-  - Test: `cmd/assent/run_test.go`
-  - Verify: `go test ./cmd/assent/...`
-  - Level: L1
-- **REQ-E2-S01-05** — Given the determinism rule, when the loader package lands, then
+- **REQ-E2-S01-04** — Given the determinism rule, when the loader package lands, then
   `TestCorePurity` stays green over `internal/core/**` (the loader introduces no
   env/clock/network/random import), and decoding the same document twice yields structurally
   identical engine types (no map-iteration-order-dependent field surfaced).
@@ -382,6 +391,17 @@ Requirements:
   - Test: `internal/core/aggregate/aggregate_test.go`
   - Verify: `go test ./internal/core/aggregate/... -run TestEvaluatorDoubleRunStable`
   - Level: L0
+- **REQ-E2-S02-06** — Given `EvaluationInput` now exists (this story), when `cmd/assent/run.go` is
+  re-seated to load the frozen `MergePolicy`/`RulesetBinding` via the E2-S01 loader and build an
+  `EvaluationInput` (facts-empty until E5 — an empty `facts` map is fail-safe, never APPROVE on a
+  fact-referencing obligation) for the evaluator, then the toy `cmd/assent/policy.go` no longer
+  exists and `cmd/assent/run_test.go` passes against real `MergePolicy`/`RulesetBinding` fixtures —
+  retiring the toy loader (moved here from E2-S01 because governed subjects live per-change in
+  `EvaluationInput`, absent before this story). The live path still reads content from the local
+  checkout (ADR-0008 §4); this REQ changes policy *loading* + input *shape*, not file sourcing.
+  - Test: `cmd/assent/run_test.go`
+  - Verify: `go test ./cmd/assent/...`
+  - Level: L1
 
 ## E2-S03 — `all`/`any`/`not` combinator walker + per-leaf message `[autonomous]`
 
