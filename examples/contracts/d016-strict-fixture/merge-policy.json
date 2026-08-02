@@ -48,12 +48,13 @@
         },
         "prove": {
           "obligation": "non-destructive",
-          "when": "input.new >= input.old"
+          "when": "new >= old"
         },
         "onFailure": {
           "effect": "block",
           "code": "partition-count-shrunk"
         },
+        "points": 10,
         "phase": "enforce"
       }
     ]
