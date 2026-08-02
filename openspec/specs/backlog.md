@@ -113,6 +113,46 @@ first. **Do first: S01** — the smallest pure extension of already-shipped code
 dependency root for rename fold, the value tree, EntryRef derivation, and matcher domains.
 
 
+## Phase 5 — E2 decision engine + CEL predicate backend stories
+
+Full INVEST stories in [p5-e2-decision-engine/spec.md](p5-e2-decision-engine/spec.md).
+E2 grows the P4-E1 walking-skeleton evaluator (`internal/core/aggregate/aggregate.go` — one CEL
+string `when`, `old`/`new`/`changes`-only env, toy `cmd/assent/policy.go` YAML, hardcoded
+`Points: 0`, no threshold, no `require-review` path, no phase) into the full decision engine of
+ADR-0007 (effects + aggregation + risk points), ADR-0013 (CEL `all`/`any`/`not` backend),
+ADR-0017 (obligations, `require-review`, arming, tri-state fail-safe), and ADR-0018 (phase/profile
+lifecycle), **re-seated on the frozen P3 schemas**, so it *reproduces* the strict D-016 §8
+exit-gate DecisionRecord (not just validates its shape). REQ IDs `REQ-E2-S0n-nn`. **Every story is
+`[autonomous]`** — pure `internal/core` engine (+ the `cmd/assent` loader/run re-seat), gated
+against `schemas/` + `examples/contracts/` fixtures and in-memory injected inputs
+(`EvaluationInput`, `ApprovalEvidence`), no live forge/provider/token (contrast with P4-E1's
+S10/S11). E2 is sequenced **before E7** (decide-and-log): its exit gate is pure-engine and needs
+no live infra, and realized value of E1's primitives waits on a working engine, not on infra —
+E7 remains the next epic to claim after E2.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| E2-F | Fixture-fix (two corrections) to d016 `partitions-must-not-shrink`: (1) `when` `input.new>=input.old` → `new>=old` (out-of-scope `input` vs ADR-0013/predicate-scope); (2) add missing `points: 10` (golden shows 10 but rule authors none; S06 has no engine default) | **[autonomous]** `🔴 DECIDED` (edits P3-frozen fixture) | none | unblocks a clean S10 reproduction; **land early (before/with S02)** |
+| E2-S01 | Frozen-contract policy loader (`MergePolicy`/`RulesetBinding`/`Config`/`Pack`, strict decode); retire toy `cmd/assent/policy.go` | **[autonomous]** | none | retires engine↔contract drift; **do first** |
+| E2-S02 | Evaluator re-seated on `EvaluationInput` + full frozen predicate scope (single-leaf `when`) | **[autonomous]** | S01 (+F) | real activation model; closes numeric-coercion risk |
+| E2-S03 | `all`/`any`/`not` combinator walker + per-leaf message | **[autonomous]** | S02 | ADR-0013 tree backend (**off S10 critical path**) |
+| E2-S04 | Multi-obligation AND coverage across subjects (no `anyOf`) | **[autonomous]** | S02 | ADR-0017 §2 obligation coverage |
+| E2-S05 | Fact tri-state fail-safe (`unavailable`/`invalid`/`expired` never APPROVE) | **[autonomous]** | S02 | ADR-0007 F6 / §4 arming precondition (decision-side) |
+| E2-S06 | Points per firing + per-binding risk threshold (author-declared `rule.points`, no engine default) | **[autonomous]** | S04 | ADR-0007 aggregation tail; retires `Points: 0` |
+| E2-S07 | `require-review` via injected `ApprovalEvidence` (sha-matched, eligible, capability-gated) | **[autonomous]** | S04 | ADR-0017 §3; closes staleness fail-open |
+| E2-S08 | Phase `off`/`observe`/`enforce` + pack ceiling (threads `record.go:209`) | **[autonomous]** | S04 | ADR-0018 §1 lifecycle |
+| E2-S09 | Profile resolution + single-writer authority | **[autonomous]** | S08 | ADR-0018 §2 (**off S10 critical path**) |
+| E2-S10 | D-016 strict-fixture end-to-end DecisionRecord reproduction | **[autonomous]** | S01,S02,S04,S05,S06,S07,S08 (+F) | closes the contracts↔engine loop (§8 exit gate) |
+
+**Dependency order**: S01 (loader) → S02 (evaluator re-seat) → {S03 tree walker, S04 obligation
+coverage, S05 fact tri-state}; S04 → {S06 points/threshold, S07 require-review, S08 phase}; S08 →
+S09 profiles. **S10 reproduces the frozen D-016 DecisionRecord** and depends on the
+fixture-exercised stories (S01,S02,S04,S05,S06,S07,S08 + the E2-F fixture-fix) — **not** S03
+(fixture `when`s are single-leaf) or S09 (no profile declared), which are validated by their own
+goldens. **Do first: S01** (smallest independently-valuable slice, retires the toy loader every
+later story consumes) alongside **E2-F** (a one-line fixture correction, startable day one).
+
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
