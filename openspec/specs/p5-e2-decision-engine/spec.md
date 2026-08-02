@@ -196,7 +196,7 @@ here is found to need live infra, it must be split out and re-tagged explicitly 
 ## Dependency order
 
 ```
-E2-S01 frozen-contract loader ──► E2-S02 evaluator re-seated on EvaluationInput + full CEL scope
+E2-S01 frozen-contract loader ──► E2-S02 per-change eval primitive (EvaluationInput + full CEL scope)
                                         │  (single-leaf when)
       ┌─────────────────────────────────┼───────────────────────────────┐
       ▼                                 ▼                                 ▼
@@ -253,7 +253,7 @@ off cel-go and pure. **Design constraint: `internal/core/policy` is self-contain
 import `internal/core/aggregate`** (S02 makes `aggregate` consume `policy`; a `policy → aggregate`
 import now would cycle) — the `Effect`/`OnFailure`/rule types live in `policy`. Pure: no
 clock/env/network/random. **The `cmd/assent/run.go` re-seat + `cmd/assent/policy.go` deletion are
-NOT in this story** — see the Not-in-scope note (they depend on `EvaluationInput`, an S02
+NOT in this story** — see the Not-in-scope note (they need S04's coverage-loop decision, not an S02
 deliverable).
 
 **Operator input**: no.
@@ -313,7 +313,7 @@ Requirements:
   - Verify: `go test ./internal/core/policy/... -run TestLoaderDoubleRunStable`
   - Level: L0
 
-## E2-S02 — Evaluator re-seated on `EvaluationInput` + full frozen predicate scope `[autonomous]`
+## E2-S02 — Per-change eval primitive (`EvaluationInput` + full frozen predicate scope) `[autonomous]`
 
 **As a** rule author **I want** my CEL `when` to see the complete frozen predicate-scope set
 (`old`, `new`, `path`, `kind`, `file`, `entry`, `oldEntry`, `changes`, `facts`, `mr`, `env`)
@@ -365,7 +365,7 @@ Requirements:
   `/partitions` modify change (`old: 12`, `new: 6`) from an `EvaluationInput`, when the evaluator
   runs, then the predicate evaluates to **false** (obligation unproven) using the top-level `old`/
   `new` activation bindings — proving the frozen predicate scope, not a toy `input.`-wrapped model.
-  - Test: `internal/core/aggregate/aggregate_test.go`
+  - Test: `internal/core/aggregate/evaluate_test.go`
   - Verify: `go test ./internal/core/aggregate/... -run TestSingleLeafNewOldOverEvaluationInput`
   - Level: L0
 - **REQ-E2-S02-02** — Given a rule whose `when` references an identifier **not** in the frozen
@@ -374,14 +374,14 @@ Requirements:
   load-time error), never a runtime `<no value>` or a silent false. Adversarial case: `input.new >=
   input.old` (the pre-fix D-016 typo) is rejected here — this REQ is the engine-side guarantee that
   the fixture-fix lane (F) is *required*, not optional.
-  - Test: `internal/core/aggregate/aggregate_test.go`
+  - Test: `internal/core/aggregate/evaluate_test.go`
   - Verify: `go test ./internal/core/aggregate/... -run TestUndeclaredPredicateReferenceRejected`
   - Level: L0
 - **REQ-E2-S02-03** — Given the eleven frozen predicate-scope fields, when a `when` references each
   of `old`/`new`/`path`/`kind`/`file`/`entry`/`oldEntry`/`changes`/`facts`/`mr`/`env`, then each
   resolves to the corresponding `EvaluationInput`-derived value (e.g. `facts.owner.team.state`,
   `mr.author`, `kind == 'modify'`) and compiles clean; a twelfth invented field does not.
-  - Test: `internal/core/aggregate/aggregate_test.go`
+  - Test: `internal/core/aggregate/evaluate_test.go`
   - Verify: `go test ./internal/core/aggregate/... -run TestFrozenPredicateScopeExactlyBound`
   - Level: L0
 - **REQ-E2-S02-04** — Given two numeric values that would collapse or mis-order under a lossy
@@ -390,14 +390,14 @@ Requirements:
   the coercion error surfaced — never a silent wrong boolean (ADR-0013 residual risk #1). Adversarial
   case: an `old`/`new` pair crafted to mis-compare under naive float coercion is proven correct or
   fail-safe.
-  - Test: `internal/core/aggregate/aggregate_test.go`
+  - Test: `internal/core/aggregate/evaluate_test.go`
   - Verify: `go test ./internal/core/aggregate/... -run TestNumericCoercionInjectiveOrFailSafe`
   - Level: L0
 - **REQ-E2-S02-05** — Given the determinism rule, when the evaluator re-seat lands, then the cel-go
   env registers no `time`/`now`/`rand`/non-deterministic function or macro, applies a cost budget,
   `TestCorePurity` stays green over `internal/core/**`, and evaluating the same `EvaluationInput` +
   policy twice yields a byte-identical finding set after canonical sort.
-  - Test: `internal/core/aggregate/aggregate_test.go`
+  - Test: `internal/core/aggregate/evaluate_test.go`
   - Verify: `go test ./internal/core/aggregate/... -run TestEvaluatorDoubleRunStable`
   - Level: L0
 _(The `cmd/assent/run.go` re-seat + toy `cmd/assent/policy.go` retirement moved to **E2-S04**
