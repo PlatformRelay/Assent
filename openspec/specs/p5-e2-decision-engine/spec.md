@@ -270,12 +270,12 @@ decoded structurally (not CEL-compiled); `TestCorePurity` stays green over the n
 package does not import `internal/core/aggregate`.
 
 **Not in scope**: evaluating any rule / compiling any CEL (E2-S02); **the `cmd/assent/run.go`
-re-seat + `cmd/assent/policy.go` deletion** — moved to E2-S02 (REQ-E2-S02-06), because the live run
-path selects the governed file from `binding.Subject` (`run.go:159`) and the frozen `MergePolicy`
-has **no** `subject` field: per-change governed subjects live in `EvaluationInput.changeSet.
-changes[].subject`, an S02 deliverable, so re-seating run.go before `EvaluationInput` exists would
-only preserve throwaway toy single-subject file-selection S02 immediately deletes
-(implementation-discovered refinement, folded into S01's lane); `assent lint`'s human diagnostics UX
+re-seat + `cmd/assent/policy.go` deletion** — moved to E2-S04 (REQ-E2-S04-06), because the run.go
+re-seat needs a **decision** over an `EvaluationInput`, which does not exist until S04's coverage
+loop (S02 produces only a per-leaf bool); the live run path today selects the governed file from
+`binding.Subject` (`run.go:159`) and the frozen `MergePolicy` has **no** `subject` field, so the
+re-seat cannot land until the coverage loop consumes per-change subjects
+(implementation-discovered refinement); `assent lint`'s human diagnostics UX
 (E3 — this is strict *decode*, structural refusal, not lint); `ApprovalEvidence` loading (E2-S07);
 profile/pack precedence resolution (E2-S08/S09 — this story decodes `Pack.spec.phase` and
 `Config.profiles` into types but does not yet apply the ceiling/precedence).
@@ -321,16 +321,25 @@ evaluated over the real `EvaluationInput` **so that** a predicate like `new >= o
 `facts.owner.team.state == 'resolved'` resolves against the actual change and resolved facts, not
 the walking-skeleton's `old`/`new`/`changes`-only env fed by a toy struct.
 
-**Goal**: re-point `internal/core/aggregate`'s evaluator at the frozen `EvaluationInput`
-(`changeSet.changes[]` with `subject`/`file`/`path`/`kind`/`old`/`new`, typed `facts`, `mr`,
-`require[]`) loaded via E2-S01, and build the cel-go activation model that binds **exactly** the
-frozen predicate-scope top-level fields (`docs/planning/predicate-scope.md`) — no more (a reference
-to an undeclared identifier such as `input` surfaces as a load/compile error, never a silent
-`<no value>`, per ADR-0016) and no less. Single-leaf `when` (a bare CEL string) still — the
-`all`/`any`/`not` walker is E2-S03. Numeric YAML/HCL→CEL coercion (ADR-0013's highest residual
-risk) is closed here: `old`/`new` int/double values compare injectively (a fail-safe REVIEW on a
-coercion error, never a silent wrong answer). The cel-go env registers **zero** non-deterministic
-functions/macros (no `time`/`now`/`rand`) and applies a cost budget.
+**Goal**: build a Go `EvaluationInput` type (modelling the frozen `evaluation-input.schema.json`:
+`changeSet.changes[]` with `subject`/`file`/`path`/`kind`/typed `old`/`new`, typed `facts`, `mr`,
+`require[]`) and a **per-change activation + single-leaf compile/eval primitive** —
+`evalLeaf(input, change, env, leaf) (bool, error)` — that binds **exactly** the frozen
+predicate-scope top-level fields (`docs/planning/predicate-scope.md`) into the cel-go env: `old`,
+`new`, `entry`, `oldEntry` (from the handed change, typed), `path`, `kind`, `file`, `env` (strings),
+`changes` (the whole list), `facts`, `mr` (shared) — no more (an undeclared identifier such as
+`input` surfaces as a **compile/load** error, never a silent `<no value>`, per ADR-0016) and no
+less. **This primitive is built BESIDE the walking-skeleton `Aggregate`/`change.ChangeSet` path,
+which stays untouched** (so the shipped fail-safe suite stays trivially green) — E2-S04 wires this
+primitive into the obligation×subject coverage loop and swaps run.go over. The primitive does no
+matching/selection: its caller (a test here, S04 in production) hands it the change. Single-leaf
+`when` only (`all`/`any`/`not` is E2-S03). **Typed `old`/`new` is the substance**: they carry the
+change's real JSON values (`12`, `6`, or a nested object for a rename), bound as their natural CEL
+types so `new >= old` is a numeric compare — reusing E1's `json.Number` injectivity discipline (no
+float64 collapse); a cross-type or lossy compare (e.g. a numeric leaf over the rename change's
+object `old`/`new`) **fails safe to error→REVIEW, never a silent wrong bool or a panic**. The cel-go
+env registers **zero** non-deterministic functions/macros (no `time`/`now`/`rand`) and applies a
+cost budget.
 
 **Operator input**: no.
 
@@ -391,17 +400,10 @@ Requirements:
   - Test: `internal/core/aggregate/aggregate_test.go`
   - Verify: `go test ./internal/core/aggregate/... -run TestEvaluatorDoubleRunStable`
   - Level: L0
-- **REQ-E2-S02-06** — Given `EvaluationInput` now exists (this story), when `cmd/assent/run.go` is
-  re-seated to load the frozen `MergePolicy`/`RulesetBinding` via the E2-S01 loader and build an
-  `EvaluationInput` (facts-empty until E5 — an empty `facts` map is fail-safe, never APPROVE on a
-  fact-referencing obligation) for the evaluator, then the toy `cmd/assent/policy.go` no longer
-  exists and `cmd/assent/run_test.go` passes against real `MergePolicy`/`RulesetBinding` fixtures —
-  retiring the toy loader (moved here from E2-S01 because governed subjects live per-change in
-  `EvaluationInput`, absent before this story). The live path still reads content from the local
-  checkout (ADR-0008 §4); this REQ changes policy *loading* + input *shape*, not file sourcing.
-  - Test: `cmd/assent/run_test.go`
-  - Verify: `go test ./cmd/assent/...`
-  - Level: L1
+_(The `cmd/assent/run.go` re-seat + toy `cmd/assent/policy.go` retirement moved to **E2-S04**
+(REQ-E2-S04-06): it needs a **decision** over an `EvaluationInput`, which does not exist until S04's
+coverage loop — S02 produces only a per-leaf bool. Folded refinement, per this lane's implementation
+discovery; `EvaluationInput`-existing is necessary but not sufficient for the re-seat.)_
 
 ## E2-S03 — `all`/`any`/`not` combinator walker + per-leaf message `[autonomous]`
 
@@ -544,6 +546,18 @@ Requirements:
   - Test: `internal/core/aggregate/coverage_test.go`
   - Verify: `go test ./internal/core/aggregate/... -run TestCoverageOrderIndependent`
   - Level: L0
+- **REQ-E2-S04-06** — Given the coverage loop now produces a decision over an `EvaluationInput`
+  (this story), when `cmd/assent/run.go` is re-seated to load the frozen `MergePolicy`/
+  `RulesetBinding` via the E2-S01 loader, build an `EvaluationInput` (facts-empty until E5 — an empty
+  `facts` map is fail-safe, never APPROVE on a fact-referencing obligation), and evaluate it through
+  the coverage loop, then the toy `cmd/assent/policy.go` no longer exists and `cmd/assent/run_test.go`
+  passes against real `MergePolicy`/`RulesetBinding` fixtures — retiring the toy loader (moved here
+  from E2-S01/S02: the re-seat needs a decision, which first exists in this story). The live path
+  still reads content from the local checkout (ADR-0008 §4); this REQ changes policy *loading* +
+  input *shape* + evaluator, not file sourcing.
+  - Test: `cmd/assent/run_test.go`
+  - Verify: `go test ./cmd/assent/...`
+  - Level: L1
 
 ## E2-S05 — Fact tri-state fail-safe (`unavailable`/`invalid`/`expired` never APPROVE) `[autonomous]`
 
