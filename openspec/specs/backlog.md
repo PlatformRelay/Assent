@@ -78,6 +78,38 @@ runs early/parallel. **Infra-gated (park for operator)**: S10 (L3 e2e green) the
 | **P4-KIND-LAB** | Durable local kind GitLab lab (`task kind-up`, etc.) | **OPEN — authorized, deferred** (D-038) | no (agent lane when claimed) | Promote Spike-B `boot-kind.sh`; CI stays testcontainer |
 | **P4-CODEQL** | Enable CodeQL default setup (Go + Actions) | **OPEN** — found via cross-repo CodeQL/SonarQube sweep (2026-07-29) | no (Settings → Code security → Default, or `gh api --method PUT repos/PlatformRelay/assent/code-scanning/default-setup`) | `state: not-configured` today despite `schemas.yml`/`verify.yaml` CI; zero-cost enablement, no SonarQube config exists either (not proposing one) |
 
+## Code-health / SonarCloud maintainability residuals
+
+**Snapshot (SonarCloud `PlatformRelay_assent`, live query 2026-08-03):** Quality Gate = **OK
+(green)** on new-code conditions — **0 bugs, 0 vulnerabilities, 0 unreviewed hotspots**. The
+`new_security_rating`=A gate cleared after the 2026-08-03 S6505 fix + S4036 accept (INBOX). All
+**115 open issues are `CODE_SMELL` / maintainability on old code** (outside the leak window →
+**non-gating, nothing is red or blocked**). Remediation below is opportunistic hygiene, not a
+release blocker; sequence it *behind* E2 engine work. Lanes are cut by rule-family + blast radius
+so each is an independently reviewable `[autonomous]` slice. **Invariant for every lane: behaviour
+must not change** — `task check` green and each touched CI script re-run to identical output.
+
+| ID | Item | Rules (count) | Blast radius | Status | Needs operator |
+| --- | --- | --- | --- | --- | --- |
+| **SONAR-SHELL** | Shell-script hygiene in `hack/*.sh` (`validate-schemas-stock.sh` 19 · `check-sanitization.sh` 18 · `check-migration-invariants.sh` 13 · `spikes/e2e/smoke.sh` 4) | `shelldre:S7688` use `[[` not `[` (34) · `S7679` assign positional param to local (9) · `S7682` explicit `return` (5) · `S131` add default `*)` case (3) · `S1192` de-dup literal (2) · `S7684` lower_case var (1) = **54** | **these are CI-gate scripts** — mechanical but must stay byte-behaviour-identical; re-run each script as the gate | **OPEN** `[autonomous]` | no |
+| **SONAR-GO-CX-PROD** | Cognitive-complexity refactor of **production** Go (`internal/change/{diff,diff_hcl,limits,entryref}.go` · `cmd/assent/run.go` · `internal/forge/gitlab/gitlab.go` · `internal/core/classify/*` · `internal/core/hash/hash.go` · `hack/spikes/cel/*`) | `go:S3776` cognitive complexity > 15 (~12) | engine/determinism paths — extract helpers, **no behaviour change**; `internal/core` purity guards stay green | **OPEN** `[autonomous]` | no |
+| **SONAR-GO-CX-TEST** | ~34 `go:S3776` hits in `*_test.go` (table-driven suites legitimately long by line-count, low by risk) | `go:S3776` (~34) | tests only | **OPEN — 🔴 decision** — recommend *exempt `**/*_test.go` from S3776* over churning 34 test files (see config note) | **yes — pick fix vs. exempt** |
+| **SONAR-GO-MISC** | Small Go smells: `godre:S8184` comment blank imports (4) · `go:S1186` comment empty funcs (4) · `godre:S8196` single-method interface naming (2) · `go:S1135` resolve TODOs (2) · `godre:S8205` extract nested anon struct (1) · `go:S107` 8-param func (1) · `go:S1192` const for `"sha256:"` ×4 (1) = **15** | trivial, isolated | **OPEN** `[autonomous]` | no |
+
+**Config note (blocks the exempt option in SONAR-GO-CX-TEST + any per-rule tuning):** the project
+runs SonarCloud **Automatic Analysis** (GitHub App, no config file). Path/rule exclusions such as
+`sonar.issue.ignore.multicriteria` (to exempt `**/*_test.go` from `S3776`) require a checked-in
+`sonar-project.properties` **and** switching to CI-based analysis (Automatic Analysis and a config
+file are mutually exclusive) — a real tradeoff (extra CI step + `SONAR_TOKEN` in Actions vs. the
+current zero-config setup). Cutting the exclusion file is therefore itself an operator decision,
+not an autonomous lane. If the exempt path is rejected, SONAR-GO-CX-TEST folds into
+SONAR-GO-CX-PROD as subtest-extraction work.
+
+**Suggested order:** SONAR-SHELL (biggest count, lowest risk, fully mechanical) → SONAR-GO-MISC
+(trivial) → SONAR-GO-CX-PROD (real refactor value) → SONAR-GO-CX-TEST (only after the config
+decision). None gate a release; all are startable once the operator wants to spend cycles on
+hygiene rather than E2 feature work.
+
 ## Phase 5 — E1 canonical change model stories
 
 Full INVEST stories in [p5-e1-canonical-change-model/spec.md](p5-e1-canonical-change-model/spec.md).
