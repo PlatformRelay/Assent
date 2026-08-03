@@ -111,6 +111,30 @@ SONAR-GO-CX-PROD as subtest-extraction work.
 decision). None gate a release; all are startable once the operator wants to spend cycles on
 hygiene rather than E2 feature work.
 
+## Reference-derived coverage findings & example candidates
+
+A read-only analysis (2026-08-03) of four real self-service repo shapes (provided as gitignored
+`references/`, third-party IP — never committed; only generalized equivalents enter the tree, D-002)
+assessed whether assent can gate their MRs and mined generic patterns. **Verdict: assent already
+gates ~70–85% of those MRs at the REVIEW/BLOCK tier today** (same "needs a human" outcome the teams
+make by hand, but deterministic + explained); the engine's shape fits — **the missing pieces are fact
+providers, not core-model redesign**. All rows below are generalized (invented names, synthetic data).
+
+**Fact-provider / model gaps (ranked by MR-weight):**
+
+| ID | Gap | Status | Notes |
+| --- | --- | --- | --- |
+| **REF-GAP-1** | Referenced-resource authorization fact source (a list value / ACL names *another* team's resource → who owns it?) | **OPEN** — highest MR-weight | obligation side exists (`ownership`/`require-review`); needs a `resource→owner` provider. Feeds E5 (provider tier). Demonstrator fixture = C7 below |
+| **REF-GAP-2** | In-repo-state-as-a-fact (quota/placement/limits registries + in-repo reviewers files that today no provider reads) | **OPEN** | a `builtin/repo-file`/`exec` provider resolving most-specific-first; unlocks quota-ceiling + placement + in-repo-approval gates. E5 |
+| **REF-GAP-3** | Cross-class / companion-file correlation ("two-step delete": remove from file A *and* append to manifest B) | **OPEN — likely out of v1** | `changes` is class-slice-scoped by contract (ADR-0017 §5); ship C8 as a known-limitation fixture (expected REVIEW), decide scope via OQ |
+| **REF-GAP-4** | Plan-level blast radius (weighting the expanded IaC plan, not the request diff) | **OUT of model** | assent gates the request diff; `points`/`threshold` bulk-guard on the diff is the in-scope approximation |
+
+**Generalized example/test candidates (a later sanitized authoring lane — passes `check-sanitization.sh`):**
+
+| ID | Item | Status | Closest existing archetype |
+| --- | --- | --- | --- |
+| **REF-EX** | Author 8 domain-neutral archetype fixtures C1–C8 (list-no-shrink, privilege-tier allow-list, wildcard-grant block, soft-delete-as-field-add, quota-ceiling-from-fact, placement allow-list, referenced-resource-ownership [gap demo], companion-file delete [known-limitation]) | **OPEN** (agent lane; do AFTER the E2 engine + E5 facts for C5/C6/C7) | extends no-destruction (C1/C4/C8), allowed-fields+ownership (C2/C3/C6/C7), bounded-change (C5); none duplicates an existing fixture |
+
 ## Phase 5 — E1 canonical change model stories
 
 Full INVEST stories in [p5-e1-canonical-change-model/spec.md](p5-e1-canonical-change-model/spec.md).
