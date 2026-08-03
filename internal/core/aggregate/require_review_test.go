@@ -204,6 +204,39 @@ func TestSelfAndBotApprovalExcluded(t *testing.T) {
 	}
 }
 
+// TestDuplicateApproverDoesNotMeetThreshold — F1 regression (approval bypass):
+// the frozen approvedBy has minItems:1 but NO uniqueItems, so a schema-valid
+// evidence [{id:X},{id:X}] with eligible:[X] and approvalsRequired:2 would let
+// ONE human satisfy a two-approver gate under a per-ENTRY count. The engine counts
+// DISTINCT eligible non-author IDs, so this must NOT satisfy (finding stands).
+// The test genuinely catches the dedup: under the old per-entry count the two
+// duplicate entries would total 2 -> satisfied -> APPROVE, which this asserts against.
+func TestDuplicateApproverDoesNotMeetThreshold(t *testing.T) {
+	subj := "topic-registry:orders.events.v1"
+	pol, bind, in := ownershipRequireReviewPolicy(), ownershipBinding(), oneSubjectInput(subj)
+
+	ev := &ApprovalEvidence{
+		VerifyingCapability: "approval-rules-api",
+		ApprovalsRequired:   2, // a genuine two-approver gate
+		Eligibility:         []string{"reviewer-id"},
+		ApprovedBy: []Approver{
+			{ID: "reviewer-id", Username: "rita-reviewer", IsAuthor: false},
+			{ID: "reviewer-id", Username: "rita-reviewer", IsAuthor: false}, // duplicate id
+		},
+		Pins: ApprovalPins{SourceSha: "sha-1"},
+	}
+	appr := &ApprovalContext{SourceSha: "sha-1", Evidence: map[string]*ApprovalEvidence{subj: ev}}
+	got, err := CoverWithApproval(pol, bind, in, appr)
+	if err != nil {
+		t.Fatalf("CoverWithApproval: %v", err)
+	}
+	// One distinct eligible approver (reviewer-id) < approvalsRequired 2 -> unsatisfied.
+	assertRequireReviewStands(t, got, subj)
+	if len(got.CapabilityGaps) != 0 {
+		t.Errorf("a duplicate-approver shortfall is a missing approval, not a capability gap: %v", got.CapabilityGaps)
+	}
+}
+
 // TestNoneCapabilityIsGapNeverAutoMerge — REQ-07-04: verifyingCapability:none is
 // a capability gap. It never satisfies (finding stands, never APPROVE) AND is
 // recorded distinctly (Result.CapabilityGaps) so it stays distinguishable from a

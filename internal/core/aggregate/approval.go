@@ -140,14 +140,21 @@ func approvalSatisfies(ev *ApprovalEvidence, sourceSha, mrAuthor string) (satisf
 	if ev.ApprovalsRequired < 1 {
 		return false, false // a non-positive threshold is unprovable -> fail closed
 	}
-	eligible := 0
+	// Count DISTINCT eligible non-author approver IDs, not approvedBy ENTRIES: the
+	// frozen approvedBy has minItems:1 but NO uniqueItems, so a schema-VALID
+	// evidence [{id:X},{id:X}] with eligible:[X], approvalsRequired:2 would let ONE
+	// human satisfy a two-approver gate under a per-entry count (F1 approval
+	// bypass). Dedup by ID defends at the decision layer regardless of the frozen
+	// schema, consistent with the other engine-side fail-safe guards above.
+	distinct := map[string]bool{}
 	for i := range ev.ApprovedBy {
-		if countsAsApprover(ev.ApprovedBy[i], ev.Eligibility, mrAuthor) {
-			eligible++
+		a := ev.ApprovedBy[i]
+		if countsAsApprover(a, ev.Eligibility, mrAuthor) {
+			distinct[a.ID] = true
 		}
 	}
-	if eligible < ev.ApprovalsRequired {
-		return false, false // threshold unmet by eligible non-author approvers (REQ-07-03)
+	if len(distinct) < ev.ApprovalsRequired {
+		return false, false // threshold unmet by DISTINCT eligible non-author approvers (REQ-07-03)
 	}
 	return true, false // fully valid, eligible, sha-matching, non-expired (REQ-07-05)
 }
@@ -160,7 +167,10 @@ func countsAsApprover(a Approver, eligible []string, mrAuthor string) bool {
 	if a.IsAuthor {
 		return false // defense-in-depth (schema forces isAuthor:false already)
 	}
-	if mrAuthor != "" && a.Username == mrAuthor {
+	// Self-approval excluded by identity match to the MR author — on username OR
+	// id (defense-in-depth: mr.author is a username today, but must never satisfy
+	// even if it ever carries an id).
+	if mrAuthor != "" && (a.Username == mrAuthor || a.ID == mrAuthor) {
 		return false // self-approval (REQ-07-03)
 	}
 	return contains(eligible, a.ID) // forge-proven eligible only (excludes bots)
