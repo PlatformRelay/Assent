@@ -1,10 +1,8 @@
 package classify
 
 import (
-	"regexp"
-	"strings"
-
 	"github.com/PlatformRelay/assent/internal/change"
+	"github.com/PlatformRelay/assent/internal/glob"
 )
 
 // Matcher domains (E1-S06, ADR-0017 §5). This file adds the four decidable matcher-
@@ -30,15 +28,15 @@ import (
 // of non-`/` characters, within a path segment) and `**` (any characters including `/`, spanning
 // segments), e.g. `topics/**` matches `topics/orders.yml` and `topics/sub/x.yml` but not
 // `catalog/services.json`.
-func MatchFiles(cs change.ChangeSet, glob string) []change.Change {
-	return selectChanges(cs, func(c change.Change) bool { return globMatch(glob, c.File) })
+func MatchFiles(cs change.ChangeSet, pattern string) []change.Change {
+	return selectChanges(cs, func(c change.Change) bool { return glob.Match(pattern, c.File) })
 }
 
 // MatchValuePointers selects the changes whose Path (an RFC-6901 JSON pointer within the file)
 // matches the pointer glob — the FIELD pointer, not the file glob (the overload ADR-0017 §5 ends).
 // `/partitions` matches exactly `/partitions`; `/services/*/tier` matches a tier under any service.
-func MatchValuePointers(cs change.ChangeSet, glob string) []change.Change {
-	return selectChanges(cs, func(c change.Change) bool { return globMatch(glob, c.Path) })
+func MatchValuePointers(cs change.ChangeSet, pattern string) []change.Change {
+	return selectChanges(cs, func(c change.Change) bool { return glob.Match(pattern, c.Path) })
 }
 
 // MatchValueChanges selects the changes whose Kind is one of kinds — a structural match
@@ -83,33 +81,4 @@ func selectChanges(cs change.ChangeSet, keep func(change.Change) bool) []change.
 		}
 	}
 	return out
-}
-
-// globMatch reports whether s matches a glob supporting `*` (non-`/` run) and `**` (any run,
-// spanning `/`). It is a PURE function of (glob, s): the glob is translated to an anchored regexp
-// with all other characters escaped. A malformed translation (which cannot occur for these two
-// wildcards) matches nothing (fail-closed).
-func globMatch(glob, s string) bool {
-	var b strings.Builder
-	b.WriteString("^")
-	for i := 0; i < len(glob); i++ {
-		c := glob[i]
-		switch c {
-		case '*':
-			if i+1 < len(glob) && glob[i+1] == '*' {
-				b.WriteString(".*") // ** spans path separators
-				i++
-			} else {
-				b.WriteString("[^/]*") // * stays within one segment
-			}
-		default:
-			b.WriteString(regexp.QuoteMeta(string(c)))
-		}
-	}
-	b.WriteString("$")
-	re, err := regexp.Compile(b.String())
-	if err != nil {
-		return false
-	}
-	return re.MatchString(s)
 }
