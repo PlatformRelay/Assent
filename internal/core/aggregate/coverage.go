@@ -169,6 +169,20 @@ func coverSubject(env *cel.Env, in *EvaluationInput, r policy.Rule, expr, envLab
 			Code:       "predicate.error",
 		}, true
 	case anyFalse:
+		// A prove rule with a nil OnFailure is a malformed policy the schema's
+		// oneOf normally rejects — but Cover also accepts hand-built policies, so
+		// guard it: a clean-false with no declared effect is a shape error that
+		// fails SAFE to require-review, never a nil-deref panic or a silent APPROVE.
+		if r.OnFailure == nil {
+			return Finding{
+				Rule:       r.Name,
+				Obligation: r.Prove.Obligation,
+				Effect:     EffectRequireReview,
+				Subject:    subj,
+				Points:     r.Points,
+				Code:       "policy.shape-error",
+			}, true
+		}
 		return Finding{
 			Rule:       r.Name,
 			Obligation: r.Prove.Obligation,
@@ -223,7 +237,11 @@ func matchChanges(m policy.Match, changes []EvalChange) ([]EvalChange, error) {
 	case m.ValueChanges != nil:
 		vc := m.ValueChanges
 		return selectMatched(changes, func(ch EvalChange) bool {
-			if !contains(vc.Pointers, ch.Path) {
+			// pointers are GLOBS over the field pointer (ch.Path), consistent with
+			// E1's classify.MatchValuePointers and internal/glob — an authored
+			// pointer like "/config/*/enabled" is valid (the schema imposes no
+			// pattern), so exact membership would fail-open on a wildcard rule.
+			if !matchesAnyGlob(vc.Pointers, ch.Path) {
 				return false
 			}
 			if len(vc.Kinds) > 0 && !contains(vc.Kinds, ch.Kind) {
@@ -236,13 +254,24 @@ func matchChanges(m policy.Match, changes []EvalChange) ([]EvalChange, error) {
 		}), nil
 	case m.Values != nil:
 		v := m.Values
+		// Values is the implicit-modify value domain, matched like valueChanges
+		// with an implied kind:modify: pointers (globs) AND-narrow over ch.Path,
+		// paths (file globs) AND-narrow over ch.File. At least one selector must be
+		// present, else the domain matches nothing (fail-closed, never a wildcard).
+		if len(v.Pointers) == 0 && len(v.Paths) == 0 {
+			return nil, fmt.Errorf("match.values declares neither pointers nor paths")
+		}
 		return selectMatched(changes, func(ch EvalChange) bool {
-			// Values is the implicit-modify value domain: a field modification at
-			// one of the named pointers/paths.
-			if ch.Kind != string(kindModify) {
+			if ch.Kind != kindModify {
 				return false
 			}
-			return contains(v.Pointers, ch.Path) || contains(v.Paths, ch.Path)
+			if len(v.Pointers) > 0 && !matchesAnyGlob(v.Pointers, ch.Path) {
+				return false
+			}
+			if len(v.Paths) > 0 && !matchesAnyGlob(v.Paths, ch.File) {
+				return false
+			}
+			return true
 		}), nil
 	default:
 		return nil, fmt.Errorf("rule match declares no supported domain (files, values, or valueChanges)")

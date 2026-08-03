@@ -55,6 +55,10 @@ func TestObligationCoveragePerSubject(t *testing.T) {
 		t.Fatalf("Cover: %v", err)
 	}
 
+	// F5 note: non-destructive is a COVERED obligation (an enforce rule proves it),
+	// but its valueChanges /partitions-modify match selects only the orders
+	// subject, so payments gets NO non-destructive finding — covered-but-silent,
+	// NOT uncovered. That is why there are exactly three findings, not four.
 	want := []Finding{
 		{Rule: "topic-owner-must-approve", Obligation: "ownership", Effect: EffectRequireReview, Subject: "topic-registry:orders.events.v1", Points: 0, Code: "ownership-approval-missing"},
 		{Rule: "partitions-must-not-shrink", Obligation: "non-destructive", Effect: EffectBlock, Subject: "topic-registry:orders.events.v1", Points: 10, Code: "partition-count-shrunk"},
@@ -339,6 +343,108 @@ func TestCoverValuesMatch(t *testing.T) {
 	}
 	if got.Decision != DecisionBlock {
 		t.Errorf("decision = %q, want BLOCK", got.Decision)
+	}
+}
+
+// TestCoverWildcardPointerNeverApproves is the F1 regression: valueChanges
+// pointers are GLOBS (the schema imposes no pattern, and E1/glob treat them as
+// globs), so a wildcard pointer rule must match a violating change and NEVER
+// fail-open to APPROVE via exact-membership. A rule on "/config/*/enabled" over a
+// modify at "/config/db/enabled" that shrinks (new < old) must BLOCK.
+func TestCoverWildcardPointerNeverApproves(t *testing.T) {
+	pol := &policy.MergePolicy{
+		Spec: policy.MergePolicySpec{
+			Rules: []policy.Rule{{
+				Name:      "config-monotonic",
+				Phase:     policy.PhaseEnforce,
+				Match:     policy.Match{ValueChanges: &policy.ValueChangesMatch{Pointers: []string{"/config/*/enabled"}, Kinds: []string{"modify"}}},
+				Prove:     &policy.Prove{Obligation: "non-destructive", When: policy.AssertTree{Leaf: &policy.Leaf{CEL: "new >= old"}}},
+				OnFailure: &policy.OnFailure{Effect: policy.EffectBlock, Code: "config-shrunk"},
+			}},
+		},
+	}
+	bind := &policy.Binding{Require: []string{"non-destructive"}, Environment: "prod"}
+	in := &EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{
+		{Subject: "s:1", File: "svc.yaml", Path: "/config/db/enabled", Kind: "modify", Old: intNum(10), New: intNum(5)},
+	}}}
+
+	got, err := Cover(pol, bind, in)
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if got.Decision == DecisionApprove {
+		t.Fatal("a wildcard-pointer rule over a violating change must never APPROVE (fail-open)")
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Code != "config-shrunk" || got.Findings[0].Effect != EffectBlock {
+		t.Fatalf("want one config-shrunk block finding, got %+v", got.Findings)
+	}
+}
+
+// TestCoverValuesPathsFileGlob is the F2 regression: the Values domain's `paths`
+// are FILE globs (over ch.File), AND-narrowing with `pointers` (over ch.Path) —
+// not an OR-widening exact compare against the pointer. A change in a
+// non-matching file must be excluded even when its pointer matches.
+func TestCoverValuesPathsFileGlob(t *testing.T) {
+	pol := &policy.MergePolicy{
+		Spec: policy.MergePolicySpec{
+			Rules: []policy.Rule{{
+				Name:      "prod-retention-monotonic",
+				Phase:     policy.PhaseEnforce,
+				Match:     policy.Match{Values: &policy.ValuesMatch{Paths: []string{"topics/prod/**.yaml"}, Pointers: []string{"/retentionMs"}}},
+				Prove:     &policy.Prove{Obligation: "non-destructive", When: policy.AssertTree{Leaf: &policy.Leaf{CEL: "new >= old"}}},
+				OnFailure: &policy.OnFailure{Effect: policy.EffectBlock, Code: "retention-shrunk"},
+			}},
+		},
+	}
+	bind := &policy.Binding{Require: []string{"non-destructive"}, Environment: "prod"}
+	in := &EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{
+		// prod file, matching pointer, shrinks -> selected -> BLOCK.
+		{Subject: "s:prod", File: "topics/prod/a.yaml", Path: "/retentionMs", Kind: "modify", Old: intNum(10), New: intNum(5)},
+		// staging file (paths glob excludes it), same pointer + shrink -> NOT selected.
+		{Subject: "s:stg", File: "topics/staging/b.yaml", Path: "/retentionMs", Kind: "modify", Old: intNum(10), New: intNum(5)},
+	}}}
+
+	got, err := Cover(pol, bind, in)
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if len(got.Findings) != 1 {
+		t.Fatalf("want exactly one finding (staging file excluded by paths glob), got %+v", got.Findings)
+	}
+	if got.Findings[0].Subject != "s:prod" || got.Findings[0].Code != "retention-shrunk" {
+		t.Errorf("finding must be the prod subject only, got %+v", got.Findings[0])
+	}
+}
+
+// TestCoverNilOnFailureFailsSafe is the F4 regression: a hand-built prove rule
+// whose When is cleanly false but that carries no OnFailure is a shape error —
+// Cover must fail SAFE to require-review, never panic and never APPROVE.
+func TestCoverNilOnFailureFailsSafe(t *testing.T) {
+	pol := &policy.MergePolicy{
+		Spec: policy.MergePolicySpec{
+			Rules: []policy.Rule{{
+				Name:  "no-onfailure",
+				Phase: policy.PhaseEnforce,
+				Match: policy.Match{Files: &policy.FilesMatch{Paths: []string{"**.yaml"}}},
+				Prove: &policy.Prove{Obligation: "ownership", When: policy.AssertTree{Leaf: &policy.Leaf{CEL: "false"}}},
+				// OnFailure deliberately nil.
+			}},
+		},
+	}
+	bind := &policy.Binding{Require: []string{"ownership"}, Environment: "prod"}
+	in := &EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{
+		{Subject: "s:1", File: "a.yaml", Path: "/x", Kind: "modify", Old: intNum(1), New: intNum(2)},
+	}}}
+
+	got, err := Cover(pol, bind, in)
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if got.Decision == DecisionApprove {
+		t.Fatal("a clean-false rule with nil OnFailure must never APPROVE")
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Effect != EffectRequireReview || got.Findings[0].Code != "policy.shape-error" {
+		t.Fatalf("want one policy.shape-error require-review finding, got %+v", got.Findings)
 	}
 }
 

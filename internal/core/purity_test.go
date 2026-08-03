@@ -146,9 +146,11 @@ func scanTree(t *testing.T, dir string) []violation {
 // TestCorePurity asserts internal/core/** and internal/change/** reference no
 // os.Getenv/os.Environ, time.Now, rand, or network package (REQ-P4-E1-S01-03).
 func TestCorePurity(t *testing.T) {
-	// The test runs with cwd = the package dir (internal/core), so "." is core
-	// and "../change" is the sibling differ tree (guarded absent).
-	for _, dir := range []string{".", "../change"} {
+	// The test runs with cwd = the package dir (internal/core), so "." is core,
+	// "../change" is the sibling differ tree, and "../glob" is the shared glob
+	// matcher the decision path (aggregate coverage) now depends on for
+	// determinism — all guarded pure (no clock/rand/env/net).
+	for _, dir := range []string{".", "../change", "../glob"} {
 		vs := scanTree(t, dir)
 		if len(vs) > 0 {
 			sort.Slice(vs, func(i, j int) bool { return vs[i].pos < vs[j].pos })
