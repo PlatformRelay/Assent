@@ -17,11 +17,11 @@ PROFILE="${ASSENT_SPIKE_PROFILE:-testcontainer}"
 case "${PROFILE}" in
 testcontainer)
   BASE="http://localhost:${ASSENT_SPIKE_HTTP_PORT:-8980}"
-  rails_exec() { docker exec assent-spike-gitlab gitlab-rails runner "$1"; }
+  rails_exec() { local ruby="$1"; docker exec assent-spike-gitlab gitlab-rails runner "$ruby"; }
   ;;
 kind)
   BASE="http://localhost:8929"
-  rails_exec() { kubectl --context kind-assent exec deploy/gitlab -- gitlab-rails runner "$1"; }
+  rails_exec() { local ruby="$1"; kubectl --context kind-assent exec deploy/gitlab -- gitlab-rails runner "$ruby"; }
   ;;
 *)
   echo "ERROR: unknown profile '${PROFILE}'" >&2
@@ -29,6 +29,10 @@ kind)
   ;;
 esac
 API="${BASE}/api/v4"
+# Reused literals (kept single-sourced): JSON content-type header and the
+# curl write-out format that appends the HTTP status on its own line.
+readonly CONTENT_TYPE_JSON='Content-Type: application/json'
+readonly HTTP_CODE_FMT=$'\n%{http_code}'
 PROJECT="topic-registry-smoke"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
@@ -41,7 +45,7 @@ api() {
   local method="$1" path="$2" expect="$3"
   shift 3
   local out status body
-  out=$(curl -s -w $'\n%{http_code}' -X "${method}" -H "PRIVATE-TOKEN: ${TOKEN}" "$@" "${API}${path}")
+  out=$(curl -s -w "${HTTP_CODE_FMT}" -X "${method}" -H "PRIVATE-TOKEN: ${TOKEN}" "$@" "${API}${path}")
   status="${out##*$'\n'}"
   body="${out%$'\n'*}"
   if [[ "${status}" != "${expect}" ]]; then
@@ -49,10 +53,12 @@ api() {
     return 1
   fi
   printf '%s' "${body}"
+  return
 }
 
 json_escape() {
   python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()), end="")'
+  return
 }
 
 # --- auth: mint a throwaway root PAT unless one was provided ------------------------------
@@ -104,7 +110,7 @@ print(json.dumps({
 PY
 )
 api POST "/projects/${pid}/repository/commits" 201 \
-  -H 'Content-Type: application/json' \
+  -H "${CONTENT_TYPE_JSON}" \
   --data "${seed_json}" >/dev/null
 
 CHANGE_FILE="topics/prod/orders.events.v1.yaml"
@@ -124,7 +130,7 @@ log "creating change branch + commit (bump orders.events.v1 partitions)"
 api POST "/projects/${pid}/repository/branches" 201 \
   --data "branch=change/orders-partitions&ref=main" >/dev/null
 api POST "/projects/${pid}/repository/commits" 201 \
-  -H 'Content-Type: application/json' \
+  -H "${CONTENT_TYPE_JSON}" \
   --data "{\"branch\":\"change/orders-partitions\",\"commit_message\":\"orders.events.v1: scale partitions 12 -> 24\",\"actions\":[{\"action\":\"update\",\"file_path\":\"${CHANGE_FILE}\",\"content\":${changed_json}}]}" >/dev/null
 
 log "opening MR"
@@ -150,7 +156,7 @@ resolved=$(api PUT "/projects/${pid}/merge_requests/${iid}/discussions/${disc_id
 log "creating project access token (Maintainer bot) and approving with it"
 expires=$(date -v+1d +%Y-%m-%d 2>/dev/null || date -d '+1 day' +%Y-%m-%d)
 bot_token_json=$(api POST "/projects/${pid}/access_tokens" 201 \
-  -H 'Content-Type: application/json' \
+  -H "${CONTENT_TYPE_JSON}" \
   --data "{\"name\":\"spike-approver-$(date +%s)\",\"scopes\":[\"api\"],\"access_level\":40,\"expires_at\":\"${expires}\"}")
 BOT_TOKEN=$(printf '%s' "${bot_token_json}" | jq -r .token)
 [[ -n "${BOT_TOKEN}" && "${BOT_TOKEN}" != "null" ]] || {
@@ -161,7 +167,7 @@ BOT_TOKEN=$(printf '%s' "${bot_token_json}" | jq -r .token)
 approve_status=""
 approve_body=""
 for _ in $(seq 1 10); do
-  out=$(curl -s -w $'\n%{http_code}' -X POST \
+  out=$(curl -s -w "${HTTP_CODE_FMT}" -X POST \
     -H "PRIVATE-TOKEN: ${BOT_TOKEN}" "${API}/projects/${pid}/merge_requests/${iid}/approve")
   approve_status="${out##*$'\n'}"
   approve_body="${out%$'\n'*}"
@@ -188,7 +194,7 @@ adversarial_json=$(printf '%s' "${adversarial_content}" | json_escape)
 
 log "pushing new commit after approval"
 api POST "/projects/${pid}/repository/commits" 201 \
-  -H 'Content-Type: application/json' \
+  -H "${CONTENT_TYPE_JSON}" \
   --data "{\"branch\":\"change/orders-partitions\",\"commit_message\":\"orders.events.v1: also bump retention\",\"actions\":[{\"action\":\"update\",\"file_path\":\"${CHANGE_FILE}\",\"content\":${adversarial_json}}]}" >/dev/null
 
 # After a push GitLab briefly reports merge_status=checking and PUT /merge can
@@ -206,7 +212,7 @@ log "attempting merge with STALE sha ${sha} (must be rejected)"
 stale_status=""
 stale_body=""
 for _ in $(seq 1 6); do
-  stale_out=$(curl -s -w $'\n%{http_code}' -X PUT -H "PRIVATE-TOKEN: ${TOKEN}" \
+  stale_out=$(curl -s -w "${HTTP_CODE_FMT}" -X PUT -H "PRIVATE-TOKEN: ${TOKEN}" \
     "${API}/projects/${pid}/merge_requests/${iid}/merge?sha=${sha}")
   stale_status="${stale_out##*$'\n'}"
   stale_body="${stale_out%$'\n'*}"
@@ -228,7 +234,7 @@ fresh_sha=$(api GET "/projects/${pid}/merge_requests/${iid}" 200 | jq -r .sha)
 merged=""
 status=""
 for _ in $(seq 1 12); do
-  out=$(curl -s -w $'\n%{http_code}' -X PUT -H "PRIVATE-TOKEN: ${TOKEN}" \
+  out=$(curl -s -w "${HTTP_CODE_FMT}" -X PUT -H "PRIVATE-TOKEN: ${TOKEN}" \
     "${API}/projects/${pid}/merge_requests/${iid}/merge?sha=${fresh_sha}")
   status="${out##*$'\n'}"
   if [[ "${status}" == "200" ]]; then

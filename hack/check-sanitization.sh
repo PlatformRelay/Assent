@@ -27,8 +27,10 @@ empid_pat='(^|[^A-Za-z0-9])[A-Z][0-9]{6}($|[^0-9])'
 hits=0
 
 report() { # $1=source $2=kind $3=match-line
-  printf 'HIT [%s] %s: %s\n' "$2" "$1" "$3" >&2
+  local source="$1" kind="$2" match_line="$3"
+  printf 'HIT [%s] %s: %s\n' "$kind" "$source" "$match_line" >&2
   hits=1
+  return
 }
 
 decode_b64() { # stdin -> decoded stdout; tolerate both BSD (-D) and GNU (-d)
@@ -37,8 +39,8 @@ decode_b64() { # stdin -> decoded stdout; tolerate both BSD (-D) and GNU (-d)
 
 # Denylist: optional, workspace-local, one term per line (# comments allowed).
 denylist_terms=""
-if [ "${ASSENT_SANITIZE_DENYLIST:-}" != "" ]; then
-  if [ ! -f "$ASSENT_SANITIZE_DENYLIST" ]; then
+if [[ "${ASSENT_SANITIZE_DENYLIST:-}" != "" ]]; then
+  if [[ ! -f "$ASSENT_SANITIZE_DENYLIST" ]]; then
     echo "error: ASSENT_SANITIZE_DENYLIST points to a missing file: $ASSENT_SANITIZE_DENYLIST" >&2
     exit 2
   fi
@@ -48,18 +50,18 @@ fi
 scan_text() { # $1=source-label ; content on stdin
   local src="$1" content line
   content=$(cat)
-  [ -n "$content" ] || return 0
+  [[ -n "$content" ]] || return 0
 
   line=$(printf '%s\n' "$content" | grep -E -n "$host_pat" | head -5)
-  [ -n "$line" ] && report "$src" "internal-hostname" "$line"
+  [[ -n "$line" ]] && report "$src" "internal-hostname" "$line"
   line=$(printf '%s\n' "$content" | grep -E -n "$empid_pat" | head -5)
-  [ -n "$line" ] && report "$src" "employee-id" "$line"
+  [[ -n "$line" ]] && report "$src" "employee-id" "$line"
 
-  if [ -n "$denylist_terms" ]; then
+  if [[ -n "$denylist_terms" ]]; then
     while IFS= read -r term; do
-      [ -n "$term" ] || continue
+      [[ -n "$term" ]] || continue
       line=$(printf '%s\n' "$content" | grep -F -i -n -- "$term" | head -5)
-      [ -n "$line" ] && report "$src" "denylist" "$line"
+      [[ -n "$line" ]] && report "$src" "denylist" "$line"
     done <<EOF
 $denylist_terms
 EOF
@@ -71,7 +73,7 @@ EOF
 files=$(git ls-files --cached --others --exclude-standard | grep -v -F -x "$self" || true)
 
 while IFS= read -r f; do
-  [ -f "$f" ] || continue
+  [[ -f "$f" ]] || continue
   scan_text "$f" <"$f"
 
   # Adversarial case: base64-encoded YAML values still get matched after decoding.
@@ -79,10 +81,10 @@ while IFS= read -r f; do
     *.yaml|*.yml)
       tokens=$(grep -E -o '[A-Za-z0-9+/]{16,}={0,2}' "$f" || true)
       while IFS= read -r tok; do
-        [ -n "$tok" ] || continue
+        [[ -n "$tok" ]] || continue
         # No pipeline into scan_text: it must run in this shell so hits propagate.
         decoded=$(printf '%s' "$tok" | decode_b64 | LC_ALL=C tr -c '[:print:]\n' ' ')
-        [ -n "$decoded" ] || continue
+        [[ -n "$decoded" ]] || continue
         scan_text "$f (base64-decoded value)" <<EOD
 $decoded
 EOD
@@ -90,12 +92,13 @@ EOD
 $tokens
 EOF
       ;;
+    *) ;;
   esac
 done <<EOF
 $files
 EOF
 
-if [ "$hits" -ne 0 ]; then
+if [[ "$hits" -ne 0 ]]; then
   echo "sanitization check FAILED — remove the flagged content (D-002)" >&2
   exit 1
 fi

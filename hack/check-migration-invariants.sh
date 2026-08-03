@@ -26,15 +26,17 @@ cd "$repo_root" || exit 2
 hits=0
 
 report() {
-  printf 'FAIL [%s] %s\n' "$1" "$2" >&2
+  local kind="$1" detail="$2"
+  printf 'FAIL [%s] %s\n' "$kind" "$detail" >&2
   hits=1
+  return
 }
 
 # --- (a) DRAFT markers in migrated example trees --------------------------------
 draft_hits=$(grep -rni --include='*' 'DRAFT' examples/policies examples/archetypes 2>/dev/null || true)
-if [ -n "$draft_hits" ]; then
+if [[ -n "$draft_hits" ]]; then
   while IFS= read -r line; do
-    [ -n "$line" ] || continue
+    [[ -n "$line" ]] || continue
     report "DRAFT-marker" "$line"
   done <<EOF
 $draft_hits
@@ -43,14 +45,16 @@ fi
 
 # --- (b) quarantine marker on every rego example --------------------------------
 rego_root="examples/policies/rego"
-if [ -d "$rego_root" ]; then
+quarantine_marker='locked: D-012'
+if [[ -d "$rego_root" ]]; then
   while IFS= read -r f; do
-    [ -f "$f" ] || continue
+    [[ -f "$f" ]] || continue
     # Marker must appear on or before the first non-comment, non-blank line.
     saw_marker=0
-    while IFS= read -r line || [ -n "$line" ]; do
+    while IFS= read -r line || [[ -n "$line" ]]; do
       case "$line" in
-        *'locked: D-012'*) saw_marker=1 ;;
+        *"$quarantine_marker"*) saw_marker=1 ;;
+        *) ;;
       esac
       # Non-blank, non-comment → stop scanning; marker must already be seen.
       trimmed=${line#"${line%%[![:space:]]*}"}
@@ -59,8 +63,8 @@ if [ -d "$rego_root" ]; then
         *) break ;;
       esac
     done <"$f"
-    if [ "$saw_marker" -ne 1 ]; then
-      report "missing-rego-quarantine-marker" "$f (need locked: D-012 on/before first non-comment line)"
+    if [[ "$saw_marker" -ne 1 ]]; then
+      report "missing-rego-quarantine-marker" "$f (need $quarantine_marker on/before first non-comment line)"
     fi
   done <<EOF
 $(find "$rego_root" -type f ! -name '.*' 2>/dev/null || true)
@@ -73,16 +77,16 @@ rego_leaf_hits=$(
   find examples -type f ! -path 'examples/policies/rego/*' -print0 2>/dev/null \
     | xargs -0 grep -n 'rego:' 2>/dev/null || true
 )
-if [ -n "$rego_leaf_hits" ]; then
+if [[ -n "$rego_leaf_hits" ]]; then
   while IFS= read -r line; do
-    [ -n "$line" ] || continue
+    [[ -n "$line" ]] || continue
     report "rego-leaf-outside-quarantine" "$line"
   done <<EOF
 $rego_leaf_hits
 EOF
 fi
 
-if [ "$hits" -ne 0 ]; then
+if [[ "$hits" -ne 0 ]]; then
   echo "migration-invariants check FAILED — fix DRAFT markers, rego quarantine, or stray rego: leaves (P3-E3-S04)" >&2
   exit 1
 fi

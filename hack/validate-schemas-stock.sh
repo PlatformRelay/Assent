@@ -71,6 +71,9 @@ fi
 #   -c ajv-formats     honour "format": "date-time" etc. (Go enforces formats)
 AJV_FLAGS=(--spec=draft2020 --strict=false -c ajv-formats)
 
+# sed program used to indent captured validator stderr under its FAIL line.
+indent_sed='s/^/    /'
+
 schema_root="schemas"
 contracts_root="examples/contracts"
 neg_root="hack/testdata/stock-validator-negative"
@@ -80,13 +83,15 @@ fail=0
 corpus_validated=0
 negatives_rejected=0
 report_fail() {
-  printf 'FAIL [%s] %s\n' "$1" "$2" >&2
+  local kind="$1" detail="$2"
+  printf 'FAIL [%s] %s\n' "$kind" "$detail" >&2
   fail=1
+  return
 }
 
 # All schema files (sorted for determinism).
 mapfile -t all_schemas < <(find "$schema_root" -name '*.schema.json' -type f | sort)
-if [ "${#all_schemas[@]}" -eq 0 ]; then
+if [[ "${#all_schemas[@]}" -eq 0 ]]; then
   report_fail "no-schemas" "found no $schema_root/**/*.schema.json"
   echo "stock-validator check FAILED (P3-P1-3)" >&2
   exit 1
@@ -98,9 +103,10 @@ fi
 ref_args_excluding() {
   local target="$1" f
   for f in "${all_schemas[@]}"; do
-    [ "$f" = "$target" ] && continue
+    [[ "$f" = "$target" ]] && continue
     printf '%s\0%s\0' -r "$f"
   done
+  return
 }
 
 # --- half 1: every schema is a valid Draft 2020-12 schema, refs resolve -------
@@ -111,7 +117,7 @@ for schema in "${all_schemas[@]}"; do
     printf 'ok  %s\n' "$schema"
   else
     report_fail "schema-invalid" "$schema"
-    sed 's/^/    /' compile.err >&2
+    sed "$indent_sed" compile.err >&2
   fi
   rm -f compile.err
 done
@@ -131,15 +137,15 @@ av = p.get("apiVersion", {}).get("const")
 print(k if k is not None else "", av if av is not None else "")
 PY
   )
-  [ -n "$k" ] && [ "$av" = "$contract_group" ] && kind_to_schema["$k"]="$schema"
+  [[ -n "$k" ]] && [[ "$av" = "$contract_group" ]] && kind_to_schema["$k"]="$schema"
 done
 
 # validate_fixture <fixture> <expect: pass|reject>
 # Returns 0 if the observed result matches the expectation.
 validate_fixture() {
   local fixture="$1" expect="$2"
-  local apiVersion kind
-  read -r apiVersion kind < <(python3 - "$fixture" <<'PY'
+  local api_version kind
+  read -r api_version kind < <(python3 - "$fixture" <<'PY'
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
@@ -152,12 +158,12 @@ PY
   )
   # Skip docs that are not in the frozen contract group or carry no kind —
   # mirrors the Go harness (the *-placeholder signals doc lands here).
-  if [ "$apiVersion" != "$contract_group" ] || [ -z "$kind" ]; then
-    printf 'skip %s (apiVersion=%s kind=%s)\n' "$fixture" "${apiVersion:-<none>}" "${kind:-<none>}"
+  if [[ "$api_version" != "$contract_group" ]] || [[ -z "$kind" ]]; then
+    printf 'skip %s (apiVersion=%s kind=%s)\n' "$fixture" "${api_version:-<none>}" "${kind:-<none>}"
     return 0
   fi
   local schema="${kind_to_schema[$kind]:-}"
-  if [ -z "$schema" ]; then
+  if [[ -z "$schema" ]]; then
     report_fail "unknown-kind" "$fixture: kind '$kind' has no schemas/**/v1alpha1 owner"
     return 1
   fi
@@ -168,24 +174,25 @@ PY
   else
     observed=reject
   fi
-  if [ "$observed" = "$expect" ]; then
+  if [[ "$observed" = "$expect" ]]; then
     printf 'ok   %s [%s] -> %s (expected %s)\n' "$fixture" "$kind" "$observed" "$expect"
     case "$expect" in
       pass) corpus_validated=$((corpus_validated + 1)) ;;
       reject) negatives_rejected=$((negatives_rejected + 1)) ;;
+      *) ;;
     esac
     rm -f val.err
     return 0
   fi
   report_fail "fixture-$observed-expected-$expect" "$fixture [$kind] against $schema"
-  sed 's/^/    /' val.err >&2
+  sed "$indent_sed" val.err >&2
   rm -f val.err
   return 1
 }
 
 # --- half 2a: NEGATIVE self-test (non-vacuity + proves refs resolved) ---------
 echo "== negative self-test (must be REJECTED) =="
-if [ -d "$neg_root" ]; then
+if [[ -d "$neg_root" ]]; then
   while IFS= read -r fixture; do
     validate_fixture "$fixture" reject
   done < <(find "$neg_root" -type f \( -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) | sort)
@@ -195,7 +202,7 @@ fi
 
 # --- half 2b: real corpus fixtures (must all PASS or be skipped) --------------
 echo "== contract fixtures (must PASS) =="
-if [ -d "$contracts_root" ]; then
+if [[ -d "$contracts_root" ]]; then
   while IFS= read -r fixture; do
     validate_fixture "$fixture" pass
   done < <(find "$contracts_root" -type f \( -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) | sort)
@@ -207,11 +214,11 @@ fi
 # prove it actually validated something. If python3 were missing or a corpus /
 # negative dir were empty, every fixture would have skipped to a vacuous exit 0
 # — assert at least one real pass and one real rejection actually happened.
-if [ "$negatives_rejected" -lt 1 ] || [ "$corpus_validated" -lt 1 ]; then
+if [[ "$negatives_rejected" -lt 1 ]] || [[ "$corpus_validated" -lt 1 ]]; then
   report_fail "vacuous" "expected >=1 negative rejected (got $negatives_rejected) and >=1 corpus fixture validated (got $corpus_validated) — the check ran vacuously"
 fi
 
-if [ "$fail" -ne 0 ]; then
+if [[ "$fail" -ne 0 ]]; then
   echo "stock-validator check FAILED — see FAIL lines above (P3-P1-3)" >&2
   exit 1
 fi
