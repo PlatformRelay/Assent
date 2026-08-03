@@ -1,6 +1,7 @@
 package schemas
 
 import (
+	// Blank import: enables the //go:embed directive below to embed the schema bytes.
 	_ "embed"
 	"encoding/json"
 	"testing"

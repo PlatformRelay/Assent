@@ -15,14 +15,22 @@ const CapabilityFullContent = "trusted-full-content"
 // Config is the operator-authored declaration of one provider: what it
 // outputs and what slices of the change it may see.
 type Config struct {
-	Name     string `json:"name"`
-	Requests struct {
-		Values struct {
-			Pointers []string `json:"pointers"`
-		} `json:"values"`
-		FullContent bool `json:"fullContent"`
-	} `json:"requests"`
-	Capabilities []string `json:"capabilities"`
+	Name         string         `json:"name"`
+	Requests     ConfigRequests `json:"requests"`
+	Capabilities []string       `json:"capabilities"`
+}
+
+// ConfigRequests is the "requests" block of a provider declaration: which value
+// slices it wants and whether it asks for full old/new content.
+type ConfigRequests struct {
+	Values      ConfigValues `json:"values"`
+	FullContent bool         `json:"fullContent"`
+}
+
+// ConfigValues is the declared set of JSON-Pointer value projections a provider
+// requests.
+type ConfigValues struct {
+	Pointers []string `json:"pointers"`
 }
 
 // LoadProviderConfig parses and validates a provider declaration. A provider

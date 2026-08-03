@@ -61,8 +61,8 @@ type LeafTrace struct {
 	Err        error
 }
 
-// Node is an all/any/not tree node or a CEL leaf.
-type Node interface {
+// Noder is an all/any/not tree node or a CEL leaf.
+type Noder interface {
 	isNode()
 }
 
@@ -73,28 +73,28 @@ type Leaf struct {
 	Message string
 }
 
-func (Leaf) isNode() {}
+func (Leaf) isNode() { /* marker only: seals Noder to this package's node set */ }
 
 // All requires every child to pass (errors short-circuit as error).
 type All struct {
-	Children []Node
+	Children []Noder
 }
 
-func (All) isNode() {}
+func (All) isNode() { /* marker only: seals Noder to this package's node set */ }
 
 // Any requires at least one child to pass.
 type Any struct {
-	Children []Node
+	Children []Noder
 }
 
-func (Any) isNode() {}
+func (Any) isNode() { /* marker only: seals Noder to this package's node set */ }
 
 // Not inverts pass/fail; error stays error.
 type Not struct {
-	Child Node
+	Child Noder
 }
 
-func (Not) isNode() {}
+func (Not) isNode() { /* marker only: seals Noder to this package's node set */ }
 
 // WalkResult is the tree outcome plus per-leaf traces.
 type WalkResult struct {
@@ -103,13 +103,13 @@ type WalkResult struct {
 }
 
 // Walk evaluates an all/any/not tree, capturing a LeafTrace per leaf.
-func Walk(env *cel.Env, root Node, activation any) WalkResult {
+func Walk(env *cel.Env, root Noder, activation any) WalkResult {
 	var traces []LeafTrace
 	state := walk(env, root, activation, &traces)
 	return WalkResult{State: state, Traces: traces}
 }
 
-func walk(env *cel.Env, n Node, activation any, traces *[]LeafTrace) TriState {
+func walk(env *cel.Env, n Noder, activation any, traces *[]LeafTrace) TriState {
 	switch x := n.(type) {
 	case Leaf:
 		tr := evalLeaf(env, x, activation)

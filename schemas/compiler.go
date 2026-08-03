@@ -7,6 +7,7 @@ package schemas
 
 import (
 	"bytes"
+	// Blank import: enables the //go:embed directives in this package to embed schema bytes.
 	_ "embed"
 	"fmt"
 	"strings"
@@ -74,7 +75,7 @@ const (
 	evaluationInputSchemaID    = "https://assent.dev/schemas/decision/v1alpha1/evaluation-input.schema.json"
 	decisionRecordSchemaID     = "https://assent.dev/schemas/decision/v1alpha1/decision-record.schema.json"
 	replayBundleSchemaID       = "https://assent.dev/schemas/decision/v1alpha1/replay-bundle.schema.json"
-	presentationModelSchemaID = "https://assent.dev/schemas/decision/v1alpha1/presentation-model.schema.json"
+	presentationModelSchemaID  = "https://assent.dev/schemas/decision/v1alpha1/presentation-model.schema.json"
 	publicationReceiptSchemaID = "https://assent.dev/schemas/decision/v1alpha1/publication-receipt.schema.json"
 	comparisonRecordSchemaID   = "https://assent.dev/schemas/comparison/v1alpha1/comparison-record.schema.json"
 	comparisonSuiteSchemaID    = "https://assent.dev/schemas/comparison/v1alpha1/comparison-suite.schema.json"
@@ -84,7 +85,7 @@ var decisionSchemas = mustCompileCrossReferenced(map[string][]byte{
 	evaluationInputSchemaID:    evaluationInputSchemaJSON,
 	decisionRecordSchemaID:     decisionRecordSchemaJSON,
 	replayBundleSchemaID:       replayBundleSchemaJSON,
-	presentationModelSchemaID: presentationModelSchemaJSON,
+	presentationModelSchemaID:  presentationModelSchemaJSON,
 	publicationReceiptSchemaID: publicationReceiptSchemaJSON,
 })
 

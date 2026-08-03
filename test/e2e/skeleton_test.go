@@ -95,7 +95,7 @@ func TestSkeletonE2E(t *testing.T) {
 	// It compiles and references the real testcontainer profile + a real
 	// examples/repos/ seed, but the green run (booting GitLab, opening an MR,
 	// asserting a live thread/approval/merge, replaying the DecisionRecord) is
-	// TODO(S10): infra-gated. It only executes once ASSENT_E2E_GITLAB is set.
+	// deferred to S10 (infra-gated). It only executes once ASSENT_E2E_GITLAB is set.
 	root := repoRoot(t)
 
 	seedPath := filepath.Join(root, seedSampleRelPath)
@@ -120,8 +120,8 @@ func TestSkeletonE2E(t *testing.T) {
 		"--profile", testcontainerProfile,
 	)
 
-	// TODO(P4-E1-S10): boot GitLab via bootScript, seed the sample project (as
-	// smoke.sh does), open a one-field-change MR, run the assent binary
+	// Deferred to P4-E1-S10 (infra-gated): boot GitLab via bootScript, seed the
+	// sample project (as smoke.sh does), open a one-field-change MR, run the assent binary
 	// (runAssent), then assert against the forge API — one resolvable thread OR
 	// approve + SHA-pinned merge — and validate the emitted DecisionRecord.
 	_ = bootScript

@@ -1,5 +1,6 @@
 package schemas
 
+// Blank import: enables the //go:embed directives in this package to embed schema bytes.
 import _ "embed"
 
 // The provider envelope schemas are promoted unchanged from Spike C

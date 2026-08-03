@@ -57,7 +57,7 @@ type forgePort interface {
 // the value down as data (never time.Now inside the engine or the receipt).
 type runClock func() time.Time
 
-// clockAdapter adapts a runClock to the forge.Clock interface.
+// clockAdapter adapts a runClock to the forge.Clocker interface.
 type clockAdapter struct{ now runClock }
 
 func (c clockAdapter) Now() time.Time { return c.now() }
@@ -228,8 +228,8 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	}
 	pins := decision.Pins{
 		ToolVersion:     version,
-		ToolDigest:      "sha256:" + sha256Hex([]byte(version)),
-		PolicySha:       "sha256:" + sha256Hex(policyBytes),
+		ToolDigest:      sha256Prefix + sha256Hex([]byte(version)),
+		PolicySha:       sha256Prefix + sha256Hex(policyBytes),
 		SourceSha:       info.SourceSHA,
 		TargetSha:       info.TargetSHA,
 		MergeResult:     mergeGap,
@@ -328,8 +328,8 @@ func buildDesired(cfg runConfig, info gitlab.MRInfo, subject string, head []byte
 			EntryRef: subject,
 			Effect:   effect,
 		},
-		Occurrence: "sha256:" + sha256Hex(head),
-		Decision:   "sha256:" + sha256Hex(recordJSON),
+		Occurrence: sha256Prefix + sha256Hex(head),
+		Decision:   sha256Prefix + sha256Hex(recordJSON),
 		Artifact:   forge.Artifact{Kind: "finding-thread", SchemaVersion: "v1alpha1"},
 	}
 	body := fmt.Sprintf("assent review required: rule %q (%s) — decision %s. Resolve after addressing the finding.",
@@ -395,6 +395,10 @@ func validateRecord(raw []byte) error {
 	}
 	return schemas.DecisionRecordSchema.Validate(doc)
 }
+
+// sha256Prefix is the digest-algorithm tag prepended to every hex sha256 so the
+// marker's ^sha256:[0-9a-f]{64}$ grammar and the pinned digests share one literal.
+const sha256Prefix = "sha256:"
 
 // sha256Hex returns the lowercase hex sha256 of b (a real 64-hex digest so the
 // marker's ^sha256:[0-9a-f]{64}$ grammar and the non-empty pins are satisfied).

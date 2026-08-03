@@ -166,10 +166,10 @@ func (p Preconditions) completeForMerge() bool {
 	return p.SourceSha != "" && p.TargetSha != "" && p.MergeResultDigest != ""
 }
 
-// Clock is the injected time source for performedAt timestamps. Reconcile never
+// Clocker is the injected time source for performedAt timestamps. Reconcile never
 // calls time.Now — a test clock makes receipts byte-stable and goldens
 // reproducible (ADR-0013 double-run gate).
-type Clock interface {
+type Clocker interface {
 	Now() time.Time
 }
 
@@ -285,7 +285,7 @@ const (
 //   - APPROVE (Approve + Merge set): gated on ArmEligible AND a complete set of
 //     pins AND a compare-and-swap that honours source+target+mergeResultDigest.
 //     Any refusal returns a typed error with ZERO writes.
-func Reconcile(f Forge, clock Clock, desired DesiredReviewState, pre Preconditions) (PublicationReceipt, error) {
+func Reconcile(f Forge, clock Clocker, desired DesiredReviewState, pre Preconditions) (PublicationReceipt, error) {
 	switch {
 	case desired.Thread != nil:
 		return reconcileThread(f, clock, desired)
@@ -301,7 +301,7 @@ func Reconcile(f Forge, clock Clock, desired DesiredReviewState, pre Preconditio
 // by the ADR-0019 marker. The bot-thread listing is author-identity filtered by
 // the fake, so a contributor comment carrying a well-formed marker is never
 // seen here (REQ-P4-E1-S06-02 adversarial case).
-func reconcileThread(f Forge, clock Clock, desired DesiredReviewState) (PublicationReceipt, error) {
+func reconcileThread(f Forge, clock Clocker, desired DesiredReviewState) (PublicationReceipt, error) {
 	existing, err := f.ListBotThreads(desired.Project, desired.MR)
 	if err != nil {
 		return PublicationReceipt{}, fmt.Errorf("forge: list bot threads: %w", err)
@@ -361,7 +361,7 @@ func reconcileThread(f Forge, clock Clock, desired DesiredReviewState) (Publicat
 //   - the repairs slice is sorted by numeric repaired-id ascending, so the
 //     receipt is byte-stable regardless of the order occupants were discovered;
 //   - it creates NOTHING (zero new artifacts); it only resolves duplicates.
-func repairDuplicates(f Forge, clock Clock, desired DesiredReviewState, occupants []Thread) (PublicationReceipt, error) {
+func repairDuplicates(f Forge, clock Clocker, desired DesiredReviewState, occupants []Thread) (PublicationReceipt, error) {
 	// Canonical = the numeric-minimum forge id. forgeIDNum parses the integer
 	// after the last '/'; comparing those integers (not the lexical strings) is
 	// what makes note/999 < note/1000 order correctly.
@@ -448,7 +448,7 @@ func forgeIDNum(id string) int {
 // closed), and NO write of any kind when arming is unmet. A dangling approval is
 // not a merge and does not widen what was merged — the fail-closed direction is
 // intact.
-func reconcileApproveMerge(f Forge, clock Clock, desired DesiredReviewState, pre Preconditions) (PublicationReceipt, error) {
+func reconcileApproveMerge(f Forge, clock Clocker, desired DesiredReviewState, pre Preconditions) (PublicationReceipt, error) {
 	// D-034 arming gate: ArmEligible is injected data (S05 report), never the
 	// INSECURE-PLACEHOLDER env reader. Fail closed when unset.
 	if !pre.ArmEligible {
@@ -516,6 +516,6 @@ func receiptOf(ops ...Operation) PublicationReceipt {
 
 // rfc3339 formats the injected clock as an RFC3339 UTC timestamp for
 // performedAt. UTC + a fixed layout keeps goldens byte-stable.
-func rfc3339(c Clock) string {
+func rfc3339(c Clocker) string {
 	return c.Now().UTC().Format(time.RFC3339)
 }

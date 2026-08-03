@@ -48,7 +48,7 @@ func TestTrace(t *testing.T) {
 			t.Fatalf("want type_mismatch, got %s (%v)", errRes.Traces[0].ErrorClass, errRes.Traces[0].Err)
 		}
 
-		combo := celspike.All{Children: []celspike.Node{
+		combo := celspike.All{Children: []celspike.Noder{
 			celspike.Leaf{ID: "failing", CEL: "new >= old", Message: "fail"},
 			// string→int conversion errors (dyn == would silently false — see report).
 			celspike.Leaf{ID: "erroring", CEL: "int(entry.owner) > 0", Message: "type"},

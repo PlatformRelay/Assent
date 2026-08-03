@@ -95,7 +95,7 @@ func diffMapEntries(file string, cfg EntryConfig, label string, baseTree, headTr
 		hv, inHead := headColl.fields[key]
 		entryPtr := cfg.Root + "/" + escapePointer(key)
 		ref := label + ":" + key
-		if reason := diffOneEntry(file, entryPtr, ref, bv, inBase, hv, inHead, out); reason != "" {
+		if reason := diffOneEntry(file, entryPtr, ref, entrySide{node: bv, present: inBase}, entrySide{node: hv, present: inHead}, out); reason != "" {
 			return reason
 		}
 	}
@@ -143,26 +143,35 @@ func diffListEntries(file string, cfg EntryConfig, label string, baseTree, headT
 		he, inHead := headByID[id]
 		entryPtr := cfg.Root + "/" + escapePointer(id)
 		ref := label + ":" + id
-		if reason := diffOneEntry(file, entryPtr, ref, be, inBase, he, inHead, out); reason != "" {
+		if reason := diffOneEntry(file, entryPtr, ref, entrySide{node: be, present: inBase}, entrySide{node: he, present: inHead}, out); reason != "" {
 			return reason
 		}
 	}
 	return ""
 }
 
+// entrySide is one side (base or head) of an entry under diff: the value node and
+// whether the entry is present on that side. Grouping the two (node, present)
+// pairs keeps diffOneEntry within Go's parameter-count budget without changing
+// how the diff reasons about each side.
+type entrySide struct {
+	node    *vnode
+	present bool
+}
+
 // diffOneEntry diffs one entry (present on either or both sides) and tags every resulting change
 // with the entry's EntryRef. A both-sides entry has its subtree walked by the shared walker (so a
 // nested collection inside it is opaque, REQ-E1-S05-05); a one-sided entry is a whole-entry
 // add/delete reported as a single structural Change at the entry pointer.
-func diffOneEntry(file, entryPtr, ref string, bv *vnode, inBase bool, hv *vnode, inHead bool, out *[]Change) string {
+func diffOneEntry(file, entryPtr, ref string, base, head entrySide, out *[]Change) string {
 	var local []Change
 	switch {
-	case inBase && !inHead:
-		local = append(local, Change{File: file, Path: entryPtr, Kind: KindDelete, OldPos: bv.pos})
-	case !inBase && inHead:
-		local = append(local, Change{File: file, Path: entryPtr, Kind: KindAdd, NewPos: hv.pos})
+	case base.present && !head.present:
+		local = append(local, Change{File: file, Path: entryPtr, Kind: KindDelete, OldPos: base.node.pos})
+	case !base.present && head.present:
+		local = append(local, Change{File: file, Path: entryPtr, Kind: KindAdd, NewPos: head.node.pos})
 	default:
-		if reason := walkNode(file, entryPtr, bv, hv, &local); reason != "" {
+		if reason := walkNode(file, entryPtr, base.node, head.node, &local); reason != "" {
 			return reason
 		}
 	}
