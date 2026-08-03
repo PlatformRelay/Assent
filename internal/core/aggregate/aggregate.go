@@ -159,6 +159,16 @@ type Finding struct {
 type Result struct {
 	Decision Decision  `json:"decision"`
 	Findings []Finding `json:"findings"`
+	// CapabilityGaps records, per governed subject, a forge capability gap
+	// discovered while satisfying a require-review obligation (E2-S07): an
+	// injected ApprovalEvidence with verifyingCapability:none. It is the
+	// aggregate-layer precursor to DecisionRecord pins.capabilityGap (S10 threads
+	// it there); recorded here so a capability gap stays DISTINCT from a plain
+	// missing approval (a require-review finding with no gap) — the
+	// d016_missing_approval invariant. omitempty keeps the no-evidence Result
+	// (D-016 golden) byte-identical. A gap NEVER satisfies, so the require-review
+	// finding still stands and the run can never auto-merge.
+	CapabilityGaps map[string]string `json:"capabilityGaps,omitempty"`
 }
 
 // Synthetic finding.rule names for outcomes not attributable to a single

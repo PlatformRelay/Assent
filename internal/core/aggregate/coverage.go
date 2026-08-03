@@ -33,11 +33,28 @@ import (
 )
 
 // Cover computes the multi-obligation × multi-subject decision over the loaded
-// merge policy, binding, and evaluation input. It returns the reduced decision
-// plus the canonically sorted findings that justify it. An error is returned only
-// for a policy the loader should have rejected (an unsupported/absent match
-// domain) or an unbuildable CEL env — the decision itself is always fail-safe.
+// merge policy, binding, and evaluation input, with NO injected approval evidence
+// — every require-review obligation stays unsatisfied (the D-016 golden path).
+// It is the stable 3-arg entry preserved byte-identical for existing callers.
 func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (Result, error) {
+	return cover(pol, bind, in, nil)
+}
+
+// CoverWithApproval is the E2-S07 evidence-aware decision entry: it additionally
+// takes a separately-injected ApprovalContext (the evaluated sourceSha + per-
+// governed-subject pre-fetched ApprovalEvidence) so an authored require-review
+// obligation can be SATISFIED by valid, eligible, sha-matching, non-expired,
+// non-self/bot approval (ADR-0017 §3). A nil appr is exactly Cover. Evidence is
+// injected as a second input, never a field on the frozen EvaluationInput.
+func CoverWithApproval(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, appr *ApprovalContext) (Result, error) {
+	return cover(pol, bind, in, appr)
+}
+
+// cover is the shared implementation. It returns the reduced decision plus the
+// canonically sorted findings that justify it. An error is returned only for a
+// policy the loader should have rejected (an unsupported/absent match domain) or
+// an unbuildable CEL env — the decision itself is always fail-safe.
+func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, appr *ApprovalContext) (Result, error) {
 	if pol == nil || bind == nil || in == nil {
 		return Result{}, fmt.Errorf("coverage: nil policy, binding, or input")
 	}
@@ -49,6 +66,14 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 
 	decision := DecisionApprove
 	var findings []Finding
+	// capabilityGaps records verifyingCapability:none gaps discovered while
+	// satisfying require-review, keyed by subject (nil until the first gap, so the
+	// no-evidence Result stays byte-identical). It never satisfies — the finding
+	// still stands — but is surfaced distinctly (S10 threads it into pins.capabilityGap).
+	var capabilityGaps map[string]string
+	// mrAuthor and sourceSha are the S07 satisfaction inputs, shared across rules.
+	mrAuthor := in.MR.Author
+	sourceSha := appr.sourceSha()
 	// pointsSum accrues author-declared rule.points PER FIRING (per matched-and-
 	// failed change), NOT per finding — ADR-0007 Amendment 2, the bulk-change /
 	// salami-slice guard. It gates APPROVE at order #4 (risk check) below.
@@ -84,10 +109,22 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 		}
 
 		expr, leafErr := leafExpr(r.Prove.When)
-		ctx := coverCtx{env: env, in: in, r: r, expr: expr, envLabel: bind.Environment, leafErr: leafErr}
+		ctx := coverCtx{
+			env: env, in: in, r: r, expr: expr, envLabel: bind.Environment, leafErr: leafErr,
+			appr: appr, sourceSha: sourceSha, mrAuthor: mrAuthor,
+		}
 
 		for _, subj := range subjectsOf(matched) {
-			f, firings, contributes := coverSubject(ctx, subj, matched)
+			f, firings, contributes, gap := coverSubject(ctx, subj, matched)
+			// A verifyingCapability:none gap is recorded distinctly (never satisfies;
+			// the finding still stands below) so a capability gap stays separable
+			// from a plain missing approval (d016_missing_approval invariant).
+			if gap {
+				if capabilityGaps == nil {
+					capabilityGaps = map[string]string{}
+				}
+				capabilityGaps[subj] = capabilityGapNone
+			}
 			if !contributes {
 				continue
 			}
@@ -145,7 +182,7 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 	decision = worse(decision, riskDecision(pointsSum, bind.Risk.Threshold))
 
 	sortFindings(findings)
-	return Result{Decision: decision, Findings: findings}, nil
+	return Result{Decision: decision, Findings: findings, CapabilityGaps: capabilityGaps}, nil
 }
 
 // coverSubject evaluates one (rule, subject) pair over that subject's matched
@@ -167,7 +204,17 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 // change cleanly proved the obligation. Over-counting K (e.g. an errored change)
 // is the SAFE direction — it can only raise the sum toward REVIEW, never toward a
 // wrong APPROVE.
-func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, int, bool) {
+//
+// The final bool is `gap`: true only when a verifyingCapability:none
+// ApprovalEvidence was consulted for an authored require-review firing (recorded
+// distinctly by the caller; the finding still stands).
+//
+// S07 satisfaction is gated STRUCTURALLY: injected evidence is consulted ONLY in
+// the clean-false authored-onFailure `require-review` branch. A predicate error,
+// an assert-tree (S03) leafErr, a nil-OnFailure shape error, and a block effect
+// therefore can NEVER be suppressed by evidence — evidence satisfies an authored
+// require-review obligation, never a fail-safe error or a block.
+func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, int, bool, bool) {
 	r := c.r
 	// An all/any/not tree is E2-S03; treat it as unproven here (fail-safe). Every
 	// matched change for this subject is a fail-safe firing (over-count is SAFE).
@@ -179,7 +226,7 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, int, 
 			Subject:    subj,
 			Points:     r.Points,
 			Code:       "predicate.error",
-		}, subjectMatchCount(subj, matched), true
+		}, subjectMatchCount(subj, matched), true, false
 	}
 
 	anyErr, anyFalse := false, false
@@ -210,7 +257,7 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, int, 
 			Subject:    subj,
 			Points:     r.Points,
 			Code:       "predicate.error",
-		}, firings, true
+		}, firings, true, false
 	case anyFalse:
 		// A prove rule with a nil OnFailure is a malformed policy the schema's
 		// oneOf normally rejects — but Cover also accepts hand-built policies, so
@@ -224,18 +271,36 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, int, 
 				Subject:    subj,
 				Points:     r.Points,
 				Code:       "policy.shape-error",
-			}, firings, true
+			}, firings, true, false
+		}
+		eff := Effect(r.OnFailure.Effect)
+		// E2-S07: an authored require-review obligation may be SATISFIED by valid
+		// injected approval evidence for this subject. This is the ONLY branch that
+		// consults evidence — a block/comment/challenge onFailure is untouched.
+		if eff == EffectRequireReview {
+			satisfied, gap := approvalSatisfies(c.appr.evidenceFor(subj), c.sourceSha, c.mrAuthor)
+			if satisfied {
+				return Finding{}, 0, false, false // obligation satisfied -> silent, no firing
+			}
+			return Finding{
+				Rule:       r.Name,
+				Obligation: r.Prove.Obligation,
+				Effect:     EffectRequireReview,
+				Subject:    subj,
+				Points:     r.Points,
+				Code:       r.OnFailure.Code,
+			}, firings, true, gap
 		}
 		return Finding{
 			Rule:       r.Name,
 			Obligation: r.Prove.Obligation,
-			Effect:     Effect(r.OnFailure.Effect),
+			Effect:     eff,
 			Subject:    subj,
 			Points:     r.Points,
 			Code:       r.OnFailure.Code,
-		}, firings, true
+		}, firings, true, false
 	default:
-		return Finding{}, 0, false // satisfied for this subject -> silent, no firing
+		return Finding{}, 0, false, false // satisfied for this subject -> silent, no firing
 	}
 }
 
@@ -256,14 +321,18 @@ func subjectMatchCount(subj string, matched []EvalChange) int {
 // grouping what were eight positional parameters into one struct so the helper
 // stays within the linter's parameter bound (go:S107) without a behavioural
 // change. env/in/envLabel are shared across subjects of a rule; r/expr/leafErr
-// are the rule's decoded proof.
+// are the rule's decoded proof; appr/sourceSha/mrAuthor are the shared E2-S07
+// require-review satisfaction inputs (appr may be nil ⇒ no injected evidence).
 type coverCtx struct {
-	env      *cel.Env
-	in       *EvaluationInput
-	r        policy.Rule
-	expr     string
-	envLabel string
-	leafErr  error
+	env       *cel.Env
+	in        *EvaluationInput
+	r         policy.Rule
+	expr      string
+	envLabel  string
+	leafErr   error
+	appr      *ApprovalContext
+	sourceSha string
+	mrAuthor  string
 }
 
 // subjectsOf returns the DISTINCT subjects of the matched changes in
