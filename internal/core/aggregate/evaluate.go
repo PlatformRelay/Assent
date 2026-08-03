@@ -101,9 +101,20 @@ func bindLeafActivation(in EvaluationInput, ch EvalChange, envLabel string) map[
 	}
 }
 
-// factsToCEL flattens resolved facts to CEL-navigable maps keyed
-// provider->name->field. A non-resolved fact carries no `value` key, so a
-// predicate reading `facts.<p>.<n>.value` errors -> fail-safe (E2-S05).
+// stateResolved is the ONLY fact state that exposes a `value` binding. The other
+// three frozen states (unavailable/invalid/expired) are non-resolved and never
+// bind a value — reading `facts.<p>.<n>.value` on them errors, which is fail-safe
+// by effect (ADR-0007 F6 / ADR-0017 §6). Declared here (not imported) to keep the
+// pure engine self-contained.
+const stateResolved = "resolved"
+
+// factsToCEL flattens facts to CEL-navigable maps keyed provider->name->field.
+// The `value` key is bound ONLY for a RESOLVED fact (E2-S05): a non-resolved fact
+// (unavailable/invalid/expired) NEVER exposes value — even a malformed/stale
+// in-memory Fact that carries one — so a predicate reading `facts.<p>.<n>.value`
+// on it errors -> fail-safe, never a permissive silent bind. This state gate is
+// load-bearing: without it a stale value on a non-resolved controlling fact could
+// bind and let the run evaluate permissively (fail-open).
 func factsToCEL(facts map[string]map[string]Fact) map[string]any {
 	out := make(map[string]any, len(facts))
 	for provider, byName := range facts {
@@ -120,7 +131,7 @@ func factsToCEL(facts map[string]map[string]Fact) map[string]any {
 			if f.Reason != "" {
 				fm["reason"] = f.Reason
 			}
-			if f.Value != nil {
+			if f.State == stateResolved && f.Value != nil {
 				fm["value"] = toCEL(f.Value)
 			}
 			pm[name] = fm
