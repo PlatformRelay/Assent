@@ -49,6 +49,10 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 
 	decision := DecisionApprove
 	var findings []Finding
+	// pointsSum accrues author-declared rule.points PER FIRING (per matched-and-
+	// failed change), NOT per finding — ADR-0007 Amendment 2, the bulk-change /
+	// salami-slice guard. It gates APPROVE at order #4 (risk check) below.
+	pointsSum := 0
 
 	// An obligation is "covered" when at least one ENFORCE-phase rule names it in
 	// prove.obligation — regardless of whether that rule's match selected a
@@ -83,11 +87,28 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 		ctx := coverCtx{env: env, in: in, r: r, expr: expr, envLabel: bind.Environment, leafErr: leafErr}
 
 		for _, subj := range subjectsOf(matched) {
-			f, contributes := coverSubject(ctx, subj, matched)
+			f, firings, contributes := coverSubject(ctx, subj, matched)
 			if !contributes {
 				continue
 			}
-			decision = worse(decision, effectDecision(f.Effect))
+			// Points accrue PER FIRING: the finding carries the AUTHORED per-firing
+			// weight r.Points (e.g. 10), but the SUM adds firings*r.Points — a
+			// subject with K failed changes of a points:w rule contributes K*w. The
+			// finding-vs-sum asymmetry (one finding shows w; the sum counts K*w) is
+			// INTENTIONAL (ADR-0007 Amendment 2); do NOT "fix" the finding to K*w.
+			pointsSum += firings * r.Points
+			// Decision mapping. comment is the decision-NEUTRAL soft points channel
+			// (ADR-0007) — but ONLY for a NON-required (signal) obligation. A
+			// REQUIRED obligation is satisfied-to-arm (ADR-0017 §2, which SUPERSEDES
+			// ADR-0007's coverage line): an unproven required obligation lowers the
+			// decision regardless of effect, so comment does NOT go neutral there.
+			// Without this guard a required obligation proved by a comment-onFailure
+			// rule that FIRED would fail OPEN to APPROVE on an unproven obligation.
+			eff := firingEffectDecision(f.Effect)
+			if contains(bind.Require, r.Prove.Obligation) {
+				eff = effectDecision(f.Effect) // required: comment still lowers (§2)
+			}
+			decision = worse(decision, eff)
 			findings = append(findings, f)
 		}
 	}
@@ -116,6 +137,13 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 		})
 	}
 
+	// Aggregation order #4 (ADR-0007, the LAST check): with block (#1), unresolved
+	// challenge (#2), and uncovered/unproven obligations (#3) already reduced, a
+	// points sum over the binding threshold escalates an otherwise-APPROVE decision
+	// to REVIEW. worse() keeps any earlier BLOCK/REVIEW intact (a block dominates a
+	// points total; the threshold never displaces it).
+	decision = worse(decision, riskDecision(pointsSum, bind.Risk.Threshold))
+
 	sortFindings(findings)
 	return Result{Decision: decision, Findings: findings}, nil
 }
@@ -131,9 +159,18 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 // onFailure effect. Both never APPROVE; the exact tri-state ordering when a
 // single subject mixes a clean-false with an error is refined in E2-S05 (no S04
 // input exercises the mix, and the never-APPROVE invariant holds either way).
-func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, bool) {
+//
+// The returned int is the FIRING COUNT K: how many of this subject's matched
+// changes did NOT cleanly pass (evaluated `when`-false, or errored). The caller
+// multiplies K by the rule's authored points for the per-firing risk sum
+// (ADR-0007 Amendment 2). K is 0 (and contributes==false) only when every matched
+// change cleanly proved the obligation. Over-counting K (e.g. an errored change)
+// is the SAFE direction — it can only raise the sum toward REVIEW, never toward a
+// wrong APPROVE.
+func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, int, bool) {
 	r := c.r
-	// An all/any/not tree is E2-S03; treat it as unproven here (fail-safe).
+	// An all/any/not tree is E2-S03; treat it as unproven here (fail-safe). Every
+	// matched change for this subject is a fail-safe firing (over-count is SAFE).
 	if c.leafErr != nil {
 		return Finding{
 			Rule:       r.Name,
@@ -142,10 +179,11 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, bool)
 			Subject:    subj,
 			Points:     r.Points,
 			Code:       "predicate.error",
-		}, true
+		}, subjectMatchCount(subj, matched), true
 	}
 
 	anyErr, anyFalse := false, false
+	firings := 0
 	for _, ch := range matched {
 		if ch.Subject != subj {
 			continue
@@ -153,11 +191,14 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, bool)
 		ok, evalErr := evalLeaf(c.env, *c.in, ch, c.envLabel, c.expr)
 		if evalErr != nil {
 			anyErr = true
+			firings++ // a predicate-error firing (fail-safe; over-count is SAFE)
 			continue
 		}
 		if !ok {
 			anyFalse = true
+			firings++ // a clean-false firing -> the rule's onFailure effect
 		}
+		// a clean-true change proves the obligation for this change: NOT a firing.
 	}
 
 	switch {
@@ -169,7 +210,7 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, bool)
 			Subject:    subj,
 			Points:     r.Points,
 			Code:       "predicate.error",
-		}, true
+		}, firings, true
 	case anyFalse:
 		// A prove rule with a nil OnFailure is a malformed policy the schema's
 		// oneOf normally rejects — but Cover also accepts hand-built policies, so
@@ -183,7 +224,7 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, bool)
 				Subject:    subj,
 				Points:     r.Points,
 				Code:       "policy.shape-error",
-			}, true
+			}, firings, true
 		}
 		return Finding{
 			Rule:       r.Name,
@@ -192,10 +233,23 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, bool)
 			Subject:    subj,
 			Points:     r.Points,
 			Code:       r.OnFailure.Code,
-		}, true
+		}, firings, true
 	default:
-		return Finding{}, false // satisfied for this subject -> silent
+		return Finding{}, 0, false // satisfied for this subject -> silent, no firing
 	}
+}
+
+// subjectMatchCount counts the matched changes attributed to subj — the firing
+// count used when the whole predicate is unevaluable (an S03 tree `when`), where
+// every matched change is treated as a fail-safe firing.
+func subjectMatchCount(subj string, matched []EvalChange) int {
+	n := 0
+	for _, ch := range matched {
+		if ch.Subject == subj {
+			n++
+		}
+	}
+	return n
 }
 
 // coverCtx bundles the per-rule evaluation context handed to coverSubject —
