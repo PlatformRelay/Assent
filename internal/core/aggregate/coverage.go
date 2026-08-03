@@ -80,9 +80,10 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 		}
 
 		expr, leafErr := leafExpr(r.Prove.When)
+		ctx := coverCtx{env: env, in: in, r: r, expr: expr, envLabel: bind.Environment, leafErr: leafErr}
 
 		for _, subj := range subjectsOf(matched) {
-			f, contributes := coverSubject(env, in, r, expr, bind.Environment, leafErr, subj, matched)
+			f, contributes := coverSubject(ctx, subj, matched)
 			if !contributes {
 				continue
 			}
@@ -130,9 +131,10 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 // onFailure effect. Both never APPROVE; the exact tri-state ordering when a
 // single subject mixes a clean-false with an error is refined in E2-S05 (no S04
 // input exercises the mix, and the never-APPROVE invariant holds either way).
-func coverSubject(env *cel.Env, in *EvaluationInput, r policy.Rule, expr, envLabel string, leafErr error, subj string, matched []EvalChange) (Finding, bool) {
+func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, bool) {
+	r := c.r
 	// An all/any/not tree is E2-S03; treat it as unproven here (fail-safe).
-	if leafErr != nil {
+	if c.leafErr != nil {
 		return Finding{
 			Rule:       r.Name,
 			Obligation: r.Prove.Obligation,
@@ -148,7 +150,7 @@ func coverSubject(env *cel.Env, in *EvaluationInput, r policy.Rule, expr, envLab
 		if ch.Subject != subj {
 			continue
 		}
-		ok, evalErr := evalLeaf(env, *in, ch, envLabel, expr)
+		ok, evalErr := evalLeaf(c.env, *c.in, ch, c.envLabel, c.expr)
 		if evalErr != nil {
 			anyErr = true
 			continue
@@ -194,6 +196,20 @@ func coverSubject(env *cel.Env, in *EvaluationInput, r policy.Rule, expr, envLab
 	default:
 		return Finding{}, false // satisfied for this subject -> silent
 	}
+}
+
+// coverCtx bundles the per-rule evaluation context handed to coverSubject —
+// grouping what were eight positional parameters into one struct so the helper
+// stays within the linter's parameter bound (go:S107) without a behavioural
+// change. env/in/envLabel are shared across subjects of a rule; r/expr/leafErr
+// are the rule's decoded proof.
+type coverCtx struct {
+	env      *cel.Env
+	in       *EvaluationInput
+	r        policy.Rule
+	expr     string
+	envLabel string
+	leafErr  error
 }
 
 // subjectsOf returns the DISTINCT subjects of the matched changes in
