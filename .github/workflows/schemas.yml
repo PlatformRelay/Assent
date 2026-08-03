@@ -57,6 +57,6 @@ jobs:
         with:
           node-version: "22"
       - name: install stock Draft 2020-12 validator (ajv-cli)
-        run: npm install -g ajv-cli@5.0.0 ajv-formats@3.0.1
+        run: npm install -g --ignore-scripts ajv-cli@5.0.0 ajv-formats@3.0.1
       - name: stock validator over schemas + contract fixtures (P3-P1-3)
         run: bash hack/validate-schemas-stock.sh
