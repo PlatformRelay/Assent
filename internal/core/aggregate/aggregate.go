@@ -159,6 +159,15 @@ type Finding struct {
 type Result struct {
 	Decision Decision  `json:"decision"`
 	Findings []Finding `json:"findings"`
+	// Observed carries the findings produced by OBSERVE-phase rules (E2-S08,
+	// ADR-0018 §1). They are evaluated and recorded but STRUCTURALLY EXCLUDED from
+	// aggregation — they never enter the decision reduction, the points sum, or the
+	// capability-gap set (Findings is the enforcing bucket that does). Routed here
+	// at the point of production, not filtered post-hoc. Canonically sorted like
+	// Findings. omitempty keeps the no-observe Result (the D-016 golden) byte-
+	// identical, and record.go threads it into DecisionRecord findings.observed
+	// (was hardcoded []).
+	Observed []Finding `json:"observed,omitempty"`
 	// CapabilityGaps records, per governed subject, a forge capability gap
 	// discovered while satisfying a require-review obligation (E2-S07): an
 	// injected ApprovalEvidence with verifyingCapability:none. It is the

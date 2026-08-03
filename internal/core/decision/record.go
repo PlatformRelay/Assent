@@ -203,10 +203,12 @@ func Build(res aggregate.Result, pins Pins) (Report, error) {
 		Kind:       kindDecisionRecord,
 		Decision:   string(res.Decision),
 		Findings: findingsObject{
-			// The walking skeleton has no observe phase -> observed is empty
-			// (but non-nil so it marshals to [] not null). enforcing carries the
-			// S03 findings (D-017 phase split).
-			Observed:  []finding{},
+			// D-017 phase split (E2-S08): observed carries the OBSERVE-phase findings
+			// the aggregator routed to res.Observed (structurally excluded from the
+			// decision); enforcing carries the aggregated findings. toFindings returns
+			// a non-nil slice, so a run with no observe rules still marshals observed
+			// as [] (not null) — keeping the D-016 golden byte-identical.
+			Observed:  toFindings(res.Observed),
 			Enforcing: fs,
 		},
 		Pins: pinsObj,

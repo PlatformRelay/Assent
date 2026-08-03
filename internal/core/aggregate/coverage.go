@@ -37,7 +37,7 @@ import (
 // — every require-review obligation stays unsatisfied (the D-016 golden path).
 // It is the stable 3-arg entry preserved byte-identical for existing callers.
 func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (Result, error) {
-	return cover(pol, bind, in, nil)
+	return cover(pol, bind, in, nil, policy.PhaseEnforce)
 }
 
 // CoverWithApproval is the E2-S07 evidence-aware decision entry: it additionally
@@ -47,16 +47,41 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 // non-self/bot approval (ADR-0017 §3). A nil appr is exactly Cover. Evidence is
 // injected as a second input, never a field on the frozen EvaluationInput.
 func CoverWithApproval(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, appr *ApprovalContext) (Result, error) {
-	return cover(pol, bind, in, appr)
+	return cover(pol, bind, in, appr, policy.PhaseEnforce)
+}
+
+// CoverWithPhaseCeiling is the E2-S08 pack-ceiling decision entry: it additionally
+// takes a pack-level phase CEILING (ADR-0018 §1) that DOWNGRADES every rule's
+// effective phase to min(rule.phase, ceiling) on the off<observe<enforce ordering.
+// The ceiling only ever caps toward off — it is never additive:
+//   - ceiling enforce ⇒ each rule's own phase stands (no cap) — exactly Cover;
+//   - ceiling observe ⇒ every rule caps at observe (an enforce rule inside an
+//     observe pack runs as observe → its finding lands in the observed bucket);
+//   - ceiling off ⇒ nothing in the pack evaluates.
+//
+// The ceiling is threaded as a PARAMETER (default PhaseEnforce = no cap) because
+// the frozen MergePolicy carries no spec.phase — only a Pack does (spec.phase),
+// and Cover works over MergePolicy. A caller that has loaded a Pack passes its
+// spec.phase here; a caller with no pack passes enforce (or uses Cover). An empty
+// ceiling is normalized to enforce (no cap) so a caller slip never caps everything off.
+func CoverWithPhaseCeiling(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, appr *ApprovalContext, ceiling policy.Phase) (Result, error) {
+	return cover(pol, bind, in, appr, ceiling)
 }
 
 // cover is the shared implementation. It returns the reduced decision plus the
 // canonically sorted findings that justify it. An error is returned only for a
 // policy the loader should have rejected (an unsupported/absent match domain) or
 // an unbuildable CEL env — the decision itself is always fail-safe.
-func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, appr *ApprovalContext) (Result, error) {
+func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, appr *ApprovalContext, ceiling policy.Phase) (Result, error) {
 	if pol == nil || bind == nil || in == nil {
 		return Result{}, fmt.Errorf("coverage: nil policy, binding, or input")
+	}
+	// An empty ceiling means "no cap" — normalize to enforce so a caller slip (an
+	// unset pack phase reaching here) never silently caps every rule off. A missing
+	// phase on the pack itself is rejected at LOAD (E2-S01 strict decode); this is
+	// only the in-memory-caller defensive default.
+	if ceiling == "" {
+		ceiling = policy.PhaseEnforce
 	}
 
 	env, err := newEvalEnv()
@@ -66,6 +91,10 @@ func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, a
 
 	decision := DecisionApprove
 	var findings []Finding
+	// observed carries OBSERVE-phase findings — structurally excluded from the
+	// decision/points/capabilityGaps below; recorded and canonically sorted, then
+	// threaded into DecisionRecord findings.observed by record.go (E2-S08).
+	var observed []Finding
 	// capabilityGaps records verifyingCapability:none gaps discovered while
 	// satisfying require-review, keyed by subject (nil until the first gap, so the
 	// no-evidence Result stays byte-identical). It never satisfies — the finding
@@ -87,10 +116,25 @@ func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, a
 
 	for i := range pol.Spec.Rules {
 		r := pol.Spec.Rules[i]
-		// Only enforce-phase rules feed the decision (observe/off are recorded
-		// elsewhere, never aggregated — ADR-0018 §1). A missing phase never
-		// reaches here (the loader requires it) but would be conservatively skipped.
-		if r.Phase != policy.PhaseEnforce {
+		// Effective phase is the pack CEILING applied to the rule's own phase:
+		// min(rule.phase, ceiling) on off<observe<enforce (ADR-0018 §1). The ceiling
+		// only ever DOWNGRADES toward off; an enforce rule is never silently capped
+		// EXCEPT by this explicit ceiling (a downgrade bug = a real block becomes
+		// non-enforcing = fail-OPEN, so the cap must be this explicit min, nothing
+		// implicit). A missing rule phase is rejected at LOAD (E2-S01); a hand-built
+		// rule with an unset phase ranks as off here and is conservatively skipped.
+		phase := effectivePhase(r.Phase, ceiling)
+		// off (or any unknown/empty phase — fail-safe) ⇒ the rule is NEVER
+		// evaluated: short-circuit BEFORE prove-nil, matchChanges, leafExpr, and any
+		// CEL compile/eval, so a rule whose `when` would error still never evaluates
+		// when off (REQ-E2-S08-02). Only the two known evaluated phases survive; an
+		// unrecognized phase falls to the fail-safe default (never enforce, never
+		// silently feed the decision). A missing phase is rejected at LOAD (E2-S01);
+		// this default only guards a hand-built in-memory rule.
+		switch phase {
+		case policy.PhaseEnforce, policy.PhaseObserve:
+			// evaluated below.
+		default:
 			continue
 		}
 		// Only obligation (prove) rules participate in coverage. A non-obligation
@@ -98,7 +142,14 @@ func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, a
 		if r.Prove == nil {
 			continue
 		}
-		covered[r.Prove.Obligation] = true
+		// Only ENFORCE marks the obligation covered — an observe(d) rule (or an
+		// enforce rule capped to observe by the pack ceiling) does NOT feed the
+		// decision, so it can NEVER satisfy a required obligation. Marking covered
+		// from an observe rule would fail OPEN: a required obligation "proven" only
+		// in observe would go vacuously satisfied instead of the fail-safe REVIEW.
+		if phase == policy.PhaseEnforce {
+			covered[r.Prove.Obligation] = true
+		}
 
 		matched, merr := matchChanges(r.Match, in.ChangeSet.Changes)
 		if merr != nil {
@@ -116,6 +167,17 @@ func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, a
 
 		for _, subj := range subjectsOf(matched) {
 			f, firings, contributes, gap := coverSubject(ctx, subj, matched)
+			// OBSERVE routing (ADR-0018 §1): the rule IS evaluated (so operators see
+			// what it WOULD do), but its finding is routed to the observed bucket and
+			// STRUCTURALLY EXCLUDED from aggregation — it never touches the decision,
+			// the points sum, or the capability-gap set. Excluded at the point of
+			// production (a `continue` before all of them), not filtered post-hoc.
+			if phase == policy.PhaseObserve {
+				if contributes {
+					observed = append(observed, f)
+				}
+				continue
+			}
 			// A verifyingCapability:none gap is recorded distinctly (never satisfies;
 			// the finding still stands below) so a capability gap stays separable
 			// from a plain missing approval (d016_missing_approval invariant).
@@ -182,7 +244,37 @@ func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, a
 	decision = worse(decision, riskDecision(pointsSum, bind.Risk.Threshold))
 
 	sortFindings(findings)
-	return Result{Decision: decision, Findings: findings, CapabilityGaps: capabilityGaps}, nil
+	sortFindings(observed)
+	return Result{Decision: decision, Findings: findings, Observed: observed, CapabilityGaps: capabilityGaps}, nil
+}
+
+// effectivePhase applies the pack CEILING to a rule's own phase: min(rule,
+// ceiling) on the off<observe<enforce ordering (ADR-0018 §1). The ceiling only
+// ever DOWNGRADES toward off — it is never additive. A ceiling of enforce (the
+// no-pack default) returns the rule's phase unchanged.
+func effectivePhase(rule, ceiling policy.Phase) policy.Phase {
+	if phaseRank(ceiling) < phaseRank(rule) {
+		return ceiling
+	}
+	return rule
+}
+
+// phaseRank totally orders the phases off<observe<enforce for the ceiling min().
+// An unknown/empty phase ranks as off (0) — the fail-safe direction: an
+// unrecognized phase is NEVER evaluated/enforced. A missing rule/pack phase is
+// rejected at LOAD (E2-S01 strict decode); this default only guards a hand-built
+// in-memory rule that never passed through the loader.
+func phaseRank(p policy.Phase) int {
+	switch p {
+	case policy.PhaseObserve:
+		return 1
+	case policy.PhaseEnforce:
+		return 2
+	case policy.PhaseOff:
+		return 0
+	default:
+		return 0
+	}
 }
 
 // coverSubject evaluates one (rule, subject) pair over that subject's matched
