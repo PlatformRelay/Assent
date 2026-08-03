@@ -125,7 +125,7 @@ func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, a
 		// rule with an unset phase ranks as off here and is conservatively skipped.
 		phase := effectivePhase(r.Phase, ceiling)
 		// off (or any unknown/empty phase — fail-safe) ⇒ the rule is NEVER
-		// evaluated: short-circuit BEFORE prove-nil, matchChanges, leafExpr, and any
+		// evaluated: short-circuit BEFORE prove-nil, matchChanges, the tree walk, and any
 		// CEL compile/eval, so a rule whose `when` would error still never evaluates
 		// when off (REQ-E2-S08-02). Only the two known evaluated phases survive; an
 		// unrecognized phase falls to the fail-safe default (never enforce, never
@@ -159,9 +159,8 @@ func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, a
 			continue
 		}
 
-		expr, leafErr := leafExpr(r.Prove.When)
 		ctx := coverCtx{
-			env: env, in: in, r: r, expr: expr, envLabel: bind.Environment, leafErr: leafErr,
+			env: env, in: in, r: r, when: r.Prove.When, envLabel: bind.Environment,
 			appr: appr, sourceSha: sourceSha, mrAuthor: mrAuthor,
 		}
 
@@ -282,12 +281,18 @@ func phaseRank(p policy.Phase) int {
 // when the obligation is SATISFIED for this subject (all matched changes clean
 // true) — a satisfied obligation is silent and does not lower APPROVE.
 //
-// Precedence when a subject's matched changes disagree: an assert tree (S03) or
-// any evaluation error makes the obligation UNPROVEN for this subject ->
-// require-review (predicate.error); else a clean-false `when` -> the rule's
-// onFailure effect. Both never APPROVE; the exact tri-state ordering when a
-// single subject mixes a clean-false with an error is refined in E2-S05 (no S04
-// input exercises the mix, and the never-APPROVE invariant holds either way).
+// Precedence when a subject's matched changes disagree: any evaluation error
+// (a leaf error, or an all/any/not tri-state error surfaced by walkAssertTree)
+// makes the obligation UNPROVEN for this subject -> require-review
+// (predicate.error); else a clean-false `when` -> the rule's onFailure effect.
+// Both never APPROVE; the exact tri-state ordering when a single subject mixes a
+// clean-false with an error is refined in E2-S05 (no S04 input exercises the mix,
+// and the never-APPROVE invariant holds either way).
+//
+// The `when` is walked as the full assertTree (E2-S03): a bare-string/single-leaf
+// `when` walks to exactly the S02 evalLeaf result (byte-identical findings), and
+// an all/any/not composes leaves in Kleene tri-state. The failing leaf's expanded
+// `message` is attributed onto the emitted finding (per-leaf attribution).
 //
 // The returned int is the FIRING COUNT K: how many of this subject's matched
 // changes did NOT cleanly pass (evaluated `when`-false, or errored). The caller
@@ -303,39 +308,43 @@ func phaseRank(p policy.Phase) int {
 //
 // S07 satisfaction is gated STRUCTURALLY: injected evidence is consulted ONLY in
 // the clean-false authored-onFailure `require-review` branch. A predicate error,
-// an assert-tree (S03) leafErr, a nil-OnFailure shape error, and a block effect
+// an all/any/not tri-state error, a nil-OnFailure shape error, and a block effect
 // therefore can NEVER be suppressed by evidence — evidence satisfies an authored
 // require-review obligation, never a fail-safe error or a block.
 func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, int, bool, bool) {
 	r := c.r
-	// An all/any/not tree is E2-S03; treat it as unproven here (fail-safe). Every
-	// matched change for this subject is a fail-safe firing (over-count is SAFE).
-	if c.leafErr != nil {
-		return Finding{
-			Rule:       r.Name,
-			Obligation: r.Prove.Obligation,
-			Effect:     EffectRequireReview,
-			Subject:    subj,
-			Points:     r.Points,
-			Code:       "predicate.error",
-		}, subjectMatchCount(subj, matched), true, false
-	}
 
 	anyErr, anyFalse := false, false
 	firings := 0
+	// errMsg/falseMsg attribute the failing leaf's expanded message. Because a
+	// subject can have several matched changes that fail with DIFFERENT expanded
+	// messages (same template, different {{ old }}/{{ new }}/{{ path }} values), a
+	// "first in input order" capture would make the finding depend on change order
+	// — a determinism regression, since Message is the only per-change-varying
+	// Finding field. We instead keep the LEXICOGRAPHICALLY SMALLEST message, a
+	// canonical function of the failing set (order-independent under any shuffle,
+	// REQ-E2-S03-05). errMsg feeds the predicate.error branch, falseMsg the
+	// clean-false onFailure branch.
+	var errMsg, falseMsg string
 	for _, ch := range matched {
 		if ch.Subject != subj {
 			continue
 		}
-		ok, evalErr := evalLeaf(c.env, *c.in, ch, c.envLabel, c.expr)
-		if evalErr != nil {
-			anyErr = true
+		ok, msg, walkErr := walkAssertTree(c.env, *c.in, ch, c.envLabel, c.when)
+		if walkErr != nil {
 			firings++ // a predicate-error firing (fail-safe; over-count is SAFE)
+			if !anyErr || msg < errMsg {
+				errMsg = msg
+			}
+			anyErr = true
 			continue
 		}
 		if !ok {
-			anyFalse = true
 			firings++ // a clean-false firing -> the rule's onFailure effect
+			if !anyFalse || msg < falseMsg {
+				falseMsg = msg
+			}
+			anyFalse = true
 		}
 		// a clean-true change proves the obligation for this change: NOT a firing.
 	}
@@ -349,6 +358,7 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, int, 
 			Subject:    subj,
 			Points:     r.Points,
 			Code:       "predicate.error",
+			Message:    errMsg,
 		}, firings, true, false
 	case anyFalse:
 		// A prove rule with a nil OnFailure is a malformed policy the schema's
@@ -363,6 +373,7 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, int, 
 				Subject:    subj,
 				Points:     r.Points,
 				Code:       "policy.shape-error",
+				Message:    falseMsg,
 			}, firings, true, false
 		}
 		eff := Effect(r.OnFailure.Effect)
@@ -381,6 +392,7 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, int, 
 				Subject:    subj,
 				Points:     r.Points,
 				Code:       r.OnFailure.Code,
+				Message:    falseMsg,
 			}, firings, true, gap
 		}
 		return Finding{
@@ -390,23 +402,11 @@ func coverSubject(c coverCtx, subj string, matched []EvalChange) (Finding, int, 
 			Subject:    subj,
 			Points:     r.Points,
 			Code:       r.OnFailure.Code,
+			Message:    falseMsg,
 		}, firings, true, false
 	default:
 		return Finding{}, 0, false, false // satisfied for this subject -> silent, no firing
 	}
-}
-
-// subjectMatchCount counts the matched changes attributed to subj — the firing
-// count used when the whole predicate is unevaluable (an S03 tree `when`), where
-// every matched change is treated as a fail-safe firing.
-func subjectMatchCount(subj string, matched []EvalChange) int {
-	n := 0
-	for _, ch := range matched {
-		if ch.Subject == subj {
-			n++
-		}
-	}
-	return n
 }
 
 // coverCtx bundles the per-rule evaluation context handed to coverSubject —
@@ -419,9 +419,8 @@ type coverCtx struct {
 	env       *cel.Env
 	in        *EvaluationInput
 	r         policy.Rule
-	expr      string
+	when      policy.AssertTree
 	envLabel  string
-	leafErr   error
 	appr      *ApprovalContext
 	sourceSha string
 	mrAuthor  string
@@ -441,16 +440,6 @@ func subjectsOf(matched []EvalChange) []string {
 		out = append(out, ch.Subject)
 	}
 	return out
-}
-
-// leafExpr extracts the single CEL leaf string from a prove.when. An all/any/not
-// combinator is E2-S03 (the tree walker), NOT this story — it returns an error so
-// the caller fails safe rather than silently ignoring the composed condition.
-func leafExpr(when policy.AssertTree) (string, error) {
-	if when.Leaf != nil {
-		return when.Leaf.CEL, nil
-	}
-	return "", fmt.Errorf("assert tree (all/any/not) is E2-S03, not supported by the S04 coverage loop")
 }
 
 // matchChanges returns, in input order, the changes the rule's match domain

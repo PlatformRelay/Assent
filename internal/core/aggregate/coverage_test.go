@@ -280,37 +280,58 @@ func TestCoverPredicateErrorFailsSafe(t *testing.T) {
 	}
 }
 
-// TestCoverTreeWhenFailsSafe — an all/any/not assert tree is E2-S03, not S04;
-// Cover must fail-safe (never crash, never APPROVE) until the walker lands.
-func TestCoverTreeWhenFailsSafe(t *testing.T) {
-	pol := &policy.MergePolicy{
-		Spec: policy.MergePolicySpec{
-			Rules: []policy.Rule{{
-				Name:  "tree-rule",
-				Phase: policy.PhaseEnforce,
-				Match: policy.Match{Files: &policy.FilesMatch{Paths: []string{"**.yaml"}}},
-				Prove: &policy.Prove{Obligation: "ownership", When: policy.AssertTree{All: []policy.AssertTree{
-					{Leaf: &policy.Leaf{CEL: "true"}},
-					{Leaf: &policy.Leaf{CEL: "new >= old"}},
-				}}},
-				OnFailure: &policy.OnFailure{Effect: policy.EffectRequireReview, Code: "owner-missing"},
-			}},
-		},
+// TestCoverTreeWhenEvaluates — an all/any/not assert tree is now walked by the
+// E2-S03 combinator walker through Cover (superseding the S04 fail-safe stub that
+// mapped any tree to predicate.error). A tree whose second conjunct fails yields
+// the rule's onFailure effect (NOT predicate.error), proving the walker is wired
+// into the coverage loop; a tree that holds proves the obligation (no finding).
+func TestCoverTreeWhenEvaluates(t *testing.T) {
+	mkPol := func() *policy.MergePolicy {
+		return &policy.MergePolicy{
+			Spec: policy.MergePolicySpec{
+				Rules: []policy.Rule{{
+					Name:  "tree-rule",
+					Phase: policy.PhaseEnforce,
+					Match: policy.Match{Files: &policy.FilesMatch{Paths: []string{"**.yaml"}}},
+					Prove: &policy.Prove{Obligation: "non-destructive", When: policy.AssertTree{All: []policy.AssertTree{
+						{Leaf: &policy.Leaf{CEL: "kind == 'modify'"}},
+						{Leaf: &policy.Leaf{CEL: "new >= old", Message: "must not shrink"}},
+					}}},
+					OnFailure: &policy.OnFailure{Effect: policy.EffectBlock, Code: "shrunk"},
+				}},
+			},
+		}
 	}
-	bind := &policy.Binding{Require: []string{"ownership"}, Environment: "prod"}
-	in := &EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{
+	bind := &policy.Binding{Require: []string{"non-destructive"}, Environment: "prod"}
+
+	// Second conjunct fails (6 -> 3) -> clean-false -> block onFailure (NOT predicate.error).
+	shrink := &EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{
+		{Subject: "s:1", File: "a.yaml", Path: "/x", Kind: "modify", Old: intNum(6), New: intNum(3)},
+	}}}
+	got, err := Cover(mkPol(), bind, shrink)
+	if err != nil {
+		t.Fatalf("Cover on a tree when: %v", err)
+	}
+	if got.Decision != DecisionBlock {
+		t.Errorf("failing tree conjunct must BLOCK, got %q", got.Decision)
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Code != "shrunk" || got.Findings[0].Effect != EffectBlock {
+		t.Fatalf("want one block/shrunk finding from the walked tree, got %+v", got.Findings)
+	}
+	if got.Findings[0].Message != "must not shrink" {
+		t.Errorf("finding must carry the failing leaf's message, got %q", got.Findings[0].Message)
+	}
+
+	// Both conjuncts hold (3 -> 6) -> obligation proven -> no finding, APPROVE.
+	grow := &EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{
 		{Subject: "s:1", File: "a.yaml", Path: "/x", Kind: "modify", Old: intNum(3), New: intNum(6)},
 	}}}
-
-	got, err := Cover(pol, bind, in)
+	got, err = Cover(mkPol(), bind, grow)
 	if err != nil {
-		t.Fatalf("Cover must not error on a tree when: %v", err)
+		t.Fatalf("Cover on a satisfied tree: %v", err)
 	}
-	if got.Decision == DecisionApprove {
-		t.Fatal("an unimplemented tree when must never APPROVE")
-	}
-	if len(got.Findings) != 1 || got.Findings[0].Code != "predicate.error" {
-		t.Fatalf("want one predicate.error finding for the tree when, got %+v", got.Findings)
+	if got.Decision != DecisionApprove || len(got.Findings) != 0 {
+		t.Errorf("a satisfied tree must prove the obligation (APPROVE, no finding), got %q %+v", got.Decision, got.Findings)
 	}
 }
 

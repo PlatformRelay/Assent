@@ -151,6 +151,14 @@ type Finding struct {
 	Subject    string `json:"subject"`
 	Points     int    `json:"points"`
 	Code       string `json:"code,omitempty"`
+	// Message is the failing leaf's expanded per-leaf message (ADR-0013 E2-S03):
+	// when an all/any/not (or single-leaf) `when` is unsatisfied, the attributed
+	// leaf's `message` — with {{ old }}/{{ new }}/{{ facts.* }} template expansion
+	// over the SAME activation model the CEL leaf saw — names WHICH conjunct failed.
+	// omitempty keeps every pre-S03 finding (bare-string/no-message leaves, incl.
+	// the D-016 golden) byte-identical, and record.go does not project it into the
+	// serialized DecisionRecord finding (the frozen schema has no message field).
+	Message string `json:"message,omitempty"`
 }
 
 // Result is the aggregator output: the reduced decision and the canonically
