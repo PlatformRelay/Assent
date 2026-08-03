@@ -31,3 +31,7 @@ agent-context/
 
 # Session worktrees (agent-loop-local lanes)
 .worktrees/
+
+# Reference repos (third-party/internal IP — read-only inputs, NEVER committed;
+# only generalized, generated equivalents may enter the tree — D-002 / AGENTS.md rule 1)
+references/
