@@ -76,7 +76,8 @@ runs early/parallel. **Infra-gated (park for operator)**: S10 (L3 e2e green) the
 | ID | Item | Status | Needs operator | Notes |
 | --- | --- | --- | --- | --- |
 | **P4-KIND-LAB** | Durable local kind GitLab lab (`task kind-up`, etc.) | **OPEN — authorized, deferred** (D-038) | no (agent lane when claimed) | Promote Spike-B `boot-kind.sh`; CI stays testcontainer |
-| **P4-CODEQL** | Enable CodeQL default setup (Go + Actions) | **OPEN** — found via cross-repo CodeQL/SonarQube sweep (2026-07-29) | no (Settings → Code security → Default, or `gh api --method PUT repos/PlatformRelay/assent/code-scanning/default-setup`) | `state: not-configured` today despite `schemas.yml`/`verify.yaml` CI; zero-cost enablement, no SonarQube config exists either (not proposing one) |
+| **P4-CODEQL** | Enable CodeQL (Go + Actions) | **DONE** (2026-08-03, D-045) — `.github/workflows/codeql.yaml` | no | Pinned, workflow-based CodeQL with a `go`(manual build)+`actions`(build-mode none) matrix, consistent with sibling repos (MKurator/Kollect); chosen over the zero-config default setup for SHA-pinned reproducibility |
+| **P4-SEC-OSSF** | OpenSSF/security hardening (SECURITY.md, CODEOWNERS, Scorecard, scheduled govulncheck) | **DONE** (2026-08-03, D-045) | no | `SECURITY.md` + `.github/CODEOWNERS` + `scorecard.yaml` + schedule-only `vulncheck.yaml`; modeled on MKurator/Kollect. Residual: turn on branch protection + required checks on `main` (operator) |
 
 ## Code-health / SonarCloud maintainability residuals
 
