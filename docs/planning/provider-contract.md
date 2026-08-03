@@ -1,7 +1,7 @@
 # Provider contract — the frozen `maxAge` defaults (OQ-17 residual)
 
 The provider request/response envelope (`FactQuery`/`FactResponse`) is frozen at
-[`schemas/provider/v1alpha1/`](../../schemas/provider/v1alpha1/), promoted byte-for-byte from
+[`schemas/provider/v1alpha1/`](https://github.com/PlatformRelay/assent/tree/main/schemas/provider/v1alpha1), promoted byte-for-byte from
 Spike C (`hack/spikes/provider/`, P2-E3). This doc promotes Spike C's proposed per-fact-type
 `maxAge` table from [`docs/planning/spikes/spike-c-provider.md`](spikes/spike-c-provider.md)
 (historical evidence, unchanged) to **normative** status — the table the provider host and a

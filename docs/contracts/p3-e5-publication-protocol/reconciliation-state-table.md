@@ -10,7 +10,7 @@ something precise to implement against. It builds on the four marker concepts
 (`slot`/`occurrence`/`decision`/`artifact`) frozen in [`marker-grammar.md`](marker-grammar.md) —
 read that document first for vocabulary. Non-goals: authoring ADR-0019 itself; implementing the
 Reconcile port, `assent doctor`, or `serve`'s keyed lock — see the epic header in
-[`openspec/specs/p3-e5-publication-protocol/spec.md`](../../../openspec/specs/p3-e5-publication-protocol/spec.md).
+[`openspec/specs/p3-e5-publication-protocol/spec.md`](https://github.com/PlatformRelay/assent/blob/main/openspec/specs/p3-e5-publication-protocol/spec.md).
 
 ## The nine-step protocol
 
@@ -158,7 +158,7 @@ unverifiable evidence: `warn` (emit `unserialized-best-effort`), never a silent
 
 ## Fixtures
 
-Three fixtures under [`fixtures/`](fixtures/) exercise this protocol end to end. The first two
+Three fixtures under [`fixtures/`](https://github.com/PlatformRelay/assent/tree/main/docs/contracts/p3-e5-publication-protocol/fixtures) exercise this protocol end to end. The first two
 are the exit-gate artifact P4-E1 consumes for its rerun-idempotence case; the third pins step 8's
 deterministic repair:
 

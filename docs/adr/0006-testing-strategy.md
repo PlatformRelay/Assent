@@ -5,7 +5,7 @@
 | **Status** | Accepted (CI e2e default: GitLab CE testcontainer — Spike B; P2-E5) |
 | **Date** | 2026-07-21 |
 | **Deciders** | Konrad Heimel |
-| **Context links** | [ADR-0005 forge](0005-forge-abstraction-gitlab-first.md) · [openspec/config.yaml](../../openspec/config.yaml) |
+| **Context links** | [ADR-0005 forge](0005-forge-abstraction-gitlab-first.md) · [openspec/config.yaml](https://github.com/PlatformRelay/assent/blob/main/openspec/config.yaml) |
 
 ## Context
 

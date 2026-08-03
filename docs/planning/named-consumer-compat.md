@@ -26,16 +26,16 @@ generic core as packs/providers.
 | # | Proposal | Disposition | Where | When |
 | --- | --- | --- | --- | --- |
 | B1 | Complex pure rule backend (multi-pass / cross-manifest / graph checks) | **Accept contract unlock**; implementation stays post-skeleton | E11 flips Locked → Unlocked (D-017); Phase-3 schemas stay backend-neutral | contract: Phase 3 · impl: named-consumer expansion |
-| B2 | First-class rollout phase `off`/`observe`/`enforce` | **Accept** — reverses the OQ-21 lean | new [P3-E4](../../openspec/specs/later-phases.md) · [ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md) (Accepted, D-030) | Phase 3 (schema) |
+| B2 | First-class rollout phase `off`/`observe`/`enforce` | **Accept** — reverses the OQ-21 lean | new [P3-E4](https://github.com/PlatformRelay/assent/blob/main/openspec/specs/later-phases.md) · [ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md) (Accepted, D-030) | Phase 3 (schema) |
 | B3 | Policy profiles + counterfactual comparison | **Accept records/schema**; `compare` CLI later | P3-E4 · [ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md) (Accepted, D-030) | Phase 3 (schema) · impl Phase 5+ |
 | B4 | Corpus snapshots + machine-enforceable promotion gates | **Accept** as versioned PolicyComparisonSuite | P3-E4 (format) + E6 (runner) · [ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md) (Accepted, D-030) | Phase 3 (format) · Phase 5 (runner) |
 | B5 | Typed ApprovalEvidence contract | **Accept** — resolves OQ-23 | P3-E1 schema slice (dossier P1-E3-S02 feeds it) | Phase 3 |
-| B6 | Database-free marker/reconciliation protocol + per-MR serialization | **Accept** — preserves D-007 | new [P3-E5](../../openspec/specs/later-phases.md) (ADR-0019); P4-E1 exit gate extended | Phase 3 (freeze) · Phase 4 (minimal impl) |
+| B6 | Database-free marker/reconciliation protocol + per-MR serialization | **Accept** — preserves D-007 | new [P3-E5](https://github.com/PlatformRelay/assent/blob/main/openspec/specs/later-phases.md) (ADR-0019); P4-E1 exit gate extended | Phase 3 (freeze) · Phase 4 (minimal impl) |
 | B7 | Merge caps / rate budgets | **Seam now, implement later**; guarantees scoped honestly (see below) | E12 (rescoped service tier) | post-Phase-4 |
 | B8 | Post-merge audit + remediation (OQ-19) | **Seam now, implement later** — correlation pins already exist in the record model | E12 | post-Phase-4 |
 | B9 | Batch/sweep orchestration (OQ-20) | **Seam now, implement later**; no bulk bypass of per-MR preconditions, ever | E12 | post-Phase-4 |
 | B10 | Generated machine-readable rule catalogue | **Accept** — cheap, additive-tolerant report; not a safety schema | E3 seed (generation) + E9 (docs) | Phase 5 |
-| B11 | Kubernetes CRD/CR validation adapter | **Spike first, then decide** — the report itself concedes the dependency risk | new [P2-E6 Spike D](../../openspec/specs/p2-e6-spike-crd/spec.md) → ADR-0020 → E14 (Planned, gated) | spike: Phase-3 window (D-018 — not first-wave) · adapter: post-skeleton |
+| B11 | Kubernetes CRD/CR validation adapter | **Spike first, then decide** — the report itself concedes the dependency risk | new [P2-E6 Spike D](https://github.com/PlatformRelay/assent/blob/main/openspec/specs/p2-e6-spike-crd/spec.md) → ADR-0020 → E14 (Planned, gated) | spike: Phase-3 window (D-018 — not first-wave) · adapter: post-skeleton |
 
 ## Where the report over-reaches (declined or softened)
 

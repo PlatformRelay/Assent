@@ -14,7 +14,7 @@ surface). Ordered backlog for assent; "when" anchors each item to the meta-plan.
 | 4 | Release engineering: tag-triggered workflow, git-cliff notes, cosign keyless signing, SLSA provenance + SBOM attestation — **plus goreleaser for CLI binaries** (`go install`, brew, curl+checksum): the one piece the siblings lack and a CLI must have | E9 | ⏳ |
 | 5 | CI hardening: gitleaks, CodeQL, OpenSSF Scorecard (+badge), govulncheck, SHA-pinned actions, dependabot+renovate, codecov | E9, incrementally from first code | ⏳ |
 | 6 | Branding pack via reproducible source assets and generator script (logos, social cards, favicons) | before going public | ✅ |
-| 7 | mkdocs-material site + GH Pages docs workflow (stub `mkdocs.yml` exists) | E9 | ⏳ |
+| 7 | mkdocs-material site + GH Pages docs workflow | E9 | ✅ |
 | 8 | Compatibility-promise doc (`API_STABILITY.md` equivalent): what policy schema / decision contract / test-format guarantee per version, graduation criteria — **high trust signal for a gate tool** | Phase 3 (contracts freeze) | ⏳ |
 | 9 | Published tiered test strategy + "What CI proves" README table | with ADR-0006/0014 acceptance | ⏳ |
 | 10 | Demo assets: VHS-scripted terminal GIFs (ideal for a CLI) + a **live demo repo** (public self-service repo with `.assent/` policies and real auto-merged MRs) | after walking skeleton (Phase 4) | ⏳ |

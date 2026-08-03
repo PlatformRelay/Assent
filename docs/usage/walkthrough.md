@@ -30,7 +30,7 @@ created .assent/tests/topics/      (passing fixtures for every starter rule)
 next: assent test && assent scan --since 90d
 ```
 
-Committed starter pack (runnable policy content): [`examples/packs/topic-registry/`](../../examples/packs/topic-registry/).
+Committed starter pack (runnable policy content): [`examples/packs/topic-registry/`](https://github.com/PlatformRelay/assent/tree/main/examples/packs/topic-registry).
 
 ## Step 2 — make a rule yours
 

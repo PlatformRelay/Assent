@@ -1,0 +1,2 @@
+# Input for requirements-docs.txt; regenerate with `task docs-lock`.
+mkdocs-material==9.7.6

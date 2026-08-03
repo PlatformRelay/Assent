@@ -76,7 +76,7 @@ policy before trusting it, feeding `stats` — no database, just report artifact
 ## Example rule archetypes (generic)
 
 These generalize the rules a real production merge gate needs; concrete samples live in
-[`examples/`](../examples/):
+[`examples/`](https://github.com/PlatformRelay/assent/tree/main/examples):
 
 - **Ownership**: the author may only modify entries whose `owner` (group/team) they belong to —
   membership resolved via a permission provider (Keycloak, LDAP, forge groups, ownership file).

@@ -3,7 +3,7 @@
 Phase-1 gate inventory of every rule class the vision archetypes, sample-repo shapes, and
 corpus require. Each archetype proves a **named obligation** (ADR-0017 §2), matches on an
 explicit **domain** (ADR-0017 §5), and names a governed **subject** (`EntryRef`). Examples
-live under [`examples/archetypes/`](../../examples/archetypes/).
+live under [`examples/archetypes/`](https://github.com/PlatformRelay/assent/tree/main/examples/archetypes).
 
 **Effect vocabulary** (ADR-0007 as reshaped by ADR-0017 §3):
 

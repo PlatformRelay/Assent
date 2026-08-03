@@ -2,7 +2,7 @@
 
 **Manifest version:** `1`  
 **Owned by:** P3-E3-S04  
-**Corpus root:** [`examples/archetypes/`](../../examples/archetypes/)  
+**Corpus root:** [`examples/archetypes/`](https://github.com/PlatformRelay/assent/tree/main/examples/archetypes)
 **Inventory:** [`archetypes.md`](archetypes.md)
 
 This is the **named, versioned seed corpus** the future Phase-5 `assent test` golden-run

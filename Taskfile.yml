@@ -59,5 +59,27 @@ tasks:
 
   docs:
     desc: Serve the docs site locally
+    deps: [docs-install]
     cmds:
-      - mkdocs serve
+      - .venv-docs/bin/mkdocs serve
+
+  docs-build:
+    desc: Build the MkDocs site with strict validation
+    deps: [docs-install]
+    cmds:
+      - .venv-docs/bin/mkdocs build --strict
+
+  docs-install:
+    desc: Install the locked documentation toolchain
+    sources:
+      - docs/requirements-docs.txt
+    generates:
+      - .venv-docs/bin/mkdocs
+    cmds:
+      - uv venv --python 3.12 .venv-docs
+      - uv pip install --python .venv-docs/bin/python --require-hashes -r docs/requirements-docs.txt
+
+  docs-lock:
+    desc: Regenerate the hashed documentation dependency lock
+    cmds:
+      - uv pip compile --generate-hashes --output-file docs/requirements-docs.txt docs/requirements-docs.in

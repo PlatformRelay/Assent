@@ -19,7 +19,7 @@ labels as final truth.
 
 | Rule | Detail |
 | --- | --- |
-| Population | Merged (and optionally closed-unmerged) MRs/PRs against the governed default branch in a sampling window, drawn from the adopter repo and/or the pinned open-source corpus ([`examples/repos/corpus.md`](../../examples/repos/corpus.md)). |
+| Population | Merged (and optionally closed-unmerged) MRs/PRs against the governed default branch in a sampling window, drawn from the adopter repo and/or the pinned open-source corpus ([`examples/repos/corpus.md`](https://github.com/PlatformRelay/assent/blob/main/examples/repos/corpus.md)). |
 | Inclusion (routine) | Human reviewers at the time treated the change as mechanical self-service: single-class config edit, no incident/revert follow-up within a soak window, no security/compliance exception label, and (when available) review comments that only acknowledge ownership/bounds rather than design debate. |
 | Exclusion (non-routine) | Multi-pack / cross-env redesigns, deletions/renames of live resources, `.assent/**` policy edits, schema migrations, MRs that required ≥2 human review rounds for substance, or any MR later reverted for correctness/safety. |
 | Independence | Labels come from forge history + human adjudication — **never** from "assent would have APPROVEd". Using assent's decision as the denominator would circularly inflate the north star. |

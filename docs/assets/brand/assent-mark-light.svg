@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">assent mark</title>
+  <desc id="desc">An arched decision gate with coral and blue paths, for dark backgrounds.</desc>
+  <path fill="#F8F7F2" fill-rule="evenodd" d="M128 16C66.14 16 16 66.14 16 128v96h52v-96c0-33.14 26.86-60 60-60s60 26.86 60 60v96h52v-96C240 66.14 189.86 16 128 16Z"/>
+  <path fill="#FF5C4D" d="M76 106 116 146v78H76Z"/>
+  <path fill="#5E86FF" d="m180 106-40 40v78h40Z"/>
+</svg>

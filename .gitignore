@@ -11,6 +11,7 @@ vendor/
 # Docs site
 site/
 .venv*/
+.task/
 
 # Editors / OS
 .DS_Store

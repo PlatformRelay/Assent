@@ -5,7 +5,7 @@
 | **Status** | Accepted (D-030 — Phase-3 freeze review) |
 | **Date** | 2026-07-24 |
 | **Deciders** | Konrad Heimel |
-| **Context links** | [ADR-0011](0011-core-ports-and-contracts.md) (`UpsertComment`/`SyncThreads`) · [ADR-0012](0012-presentation-templates-debug.md) (finding-key / marker comments) · [ADR-0015](0015-trust-boundaries-merge-integrity.md) §6 (serve dedup) · [ADR-0016](0016-presentation-theming.md) §1 (renderer-owned marker region) · [ADR-0017](0017-contract-model-obligations.md) §7 (`Reconcile`) · D-007 · D-017 (B6) · frozen contracts [`docs/contracts/p3-e5-publication-protocol/`](../contracts/p3-e5-publication-protocol/) |
+| **Context links** | [ADR-0011](0011-core-ports-and-contracts.md) (`UpsertComment`/`SyncThreads`) · [ADR-0012](0012-presentation-templates-debug.md) (finding-key / marker comments) · [ADR-0015](0015-trust-boundaries-merge-integrity.md) §6 (serve dedup) · [ADR-0016](0016-presentation-theming.md) §1 (renderer-owned marker region) · [ADR-0017](0017-contract-model-obligations.md) §7 (`Reconcile`) · D-007 · D-017 (B6) · frozen contract [marker grammar](../contracts/p3-e5-publication-protocol/marker-grammar.md) |
 
 ## Context
 

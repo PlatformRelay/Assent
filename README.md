@@ -1,5 +1,19 @@
 <p align="center">
-  <img src="assets/brand/assent-logo.svg" alt="assent" width="420">
+  <a href="https://platformrelay.github.io/assent/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/assent-logo-light.svg">
+      <img src="docs/assets/brand/assent-logo.svg" alt="assent — deterministic, policy-driven auto-merge" width="420">
+    </picture>
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/PlatformRelay/assent/actions/workflows/verify.yaml"><img src="https://github.com/PlatformRelay/assent/actions/workflows/verify.yaml/badge.svg" alt="Verify"></a>
+  <a href="https://github.com/PlatformRelay/assent/actions/workflows/schemas.yml"><img src="https://github.com/PlatformRelay/assent/actions/workflows/schemas.yml/badge.svg" alt="Schemas"></a>
+  <a href="https://platformrelay.github.io/assent/"><img src="https://img.shields.io/badge/documentation-GitHub%20Pages-2ea44f?logo=materialformkdocs&logoColor=white" alt="Documentation"></a>
+  <a href="https://github.com/PlatformRelay/assent/actions/workflows/docs.yaml"><img src="https://github.com/PlatformRelay/assent/actions/workflows/docs.yaml/badge.svg" alt="Docs"></a>
+  <a href="https://github.com/PlatformRelay/assent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/PlatformRelay/assent" alt="License: Apache-2.0"></a>
+  <a href="https://pkg.go.dev/github.com/PlatformRelay/assent"><img src="https://img.shields.io/github/go-mod/go-version/PlatformRelay/assent" alt="Go version"></a>
 </p>
 
 > **Status: pre-alpha / design phase.** All APIs, schemas, and commands are drafts.

@@ -9,6 +9,8 @@ enter a deterministic boundary and leave through the gate's central channel.
 | --- | --- |
 | `assent-mark.svg` | Standalone mark without writing; icons and square placements |
 | `assent-logo.svg` | Horizontal mark and `assent` wordmark |
+| `assent-mark-light.svg` | Standalone mark for dark backgrounds |
+| `assent-logo-light.svg` | Horizontal wordmark for dark backgrounds |
 | `assent-social-github.svg` / `.png` | GitHub repository social preview, 1280×640 |
 | `assent-social-og.svg` / `.png` | Open Graph social card, 1200×630 |
 | `assent-mark-512.png` | Square raster mark |
@@ -17,7 +19,7 @@ enter a deterministic boundary and leave through the gate's central channel.
 The SVGs are the source assets. Regenerate all raster outputs with:
 
 ```bash
-./assets/brand/generate.sh
+./docs/assets/brand/generate.sh
 ```
 
 The generator requires `rsvg-convert` from librsvg.

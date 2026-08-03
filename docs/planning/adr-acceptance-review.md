@@ -82,7 +82,7 @@ Columns per REQ-P2-E5-S01-01.
 | **OQ-13** | ADR-0007 accept | Points + per-binding thresholds only in v1; no effect escalation via score. | **Resolve** with ADR-0007 Accepted |
 | **OQ-14** | ADR-0009 accept | `serve` in **v1.x / E12** (post-Phase-4); architecture-ready from day 1 (D-012/D-017). | **Resolve** with ADR-0009 Accepted |
 | **OQ-15** | ADR-0003 accept | Fold-to-rename **opt-in per class, default raw**; rename never laxer than delete (ADR-0003 amendment). Residual: similarity metric itself → Phase 3. | **Resolve** core; residual → Phase 3 |
-| **OQ-16** | (ratify in P2-E5) | Ratify leading corpus: **kafka/org + JulieOps + octoDNS** ([examples/repos/corpus.md](../../examples/repos/corpus.md)). | **Resolve** |
+| **OQ-16** | (ratify in P2-E5) | Ratify leading corpus: **kafka/org + JulieOps + octoDNS** ([examples/repos/corpus.md](https://github.com/PlatformRelay/assent/blob/main/examples/repos/corpus.md)). | **Resolve** |
 | **OQ-17** | (reframed) | Adopt Spike C host defaults: principal/membership **1h**, boolean authz **1h**, registry **24h**, `sensitive: true` **15m**; capped by `facts.max_age` 24h; expiry blocks arming (ADR-0017 §4). Exact schema freeze → Phase 3 contract fixture. | **Partial resolve**; residual defaults → Phase 3 |
 | **OQ-18** | ADR-0005 accept | GitHub arm-and-wait parity **on paper** with three deltas (dismissal, auto-merge revoke, merge queue) — [forge-dossier-github.md](forge-dossier-github.md). | **Resolve** for acceptance; implement → E8/E10 |
 | **OQ-24** | north-star / ADR-0017 §9 | Topology **Accepted** (Premium + external CI config + …). Timed clean-room run **still PENDING** — do **not** claim &lt;1h confirmed. | Topology resolved; **north-star residual** → Phase 4 / operator task |

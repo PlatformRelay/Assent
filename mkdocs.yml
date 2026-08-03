@@ -1,13 +1,53 @@
 site_name: assent
+site_description: Deterministic, policy-driven auto-merge for self-service repositories.
+site_url: https://platformrelay.github.io/assent/
+repo_url: https://github.com/PlatformRelay/assent
+repo_name: PlatformRelay/assent
+copyright: Copyright &copy; 2026 Konrad Heimel
 docs_dir: docs
+site_dir: site
 theme:
   name: material
+  logo: assets/brand/assent-mark-light.svg
+  favicon: assets/brand/assent-mark.svg
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.path
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+extra_css:
+  - stylesheets/extra.css
 markdown_extensions:
   - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
           class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - toc:
+      permalink: true
+plugins:
+  - search
 nav:
   - Home: index.md
   - Vision: vision.md
@@ -15,9 +55,13 @@ nav:
   - Architecture:
       - Context: architecture/c4-context.md
       - Containers: architecture/c4-container.md
-  - Usage (imagined): usage/walkthrough.md
+  - Usage walkthrough: usage/walkthrough.md
   - Planning:
       - Meta-plan: planning/meta-plan.md
       - Open questions: planning/open-questions.md
       - Naming: planning/naming.md
   - Decisions: decisions/decisions.md
+validation:
+  omitted_files: info
+  unrecognized_links: warn
+  absolute_links: relative_to_docs

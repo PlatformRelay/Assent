@@ -9,7 +9,7 @@ exists so D-007 ("no database — the report artifact + the forge itself are the
 and D-017 (B6, database-free marker/reconciliation protocol) have something precise to
 implement against. Non-goals, authoring ADR-0019, and the numbered reconciliation contract are
 out of scope here — see the epic header in
-[`openspec/specs/p3-e5-publication-protocol/spec.md`](../../../openspec/specs/p3-e5-publication-protocol/spec.md).
+[`openspec/specs/p3-e5-publication-protocol/spec.md`](https://github.com/PlatformRelay/assent/blob/main/openspec/specs/p3-e5-publication-protocol/spec.md).
 
 A marker is an HTML comment (`<!-- assent:marker ... -->`) embedded by the renderer in the
 artifact body, outside any user-customizable slot (ADR-0016 §1's envelope invariant). It is

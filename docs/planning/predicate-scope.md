@@ -3,7 +3,7 @@
 This table is the **closed set** of top-level fields a CEL leaf inside `assert`/`when`
 (ADR-0013) may reference. It exists so `MergePolicy`'s `assert`/`cel` leaves have one
 authoritative field list, referenced by name from
-[`schemas/policy/v1alpha1/merge-policy.schema.json`](../../schemas/policy/v1alpha1/merge-policy.schema.json),
+[`schemas/policy/v1alpha1/merge-policy.schema.json`](https://github.com/PlatformRelay/assent/blob/main/schemas/policy/v1alpha1/merge-policy.schema.json),
 that a future `assent lint` implementation checks unknown-field references against
 (ADR-0016 §2: unknown fields are load-time errors, never `<no value>`). Adding a field here is
 a schema-fixture-gated change, not a drive-by edit — REQ-P3-E1-S06-01 lists "undeclared
