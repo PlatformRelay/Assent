@@ -1,0 +1,17 @@
+# Default review routing — @konih owns all paths until additional maintainers join.
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @konih
+
+# Security-sensitive surfaces (CI, supply chain, the deterministic decision core,
+# frozen contract schemas, and the spec/decision record) — called out explicitly so
+# an added maintainer never bypasses review on these.
+/.github/   @konih
+/cmd/       @konih
+/internal/  @konih
+/schemas/   @konih
+/openspec/  @konih
+/docs/      @konih
+/hack/      @konih
+/test/      @konih
+/examples/  @konih
