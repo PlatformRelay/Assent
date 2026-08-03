@@ -13,7 +13,7 @@ surface). Ordered backlog for assent; "when" anchors each item to the meta-plan.
 | 3 | README formula: logo → ≤6 badges → one-line value prop + tagline → status callout → why-bullets with ADR links → mermaid hero diagram → quick start → **honest maturity table** (frontends / forges / providers as Core·Beta·Planned) → community/security tables | with first public push (E9) | ⏳ |
 | 4 | Release engineering: tag-triggered workflow, git-cliff notes, cosign keyless signing, SLSA provenance + SBOM attestation — **plus goreleaser for CLI binaries** (`go install`, brew, curl+checksum): the one piece the siblings lack and a CLI must have | E9 | ⏳ |
 | 5 | CI hardening: gitleaks, CodeQL, OpenSSF Scorecard (+badge), govulncheck, SHA-pinned actions, dependabot+renovate, codecov | E9, incrementally from first code | ⏳ |
-| 6 | Branding pack via the existing generator scripts (logos, social card, favicons) | before going public | ⏳ |
+| 6 | Branding pack via reproducible source assets and generator script (logos, social cards, favicons) | before going public | ✅ |
 | 7 | mkdocs-material site + GH Pages docs workflow (stub `mkdocs.yml` exists) | E9 | ⏳ |
 | 8 | Compatibility-promise doc (`API_STABILITY.md` equivalent): what policy schema / decision contract / test-format guarantee per version, graduation criteria — **high trust signal for a gate tool** | Phase 3 (contracts freeze) | ⏳ |
 | 9 | Published tiered test strategy + "What CI proves" README table | with ADR-0006/0014 acceptance | ⏳ |

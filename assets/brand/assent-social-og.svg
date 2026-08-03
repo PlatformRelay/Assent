@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">assent — deterministic, policy-driven auto-merge</title>
+  <desc id="desc">Open Graph card for the assent open-source project.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#172033"/>
+      <stop offset="1" stop-color="#242D43"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0v40" fill="none" stroke="#FFFFFF" stroke-opacity=".045"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" rx="32" fill="url(#background)"/>
+  <rect width="1200" height="630" rx="32" fill="url(#grid)"/>
+  <circle cx="1054" cy="74" r="190" fill="#316BFF" opacity=".24"/>
+  <circle cx="1120" cy="590" r="240" fill="#FF5C4D" opacity=".16"/>
+  <g transform="translate(98 123) scale(1.5)">
+    <path fill="#F8F7F2" fill-rule="evenodd" d="M128 16C66.14 16 16 66.14 16 128v96h52v-96c0-33.14 26.86-60 60-60s60 26.86 60 60v96h52v-96C240 66.14 189.86 16 128 16Z"/>
+    <path fill="#FF5C4D" d="M76 106 116 146v78H76Z"/>
+    <path fill="#5E86FF" d="m180 106-40 40v78h40Z"/>
+  </g>
+  <text x="524" y="305" fill="#F8F7F2" font-family="ui-rounded, 'SF Pro Rounded', 'Avenir Next', system-ui, sans-serif" font-size="138" font-weight="650" letter-spacing="-7">assent</text>
+  <text x="532" y="376" fill="#C8CFDD" font-family="system-ui, sans-serif" font-size="32" font-weight="500">Deterministic, policy-driven auto-merge.</text>
+  <path d="M534 428h430" stroke="#FFFFFF" stroke-opacity=".16" stroke-width="2"/>
+  <text x="532" y="480" fill="#FFFFFF" font-family="ui-monospace, 'SFMono-Regular', Menlo, monospace" font-size="23">structured changes → explained decisions</text>
+</svg>

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">assent — deterministic, policy-driven auto-merge</title>
+  <desc id="desc">Social preview card for the assent open-source project.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#F8F7F2"/>
+      <stop offset="1" stop-color="#EEF2FF"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0v40" fill="none" stroke="#172033" stroke-opacity=".045"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="640" rx="32" fill="url(#background)"/>
+  <rect width="1280" height="640" rx="32" fill="url(#grid)"/>
+  <circle cx="1088" cy="86" r="180" fill="#316BFF" opacity=".08"/>
+  <circle cx="1160" cy="560" r="250" fill="#FF5C4D" opacity=".07"/>
+  <g transform="translate(104 128) scale(1.5)">
+    <path fill="#172033" fill-rule="evenodd" d="M128 16C66.14 16 16 66.14 16 128v96h52v-96c0-33.14 26.86-60 60-60s60 26.86 60 60v96h52v-96C240 66.14 189.86 16 128 16Z"/>
+    <path fill="#FF5C4D" d="M76 106 116 146v78H76Z"/>
+    <path fill="#316BFF" d="m180 106-40 40v78h40Z"/>
+  </g>
+  <text x="544" y="310" fill="#172033" font-family="ui-rounded, 'SF Pro Rounded', 'Avenir Next', system-ui, sans-serif" font-size="144" font-weight="650" letter-spacing="-7">assent</text>
+  <text x="552" y="380" fill="#4D586D" font-family="system-ui, sans-serif" font-size="34" font-weight="500">Deterministic, policy-driven auto-merge.</text>
+  <g transform="translate(552 428)">
+    <rect width="154" height="48" rx="24" fill="#DDE5FF"/>
+    <circle cx="26" cy="24" r="7" fill="#316BFF"/>
+    <text x="44" y="32" fill="#172033" font-family="system-ui, sans-serif" font-size="22" font-weight="650">APPROVE</text>
+    <rect x="170" width="134" height="48" rx="24" fill="#FFF0E8"/>
+    <circle cx="196" cy="24" r="7" fill="#FF8A4C"/>
+    <text x="214" y="32" fill="#172033" font-family="system-ui, sans-serif" font-size="22" font-weight="650">REVIEW</text>
+    <rect x="320" width="120" height="48" rx="24" fill="#FFE3E0"/>
+    <circle cx="346" cy="24" r="7" fill="#FF5C4D"/>
+    <text x="364" y="32" fill="#172033" font-family="system-ui, sans-serif" font-size="22" font-weight="650">BLOCK</text>
+  </g>
+</svg>

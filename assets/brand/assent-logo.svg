@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 256" role="img" aria-labelledby="title desc">
+  <title id="title">assent</title>
+  <desc id="desc">The assent decision-gate mark and lowercase wordmark.</desc>
+  <g transform="translate(0)">
+    <path fill="#172033" fill-rule="evenodd" d="M128 16C66.14 16 16 66.14 16 128v96h52v-96c0-33.14 26.86-60 60-60s60 26.86 60 60v96h52v-96C240 66.14 189.86 16 128 16Z"/>
+    <path fill="#FF5C4D" d="M76 106 116 146v78H76Z"/>
+    <path fill="#316BFF" d="m180 106-40 40v78h40Z"/>
+  </g>
+  <text x="282" y="183" fill="#172033" font-family="ui-rounded, 'SF Pro Rounded', 'Avenir Next', system-ui, sans-serif" font-size="148" font-weight="650" letter-spacing="-7">assent</text>
+</svg>

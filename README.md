@@ -1,4 +1,6 @@
-# assent
+<p align="center">
+  <img src="assets/brand/assent-logo.svg" alt="assent" width="420">
+</p>
 
 > **Status: pre-alpha / design phase.** All APIs, schemas, and commands are drafts.
 
