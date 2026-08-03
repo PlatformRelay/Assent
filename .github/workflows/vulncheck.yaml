@@ -1,0 +1,33 @@
+# Scheduled govulncheck — catches newly-disclosed vulnerabilities in unchanged code
+# between commits. The per-push/PR govulncheck runs in verify.yaml; this schedule-only
+# job is the standing weekly sweep against an updated vuln database (not duplicated on
+# every push).
+name: Vulncheck
+
+on:
+  schedule:
+    - cron: "12 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vulncheck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./... # pinned, matches verify.yaml
