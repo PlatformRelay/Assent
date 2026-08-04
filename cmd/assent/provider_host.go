@@ -3,14 +3,19 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
+	"testing/fstest"
 	"time"
 
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/core/policy"
 	"github.com/PlatformRelay/assent/internal/provider"
+	"github.com/PlatformRelay/assent/internal/provider/builtin"
 )
 
 // defaultProviderTimeout bounds one HTTP/exec ResolveFacts call on the live path.
@@ -20,9 +25,9 @@ const defaultProviderTimeout = 5 * time.Second
 // EvaluationInput.Facts and pins.factsResolvedAt (REQ-E5-S05-01).
 //
 // Compatibility (REQ-E5-S05-02): nil/empty providers → empty maps (today's path).
-// Builtin types are skipped until E5-S06 — no invented unavailable keys (absence
-// keeps CEL fail-safe identical to pre-S05). Host declarations load from the
-// TARGET ref beside Config (D-065): <dir(config)>/providers/<name>.json.
+// Builtins (repo-file, resource-owner, forge-groups) resolve when the host
+// declaration + checkout/target inputs are present (E5-S10). Host declarations
+// load from the TARGET ref beside Config (D-065): <dir(config)>/providers/<name>.json.
 //
 // AutoMergeEligible is negotiation-scoped only (INBOX P2 / E5-S01): it is NEVER
 // consulted for arming. Fact envelope states remain authoritative for CEL;
@@ -33,6 +38,8 @@ func resolveRunFacts(
 	configPath string,
 	client forgePort,
 	project, targetRef string,
+	checkoutRoot string,
+	subject string,
 	now time.Time,
 ) (map[string]map[string]aggregate.Fact, map[string]string, error) {
 	facts := map[string]map[string]aggregate.Fact{}
@@ -49,18 +56,11 @@ func resolveRunFacts(
 
 	declDir := path.Join(path.Dir(configPath), "providers")
 	asOf := now.UTC()
+	anchor := anchorFromSubject(subject)
+	repoFS := checkoutFS(checkoutRoot)
 
 	for _, name := range names {
 		p := conf.Providers[name]
-		switch {
-		case p.Type == "http" && strings.TrimSpace(p.URL) != "":
-			// resolvable
-		case p.Type == "exec":
-			// resolvable when host declaration carries Exec pin
-		default:
-			// builtin/* and unknown: skip (S06+). Do not invent keys.
-			continue
-		}
 
 		declPath := path.Join(declDir, name+".json")
 		raw, err := client.FileAtRef(project, declPath, targetRef)
@@ -84,14 +84,17 @@ func resolveRunFacts(
 			hostCfg,
 			"run-"+name,
 			asOf,
-			provider.Subject{Kind: "repo", ID: project},
+			querySubject(p, hostCfg, anchor, project),
 			outputs,
-			nil, // no change projections on the S05 wire path (minimization still applies)
+			nil, // no change projections on the run wire path (minimization still applies)
 		)
 
-		call, err := providerCallFor(p, hostCfg, q)
+		call, err := providerCallFor(ctx, p, hostCfg, q, client, project, targetRef, repoFS, anchor)
 		if err != nil {
 			return nil, nil, fmt.Errorf("provider %q: %w", name, err)
+		}
+		if call == nil {
+			continue
 		}
 
 		// INBOX P2: Result.AutoMergeEligible() is intentionally unread — negotiation
@@ -108,19 +111,63 @@ func resolveRunFacts(
 	return facts, resolvedAt, nil
 }
 
+func anchorFromSubject(subject string) string {
+	s := strings.TrimSpace(subject)
+	s = strings.TrimPrefix(s, "file:")
+	return strings.TrimPrefix(s, "/")
+}
+
+func checkoutFS(checkoutRoot string) fs.FS {
+	root := strings.TrimSpace(checkoutRoot)
+	if root == "" {
+		return nil
+	}
+	// E1-S08 checkout layout: head/ is the MR source view; repo-file facts for
+	// live runs read the checkout head tree (hermetic exit-gate fixtures mirror
+	// in-repo quota/placement files beside the governed change).
+	head := filepath.Join(root, "head")
+	if st, err := os.Stat(head); err == nil && st.IsDir() {
+		return os.DirFS(head)
+	}
+	return os.DirFS(root)
+}
+
+func querySubject(p policy.Provider, hostCfg provider.Config, anchor, project string) provider.Subject {
+	switch {
+	case builtin.IsResourceOwnerType(p.Type):
+		id := anchor
+		if hostCfg.ResourceOwner != nil && strings.TrimSpace(hostCfg.ResourceOwner.Registry) != "" {
+			// Live path uses entry subject from the governed anchor when the
+			// registry lookup is keyed by entry identity (C7 referenced-resource).
+			id = strings.TrimSpace(anchor)
+		}
+		return provider.Subject{Kind: "entry", ID: id}
+	case builtin.IsRepoFileType(p.Type):
+		return provider.Subject{Kind: "repo", ID: project}
+	default:
+		return provider.Subject{Kind: "repo", ID: project}
+	}
+}
+
 // providerCallFor builds the transport CallFunc for one configured provider,
 // capturing the FactQuery the host built (projection-minimized).
-func providerCallFor(p policy.Provider, hostCfg provider.Config, q provider.FactQuery) (provider.CallFunc, error) {
-	switch p.Type {
-	case "http":
+func providerCallFor(
+	ctx context.Context,
+	p policy.Provider,
+	hostCfg provider.Config,
+	q provider.FactQuery,
+	client forgePort,
+	project, targetRef string,
+	repoFS fs.FS,
+	anchor string,
+) (provider.CallFunc, error) {
+	switch {
+	case p.Type == "http" && strings.TrimSpace(p.URL) != "":
 		url := strings.TrimSpace(p.URL)
-		if url == "" {
-			return nil, fmt.Errorf("http provider requires url")
-		}
 		return func(callCtx context.Context) ([]byte, error) {
 			return provider.CallHTTP(callCtx, url, q, defaultProviderTimeout)
 		}, nil
-	case "exec":
+	case p.Type == "exec":
 		if hostCfg.Exec == nil {
 			return nil, fmt.Errorf("exec provider requires host declaration exec.binary + exec.digest")
 		}
@@ -134,7 +181,62 @@ func providerCallFor(p policy.Provider, hostCfg provider.Config, q provider.Fact
 		return func(callCtx context.Context) ([]byte, error) {
 			return provider.CallExec(callCtx, opts, q)
 		}, nil
+	case builtin.IsRepoFileType(p.Type):
+		if hostCfg.RepoFile == nil || strings.TrimSpace(hostCfg.RepoFile.File) == "" {
+			return nil, fmt.Errorf("builtin/repo-file requires host declaration repoFile.file")
+		}
+		if repoFS == nil {
+			// No checkout — cannot walk in-repo files; skip (pre-S10 compat).
+			return nil, nil
+		}
+		opts := builtin.RepoFileOpts{
+			FS:           repoFS,
+			File:         hostCfg.RepoFile.File,
+			Anchor:       anchor,
+			Roots:        hostCfg.RepoFile.Roots,
+			Declarations: hostCfg.Outputs,
+		}
+		return func(callCtx context.Context) ([]byte, error) {
+			return builtin.CallRepoFile(callCtx, opts, q)
+		}, nil
+	case builtin.IsResourceOwnerType(p.Type):
+		if hostCfg.ResourceOwner == nil || strings.TrimSpace(hostCfg.ResourceOwner.Registry) == "" {
+			return nil, fmt.Errorf("builtin/resource-owner requires host declaration resourceOwner.registry")
+		}
+		regPath := strings.TrimSpace(hostCfg.ResourceOwner.Registry)
+		ownerClient, err := loadResourceOwnerRegistry(ctx, client, project, targetRef, repoFS, regPath)
+		if err != nil {
+			return nil, err
+		}
+		return builtin.CallResourceOwner(ownerClient, q), nil
+	case builtin.IsForgeGroupsType(p.Type):
+		// Live forge-groups is infra-gated (E5-S06); hermetic run path skips until
+		// a GroupsClient is wired from forge MR metadata.
+		return nil, nil
 	default:
-		return nil, fmt.Errorf("unsupported provider type %q", p.Type)
+		return nil, nil
 	}
+}
+
+func loadResourceOwnerRegistry(
+	ctx context.Context,
+	client forgePort,
+	project, targetRef string,
+	repoFS fs.FS,
+	regPath string,
+) (builtin.ResourceOwnerClient, error) {
+	_ = ctx
+	if repoFS != nil {
+		if _, err := fs.Stat(repoFS, regPath); err == nil {
+			return builtin.LoadResourceOwnerMap(repoFS, regPath)
+		}
+	}
+	raw, err := client.FileAtRef(project, regPath, targetRef)
+	if err != nil {
+		return nil, fmt.Errorf("resource-owner registry %q: %w", regPath, err)
+	}
+	fsys := fstest.MapFS{
+		path.Base(regPath): &fstest.MapFile{Data: raw},
+	}
+	return builtin.LoadResourceOwnerMap(fsys, path.Base(regPath))
 }

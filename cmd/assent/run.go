@@ -290,7 +290,8 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	//     Nil/empty providers → empty maps (byte-identical to pre-S05).
 	evalNow := clock().UTC()
 	facts, factsResolvedAt, ferr := resolveRunFacts(
-		context.Background(), conf, cfg.config, client, cfg.project, info.TargetBranch, evalNow,
+		context.Background(), conf, cfg.config, client, cfg.project, info.TargetBranch,
+		cfg.checkout, cfg.subject, evalNow,
 	)
 	if ferr != nil {
 		return fmt.Errorf("resolve providers: %w", ferr)
