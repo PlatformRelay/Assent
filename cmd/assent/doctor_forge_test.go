@@ -1,8 +1,10 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -67,6 +69,69 @@ func doctorReportFromForgeHandler(t *testing.T, h http.HandlerFunc) Precondition
 		t.Fatalf("Snapshot: %v", err)
 	}
 	return DoctorFromForgeProbe(forge.PreconditionFromCapabilities(snap.Capabilities))
+}
+
+// captureRunDoctor drives runDoctor end-to-end through snapshotFactory with env
+// configured for forge probe (including spoofed env arming vars).
+func captureRunDoctor(t *testing.T, h http.HandlerFunc) (code int, stdout, stderr string) {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+
+	t.Setenv("GITLAB_TOKEN", forgeDoctorToken)
+	t.Setenv("CI_PROJECT_ID", forgeDoctorProject)
+	t.Setenv("CI_MERGE_REQUEST_IID", forgeDoctorMR)
+	t.Setenv("CI_API_V4_URL", srv.URL+"/api/v4")
+	// Spoofed env self-assertion that would arm on the env-only path.
+	t.Setenv("ASSENT_PIPELINE_CONFIG_PROTECTED", "true")
+	t.Setenv("ASSENT_PIPELINE_CONFIG_AUTHOR_EDITABLE", "false")
+	t.Setenv("ASSENT_PIPELINE_TOKEN_PRIVILEGED", "false")
+
+	rOut, wOut, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rErr, wErr, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	code = runDoctor(os.Getenv, wOut, wErr, func(endpoint, token, botAuthor string) forge.Snapshotter {
+		return gitlab.New(endpoint, token, botAuthor)
+	})
+	_ = wOut.Close()
+	_ = wErr.Close()
+	outBytes, _ := io.ReadAll(rOut)
+	errBytes, _ := io.ReadAll(rErr)
+	return code, string(outBytes), string(errBytes)
+}
+
+// D-034 fail-safe: when GITLAB_TOKEN is present, forge Snapshot preconditions
+// win over spoofable env vars — runDoctor must refuse when forge probe refuses.
+func TestRunDoctorForgeProbeOverridesEnvSpoofing(t *testing.T) {
+	projectJSON := `{
+		"only_allow_merge_if_all_discussions_are_resolved":false,
+		"merge_trains_enabled":true,
+		"ci_config_path":".gitlab-ci.yml@group/external-ci"
+	}`
+	code, stdout, stderr := captureRunDoctor(t, forgeDoctorHandler(t, projectJSON, http.StatusOK))
+
+	if code != 1 {
+		t.Fatalf("forge probe must refuse despite spoofed env arming vars; exit=%d stdout=%q stderr=%q",
+			code, stdout, stderr)
+	}
+	if strings.Contains(stdout, "forge-probed, auto-merge may be armed") {
+		t.Fatalf("must not arm from env when forge refuses; stdout=%q", stdout)
+	}
+	if !strings.Contains(stderr, string(ReasonDiscussionsGateMissing)) {
+		t.Errorf("stderr must carry forge refusal %q; got %q", ReasonDiscussionsGateMissing, stderr)
+	}
+	if strings.Contains(stderr, string(ReasonProtectedConfigUnverified)) {
+		t.Error("must not fall back to env-only refusal reasons when forge probe is active")
+	}
+	if strings.Contains(stderr, doctorEnvInsecureBanner) {
+		t.Error("forge-probed path must not print env-only INSECURE banner")
+	}
 }
 
 // REQ-E4-S05-01: missing discussions-resolved gate → ArmEligible=false.
