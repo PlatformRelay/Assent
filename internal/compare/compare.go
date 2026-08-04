@@ -6,13 +6,12 @@
 // member of the frozen closed taxonomy, applies ONE promotion gate, and reports a
 // pass/fail verdict a CLI shell maps to an exit code.
 //
-// Deliberately SEEDED, not the full runner (ADR-0018 / Judgment call (f)): it
-// classifies exactly two taxonomy kinds — newly-auto-mergeable (the widening the
-// bounded-auto-merge-widening gate owns) and explanation-only (wording-only, never
-// gate-tripping) — and FAILS CLOSED on any other real difference rather than
-// silently passing it. The remaining four classifiers, the other four gates, the
-// acceptedDeltas allowlist, and the ComparisonRecord emission are owed to the
-// full PolicyComparisonSuite runner epic (decisions.md D-055).
+// Deliberately SEEDED, not the full runner (ADR-0018 / Judgment call (f)): PCS-S02
+// extended classify with destructive-or-authorization-intervention-missed and
+// stricter-intervention-added; the seed still applies only the bounded-auto-merge-
+// widening gate. explanation-only never trips a gate; unclassified real deltas
+// FAIL CLOSED. Obligation-uncovered, score-threshold, acceptedDeltas allowlist,
+// and ComparisonRecord emission are owed to later PCS slices (decisions.md D-057).
 //
 // It sits UNDER internal/ (not internal/core): like internal/adoptertest it may
 // import internal/core/aggregate + internal/core/policy while internal/core stays
@@ -43,12 +42,10 @@ type Kind string
 
 const (
 	// KindStricterInterventionAdded is when the candidate adds a stricter
-	// intervention the baseline lacked. NOT classified by the seed (owed to the
-	// full runner).
+	// intervention the baseline lacked (PCS-S02).
 	KindStricterInterventionAdded Kind = "stricter-intervention-added"
 	// KindDestructiveOrAuthorizationInterventionMissed is when the candidate misses
-	// a destructive or authorization/ownership intervention the baseline had. NOT
-	// classified by the seed.
+	// a destructive or authorization/ownership intervention the baseline had (PCS-S02).
 	KindDestructiveOrAuthorizationInterventionMissed Kind = "destructive-or-authorization-intervention-missed"
 	// KindSubjectOrObligationUncovered is when a subject/obligation covered by the
 	// baseline is uncovered by the candidate. NOT classified by the seed.
@@ -86,10 +83,10 @@ const (
 )
 
 // ErrUnclassifiable is the fail-closed sentinel: a real decision difference that
-// is none of the seed's classified kinds. It is NEVER a silent pass — the caller
-// must surface it as a non-zero, non-gate outcome (a silent pass here would be a
-// silent-approve of an unreviewed promotion).
-var ErrUnclassifiable = errors.New("compare: decision delta matches none of the seed's classified kinds (fail-closed)")
+// matches none of the classified taxonomy kinds. It is NEVER a silent pass — the
+// caller must surface it as a non-zero, non-gate outcome (a silent pass here would
+// be a silent-approve of an unreviewed promotion).
+var ErrUnclassifiable = errors.New("compare: decision delta matches none of the classified kinds (fail-closed)")
 
 // Profile is one side of the comparison: the policy activation a named
 // PolicyProfile stands for, plus everything aggregate.CoverWithProfile needs.
@@ -194,40 +191,6 @@ func Compare(in *aggregate.EvaluationInput, baseline, candidate Profile) (Compar
 // evaluate runs one profile's activation through the reused engine entry.
 func evaluate(in *aggregate.EvaluationInput, p Profile) (aggregate.Result, error) {
 	return aggregate.CoverWithProfile(p.Policy, p.Bind, in, p.Approval, p.Ceiling, p.Precedence, p.Profiles)
-}
-
-// classify places the baseline->candidate delta into one taxonomy Kind the seed
-// owns, returns a zero Kind ("") when the two Results fully agree (no delta), or a
-// wrapped ErrUnclassifiable when the delta is real but unclassified by the seed.
-func classify(baseline, candidate aggregate.Result) (Kind, error) {
-	switch {
-	case candidate.Decision == aggregate.DecisionApprove && baseline.Decision != aggregate.DecisionApprove:
-		// Candidate newly permits auto-merge where the baseline intervened.
-		return KindNewlyAutoMergeable, nil
-	case baseline.Decision == candidate.Decision:
-		return classifyEqualDecision(baseline, candidate)
-	default:
-		return "", fmt.Errorf("%w: baseline=%s candidate=%s (seed classifies only %s and %s)",
-			ErrUnclassifiable, baseline.Decision, candidate.Decision, KindNewlyAutoMergeable, KindExplanationOnly)
-	}
-}
-
-// classifyEqualDecision resolves a same-decision pair: identical finding
-// identities with a differing message is explanation-only (wording-only, never
-// gate-tripping); byte-identical is no delta (""); differing finding identities is
-// a real finding-level semantic delta the seed does not own -> fail-closed.
-func classifyEqualDecision(baseline, candidate aggregate.Result) (Kind, error) {
-	idBase := findingKeys(baseline.Findings, false)
-	idCand := findingKeys(candidate.Findings, false)
-	if !equalStrings(idBase, idCand) {
-		return "", fmt.Errorf("%w: identical decision %s but finding identities differ", ErrUnclassifiable, baseline.Decision)
-	}
-	fullBase := findingKeys(baseline.Findings, true)
-	fullCand := findingKeys(candidate.Findings, true)
-	if equalStrings(fullBase, fullCand) {
-		return "", nil // fully agree: no delta
-	}
-	return KindExplanationOnly, nil
 }
 
 // gateVerdict applies the ONE seed gate (bounded-auto-merge-widening): a

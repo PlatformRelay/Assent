@@ -139,7 +139,7 @@ func TestCompareGateExitCodes(t *testing.T) {
 		if code != 2 {
 			t.Fatalf("exit code = %d, want 2 (fail-closed classification error); stdout=%q stderr=%q", code, out.String(), errb.String())
 		}
-		if !bytes.Contains(errb.Bytes(), []byte("classifies")) {
+		if !bytes.Contains(errb.Bytes(), []byte("classified kinds")) {
 			t.Errorf("stderr = %q, want it to name the fail-closed classification error", errb.String())
 		}
 	})
