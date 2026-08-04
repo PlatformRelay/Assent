@@ -84,8 +84,8 @@ func TestRunEnumeratesChangedFileSetAndBlocksOnPolicyEdit(t *testing.T) {
 	if f.approvals != 0 || f.merges != 0 {
 		t.Errorf("smuggled `.assent` edit must NOT approve/merge: approvals=%d merges=%d", f.approvals, f.merges)
 	}
-	if f.discussionsPosted != 1 {
-		t.Errorf("BLOCK must post exactly one thread, got %d", f.discussionsPosted)
+	if f.discussionsPosted != 0 {
+		t.Errorf("assent-policy self-edit BLOCK must post no thread (E4-S08): got %d", f.discussionsPosted)
 	}
 }
 

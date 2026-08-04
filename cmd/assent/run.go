@@ -362,12 +362,15 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		return fmt.Errorf("decision record failed schema validation: %w", err)
 	}
 
-	// 8. Map the decision → forge intent, and reconcile. The marker occurrence is
-	//    derived from the JUDGED HEAD CONTENT (stable across tool/policy bumps —
-	//    the grammar's "occurrence = judged-content digest"), the decision digest
-	//    from the DecisionRecord bytes, and entryRef from the governed subject.
-	desired, pre := buildDesired(cfg, info, cfg.subject, head, result, recordJSON, probe.ArmEligible)
-	receipt, recErr := forge.Reconcile(client, clockAdapter{now: clock}, desired, pre)
+	// 8. Map the decision → forge intent, and reconcile — except GUARD 1
+	//    (E4-S08 / D-042 F1): a self-modifying `.assent/**` MR earns BLOCK but
+	//    ZERO forge writes (no thread, approve, or merge).
+	var receipt forge.PublicationReceipt
+	var recErr error
+	if !reservedSelfEditBlock(result) {
+		desired, pre := buildDesired(cfg, info, cfg.subject, head, result, recordJSON, probe.ArmEligible)
+		receipt, recErr = forge.Reconcile(client, clockAdapter{now: clock}, desired, pre)
+	}
 
 	// 9. Emit the DecisionRecord + a one-line summary. A refusal from Reconcile
 	//    that is an EXPECTED fail-closed outcome (arming unmet, SHA moved) is NOT
@@ -376,7 +379,12 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	if err := emitRecord(cfg, recordJSON, stdout); err != nil {
 		return fmt.Errorf("emit decision record: %w", err)
 	}
-	summary := summarize(result.Decision, cfg.arm, receipt, recErr)
+	var summary string
+	if reservedSelfEditBlock(result) {
+		summary = "decision=BLOCK → assent-policy self-edit, no forge writes (fail-closed)"
+	} else {
+		summary = summarize(result.Decision, cfg.arm, receipt, recErr)
+	}
 	_, _ = fmt.Fprintln(stdout, summary)
 
 	// A hard forge error (not a fail-closed refusal) IS a failure.
@@ -511,6 +519,20 @@ func mrFrom(info gitlab.MRInfo, author string) aggregate.MR {
 		SourceBranch: info.SourceBranch,
 		TargetBranch: info.TargetBranch,
 	}
+}
+
+// reservedSelfEditBlock reports GUARD 1 outcomes: BLOCK driven by the
+// assent-policy.self-edit finding (E4-S08 / D-042 F1). These skip Reconcile.
+func reservedSelfEditBlock(res aggregate.Result) bool {
+	if res.Decision != aggregate.DecisionBlock {
+		return false
+	}
+	for _, f := range res.Findings {
+		if f.Code == "assent-policy.self-edit" {
+			return true
+		}
+	}
+	return false
 }
 
 // reservedClassBlock is the reserved-class self-edit BLOCK result, reconstructing

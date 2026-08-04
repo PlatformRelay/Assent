@@ -85,6 +85,15 @@ func TestReservedClassBlock(t *testing.T) {
 	}
 }
 
+func TestReservedSelfEditBlock(t *testing.T) {
+	if !reservedSelfEditBlock(reservedClassBlock("file:x.yaml")) {
+		t.Fatal("assent-policy.self-edit BLOCK must be detected for reconcile skip")
+	}
+	if reservedSelfEditBlock(undecidableReview("file:x.yaml")) {
+		t.Fatal("REVIEW must not trigger reconcile skip")
+	}
+}
+
 // The undecidable (opaque/empty) result fails safe to REVIEW with an auditable
 // finding — never a silent APPROVE.
 func TestUndecidableReview(t *testing.T) {

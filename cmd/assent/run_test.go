@@ -51,6 +51,18 @@ type fakeGitLab struct {
 	mrAuthor           string
 	approvalEligible   bool
 	approvalRulesStatus int
+
+	// E4-S08 adversarial source-ref policy bytes (target ref stays trusted).
+	sourceMergePolicy    string
+	sourceRulesetBinding string
+
+	// policyLoads records FileAtRef calls for `.assent/**` policy documents.
+	policyLoads []policyLoad
+}
+
+type policyLoad struct {
+	path string
+	ref  string
 }
 
 type fakeDiscussion struct {
@@ -255,10 +267,12 @@ func (f *fakeGitLab) serveFile(w http.ResponseWriter, r *http.Request, p string)
 	ref := r.URL.Query().Get("ref")
 	switch {
 	case strings.Contains(p, "merge-policy"):
-		f.serveFromTarget(w, ref, f.mergePolicy)
+		f.recordPolicyLoad(p, ref)
+		f.servePolicyDocument(w, ref, f.mergePolicy, f.sourceMergePolicy)
 		return
 	case strings.Contains(p, "ruleset-binding"):
-		f.serveFromTarget(w, ref, f.rulesetBinding)
+		f.recordPolicyLoad(p, ref)
+		f.servePolicyDocument(w, ref, f.rulesetBinding, f.sourceRulesetBinding)
 		return
 	case strings.Contains(p, "providers"):
 		// Host-owned declaration docs (D-065): .assent/providers/<name>.json
@@ -293,6 +307,28 @@ func (f *fakeGitLab) serveFromTarget(w http.ResponseWriter, ref, content string)
 		return
 	}
 	_, _ = w.Write([]byte(content))
+}
+
+// servePolicyDocument serves merge-policy / ruleset-binding at ref. The target
+// ref carries the trusted bytes; the source ref may carry adversarial bytes
+// (E4-S08) so tests can prove orchestrate never loads from the MR source branch.
+func (f *fakeGitLab) servePolicyDocument(w http.ResponseWriter, ref, targetContent, sourceContent string) {
+	switch ref {
+	case f.target:
+		_, _ = w.Write([]byte(targetContent))
+	case f.sourceBranch:
+		if sourceContent != "" {
+			_, _ = w.Write([]byte(sourceContent))
+			return
+		}
+		http.Error(w, "policy documents MUST load from the target ref, got "+ref, http.StatusBadRequest)
+	default:
+		http.Error(w, "policy documents MUST load from the target ref, got "+ref, http.StatusBadRequest)
+	}
+}
+
+func (f *fakeGitLab) recordPolicyLoad(path, ref string) {
+	f.policyLoads = append(f.policyLoads, policyLoad{path: path, ref: ref})
 }
 
 // factory builds a real *gitlab.Client pointed at the fake server — the exact
