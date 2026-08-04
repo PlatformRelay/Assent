@@ -34,6 +34,10 @@
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/provider" },
       "description": "Keyed by provider name (surfaced to rules as facts.<name>.*, ADR-0004)."
+    },
+    "presentation": {
+      "$ref": "#/$defs/presentation",
+      "description": "Tier-0 renderer knobs (ADR-0016 §1, D-088): verbosity, emoji, collapse threshold, locale, and optional per-environment overrides."
     }
   },
   "$defs": {
@@ -86,6 +90,70 @@
           "enum": ["closed", "open"],
           "default": "closed",
           "description": "closed (default) demotes an unresolved fact to fail-safe (ADR-0004); a controlling/authorization provider may never be configured open (lint hard error, docs/planning/lint-hard-errors.md)."
+        }
+      }
+    },
+    "presentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "verbosity": {
+          "enum": ["minimal", "standard", "full"],
+          "default": "standard",
+          "description": "How much evaluation detail to show in rendered forge comments (ADR-0016 §1)."
+        },
+        "emoji": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether renderer chrome includes emoji (D-089)."
+        },
+        "collapseThreshold": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 5,
+          "description": "Hide detail bodies beyond N same-code findings (D-089)."
+        },
+        "locale": {
+          "type": "string",
+          "minLength": 1,
+          "default": "en",
+          "description": "Locale catalog id for fixed renderer chrome strings (ADR-0016 §5)."
+        },
+        "environments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/presentationEnvOverride" },
+          "x-uniqueKeys": ["name"],
+          "description": "Optional per-environment presentation overrides keyed by Config environment name (D-089)."
+        }
+      }
+    },
+    "presentationEnvOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Config environment name this override applies to."
+        },
+        "verbosity": {
+          "enum": ["minimal", "standard", "full"],
+          "description": "Override global verbosity for this environment."
+        },
+        "emoji": {
+          "type": "boolean",
+          "description": "Override global emoji setting for this environment."
+        },
+        "collapseThreshold": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Override global collapse threshold for this environment."
+        },
+        "locale": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Override global locale for this environment."
         }
       }
     }

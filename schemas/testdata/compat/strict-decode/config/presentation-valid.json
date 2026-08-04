@@ -1,0 +1,18 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "Config",
+  "environments": [
+    {"name": "prod", "match": {"paths": ["topics/prod/**"]}},
+    {"name": "dev", "match": {"paths": ["**"]}}
+  ],
+  "classes": [{"name": "kafka-topic", "match": {"paths": ["topics/**"]}}],
+  "presentation": {
+    "verbosity": "full",
+    "emoji": false,
+    "collapseThreshold": 10,
+    "locale": "en",
+    "environments": [
+      {"name": "prod", "verbosity": "minimal", "emoji": true}
+    ]
+  }
+}
