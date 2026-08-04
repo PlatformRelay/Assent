@@ -25,7 +25,7 @@ assent version
 
 ## curl / local install script (checksum-verified)
 
-[`hack/install.sh`](../../hack/install.sh) verifies the archive SHA256 against a
+[`hack/install.sh`](https://github.com/PlatformRelay/assent/blob/main/hack/install.sh) verifies the archive SHA256 against a
 goreleaser `checksums.txt` **before** extract (D-110 — fail-closed on mismatch).
 Cosign verification runs when a sibling `.sigstore.json` bundle is present; snapshot
 builds without signatures skip cosign. Pass `--require-signature` to fail closed when

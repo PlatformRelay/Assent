@@ -55,11 +55,10 @@ nav:
   - Architecture:
       - Context: architecture/c4-context.md
       - Containers: architecture/c4-container.md
-  - Usage walkthrough: usage/walkthrough.md
-  - Planning:
-      - Meta-plan: planning/meta-plan.md
-      - Open questions: planning/open-questions.md
-      - Naming: planning/naming.md
+  - Usage:
+      - Walkthrough: usage/walkthrough.md
+      - Install: usage/install.md
+  - API stability: api-stability.md
   - Decisions: decisions/decisions.md
 validation:
   omitted_files: info
