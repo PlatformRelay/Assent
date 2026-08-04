@@ -1,0 +1,51 @@
+# EFE-S04 / D-061 — whole-file catalog lifecycle (null side = absent).
+# Reconciles archetype no-destruction/delete → BLOCK; entry-removal stays REVIEW.
+cases:
+  # File-ADD proving polarity for no-catalog-file-deletion.
+  - name: file-non-destructive
+    file: catalog/dev/new-team-services.json
+    base: null
+    head:
+      apiVersion: catalog/v1
+      services:
+        - name: reports-api
+          owner: orders-team
+          tier: 1
+          oncall: reports-rotation
+    facts:
+      author: { login: alice, groups: [orders-team] }
+      oncall: { orders_rotation: ready, reports_rotation: ready }
+      schema: { valid: true }
+    expect:
+      decision: APPROVE
+      findings: []
+
+  # File-DELETE failing polarity → BLOCK per archetype-goldens no-destruction/delete.
+  - name: file-non-destructive-delete
+    file: catalog/prod/core-services.json
+    base:
+      apiVersion: catalog/v1
+      services:
+        - name: orders-api
+          owner: orders-team
+          tier: 1
+          oncall: orders-rotation
+        - name: payments-gateway
+          owner: payments-team
+          tier: 1
+          oncall: payments-rotation
+        - name: storefront-web
+          owner: storefront-team
+          tier: 2
+          oncall: storefront-rotation
+    head: null
+    facts:
+      author: { login: alice, groups: [orders-team] }
+      oncall: { orders_rotation: ready }
+      schema: { valid: true }
+    expect:
+      decision: BLOCK
+      findings:
+        - rule: no-catalog-file-deletion
+          obligation: non-destructive
+          effect: block

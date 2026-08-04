@@ -1,0 +1,28 @@
+# Whole-file catalog deletion — archetype no-destruction/delete → BLOCK (EFE-S04 / D-061).
+# Companion to entry-removal (valueChanges require-review): this rule governs FILE-level
+# lifecycle via match.fileEvents. Provable both-polarity: file-ADD proves
+# (kind != "delete"); file-DELETE fails → block.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: catalog-file-non-destructive
+spec:
+  entries:
+    catalog-service:
+      mode: list
+      root: /services
+      identity:
+        pointer: /name
+  rules:
+    - name: no-catalog-file-deletion
+      phase: enforce
+      match:
+        fileEvents:
+          paths: ["catalog/**/*.json"]
+          kinds: [add, delete]
+      prove:
+        obligation: non-destructive
+        when: 'kind != "delete"'
+      onFailure:
+        effect: block
+        code: destruction.forbidden
