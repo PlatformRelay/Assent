@@ -24,15 +24,35 @@ import (
 // S01 scope: single-rule/single-file directory cases (the anchor). Whole multi-rule
 // packs, entry-scoped rules, the finding matcher, and inline cases.yaml are S02/S03/S06.
 
-// runTest is the testable entry point for `assent test`. args[0] is the repo
-// directory (the tree containing `.assent/**`). It returns a process exit code:
-// 0 = every case's decision matched, 1 = a mismatch/load error, 2 = usage/discovery.
+// runTest is the testable entry point for `assent test`. It accepts an optional
+// `--update` flag (in any position) plus the repo directory (the tree containing
+// `.assent/**`). It returns a process exit code: 0 = every case's decision matched (or,
+// under --update, every failing case was refreshed), 1 = a mismatch/write/load error,
+// 2 = usage/discovery/CI-guard refusal.
 func runTest(args []string, stdout, stderr io.Writer) int {
-	if len(args) < 1 || args[0] == "" {
-		_, _ = fmt.Fprintln(stderr, "assent test: a directory argument is required (usage: assent test <repo>)")
+	update := false
+	var positional []string
+	for _, a := range args {
+		if a == "--update" {
+			update = true
+			continue
+		}
+		positional = append(positional, a)
+	}
+	if len(positional) < 1 || positional[0] == "" {
+		_, _ = fmt.Fprintln(stderr, "assent test: a directory argument is required (usage: assent test [--update] <repo>)")
 		return 2
 	}
-	dir := args[0]
+	dir := positional[0]
+
+	// CI guard (D-058): --update auto-accepts the produced actuals as the new golden,
+	// so running it in CI would silently ratify a regression instead of failing the
+	// build (the classic golden-update footgun). Refuse under a CI environment. The env
+	// read lives ONLY here in cmd/assent — never in internal/core or the pure library.
+	if update && os.Getenv("CI") != "" {
+		_, _ = fmt.Fprintln(stderr, "assent test: --update refused: a CI environment is set (auto-accepting actuals in CI would ratify a regression); run --update locally and review the diff")
+		return 2
+	}
 
 	in, err := loadCatalogueInput(dir)
 	if err != nil {
@@ -95,20 +115,42 @@ func runTest(args []string, stdout, stderr io.Writer) int {
 			continue
 		}
 		if out.Pass {
+			// A PASSING case is left byte-identical under --update — the writer is
+			// never invoked for it (no spurious churn, REQ-E6-S05-03).
 			_, _ = fmt.Fprintf(stdout, "PASS %s (%s)\n", out.Name, out.Actual)
-		} else {
-			anyFail = true
-			// S04 failure UX: the located expected/actual diff + a ready-to-copy
-			// actual block. The pure formatting lives in internal/adoptertest; this
-			// shell only prints it. A serialization failure (the actual block cannot
-			// be made schema-valid) is itself a fail-closed error, never a silent pass.
-			report, rerr := adoptertest.RenderFailure(cf.expect, out)
-			if rerr != nil {
-				_, _ = fmt.Fprintf(stderr, "assent test: %s: render failure: %v\n", out.Name, rerr)
+			continue
+		}
+		if update {
+			// S05 golden-refresh: rewrite ONLY this failing case's expect.yaml with the
+			// produced actuals, preserving the author's comments (pure Node surgery in
+			// internal/adoptertest; the FS write — the only I/O — lives here). Fail-closed:
+			// a rewrite that would not re-validate against the frozen schema is an error,
+			// never a written golden.
+			newBytes, uerr := adoptertest.UpdateExpectationBlock(cf.expectRaw, out.ActualExpect)
+			if uerr != nil {
+				_, _ = fmt.Fprintf(stderr, "assent test: %s: --update: %v\n", out.Name, uerr)
+				anyFail = true
 				continue
 			}
-			_, _ = fmt.Fprint(stdout, report)
+			if werr := os.WriteFile(cf.expectPath, newBytes, 0o600); werr != nil { // #nosec G306 -- 0600 golden; path is the discovered case's own expect.yaml.
+				_, _ = fmt.Fprintf(stderr, "assent test: %s: --update write: %v\n", out.Name, werr)
+				anyFail = true
+				continue
+			}
+			_, _ = fmt.Fprintf(stdout, "UPDATED %s (%s)\n", out.Name, out.Actual)
+			continue
 		}
+		anyFail = true
+		// S04 failure UX: the located expected/actual diff + a ready-to-copy
+		// actual block. The pure formatting lives in internal/adoptertest; this
+		// shell only prints it. A serialization failure (the actual block cannot
+		// be made schema-valid) is itself a fail-closed error, never a silent pass.
+		report, rerr := adoptertest.RenderFailure(cf.expect, out)
+		if rerr != nil {
+			_, _ = fmt.Fprintf(stderr, "assent test: %s: render failure: %v\n", out.Name, rerr)
+			continue
+		}
+		_, _ = fmt.Fprint(stdout, report)
 	}
 	if anyFail {
 		return 1
@@ -119,13 +161,18 @@ func runTest(args []string, stdout, stderr io.Writer) int {
 // discoveredCase is one directory case's raw contents: the pure library maps the
 // facts, so the shell carries facts.yaml as raw bytes.
 type discoveredCase struct {
-	pack     string
-	name     string
-	file     string
-	base     []byte
-	head     []byte
-	factsRaw []byte
-	expect   adoptertest.Expectation
+	pack string
+	name string
+	file string
+	base []byte
+	head []byte
+	// expectPath is the case's expect.yaml path and expectRaw its original bytes —
+	// carried so `--update` can rewrite the golden in place, preserving the authored
+	// comments in expectRaw (the pure surgery reads the original bytes).
+	expectPath string
+	expectRaw  []byte
+	factsRaw   []byte
+	expect     adoptertest.Expectation
 }
 
 // discoverCases walks <dir>/.assent/tests and returns, in deterministic name order,
@@ -177,7 +224,8 @@ func loadDiscoveredCase(root, caseDir string) (discoveredCase, error) {
 	name := filepath.ToSlash(rel)
 	pack := strings.SplitN(name, "/", 2)[0]
 
-	expectRaw, err := os.ReadFile(filepath.Join(caseDir, "expect.yaml")) // #nosec G304 -- fixed .assent/tests case path.
+	expectPath := filepath.Join(caseDir, "expect.yaml")
+	expectRaw, err := os.ReadFile(expectPath) // #nosec G304 -- fixed .assent/tests case path.
 	if err != nil {
 		return discoveredCase{}, fmt.Errorf("%s: read expect.yaml: %w", name, err)
 	}
@@ -197,13 +245,15 @@ func loadDiscoveredCase(root, caseDir string) (discoveredCase, error) {
 	}
 
 	return discoveredCase{
-		pack:     pack,
-		name:     name,
-		file:     file,
-		base:     base,
-		head:     head,
-		factsRaw: factsRaw,
-		expect:   expect,
+		pack:       pack,
+		name:       name,
+		file:       file,
+		base:       base,
+		head:       head,
+		expectPath: expectPath,
+		expectRaw:  expectRaw,
+		factsRaw:   factsRaw,
+		expect:     expect,
 	}, nil
 }
 

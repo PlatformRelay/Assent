@@ -97,6 +97,84 @@ func TestTestCommandFailureUX(t *testing.T) {
 	})
 }
 
+// TestUpdateLeavesPassingCasesUntouched (REQ-E6-S05-03) proves the `--update`
+// orchestration: only FAILING cases are rewritten (the golden refreshed, its authored
+// comment preserved, and a subsequent normal run passes), while a PASSING case's
+// expect.yaml is left byte-identical (no spurious churn). The FS write lives here in
+// cmd/assent; the pure comment-preserving surgery is internal/adoptertest.
+func TestUpdateLeavesPassingCasesUntouched(t *testing.T) {
+	repo := copyTree(t, adopterRepo)
+	within := filepath.Join(repo, ".assent", "tests", "capped", "within-cap", "expect.yaml")
+	overCap := filepath.Join(repo, ".assent", "tests", "capped", "over-cap", "expect.yaml")
+
+	// Tamper the passing within-cap case into a FAILING one, keeping an authored comment
+	// that must survive the refresh.
+	writeFile(t, within, "# keep this comment across --update\ndecision: BLOCK\nfindings: []\n")
+
+	// Snapshot a genuinely PASSING case (over-cap) before the update.
+	overBefore := readCaseFile(t, overCap)
+
+	var stdout, stderr bytes.Buffer
+	code := runTest([]string{"--update", repo}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 after --update rewrites the failing case\nstdout:%s\nstderr:%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "UPDATED capped/within-cap") {
+		t.Fatalf("stdout missing UPDATED for the refreshed case:\n%s", stdout.String())
+	}
+
+	// The passing case is byte-identical (no spurious churn).
+	if overAfter := readCaseFile(t, overCap); !bytes.Equal(overBefore, overAfter) {
+		t.Fatalf("passing case was rewritten under --update:\nbefore:\n%s\nafter:\n%s", overBefore, overAfter)
+	}
+
+	// The failing case was refreshed to the actual (APPROVE), its comment survived...
+	refreshed := string(readCaseFile(t, within))
+	if !strings.Contains(refreshed, "decision: APPROVE") {
+		t.Fatalf("refreshed within-cap did not take the actual decision:\n%s", refreshed)
+	}
+	if !strings.Contains(refreshed, "# keep this comment across --update") {
+		t.Fatalf("authored comment did not survive --update:\n%s", refreshed)
+	}
+
+	// ...and a subsequent NORMAL run now passes (exit 0, no failures).
+	var stdout2, stderr2 bytes.Buffer
+	if code := runTest([]string{repo}, &stdout2, &stderr2); code != 0 {
+		t.Fatalf("re-run after --update exit = %d, want 0\nstdout:%s\nstderr:%s", code, stdout2.String(), stderr2.String())
+	}
+}
+
+// TestUpdateRefusedInCI proves the logged CI guard (D-058): `--update` under a CI
+// environment refuses (exit 2) and writes nothing — auto-accepting actuals in CI would
+// silently ratify a regression (the classic golden-update footgun). The env read lives
+// only in cmd/assent, never in internal/core or the pure library.
+func TestUpdateRefusedInCI(t *testing.T) {
+	t.Setenv("CI", "true")
+	repo := copyTree(t, adopterRepo)
+	within := filepath.Join(repo, ".assent", "tests", "capped", "within-cap", "expect.yaml")
+	writeFile(t, within, "# keep\ndecision: BLOCK\nfindings: []\n")
+	before := readCaseFile(t, within)
+
+	var stdout, stderr bytes.Buffer
+	code := runTest([]string{"--update", repo}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2 (--update refused in CI)\nstdout:%s\nstderr:%s", code, stdout.String(), stderr.String())
+	}
+	if after := readCaseFile(t, within); !bytes.Equal(before, after) {
+		t.Fatalf("--update wrote a file despite the CI refusal:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// readCaseFile reads a case file's bytes for a byte-identity assertion.
+func readCaseFile(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path) //nolint:gosec // path is under t.TempDir(), a fresh test dir.
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return b
+}
+
 func copyTree(t *testing.T, src string) string {
 	t.Helper()
 	dst := t.TempDir()

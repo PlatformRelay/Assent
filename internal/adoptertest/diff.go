@@ -15,10 +15,12 @@ import (
 // actual block. A PASSING case is never rendered (the caller — cmd/assent/test.go —
 // gates on !Outcome.Pass). All formatting lives here; the command shell only wires it.
 //
-// The serialization (ActualExpectation + MarshalExpectation) is factored as reusable,
-// exported functions: S05's --update reuses the SAME two-step model→bytes path to
-// WRITE the block into expect.yaml, so the copyable block a human hand-copies here is
-// byte-for-byte what --update would write.
+// The reconstructed actual MODEL (ActualExpectation) is shared with S05's --update: the
+// copyable block here and the on-disk rewrite carry the SAME expectation payload. They
+// diverge on BYTES, though — this block is a fresh comment-free MarshalExpectation
+// serialization (yaml default indent), whereas --update writes via
+// UpdateExpectationBlock (comment-preserving yaml.v3 Node surgery at 2-space indent). So
+// the human-copyable block matches --update's payload, not its exact bytes.
 //
 // Determinism (ADR-0014 golden L0): every function joins the engine's PRE-SORTED
 // Result.Findings and the expectation's DECLARED order; nothing ranges a Go map to
