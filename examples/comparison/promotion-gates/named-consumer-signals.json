@@ -1,0 +1,17 @@
+{
+  "signals": {
+    "phase": "enforce",
+    "profile": {
+      "name": "prod-strict",
+      "revision": 7
+    },
+    "comparisonDelta": {
+      "baseProfile": "prod-strict@6",
+      "headProfile": "prod-strict@7",
+      "caseId": "named-consumer-compat-widen-accepted",
+      "kind": "newly-auto-mergeable",
+      "rule": "non-destructive",
+      "subject": "topic-registry:orders.events.v1"
+    }
+  }
+}

@@ -1,0 +1,60 @@
+apiVersion: assent.dev/v1alpha1
+kind: PolicyComparisonSuite
+metadata:
+  name: promotion-gates
+  version: "1"
+spec:
+  baselineProfile: prod-strict@6
+  candidateProfile: prod-strict@7
+  cases:
+    - caseId: partition-grow-agree
+      replayBundleDigest: sha256:c1223668c50254d873361347ea6e30deec8baf75c010c855a9cc697a44011000
+      description: Both profiles hold destructive + authorization interventions on a grow change (gates 1–3 pass).
+    - caseId: partition-shrink-widen-accepted
+      replayBundleDigest: sha256:0b3808c5d28c03e6fc67f9b1b3eb215a0e93142208f2ab4356f208603678960e
+      description: Bounded auto-merge widening allowlisted for promotion review.
+    - caseId: named-consumer-compat-widen-accepted
+      replayBundleDigest: sha256:0b3808c5d28c03e6fc67f9b1b3eb215a0e93142208f2ab4356f208603678960e
+      description: Named-consumer comparisonDelta signal (see named-consumer-signals.json) with accepted widening.
+    - caseId: score-threshold-change-accepted
+      replayBundleDigest: sha256:379308b86fcfad88e1c028d6053ba9307718af368007e63fb71637eee715c618
+      description: Score-threshold delta allowlisted under explicitly-accepted-deltas gate.
+  promotionGates:
+    - gateId: zero-missed-destructive
+      failOnKinds: [destructive-or-authorization-intervention-missed]
+      defaultVerdict: fail
+      acceptance: per-delta-identity
+    - gateId: zero-missed-authorization-ownership
+      failOnKinds: [destructive-or-authorization-intervention-missed]
+      defaultVerdict: fail
+      acceptance: per-delta-identity
+    - gateId: no-unexpected-obligation-removal
+      failOnKinds: [subject-or-obligation-uncovered]
+      defaultVerdict: fail
+      acceptance: per-delta-identity
+    - gateId: bounded-auto-merge-widening
+      failOnKinds: [newly-auto-mergeable]
+      defaultVerdict: fail
+      acceptance: per-delta-identity
+    - gateId: explicitly-accepted-deltas
+      failOnKinds: [stricter-intervention-added, score-threshold-change]
+      defaultVerdict: fail
+      acceptance: per-delta-identity
+  acceptedDeltas:
+    - caseId: partition-shrink-widen-accepted
+      kind: newly-auto-mergeable
+      rule: non-destructive
+      subject: topic-registry:orders.events.v1
+      obligation: non-destructive
+      rationale: reviewed quota pilot widening
+    - caseId: named-consumer-compat-widen-accepted
+      kind: newly-auto-mergeable
+      rule: non-destructive
+      subject: topic-registry:orders.events.v1
+      obligation: non-destructive
+      rationale: named-consumer compat structured widening signal
+    - caseId: score-threshold-change-accepted
+      kind: score-threshold-change
+      rule: soft-bump
+      subject: topic-registry:orders.events.v1
+      rationale: reviewed score arithmetic tightening

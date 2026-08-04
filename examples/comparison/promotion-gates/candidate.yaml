@@ -1,0 +1,47 @@
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: prod-strict@7
+spec:
+  rules:
+    - name: non-destructive
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/partitions"]
+          kinds: [modify]
+      prove:
+        obligation: non-destructive
+        when:
+          cel: "true"
+          message: "partitions may change"
+      onFailure:
+        effect: block
+        code: partitions.shrunk
+    - name: owner-ok
+      phase: enforce
+      match:
+        values:
+          pointers: ["/owner"]
+      prove:
+        obligation: ownership
+        when:
+          cel: "true"
+          message: "owner must be present"
+      onFailure:
+        effect: require-review
+        code: owner-missing
+    - name: soft-bump
+      phase: enforce
+      points: 1
+      match:
+        values:
+          pointers: ["/p0", "/p1", "/p2", "/p3", "/p4"]
+      prove:
+        obligation: signal
+        when:
+          cel: "new >= old"
+          message: "soft bump"
+      onFailure:
+        effect: comment
+        code: value-bumped

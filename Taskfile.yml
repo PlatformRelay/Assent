@@ -60,6 +60,11 @@ tasks:
           ./bin/assent test --coverage "examples/packs/$pack"
         done
 
+  dogfood-comparison:
+    desc: "Dogfood gate (PCS-S08): comparison corpus validates and runs green under assent compare --suite"
+    cmds:
+      - go test ./examples/comparison/...
+
   check:
     desc: "Gate: fmt + vet + lint + test + build (must pass before every commit)"
     cmds:
@@ -69,6 +74,7 @@ tasks:
       - task: test
       - task: coverage
       - task: build
+      - task: dogfood-comparison
 
   determinism:
     desc: "Determinism gate (E7-S04): double-run engine + conformance goldens (-count=2); mirrors verify.yaml"

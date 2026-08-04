@@ -58,3 +58,5 @@ jobs:
             ./bin/assent test "examples/packs/$pack"
             ./bin/assent test --coverage "examples/packs/$pack"
           done
+      - name: comparison corpus dogfood (PCS-S08 — examples/comparison validates and runs green)
+        run: go test ./examples/comparison/...

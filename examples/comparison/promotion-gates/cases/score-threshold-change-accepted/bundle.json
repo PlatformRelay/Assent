@@ -1,0 +1,68 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "ReplayBundle",
+  "pins": {
+    "toolVersion": "0.0.0-corpus",
+    "toolDigest": "sha256:aaaa",
+    "policySha": "sha256:bbbb",
+    "sourceSha": "cccc",
+    "targetSha": "dddd",
+    "mergeResultDigest": "sha256:eeee",
+    "factsResolvedAt": {}
+  },
+  "evaluationInput": {
+    "apiVersion": "assent.dev/v1alpha1",
+    "kind": "EvaluationInput",
+    "changeSet": {
+      "changes": [
+        {
+          "subject": "topic-registry:orders.events.v1",
+          "file": "topics/prod/a.yaml",
+          "path": "/p0",
+          "kind": "modify",
+          "old": 2,
+          "new": 1
+        },
+        {
+          "subject": "topic-registry:orders.events.v1",
+          "file": "topics/prod/a.yaml",
+          "path": "/p1",
+          "kind": "modify",
+          "old": 2,
+          "new": 1
+        },
+        {
+          "subject": "topic-registry:orders.events.v1",
+          "file": "topics/prod/a.yaml",
+          "path": "/p2",
+          "kind": "modify",
+          "old": 2,
+          "new": 1
+        },
+        {
+          "subject": "topic-registry:orders.events.v1",
+          "file": "topics/prod/a.yaml",
+          "path": "/p3",
+          "kind": "modify",
+          "old": 2,
+          "new": 1
+        },
+        {
+          "subject": "topic-registry:orders.events.v1",
+          "file": "topics/prod/a.yaml",
+          "path": "/p4",
+          "kind": "modify",
+          "old": 2,
+          "new": 1
+        }
+      ]
+    },
+    "facts": {},
+    "mr": {
+      "author": "alice",
+      "sourceBranch": "topic/bump",
+      "targetBranch": "main"
+    },
+    "require": ["ownership"]
+  }
+}

@@ -1,0 +1,20 @@
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: prod-strict@7
+spec:
+  rules:
+    - name: non-destructive
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/partitions"]
+          kinds: [modify]
+      prove:
+        obligation: non-destructive
+        when:
+          cel: "new >= old"
+          message: "partitions may not be reduced"
+      onFailure:
+        effect: block
+        code: partitions.shrunk

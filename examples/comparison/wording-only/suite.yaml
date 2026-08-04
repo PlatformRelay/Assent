@@ -1,0 +1,34 @@
+apiVersion: assent.dev/v1alpha1
+kind: PolicyComparisonSuite
+metadata:
+  name: wording-only
+  version: "1"
+spec:
+  baselineProfile: prod-strict@6
+  candidateProfile: prod-strict@7
+  cases:
+    - caseId: partition-shrink-wording-only
+      replayBundleDigest: sha256:91061647d8272743e4bcf4238bc7557ac8966f767f293566378d158814457db7
+      description: Leaf message change only — explanation-only delta never trips gates.
+  promotionGates:
+    - gateId: zero-missed-destructive
+      failOnKinds: [destructive-or-authorization-intervention-missed]
+      defaultVerdict: fail
+      acceptance: per-delta-identity
+    - gateId: zero-missed-authorization-ownership
+      failOnKinds: [destructive-or-authorization-intervention-missed]
+      defaultVerdict: fail
+      acceptance: per-delta-identity
+    - gateId: no-unexpected-obligation-removal
+      failOnKinds: [subject-or-obligation-uncovered]
+      defaultVerdict: fail
+      acceptance: per-delta-identity
+    - gateId: bounded-auto-merge-widening
+      failOnKinds: [newly-auto-mergeable]
+      defaultVerdict: fail
+      acceptance: per-delta-identity
+    - gateId: explicitly-accepted-deltas
+      failOnKinds: [stricter-intervention-added, score-threshold-change]
+      defaultVerdict: fail
+      acceptance: per-delta-identity
+  acceptedDeltas: []
