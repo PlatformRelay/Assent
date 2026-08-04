@@ -46,3 +46,14 @@ merging user-facing commits; `verify-changelog.sh` keeps the committed file in s
 | `task release-snapshot` | Local goreleaser snapshot under `dist/` |
 | `hack/release/snapshot_test.sh` | REQ-E9-S02 gate: archives, checksums, stamped version |
 | `hack/release/ci_audit_test.sh` | REQ-E9-S04 gate: no duplicate CodeQL workflow |
+
+## Install script (E9-S07a)
+
+| Script | Purpose |
+| --- | --- |
+| `hack/install.sh` | SHA256-verify archive, optional cosign, install binary |
+| `hack/release/install_test.sh` | REQ-E9-S07a gate: mismatch reject + snapshot-no-sig + docs |
+| `docs/usage/install.md` | Adopter docs (`go install`, curl script, Homebrew coming soon) |
+
+Cosign skip-when-absent matches D-110 (autonomous/snapshot path). Use
+`--require-signature` for post-S06 signed releases.
