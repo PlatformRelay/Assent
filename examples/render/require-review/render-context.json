@@ -5,6 +5,7 @@
     "collapseThreshold": 5,
     "locale": "en"
   },
+  "riskThreshold": 10,
   "activation": {
     "path": "/metadata/owner",
     "kind": "modify",

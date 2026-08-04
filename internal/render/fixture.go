@@ -37,9 +37,10 @@ func LoadPresentationModel(raw []byte) (Fixture, error) {
 // Pure — no filesystem I/O.
 func LoadRenderContext(raw []byte) (Context, error) {
 	var doc struct {
-		Options    *Options             `json:"options"`
-		Activation json.RawMessage      `json:"activation"`
-		Rules      map[string]RuleMeta  `json:"rules"`
+		Options       *Options            `json:"options"`
+		Activation    json.RawMessage     `json:"activation"`
+		Rules         map[string]RuleMeta `json:"rules"`
+		RiskThreshold *int                `json:"riskThreshold"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return Context{}, fmt.Errorf("render-context: %w", err)
@@ -57,6 +58,9 @@ func LoadRenderContext(raw []byte) (Context, error) {
 			return Context{}, fmt.Errorf("render-context activation: %w", err)
 		}
 		ctx.Activation = act
+	}
+	if doc.RiskThreshold != nil {
+		ctx.RiskThreshold = *doc.RiskThreshold
 	}
 	return ctx, nil
 }

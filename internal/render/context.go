@@ -25,7 +25,8 @@ type RuleDocs struct {
 // activation, and pack-rule metadata. It is never serialized and is not a frozen
 // contract beside PresentationModel.
 type Context struct {
-	Options    Options
-	Activation any
-	Rules      map[string]RuleMeta
+	Options       Options
+	Activation    any
+	Rules         map[string]RuleMeta
+	RiskThreshold int // binding approve threshold for summary score line (E8-S13)
 }

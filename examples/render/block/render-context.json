@@ -5,6 +5,7 @@
     "collapseThreshold": 5,
     "locale": "en"
   },
+  "riskThreshold": 10,
   "activation": {
     "path": "examples/repos/service-catalog/catalog/prod/core-services.json",
     "kind": "delete",

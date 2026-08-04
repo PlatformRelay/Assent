@@ -5,6 +5,7 @@
     "collapseThreshold": 5,
     "locale": "en"
   },
+  "riskThreshold": 4,
   "activation": {
     "old": 12,
     "new": 8,
