@@ -6,19 +6,6 @@ import (
 	"testing"
 )
 
-//go:embed approval/v1alpha1/approval-evidence.schema.json
-var approvalEvidenceSchemaJSON []byte
-
-const approvalEvidenceSchemaID = "https://assent.dev/schemas/approval/v1alpha1/approval-evidence.schema.json"
-
-// ApprovalEvidenceSchema validates approval-evidence.schema.json instances.
-// Compiled with DecisionRecord in the same compiler so the cross-file pins
-// $ref resolves (roast P1-B — one pins shape only).
-var ApprovalEvidenceSchema = mustCompileCrossReferenced(map[string][]byte{
-	decisionRecordSchemaID:   decisionRecordSchemaJSON,
-	approvalEvidenceSchemaID: approvalEvidenceSchemaJSON,
-})[approvalEvidenceSchemaID]
-
 // fullPins is a valid DecisionRecord.$defs.pins instance (canonical shape).
 const fullPins = `{
 	"toolVersion": "0.0.0-dev",

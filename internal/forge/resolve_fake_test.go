@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/forge/fake"
 )
@@ -104,6 +105,19 @@ func TestResolveFake(t *testing.T) {
 		}
 		if got.Gap.Subject != subject {
 			t.Errorf("Gap.Subject = %q, want %q", got.Gap.Subject, subject)
+		}
+	})
+
+	t.Run("WellFormed sum type", func(t *testing.T) {
+		t.Parallel()
+		if err := (forge.ResolveResult{}).WellFormed(); err == nil {
+			t.Fatal("empty result must not be well-formed")
+		}
+		if err := forge.ResolveWithEvidence(aggregate.ApprovalEvidence{}).WellFormed(); err != nil {
+			t.Errorf("evidence-only: %v", err)
+		}
+		if err := forge.ResolveWithGap(forge.CapabilityGap{Reason: forge.GapFreeTierRequireReview}).WellFormed(); err != nil {
+			t.Errorf("gap-only: %v", err)
 		}
 	})
 

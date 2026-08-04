@@ -44,6 +44,7 @@ type Client struct {
 	token     string       // PAT, sent as the PRIVATE-TOKEN header. NEVER logged.
 	botAuthor string       // username whose notes count as bot-authored (ADR-0019 filter).
 	http      *http.Client // injected transport; tests point it at an httptest.Server.
+	observedAt func() time.Time // optional clock hook (tests); nil → time.Now().UTC in Resolve.
 }
 
 // New builds a GitLab adapter. endpoint is the instance base URL

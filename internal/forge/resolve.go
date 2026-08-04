@@ -1,6 +1,10 @@
 package forge
 
-import "github.com/PlatformRelay/assent/internal/core/aggregate"
+import (
+	"fmt"
+
+	"github.com/PlatformRelay/assent/internal/core/aggregate"
+)
 
 // Resolver maps a require-review subject and pinned SHAs to forge-proven evidence
 // or an explicit capability gap — never silent APPROVE on missing proof (E4-S01).
@@ -31,6 +35,18 @@ func (r ResolveResult) HasEvidence() bool { return r.Evidence != nil }
 
 // HasGap reports whether Resolve returned an explicit capability gap.
 func (r ResolveResult) HasGap() bool { return r.Gap != nil }
+
+// WellFormed reports whether exactly one of Evidence or Gap is populated (INBOX P2).
+func (r ResolveResult) WellFormed() error {
+	switch {
+	case r.Evidence != nil && r.Gap != nil:
+		return fmt.Errorf("forge resolve: both evidence and gap set")
+	case r.Evidence == nil && r.Gap == nil:
+		return fmt.Errorf("forge resolve: neither evidence nor gap set")
+	default:
+		return nil
+	}
+}
 
 // CapabilityGapReason is a typed forge capability absence (never map[string]any).
 type CapabilityGapReason string
