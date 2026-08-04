@@ -186,6 +186,18 @@ type Result struct {
 	// (D-016 golden) byte-identical. A gap NEVER satisfies, so the require-review
 	// finding still stands and the run can never auto-merge.
 	CapabilityGaps map[string]string `json:"capabilityGaps,omitempty"`
+	// Profile is the resolved covering profile's identity (E2-S09, ADR-0018 §2),
+	// stamped by WithProfile. Empty when no profile covers the binding (or none
+	// were declared — the D-016 case). Surfaced at the engine layer only; E4
+	// threads it into the DecisionRecord once the frozen schema carries the field.
+	Profile string `json:"profile,omitempty"`
+	// WriteAllowed is whether the resolved profile holds forge write authority
+	// (spec.writes) for this binding (E2-S09). It is the SAFE value false unless a
+	// single covering writes:true profile resolved — a recorder-only (writes:false)
+	// profile never sets it, and an uncovered/undeclared binding defaults to false.
+	// A downstream forge step reads it to know whether this run may arm/merge.
+	// omitempty keeps the no-profile Result (the D-016 golden) byte-identical.
+	WriteAllowed bool `json:"writeAllowed,omitempty"`
 }
 
 // Synthetic finding.rule names for outcomes not attributable to a single
