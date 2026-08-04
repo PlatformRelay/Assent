@@ -414,30 +414,31 @@ oss-playbook release surface: goreleaser binaries (brew, curl+checksum, `go inst
 keyless + SLSA + SBOM, git-cliff notes without SHAs, CI hardening **audit** (extend D-045 jobs —
 no duplicate CodeQL/Scorecard), MkDocs product-only nav, README maturity table, VHS demo tapes,
 OQ-2 GitLab mirror disposition. **Judgment calls D-099–D-110** in `docs/decisions/decisions.md`.
-REQ prefix `REQ-E9-S0n-nn`. **Autonomous stories S01–S04 + S08–S12 + S11** close without publish
-credentials; **infra-gated S05–S07 + S13 publish half**.
+REQ prefix `REQ-E9-S0n-nn`. **Autonomous close:** S01–S04 + S07a + S08→S09 + S11 + S12 (no publish
+credentials). **Infra-gated:** S05, S06, S07b, S13 publish half.
 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
 | E9-S01 | Semver ldflags + `assent version` contract | **[autonomous]** | none | stamped binaries; **do first** |
 | E9-S02 | Goreleaser config + local snapshot dry-run | **[autonomous]** | S01 | cross-platform archives + checksums |
 | E9-S03 | git-cliff changelog without SHAs + CHANGELOG.md sync | **[autonomous]** | S02 | oss-playbook #4 release notes |
-| E9-S04 | CI hardening audit + residual gaps (extend, don't duplicate) | **[autonomous]** | none ∥ | actionlint + audit doc; D-102 |
+| E9-S04 | CI hardening audit + residual gaps (extend, don't duplicate) | **[autonomous]** | S01 ∥ | actionlint + audit doc; D-102 |
 | E9-S05 | Tag-triggered release workflow + goreleaser publish | **[infra-gated: GH release write]** | S02, S03 | GitHub Release assets |
 | E9-S06 | ⚠️ cosign keyless + SLSA + SBOM on release artifacts | **[infra-gated · engine-grade]** | S05 | supply-chain verify surface |
-| E9-S07 | curl+checksum install script + Homebrew tap wiring | **[autonomous script · infra-gated tap push]** | S02, S06 | three install channels |
-| E9-S08 | MkDocs product-only nav + install page | **[autonomous]** | S07 | D-103 docs fence |
+| E9-S07a | curl+checksum install script + install docs | **[autonomous]** | S02 | checksum install path; D-110 skip-when-no-sig |
+| E9-S07b | Homebrew tap wiring + goreleaser brews publish | **[infra-gated: tap push]** | S05, S06 | third install channel |
+| E9-S08 | MkDocs product-only nav + install page | **[autonomous]** | S07a | D-103 docs fence |
 | E9-S09 | README maturity formula + honest alpha status | **[autonomous]** | S08 | oss-playbook #3 |
 | E9-S10 | VHS demo tape sources (GIF optional) | **[autonomous tapes · infra-gated GIF]** | none ∥ | oss-playbook #10 |
 | E9-S11 | OQ-2 GitLab dogfood mirror decide-and-log (D-105 defer) | **[autonomous · decide-and-log]** | none ∥ | hosting disposition |
-| E9-S12 | ⚠️ Release artifact verify harness | **[autonomous · engine-grade]** | S02, S06 | checksum + cosign CI gate |
+| E9-S12 | ⚠️ Release artifact verify harness (S02 snapshot) | **[autonomous · engine-grade]** | S02 | checksum verify; cosign optional |
 | E9-S13 | Exit gate: tagged release + channels + docs live | **[infra-gated · engine-grade]** | S01..S12 | **the E9 exit gate** |
 
-**Dependency order**: S01 → S02 → S03 → S04; S02 → S05 → S06 → S12 → S13; S02 → S07; S08 ∥ S09
-(after S07 content); S10 ∥; S11 early. **Closes oss-playbook #4–#5 nav/install: S02–S09. Next after
-E9: PolicyComparisonSuite runner (D-057) — separate epic, not absorbed.**
+**Dependency order**: S01 → {S02, S04 ∥}; S02 → S03; S02 → S07a → S08 → S09; S02 → S12; S02 → S05
+→ S06 → S07b; S10 ∥; S11 ∥; S13 last. **Closes oss-playbook #4–#5 nav/install: S02–S07a/b, S08–S09.
+Next after E9: PolicyComparisonSuite runner (D-057) — separate epic, not absorbed.**
 
-> **E9 status: SPEC READY** — 13 stories (8 autonomous, 5 infra-gated); ground truth: CodeQL/
+> **E9 status: SPEC READY** — 14 stories (10 autonomous, 4 infra-gated); ground truth: CodeQL/
 > Scorecard/govulncheck/docs pipeline already on main (D-044/D-045); goreleaser/release/cosign
 > greenfield.
 

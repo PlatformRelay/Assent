@@ -240,7 +240,7 @@ from published nav), README maturity table, VHS demo tapes, OQ-2 GitLab mirror d
 (**D-105 defer**). Partial coverage already on main: MkDocs + GH Pages (D-044), security batch
 (D-045), `cliff.toml`, `API_STABILITY.md`. **Exit gate**: tagged release (`v0.1.0`, D-108)
 installs via curl + go install (+ Homebrew when tap lands), signatures verify, docs site live.
-**13 stories (8 autonomous, 5 infra-gated)** — judgment calls D-099–D-110. **Next after E9:**
+**14 stories (10 autonomous, 4 infra-gated)** — judgment calls D-099–D-110. **Next after E9:**
 PolicyComparisonSuite full runner (D-057, separate epic). Seeds: `.goreleaser.yaml`,
 `release.yaml`, `hack/release/**`, install script, product nav trim.
 

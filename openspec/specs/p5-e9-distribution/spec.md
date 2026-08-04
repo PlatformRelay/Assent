@@ -23,19 +23,21 @@ SHA-pinned Actions, Dependabot, `SECURITY.md`, `CODEOWNERS`, `cliff.toml` (minim
   `mkurator/.github/workflows/release.yaml` (cosign + git-cliff + attestations) are the templates.
 - **Version surface:** single `main.version` var in `cmd/assent/main.go`; goreleaser ldflags target
   `-X main.version={{.Version}}` (D-099).
-- **Autonomous close path:** S01–S04 + S08–S09 + S10 (tape sources) + S11 (OQ-2 decision) +
-  S12 (verify harness against goreleaser `--snapshot`) close without publish credentials; S05–S07
-  and S13 publish half are **infra-gated** (GitHub Releases write, cosign OIDC, Homebrew tap push).
+- **Autonomous close path:** S01–S04 + **S07a** (install script + `install.md`) + S08 → S09 +
+  S10 (tape sources) + S11 (OQ-2 decision) + S12 (verify harness on S02 `--snapshot` checksums;
+  cosign branch **skip-when-no-signature**) close without publish credentials. **Infra-gated:**
+  S05–S06 (publish + signing), **S07b** (Homebrew tap push), S10 GIF optional, S13 tagged release
+  proof.
 
 **Scope**: (S01) semver ldflags + `assent version`; (S02) goreleaser config + local snapshot;
 (S03) git-cliff changelog without SHAs + `CHANGELOG.md` sync; (S04) CI hardening audit + residual
 gaps (actionlint, README badges, oss-playbook checklist — **no duplicate** CodeQL/Scorecard);
 (S05) tag-triggered release workflow + goreleaser publish; (S06) cosign keyless + SLSA + SBOM on
-release artifacts; (S07) curl+checksum install script + Homebrew formula wiring; (S08) MkDocs
-product-only nav + install doc page; (S09) README maturity formula + honest post-E8 status;
-(S10) VHS demo tape sources; (S11) OQ-2 GitLab dogfood mirror decide-and-log; (S12) release
-artifact verify harness; (S13) exit gate. **Infra-gated:** S05–S07 publish, S10 GIF optional,
-S13 tagged release proof.
+release artifacts; (**S07a**) curl+checksum install script + `docs/usage/install.md`; (**S07b**)
+Homebrew tap wiring + goreleaser `brews` publish; (S08) MkDocs product-only nav + install page;
+(S09) README maturity formula + honest post-E8 status; (S10) VHS demo tape sources; (S11) OQ-2
+GitLab dogfood mirror decide-and-log; (S12) release artifact verify harness (S02 snapshot);
+(S13) exit gate. **Infra-gated:** S05, S06, S07b, S10 GIF optional, S13 publish half.
 
 **Non-goals** (fenced): **GitHub Actions adapter** (E10, D-012 locked); **Rego backend** (E11);
 **PolicyComparisonSuite full runner** (D-057 — separate epic after E9 or parallel if file-disjoint;
@@ -50,10 +52,11 @@ only in v1).
 **New**: `.goreleaser.yaml`, `.github/workflows/release.yaml`, `hack/release/**`, install script,
 Homebrew formula template, VHS tapes, product docs nav trim.
 
-**Executability**: S01–S04, S08–S09, S10 (tapes), S11, S12 **`[autonomous]`** — snapshot artifacts,
-local verify, docs/nav/README, decision log. **Infra-gated:** S05–S07 (publish credentials),
-S10 (GIF render optional), S13 (tagged release + live install proof). **Engine-grade / supply-chain
-review:** S06 (signing/SBOM/SLSA), S12 (verify harness), S13 (exit gate).
+**Executability**: S01–S04, S07a, S08, S09, S10 (tapes), S11, S12 **`[autonomous]`** — snapshot
+artifacts, checksum verify (cosign optional/skip-when-absent), docs/nav/README, decision log.
+**Infra-gated:** S05, S06, S07b (publish credentials), S10 (GIF render optional), S13 (tagged
+release + live install proof). **Engine-grade / supply-chain review:** S06 (signing/SBOM/SLSA),
+S12 (verify harness), S13 (exit gate).
 
 **Judgment calls (decide-and-log / operator):**
 (a) **DECIDED — link-time version via `-X main.version={{.Version}}`.** Dev builds keep
@@ -84,13 +87,16 @@ Logged **D-108**.
 (k) **DECIDED — supply-chain stack on release artifacts:** goreleaser cosign + SBOM where
 supported; supplement with `actions/attest` SLSA provenance on checksums/archives (mkurator
 pattern). Logged **D-109**.
-(l) **DECIDED — curl install script verifies SHA256 checksums + cosign signatures** before
-extracting; fails closed on mismatch. Logged **D-110**.
+(l) **DECIDED — curl install script verifies SHA256 checksums before extract (always fail-closed
+on mismatch); cosign verify runs when signature bundles are present, skipped when absent
+(snapshot/autonomous path). `--require-signature` flag fails closed if bundles missing (post-S06
+releases). Logged **D-110**.
 
-**Dependency order**: **S01 → S02 → S03 → S04**; **S02 → S05 → S06 → S12 → S13**; **S02 → S07**;
-**S08 ∥ S09** (after S01 for version string in docs); **S10 ∥**; **S11** early (parallel S02);
-S13 last. **Closes oss-playbook #4–#5, #7 nav fence, #10 tapes: S02–S07, S08, S10. Next epic after
-E9: PolicyComparisonSuite runner (D-057) or E11/E12 per operator priority.**
+**Dependency order**: **S01 → {S02, S04 ∥}**; **S02 → S03**; **S02 → S07a → S08 → S09**;
+**S02 → S12** (checksum verify on snapshot; cosign branch optional); **S02 → S05 → S06 → S07b**;
+**S10 ∥**, **S11 ∥** (early); **S13** last. **Closes oss-playbook #4–#5, #7 nav fence, #10 tapes:
+S02–S07a/b, S08, S10. Next epic after E9: PolicyComparisonSuite runner (D-057) or E11/E12 per
+operator priority.**
 
 **Coordination note:** S05/S06 touch `.github/workflows/release.yaml` only — do not modify
 `verify.yaml` security steps (D-086). S08 edits `mkdocs.yml` nav only; `docs/planning/**` stays
@@ -166,7 +172,7 @@ Seed `CHANGELOG.md` with Unreleased section.
 Requirements:
 - **REQ-E9-S03-01** — `git-cliff --unreleased` output contains no full/commit-short SHA patterns.
   Test: `hack/release/changelog_test.sh`; Verify:
-  `task changelog | grep -Ev '[0-9a-f]{7,40}' || true`; Level: L0
+  `! task changelog | grep -qE '[0-9a-f]{7,40}'`; Level: L0
 - **REQ-E9-S03-02** — `CHANGELOG.md` parses and includes Unreleased + at least one historical stub.
   Test: same; Verify: `test -f CHANGELOG.md && grep -q Unreleased CHANGELOG.md`; Level: doc
 - **REQ-E9-S03-03** — release workflow will consume git-cliff output (document hook point in
@@ -187,7 +193,7 @@ residual gaps only: (1) `actionlint` workflow on `.github/workflows/**`; (2) Ope
 badge on README (if score publishes); (3) optional `ossf/scorecard-action` pin bump if drift.
 **Explicit non-actions:** no second CodeQL matrix, no duplicate govulncheck on push.
 
-**Dependencies**: none (parallel S01).
+**Dependencies**: E9-S01 ∥ (parallel after S01).
 
 **Definition of done**: audit doc committed; actionlint workflow green; README badge only if
 workflow exists.
@@ -198,9 +204,9 @@ Requirements:
   `grep -q codeql.yaml docs/planning/ci-hardening-status.md`; Level: doc
 - **REQ-E9-S04-02** — `.github/workflows/actionlint.yaml` runs actionlint on workflow changes.
   Test: workflow file; Verify: `actionlint .github/workflows/*.yaml`; Level: L1
-- **REQ-E9-S04-03** — no new duplicate security workflow for CodeQL or Scorecard (grep guard).
-  Test: `hack/release/ci_audit_test.sh`; Verify:
-  `! grep -l 'name: CodeQL' .github/workflows/*.yaml | wc -l | grep -qx 2`; Level: L0
+- **REQ-E9-S04-03** — exactly one CodeQL workflow file exists (D-045 shipped; E9 must not add a
+  second). Test: `hack/release/ci_audit_test.sh`; Verify:
+  `test "$(grep -l 'name: CodeQL' .github/workflows/*.yaml | wc -l)" -eq 1`; Level: L0
 
 ---
 
@@ -259,31 +265,54 @@ Requirements:
 
 ---
 
-## E9-S07 — curl+checksum install + Homebrew tap wiring [autonomous script · infra-gated publish]
+## E9-S07a — curl+checksum install script + install docs [autonomous]
 
-**As a** adopter **I want** three install paths **so that** I can consume assent like other CLIs.
+**As a** adopter **I want** a checksum-verified install path **so that** I can install from local
+snapshot or release artifacts without trusting transport alone.
 
-**Goal**: (1) **`go install github.com/PlatformRelay/assent/cmd/assent@vX.Y.Z`** documented in
-`docs/usage/install.md` (no workflow needed). (2) **`hack/install.sh`** — curl latest release
-archive, verify `checksums.txt` SHA256 (D-110), optionally cosign-verify, install to
-`/usr/local/bin` or `~/.local/bin`. Script testable against S02 snapshot `dist/`. (3) **Homebrew:**
-goreleaser `brews` section + formula template committed; tap push to `PlatformRelay/homebrew-tap`
-infra-gated. README install section links all three; only claim Homebrew after tap lands.
+**Goal**: (1) **`hack/install.sh`** — given `--archive` + `--checksums` (S02 snapshot or release),
+verify SHA256 (D-110, always fail-closed on mismatch), install to `/usr/local/bin` or
+`~/.local/bin`. Cosign verify: **skip when no `.sigstore.json` bundles** (snapshot/autonomous);
+verify when present; **`--require-signature`** fails closed if bundles absent (for post-S06
+releases). (2) **`docs/usage/install.md`** documents `go install`, curl script usage (local
+`dist/` + GitHub release URL pattern), and Homebrew as "coming soon" until S07b. Script tested
+against S02 snapshot — **no S06 dependency**.
 
-**Dependencies**: E9-S02; S06 for cosign verify in install.sh.
+**Dependencies**: E9-S02.
 
-**Definition of done**: install.sh passes against snapshot; docs list three channels; brew template
-reviewable in-repo.
+**Definition of done**: install.sh passes against snapshot; install.md committed; cosign skip path
+documented.
 
 Requirements:
-- **REQ-E9-S07-01** — `hack/install.sh --version X.Y.Z --archive … --checksums …` verifies SHA256
-  before install; rejects mismatch exit 1. Test: `hack/release/install_test.sh`; Verify:
-  `bash hack/release/install_test.sh`; Level: L1
-- **REQ-E9-S07-02** — `docs/usage/install.md` documents go install, curl script, and Homebrew
-  (marked "coming soon" until tap push). Test: doc file; Verify:
-  `grep -q 'go install' docs/usage/install.md`; Level: doc
-- **REQ-E9-S07-03** — `.goreleaser.yaml` includes `brews` stub with tap owner/repo (D-107). Test:
-  `.goreleaser.yaml`; Verify: `grep -q brews .goreleaser.yaml`; Level: doc
+- **REQ-E9-S07a-01** — install.sh verifies SHA256 before extract; rejects mismatch exit 1. Test:
+  `hack/release/install_test.sh`; Verify: `bash hack/release/install_test.sh`; Level: L1
+- **REQ-E9-S07a-02** — without signature bundles, install.sh skips cosign and succeeds on valid
+  checksum. Test: same; Verify: `bash hack/release/install_test.sh snapshot-no-sig`; Level: L0
+- **REQ-E9-S07a-03** — `docs/usage/install.md` documents go install + curl script. Test: doc;
+  Verify: `grep -q 'go install' docs/usage/install.md`; Level: doc
+
+---
+
+## E9-S07b — Homebrew tap wiring + goreleaser brews publish [infra-gated]
+
+**As a** macOS adopter **I want** `brew install assent` **so that** I can consume assent via
+Homebrew after the tap lands.
+
+**Goal**: goreleaser `brews` section (D-107) targeting `PlatformRelay/homebrew-tap`; in-repo
+formula template for review; tap push infra-gated on tagged release (S05/S06). README/Homebrew
+claim only after tap commit lands.
+
+**Dependencies**: E9-S05, E9-S06.
+
+**Definition of done**: formula template in-repo; tap receives commit on first tagged release.
+
+Requirements:
+- **REQ-E9-S07b-01** — `.goreleaser.yaml` includes `brews` with tap owner/repo (D-107). Test:
+  config; Verify: `grep -q brews .goreleaser.yaml`; Level: doc
+- **REQ-E9-S07b-02** — tagged release publishes formula to homebrew-tap (manual/CI verify). Test:
+  infra; Verify: `brew tap PlatformRelay/tap && brew install assent`; Level: infra
+- **REQ-E9-S07b-03** — install.md Homebrew section upgraded from "coming soon" after tap lands.
+  Test: doc; Verify: `grep -q Homebrew docs/usage/install.md`; Level: doc
 
 ---
 
@@ -297,7 +326,7 @@ the published nav (oss-playbook #3, D-103).
 `docs/api-stability.md` symlink/copy), Decisions. Remove Planning subtree from nav (files remain
 on disk). Add `docs/usage/install.md` to nav. `mkdocs build --strict` stays green.
 
-**Dependencies**: E9-S07 (install doc content, can stub then fill).
+**Dependencies**: E9-S07a (install doc content).
 
 **Definition of done**: site builds strict; nav has no `planning/` entries; install page linked.
 
@@ -329,8 +358,9 @@ mermaid hero optional if already present. Do **not** link VHS GIFs until S10 ass
 Requirements:
 - **REQ-E9-S09-01** — README contains maturity table with GitLab=Core and GitHub=Planned. Test:
   `README.md`; Verify: `grep -q 'GitLab' README.md && grep -q Planned README.md`; Level: doc
-- **REQ-E9-S09-02** — README badge count ≤7 and each badge maps to existing workflow/metadata.
-  Test: same; Verify: `grep -c 'badge.svg' README.md`; Level: doc
+- **REQ-E9-S09-02** — README badge count ≤6 (oss-playbook #3) and each badge maps to existing
+  workflow/metadata. Test: same; Verify:
+  `test "$(grep -c 'badge.svg' README.md)" -le 6`; Level: doc
 - **REQ-E9-S09-03** — Status callout no longer says "design phase" exclusively. Test: same;
   Verify: `grep -qi alpha README.md`; Level: doc
 
@@ -393,21 +423,25 @@ Requirements:
 checksum and signature regressions fail CI before adopters see them.
 
 **Goal**: Add `hack/release/verify-artifacts.sh`: given a `dist/` directory, verify (1) checksums
-match archives, (2) cosign bundles validate when present, (3) `assent version` in each archive
-matches expected semver. Wire into `task release-verify` and PR CI after `release-snapshot`.
-Document in `SECURITY.md`.
+match archives (required — S02 snapshot), (2) cosign bundles validate **when present**, skip when
+absent (D-110 autonomous path), (3) `assent version` in each archive matches expected semver.
+Wire into `task release-verify` and PR CI after `release-snapshot`. Post-S06: optional extended
+test fixture with real sig bundles (not an S12 hard dependency). Document in `SECURITY.md`.
 
-**Dependencies**: E9-S02, E9-S06 (cosign bundles on snapshot optional).
+**Dependencies**: E9-S02 only (autonomous checksum path; cosign branch optional).
 
-**Definition of done**: verify script exits non-zero on tampered checksum test fixture.
+**Definition of done**: verify script exits non-zero on tampered checksum; passes on snapshot
+without signatures.
 
 Requirements:
-- **REQ-E9-S12-01** — verify script passes on fresh `task release-snapshot` output. Test:
+- **REQ-E9-S12-01** — verify script passes on fresh `task release-snapshot` output (no sigs). Test:
   `hack/release/verify_test.sh`; Verify: `task release-snapshot && task release-verify`; Level: L1
-- **REQ-E9-S12-02** — tampered archive fails verify (negative test). Test: same; Verify:
+- **REQ-E9-S12-02** — tampered archive fails checksum verify (negative test). Test: same; Verify:
   `hack/release/verify_test.sh negative`; Level: L0
-- **REQ-E9-S12-03** — script documented in `hack/release/README.md` with adoptable cosign verify
-  one-liner. Test: README; Verify: `grep -q verify-artifacts hack/release/README.md`; Level: doc
+- **REQ-E9-S12-03** — when sig bundles present, invalid signature fails closed; when absent, verify
+  skips cosign branch. Test: same; Verify:
+- **REQ-E9-S12-04** — script documented in `hack/release/README.md` with cosign skip-when-absent
+  behaviour. Test: README; Verify: `grep -q verify-artifacts hack/release/README.md`; Level: doc
 
 ---
 
@@ -416,11 +450,12 @@ Requirements:
 **As a** maintainer **I want** the E9 autonomous slice proven and a tagged release published **so
 that** the Phase-5 distribution gate closes.
 
-**Goal**: **Autonomous half:** S01–S04 + S08–S12 green under `task check`; snapshot + verify in
-CI; docs site builds product nav; backlog marks E9 spec authoritative. **Infra-gated half:** tag
-`v0.1.0` (D-108); release workflow publishes assets; install via curl script + `go install` +
-Homebrew (if tap ready); cosign/SBOM verified; `https://platformrelay.github.io/assent/` live
-with install page. Record **D-111** (E9 exit gate closed) when both halves done.
+**Goal**: **Autonomous half:** S01–S04 + S07a + S08 → S09 + S12 green under `task check`; snapshot +
+checksum verify in CI; docs site builds product nav; backlog marks E9 spec authoritative.
+**Infra-gated half:** tag `v0.1.0` (D-108); S05–S06 publish signed assets; S07b tap (if ready);
+install via curl script + `go install` + Homebrew; cosign/SBOM verified live;
+`https://platformrelay.github.io/assent/` live with install page. Record **D-111** (E9 exit gate
+closed) when both halves done.
 
 **Dependencies**: E9-S01..S12.
 
@@ -443,15 +478,15 @@ Requirements:
 
 | Gate | Criterion |
 | --- | --- |
-| **Autonomous (S13 half)** | S01–S04 + S08–S12 green; snapshot + verify + product docs nav; D-105 logged |
-| **Infra (S13 half)** | Tag `v0.1.0` publishes signed assets; curl + go install work; docs site live |
+| **Autonomous (S13 half)** | S01–S04 + S07a + S08→S09 + S11 + S12 green; snapshot checksum verify; D-105 logged |
+| **Infra (S13 half)** | Tag `v0.1.0` publishes signed assets; S07b tap optional; curl + go install work |
 | **Supply chain** | cosign + SBOM + SLSA on release artifacts (S06); verify harness green (S12) |
 | **No dup CI** | CodeQL/Scorecard/govulncheck not duplicated (D-102) |
 | **Deferred** | GitLab mirror (D-105), PolicyComparisonSuite (D-057), E10/E11/E12 |
 | **Next epic** | D-057 PolicyComparisonSuite runner (recommended) or E11 Rego per operator |
 
-**Story count:** 13 — **8 autonomous**, **5 infra-gated** (S05, S06, S07 publish, S10 GIF optional,
-S13 publish half).
+**Story count:** 14 — **10 autonomous** (S01–S04, S07a, S08, S09, S10 tapes, S11, S12), **4
+infra-gated** (S05, S06, S07b, S13 publish half; S10 GIF optional within S10).
 
 **Do first:** **E9-S01** — thinnest vertical slice (stamped `assent version`) before goreleaser or
 workflows.
