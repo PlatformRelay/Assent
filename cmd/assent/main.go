@@ -100,6 +100,12 @@ func run(args []string) int {
 				return gitlab.New(endpoint, token, botAuthor)
 			})
 	}
+	if len(args) > 0 && args[0] == "render" {
+		// `assent render --finding examples/render/<case>` (E8-S10): load a committed
+		// render fixture, validate via LoadPresentationModel/LoadRenderContext, and
+		// emit markdown on stdout for local preview without a live MR (ADR-0016 §4).
+		return runRender(args[1:], os.Stdout, os.Stderr)
+	}
 	fmt.Fprintln(os.Stderr, "assent (pre-alpha): no commands implemented yet — see docs/planning/meta-plan.md")
 	return 2
 }
