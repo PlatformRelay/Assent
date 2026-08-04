@@ -1,21 +1,14 @@
 package schemas
 
 import (
-	// Blank import: enables the //go:embed directive below to embed the schema bytes.
-	_ "embed"
 	"encoding/json"
 	"testing"
 )
 
-//go:embed testfixture/v1alpha1/test-expectation.schema.json
-var testExpectationSchemaJSON []byte
-
-// TestExpectationSchema validates schemas/testfixture/v1alpha1/test-expectation.schema.json
-// instances — both the expect.yaml document shape and the cases.yaml wrapper
-// shape (REQ-P3-E1-S05-02: one schema, not two contracts). Compiled/embedded
-// here (not in compiler.go) per this lane's self-contained-ownership
-// boundary, matching S04's precedent.
-var TestExpectationSchema = mustCompile("test-expectation.schema.json", testExpectationSchemaJSON)
+// TestExpectationSchema and its embedded bytes (testExpectationSchemaJSON) are the
+// PRODUCTION schema vars in compiler.go (E6-S01 moved them there so the pure
+// internal/adoptertest harness can reuse the frozen contract); these tests exercise
+// that same production var, same package.
 
 // REQ-P3-E1-S05-01: test-expectation.schema.json requires decision: enum
 // [APPROVE, REVIEW, BLOCK], an optional findings[] (each entry's effect

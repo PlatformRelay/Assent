@@ -51,6 +51,9 @@ var comparisonRecordSchemaJSON []byte
 //go:embed comparison/v1alpha1/comparison-suite.schema.json
 var comparisonSuiteSchemaJSON []byte
 
+//go:embed testfixture/v1alpha1/test-expectation.schema.json
+var testExpectationSchemaJSON []byte
+
 var (
 	// ConfigSchema validates schemas/policy/v1alpha1/config.schema.json instances.
 	ConfigSchema = mustCompile("config.schema.json", configSchemaJSON)
@@ -64,6 +67,18 @@ var (
 	// ProfileSchema validates schemas/policy/v1alpha1/profile.schema.json
 	// instances (named PolicyProfile; required writes boolean — P3-E4-S02).
 	ProfileSchema = mustCompile("profile.schema.json", profileSchemaJSON)
+	// TestExpectationSchema validates schemas/testfixture/v1alpha1/test-expectation.schema.json
+	// instances — the whole frozen adopter test-fixture contract (the expect.yaml
+	// #/$defs/expectation document shape AND the cases.yaml #/$defs/casesFile wrapper
+	// are one oneOf contract, REQ-P3-E1-S05-02).
+	TestExpectationSchema = mustCompile("test-expectation.schema.json", testExpectationSchemaJSON)
+	// ExpectationSchema validates a single expect.yaml against the #/$defs/expectation
+	// FRAGMENT of the frozen contract (E6-S01). The fragment (not the top-level oneOf)
+	// gives a located field-level rejection — additionalProperties '<field>' / enum —
+	// for `assent test`'s strict expect.yaml decode, instead of a muddy
+	// "oneOf matched none of 2" error. Its internal $ref to finding/score resolves
+	// within the same compiled document.
+	ExpectationSchema = mustCompileFragment("test-expectation.schema.json", testExpectationSchemaJSON, "#/$defs/expectation")
 )
 
 // decisionSchemaID is the $id of one of the five decision/v1alpha1 runtime
@@ -142,6 +157,26 @@ func mustCompile(name string, raw []byte) *jsonschema.Schema {
 	sch, err := compile(name, raw)
 	if err != nil {
 		panic(fmt.Sprintf("compile %s: %v", name, err))
+	}
+	return sch
+}
+
+// mustCompileFragment compiles the sub-schema at a JSON-pointer fragment of one
+// document (e.g. "#/$defs/expectation"), so a caller can strict-validate against a
+// single $def and get a located field-level error rather than a top-level
+// oneOf/anyOf "matched none" error. Internal $refs resolve within the same document.
+func mustCompileFragment(name string, raw []byte, fragment string) *jsonschema.Schema {
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		panic(fmt.Sprintf("parse %s: %v", name, err))
+	}
+	c := newCompiler()
+	if err := c.AddResource(name, doc); err != nil {
+		panic(fmt.Sprintf("add resource %s: %v", name, err))
+	}
+	sch, err := c.Compile(name + fragment)
+	if err != nil {
+		panic(fmt.Sprintf("compile %s%s: %v", name, fragment, err))
 	}
 	return sch
 }

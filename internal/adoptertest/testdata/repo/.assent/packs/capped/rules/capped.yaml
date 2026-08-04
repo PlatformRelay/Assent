@@ -1,0 +1,23 @@
+# Minimal single-rule pack for the E6-S01 adopter-test anchor. ONE valueChanges
+# leaf rule whose `when` binds only the typed scalar `new` and a resolved fact
+# `facts.limits.maxPartitions.value` — no `entry`/`oldEntry` (that binding is the
+# S02 approximation), so bindLeafActivation is already exact here.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: capped-partitions
+spec:
+  rules:
+    - name: partitions-within-cap
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/partitions"]
+          kinds: [modify]
+      prove:
+        obligation: capped
+        when: new <= facts.limits.maxPartitions.value
+      onFailure:
+        effect: challenge
+        code: capped.over-limit
+      points: 1

@@ -1,0 +1,4 @@
+# The band provider resolved NOTHING (facts.yaml is empty): the cap predicate
+# reads facts.limits.maxPartitions.value on an absent fact -> errors -> fail-safe
+# REVIEW. It must NEVER APPROVE on a fact that was never resolved (REQ-E6-S01-02).
+decision: REVIEW

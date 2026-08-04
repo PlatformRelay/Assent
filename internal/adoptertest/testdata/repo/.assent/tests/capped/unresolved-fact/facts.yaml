@@ -1,0 +1,3 @@
+# Deliberately empty: no provider resolved any fact. The `limits` provider is
+# ABSENT, so no resolved value is fabricated for the cap predicate.
+{}

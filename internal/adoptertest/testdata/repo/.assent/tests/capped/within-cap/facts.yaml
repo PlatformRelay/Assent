@@ -1,0 +1,4 @@
+# Authored (flat) provider facts; the harness lifts each into the resolved-fact
+# envelope {state: resolved, value: ...} the engine binds.
+limits:
+  maxPartitions: 32

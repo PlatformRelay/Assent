@@ -1,0 +1,7 @@
+# partitions 12 -> 64 exceeds the resolved cap 32 -> challenge fires -> REVIEW
+decision: REVIEW
+findings:
+  - rule: partitions-within-cap
+    obligation: capped
+    effect: challenge
+    path: "/partitions"

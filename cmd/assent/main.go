@@ -73,6 +73,17 @@ func run(args []string) int {
 		// (D-048).
 		return runCatalogue(args[1:], os.Stdout, os.Stderr)
 	}
+	if len(args) > 0 && args[0] == "test" {
+		// `assent test <repo>` (E6-S01): discover the repo's `.assent/tests/**`
+		// directory cases, diff each case's base/↔head/ with the production differ,
+		// stub its facts.yaml into the resolved-fact envelope, and evaluate the pack
+		// via aggregate.Cover — asserting the produced Decision equals the case's
+		// expect.yaml. The directory walk + file reads (the only I/O) live in runTest;
+		// the case loader/assembler/assertion is the pure internal/adoptertest library.
+		// Exit 0 when every case matched, non-zero on any mismatch or load error, so a
+		// policy regression fails CI before it reaches an MR (ADR-0006 dogfooding).
+		return runTest(args[1:], os.Stdout, os.Stderr)
+	}
 	if len(args) > 0 && args[0] == "doctor" {
 		// Precondition/arming report (ADR-0015 §4/§8, ADR-0017 §9). The env
 		// boundary lives here (readPipelineDescription); Doctor is pure and

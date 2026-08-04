@@ -1,4 +1,4 @@
-package main
+package evaldecode_test
 
 import (
 	"encoding/json"
@@ -9,6 +9,7 @@ import (
 	"github.com/PlatformRelay/assent/internal/change"
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/core/policy"
+	"github.com/PlatformRelay/assent/internal/evaldecode"
 )
 
 // shrinkPolicy returns a MergePolicy + Binding of the D-016
@@ -77,9 +78,9 @@ func TestDecodeCanonical(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := decodeCanonical(tc.in)
+			got := evaldecode.DecodeCanonical(tc.in)
 			if got != tc.want {
-				t.Fatalf("decodeCanonical(%q) = %#v (%T), want %#v (%T)", tc.in, got, got, tc.want, tc.want)
+				t.Fatalf("evaldecode.DecodeCanonical(%q) = %#v (%T), want %#v (%T)", tc.in, got, got, tc.want, tc.want)
 			}
 		})
 	}
@@ -109,7 +110,7 @@ func TestRealDiffNumericShrinkBlocks(t *testing.T) {
 		t.Fatalf("change = %+v, want /partitions old=\"12\" new=\"6\" (canonical strings)", c)
 	}
 
-	in := buildEvaluationInput(cs, aggregate.MR{}, []string{"non-destructive"})
+	in := evaldecode.BuildEvaluationInput(cs, aggregate.MR{}, []string{"non-destructive"})
 
 	// (a) The decoded Old/New are TYPED json.Number — not the raw canonical strings.
 	got := in.ChangeSet.Changes[0]
@@ -182,7 +183,7 @@ func TestCapitalizedBoolDecodesAsBool(t *testing.T) {
 		t.Fatalf("change = %+v, want old=\"False\" new=\"True\" (raw !!bool literals)", c)
 	}
 
-	in := buildEvaluationInput(cs, aggregate.MR{}, []string{"non-destructive"})
+	in := evaldecode.BuildEvaluationInput(cs, aggregate.MR{}, []string{"non-destructive"})
 	got := in.ChangeSet.Changes[0]
 	if got.Old != false || got.New != true {
 		t.Fatalf("decoded old/new = %#v/%#v, want Go bools false/true (not json.Number/string)", got.Old, got.New)
@@ -214,6 +215,18 @@ func TestCapitalizedBoolDecodesAsBool(t *testing.T) {
 	}
 	if resStr.Decision == aggregate.DecisionApprove {
 		t.Fatalf("a string-bound bool must NOT prove `new == true` (cross-type) — got APPROVE; the decoder's bool binding is what closes this")
+	}
+}
+
+// TestSubjectOf proves the governed-subject derivation: a collection EntryRef is
+// preferred; a document-mode change (no EntryRef) falls back to file:<path>. A
+// non-empty subject is required (the DecisionRecord finding schema pins it).
+func TestSubjectOf(t *testing.T) {
+	if got := evaldecode.SubjectOf(change.Change{EntryRef: "topic-registry:orders.events.v1", File: "topics/x.yaml"}); got != "topic-registry:orders.events.v1" {
+		t.Errorf("SubjectOf(entryRef) = %q, want the EntryRef", got)
+	}
+	if got := evaldecode.SubjectOf(change.Change{File: "topics/x.yaml"}); got != "file:topics/x.yaml" {
+		t.Errorf("SubjectOf(no entryRef) = %q, want the file:<path> fallback", got)
 	}
 }
 
