@@ -436,7 +436,7 @@ func evalRule(env *cel.Env, activation map[string]any, when string) (bool, error
 	if iss != nil && iss.Err() != nil {
 		return false, fmt.Errorf("compile when %q: %w", when, iss.Err())
 	}
-	prg, err := env.Program(ast)
+	prg, err := env.Program(ast, cel.CostLimit(celCostBudget))
 	if err != nil {
 		return false, fmt.Errorf("program when %q: %w", when, err)
 	}
