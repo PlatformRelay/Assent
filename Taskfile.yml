@@ -1,5 +1,11 @@
 version: "3"
 
+vars:
+  BIN_DIR: bin
+  GIT_CLIFF_VERSION: v2.13.1
+  GIT_CLIFF_BIN: "{{.BIN_DIR}}/git-cliff"
+  CLIFF_CONFIG: cliff.toml
+
 tasks:
   default:
     cmds: [task --list]
@@ -134,3 +140,28 @@ tasks:
     desc: "Verify snapshot output (REQ-E9-S02-01/02/03)"
     cmds:
       - bash hack/release/snapshot_test.sh
+
+  tools:git-cliff:
+    desc: Download pinned git-cliff binary ({{.GIT_CLIFF_VERSION}})
+    status:
+      - test -x {{.GIT_CLIFF_BIN}}
+    cmds:
+      - bash hack/install-git-cliff.sh {{.GIT_CLIFF_VERSION}} {{.GIT_CLIFF_BIN}}
+
+  changelog:
+    desc: Preview unreleased changelog section (stdout, no SHAs)
+    deps: [tools:git-cliff]
+    cmds:
+      - "{{.GIT_CLIFF_BIN}} --config {{.CLIFF_CONFIG}} --unreleased -o -"
+
+  changelog-write:
+    desc: Regenerate CHANGELOG.md from git tags and unreleased commits
+    deps: [tools:git-cliff]
+    cmds:
+      - "{{.GIT_CLIFF_BIN}} --config {{.CLIFF_CONFIG}} -o CHANGELOG.md"
+
+  changelog-verify:
+    desc: Fail if CHANGELOG.md is stale vs cliff.toml output (REQ-E9-S03-03)
+    deps: [tools:git-cliff]
+    cmds:
+      - bash hack/release/verify-changelog.sh

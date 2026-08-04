@@ -1,12 +1,30 @@
 # git-cliff configuration — gitmoji-conventional commits -> categorized changelog.
+# Body emits subject lines only; no commit SHAs (D-101, oss-playbook #4).
+
 [changelog]
-header = "# Changelog\n\n"
+header = """
+# Changelog
+
+All notable changes to this project are documented here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Release notes are generated from gitmoji-conventional commits on the default branch using
+[git-cliff](https://git-cliff.org/).
+
+"""
 body = """
 {% if version %}## {{ version }} - {{ timestamp | date(format="%Y-%m-%d") }}{% else %}## Unreleased{% endif %}
 {% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group }}
 {% for commit in commits %}- {{ commit.message | split(pat="\n") | first }}
 {% endfor %}{% endfor %}
+"""
+footer = """
+## [0.0.0] - 2026-08-04
+
+Pre-release development history before the first tagged alpha (`v0.1.0`, D-108). Milestone ADRs
+and phase specs live under `docs/decisions/` and `openspec/specs/`.
 """
 trim = true
 
