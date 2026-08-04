@@ -140,6 +140,9 @@ func (f *Forge) ListBotNotes(_, _ string) ([]forge.Note, error) {
 // MR. When a bot note with artifact.kind summary-comment already exists, its
 // body is updated and the same forge id is returned — never a second note.
 func (f *Forge) UpsertComment(_, _ string, marker forge.Marker, body string) (forge.Note, error) {
+	if marker.Artifact.Kind != "summary-comment" {
+		return forge.Note{}, forge.ErrInvalidSummaryMarker
+	}
 	for i := range f.notes {
 		if f.notes[i].Author != f.BotAuthor {
 			continue

@@ -62,6 +62,10 @@ var (
 	// guess (an unknown decision must never widen to a write).
 	ErrUnsupportedDecision = errors.New("forge: unsupported decision for Reconcile")
 
+	// ErrInvalidSummaryMarker is returned when UpsertComment is invoked with a
+	// marker whose artifact.kind is not summary-comment.
+	ErrInvalidSummaryMarker = errors.New("forge: UpsertComment requires artifact.kind summary-comment")
+
 	// ErrRescanFailed is returned when the post-write rescan (P3-E5 step 9) finds
 	// the forge does not reflect the desired state. Writes may have occurred, but
 	// success is never reported without forge confirmation.
@@ -332,6 +336,11 @@ const (
 //     pins AND a compare-and-swap that honours source+target+mergeResultDigest.
 //     Any refusal returns a typed error with ZERO writes.
 func Reconcile(f Forge, clock Clocker, desired DesiredReviewState, pre Preconditions) (PublicationReceipt, error) {
+	path, err := reconcilePathOf(desired)
+	if err != nil {
+		return PublicationReceipt{}, err
+	}
+
 	var preambleOps []Operation
 	if desired.Summary != nil {
 		op, err := reconcileSummaryPreamble(f, clock, desired)
@@ -342,16 +351,13 @@ func Reconcile(f Forge, clock Clocker, desired DesiredReviewState, pre Precondit
 	}
 
 	var receipt PublicationReceipt
-	var err error
-	switch {
-	case desired.ClearSlot != nil:
+	switch path {
+	case pathClearSlot:
 		receipt, err = reconcileClearSlot(f, clock, desired)
-	case desired.Thread != nil:
+	case pathThread:
 		receipt, err = reconcileThread(f, clock, desired)
-	case desired.Approve && desired.Merge != nil:
+	case pathApproveMerge:
 		receipt, err = reconcileApproveMerge(f, clock, desired, pre)
-	default:
-		return PublicationReceipt{}, ErrUnsupportedDecision
 	}
 	if err != nil {
 		return PublicationReceipt{}, err
@@ -361,6 +367,27 @@ func Reconcile(f Forge, clock Clocker, desired DesiredReviewState, pre Precondit
 	}
 	all := append(preambleOps, receipt.Operations...)
 	return receiptOf(all...), nil
+}
+
+type reconcilePathKind int
+
+const (
+	pathClearSlot reconcilePathKind = iota
+	pathThread
+	pathApproveMerge
+)
+
+func reconcilePathOf(desired DesiredReviewState) (reconcilePathKind, error) {
+	switch {
+	case desired.ClearSlot != nil:
+		return pathClearSlot, nil
+	case desired.Thread != nil:
+		return pathThread, nil
+	case desired.Approve && desired.Merge != nil:
+		return pathApproveMerge, nil
+	default:
+		return 0, ErrUnsupportedDecision
+	}
 }
 
 // reconcileSummaryPreamble implements P3-E5 step 2 (list bot notes) then step 3
@@ -375,6 +402,9 @@ func reconcileSummaryPreamble(f Forge, clock Clocker, desired DesiredReviewState
 
 func reconcileSummary(f Forge, clock Clocker, desired DesiredReviewState) (Operation, error) {
 	summary := desired.Summary
+	if summary.Marker.Artifact.Kind != "summary-comment" {
+		return Operation{}, ErrInvalidSummaryMarker
+	}
 	note, err := f.UpsertComment(desired.Project, desired.MR, summary.Marker, summary.Body)
 	if err != nil {
 		return Operation{}, fmt.Errorf("forge: upsert summary: %w", err)

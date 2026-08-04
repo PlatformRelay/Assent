@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -56,6 +57,17 @@ func TestListBotNotesAuthorIdentityFilter(t *testing.T) {
 	}
 	if notes[0].ID != "note/9000" {
 		t.Errorf("note id = %q, want note/9000", notes[0].ID)
+	}
+}
+
+func TestUpsertCommentRejectsNonSummaryKind(t *testing.T) {
+	c, _ := newServer(t, func(_ http.ResponseWriter, _ *http.Request) {
+		t.Fatal("must not call GitLab when marker kind is invalid")
+	})
+	m := botMarker() // finding-thread
+	_, err := c.UpsertComment("42", "7", m, "body")
+	if !errors.Is(err, forge.ErrInvalidSummaryMarker) {
+		t.Fatalf("expected ErrInvalidSummaryMarker, got %v", err)
 	}
 }
 

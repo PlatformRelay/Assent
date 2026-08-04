@@ -73,11 +73,18 @@ func TestReconcileSummaryPreamble(t *testing.T) {
 	})
 
 	t.Run("preamble-list-error-fails-closed", func(t *testing.T) {
-		f := &listNotesFailForge{inner: fake.New(botID, "src", "tgt", "sha256:merge")}
+		inner := fake.New(botID, "src", "tgt", "sha256:merge")
+		f := &listNotesFailForge{inner: inner}
 		d := desiredWithSummary(&forge.DesiredThread{Marker: reviewMarker(), Body: "x"})
 		_, err := forge.Reconcile(f, testClock(), d, forge.Preconditions{})
 		if err == nil {
 			t.Fatal("expected error when ListBotNotes fails")
+		}
+		if got := inner.BotThreadCount(); got != 0 {
+			t.Fatalf("ListBotNotes failure must not create threads, got %d", got)
+		}
+		if got := inner.SummaryNoteCount(); got != 0 {
+			t.Fatalf("ListBotNotes failure must not create summary notes, got %d", got)
 		}
 	})
 }

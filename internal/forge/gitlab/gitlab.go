@@ -332,6 +332,9 @@ func (c *Client) ListBotNotes(project, mr string) ([]forge.Note, error) {
 // the MR. When a bot note with artifact.kind summary-comment already exists, it
 // is updated via PUT; otherwise a new note is POSTed.
 func (c *Client) UpsertComment(project, mr string, marker forge.Marker, body string) (forge.Note, error) {
+	if marker.Artifact.Kind != "summary-comment" {
+		return forge.Note{}, forge.ErrInvalidSummaryMarker
+	}
 	existing, err := c.ListBotNotes(project, mr)
 	if err != nil {
 		return forge.Note{}, err
