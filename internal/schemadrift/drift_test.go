@@ -98,16 +98,14 @@ func TestAllowedD088ConfigSchemaChange(t *testing.T) {
 
 	t.Run("added_non_presentation_property_fails", func(t *testing.T) {
 		tampered := strings.Replace(string(originMain),
-			`"providers": {
-      "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/provider" },
-      "description": "Keyed by provider name (surfaced to rules as facts.<name>.*, ADR-0004)."
+			`"presentation": {
+      "$ref": "#/$defs/presentation",
+      "description": "Tier-0 renderer knobs (ADR-0016 §1, D-088): verbosity, emoji, collapse threshold, locale, and optional per-environment overrides."
     }
   },`,
-			`"providers": {
-      "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/provider" },
-      "description": "Keyed by provider name (surfaced to rules as facts.<name>.*, ADR-0004)."
+			`"presentation": {
+      "$ref": "#/$defs/presentation",
+      "description": "Tier-0 renderer knobs (ADR-0016 §1, D-088): verbosity, emoji, collapse threshold, locale, and optional per-environment overrides."
     },
     "telemetry": { "type": "object" }
   },`,
@@ -164,6 +162,55 @@ func TestAllowedD088ConfigSchemaChange(t *testing.T) {
 		)
 		if err == nil {
 			t.Fatal("expected non-object properties to fail")
+		}
+	})
+
+	t.Run("removed_top_level_key_fails", func(t *testing.T) {
+		tampered := strings.Replace(string(originMain), `"title": "Config",`+"\n", "", 1)
+		if err := schemadrift.AllowedD088ConfigSchemaChange(originMain, []byte(tampered)); err == nil {
+			t.Fatal("expected removed top-level key to fail")
+		}
+	})
+
+	t.Run("removed_non_presentation_property_fails", func(t *testing.T) {
+		tampered := strings.Replace(string(originMain),
+			`"providers": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/provider" },
+      "description": "Keyed by provider name (surfaced to rules as facts.<name>.*, ADR-0004)."
+    },
+`,
+			"",
+			1)
+		if err := schemadrift.AllowedD088ConfigSchemaChange(originMain, []byte(tampered)); err == nil {
+			t.Fatal("expected removed providers property to fail")
+		}
+	})
+
+	t.Run("added_top_level_key_fails", func(t *testing.T) {
+		tampered := strings.Replace(string(originMain), `"title": "Config",`, `"title": "Config",`+"\n"+`  "telemetryVersion": 1,`, 1)
+		if err := schemadrift.AllowedD088ConfigSchemaChange(originMain, []byte(tampered)); err == nil {
+			t.Fatal("expected added top-level key to fail")
+		}
+	})
+
+	t.Run("changed_non_presentation_property_fails", func(t *testing.T) {
+		tampered := strings.Replace(string(originMain), `"const": "Config"`, `"const": "ConfigV2"`, 1)
+		if err := schemadrift.AllowedD088ConfigSchemaChange(originMain, []byte(tampered)); err == nil {
+			t.Fatal("expected changed kind const to fail")
+		}
+	})
+
+	t.Run("added_non_presentation_def_fails", func(t *testing.T) {
+		tampered := strings.Replace(string(originMain),
+			`"$defs": {
+    "profileRef": {`,
+			`"$defs": {
+    "telemetry": { "type": "object" },
+    "profileRef": {`,
+			1)
+		if err := schemadrift.AllowedD088ConfigSchemaChange(originMain, []byte(tampered)); err == nil {
+			t.Fatal("expected added non-presentation $defs entry to fail")
 		}
 	})
 }
