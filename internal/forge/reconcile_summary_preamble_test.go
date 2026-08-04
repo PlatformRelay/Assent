@@ -6,6 +6,7 @@ import (
 
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/forge/fake"
+	"github.com/PlatformRelay/assent/internal/render"
 )
 
 func desiredWithSummary(thread *forge.DesiredThread) forge.DesiredReviewState {
@@ -67,7 +68,11 @@ func TestReconcileSummaryPreamble(t *testing.T) {
 		if got := f.SummaryNoteCount() - beforeSummaries; got != 0 {
 			t.Fatalf("rerun must not create a new summary note, created %d", got)
 		}
-		if got := f.NoteBody("note/9000"); got != "placeholder summary body" {
+		wantSummary, err := render.Envelope(summaryMarker(), "placeholder summary body")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := f.NoteBody("note/9000"); got != wantSummary {
 			t.Fatalf("summary must be updated in place, got %q", got)
 		}
 	})

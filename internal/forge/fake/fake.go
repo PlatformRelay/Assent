@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/PlatformRelay/assent/internal/forge"
+	"github.com/PlatformRelay/assent/internal/render"
 )
 
 // Forge is the in-memory fake. It is deterministic: forge-assigned ids are
@@ -143,6 +144,10 @@ func (f *Forge) UpsertComment(_, _ string, marker forge.Marker, body string) (fo
 	if marker.Artifact.Kind != "summary-comment" {
 		return forge.Note{}, forge.ErrInvalidSummaryMarker
 	}
+	fullBody, err := render.Envelope(marker, body)
+	if err != nil {
+		return forge.Note{}, err
+	}
 	for i := range f.notes {
 		if f.notes[i].Author != f.BotAuthor {
 			continue
@@ -152,7 +157,7 @@ func (f *Forge) UpsertComment(_, _ string, marker forge.Marker, body string) (fo
 		}
 		if marker.Artifact.Kind == "summary-comment" {
 			f.notes[i].Marker = marker
-			f.notes[i].Body = body
+			f.notes[i].Body = fullBody
 			f.noteMutation()
 			return f.notes[i], nil
 		}
@@ -162,7 +167,7 @@ func (f *Forge) UpsertComment(_, _ string, marker forge.Marker, body string) (fo
 		ID:     fmt.Sprintf("note/%d", 8000+f.seq),
 		Marker: marker,
 		Author: f.BotAuthor,
-		Body:   body,
+		Body:   fullBody,
 	}
 	f.notes = append(f.notes, n)
 	f.noteMutation()
@@ -205,7 +210,10 @@ func (f *Forge) ResolveThread(_, _, id string) error {
 }
 
 // CreateThread records a new bot-authored thread with a fresh forge id.
-func (f *Forge) CreateThread(_, _ string, marker forge.Marker, _ string) (forge.Thread, error) {
+func (f *Forge) CreateThread(_, _ string, marker forge.Marker, body string) (forge.Thread, error) {
+	if _, err := render.Envelope(marker, body); err != nil {
+		return forge.Thread{}, err
+	}
 	f.seq++
 	t := forge.Thread{
 		ID:     fmt.Sprintf("note/%d", 9000+f.seq),

@@ -1,6 +1,7 @@
 package render
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -64,19 +65,20 @@ func TestEnvelopeRejectsEmbeddedSentinel(t *testing.T) {
 	t.Parallel()
 	m := sampleMarker()
 	cases := []struct {
-		name string
-		body string
+		name    string
+		body    string
+		wantErr error
 	}{
-		{name: "sentinel substring", body: "do not forge <!-- assent:marker {} -->"},
-		{name: "bare sentinel", body: "contains assent:marker token"},
-		{name: "premature close", body: "broken <!-- not a marker -->"},
+		{name: "sentinel substring", body: "do not forge <!-- assent:marker {} -->", wantErr: ErrEmbeddedMarkerSentinel},
+		{name: "bare sentinel", body: "contains assent:marker token", wantErr: ErrEmbeddedMarkerSentinel},
+		{name: "premature close", body: "broken <!-- not a marker -->", wantErr: ErrPrematureCommentClose},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := Envelope(m, tc.body)
-			if err == nil {
-				t.Fatalf("Envelope(%q): expected error", tc.body)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Envelope(%q): got %v, want %v", tc.body, err, tc.wantErr)
 			}
 		})
 	}

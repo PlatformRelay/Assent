@@ -6,6 +6,7 @@ import (
 
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/forge/fake"
+	"github.com/PlatformRelay/assent/internal/render"
 )
 
 // This file gates the P4-E1-S12 rerun-idempotence + deterministic
@@ -128,7 +129,11 @@ func TestReconcileReplaysP3E5Fixtures(t *testing.T) {
 		if got := f.SummaryNoteCount() - beforeSummaries; got != 0 {
 			t.Fatalf("rerun must not create a new summary note, created %d", got)
 		}
-		if got := f.NoteBody("note/9000"); got != "placeholder summary" {
+		wantSummary, err := render.Envelope(summaryMarker(), "placeholder summary")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := f.NoteBody("note/9000"); got != wantSummary {
 			t.Fatalf("summary must be updated in place (summaryUpdated: true), got %q", got)
 		}
 		// expected.duplicateSlotOccupancy: 0 (line 83) — exactly the two seeded

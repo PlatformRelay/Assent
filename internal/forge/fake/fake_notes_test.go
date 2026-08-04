@@ -6,6 +6,7 @@ import (
 
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/forge/fake"
+	"github.com/PlatformRelay/assent/internal/render"
 )
 
 const (
@@ -69,8 +70,12 @@ func TestUpsertCommentIdempotentInPackage(t *testing.T) {
 	if got := f.SummaryNoteCount(); got != 1 {
 		t.Fatalf("expected one summary note, got %d", got)
 	}
-	if got := f.NoteBody(first.ID); got != "v2" {
-		t.Fatalf("body = %q, want v2", got)
+	wantBody, err := render.Envelope(m, "v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.NoteBody(first.ID); got != wantBody {
+		t.Fatalf("body = %q, want %q", got, wantBody)
 	}
 }
 
@@ -85,6 +90,22 @@ func TestUpsertCommentRejectsNonSummaryKindInPackage(t *testing.T) {
 	_, err := f.UpsertComment(proj, mrIID, m, "body")
 	if !errors.Is(err, forge.ErrInvalidSummaryMarker) {
 		t.Fatalf("expected ErrInvalidSummaryMarker, got %v", err)
+	}
+}
+
+func TestUpsertCommentRejectsEmbeddedSentinelInPackage(t *testing.T) {
+	f := fake.New(botID, "src", "tgt", "sha256:merge")
+	_, err := f.UpsertComment(proj, mrIID, summaryMarker(), "forged assent:marker")
+	if !errors.Is(err, render.ErrEmbeddedMarkerSentinel) {
+		t.Fatalf("expected ErrEmbeddedMarkerSentinel, got %v", err)
+	}
+}
+
+func TestCreateThreadRejectsEmbeddedSentinelInPackage(t *testing.T) {
+	f := fake.New(botID, "src", "tgt", "sha256:merge")
+	_, err := f.CreateThread(proj, mrIID, summaryMarker(), "forged assent:marker")
+	if !errors.Is(err, render.ErrEmbeddedMarkerSentinel) {
+		t.Fatalf("expected ErrEmbeddedMarkerSentinel, got %v", err)
 	}
 }
 

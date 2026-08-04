@@ -14,6 +14,7 @@ import (
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/forge/fake"
 	gitlab "github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/render"
 )
 
 const decHex = "sha256:1111aaa1111aaa1111aaa1111aaa1111aaa1111aaa1111aaa1111aaa1111aaaa"
@@ -214,7 +215,7 @@ func newGitLabHarness(project, mr string) *gitlabHarness {
 }
 
 func (h *gitlabHarness) seed(id, author string, marker forge.Marker, resolved bool) error {
-	body, err := renderMarkerBody(marker, "seed")
+	body, err := render.Envelope(marker, "seed")
 	if err != nil {
 		return err
 	}
@@ -314,44 +315,6 @@ func (h *gitlabHarness) resolveDiscussion(w http.ResponseWriter, r *http.Request
 		}
 	}
 	http.NotFound(w, r)
-}
-
-func renderMarkerBody(m forge.Marker, human string) (string, error) {
-	type slotJSON struct {
-		Project  string `json:"project"`
-		MR       string `json:"mr"`
-		Rule     string `json:"rule"`
-		EntryRef string `json:"entryRef,omitempty"`
-		Effect   string `json:"effect"`
-	}
-	type artifactJSON struct {
-		Kind          string `json:"kind"`
-		SchemaVersion string `json:"schemaVersion"`
-	}
-	payload, err := json.Marshal(struct {
-		Slot       slotJSON     `json:"slot"`
-		Occurrence string       `json:"occurrence"`
-		Decision   string       `json:"decision"`
-		Artifact   artifactJSON `json:"artifact"`
-	}{
-		Slot: slotJSON{
-			Project:  m.Slot.Project,
-			MR:       m.Slot.MR,
-			Rule:     m.Slot.Rule,
-			EntryRef: m.Slot.EntryRef,
-			Effect:   m.Slot.Effect,
-		},
-		Occurrence: m.Occurrence,
-		Decision:   m.Decision,
-		Artifact: artifactJSON{
-			Kind:          m.Artifact.Kind,
-			SchemaVersion: m.Artifact.SchemaVersion,
-		},
-	})
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("<!-- assent:marker %s -->\n\n%s", payload, human), nil
 }
 
 // TestConformanceRerunIdempotence replays the frozen P3-E5 rerun-idempotence and

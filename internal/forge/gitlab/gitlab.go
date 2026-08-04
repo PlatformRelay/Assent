@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
+	"github.com/PlatformRelay/assent/internal/render"
 )
 
 // Client is a GitLab REST v4 adapter bound to one endpoint + PAT + bot identity.
@@ -335,6 +336,9 @@ func (c *Client) UpsertComment(project, mr string, marker forge.Marker, body str
 	if marker.Artifact.Kind != "summary-comment" {
 		return forge.Note{}, forge.ErrInvalidSummaryMarker
 	}
+	if _, err := render.Envelope(marker, body); err != nil {
+		return forge.Note{}, err
+	}
 	existing, err := c.ListBotNotes(project, mr)
 	if err != nil {
 		return forge.Note{}, err
@@ -348,11 +352,10 @@ func (c *Client) UpsertComment(project, mr string, marker forge.Marker, body str
 }
 
 func (c *Client) createNote(project, mr string, marker forge.Marker, body string) (forge.Note, error) {
-	rendered, err := renderMarker(marker)
+	fullBody, err := render.Envelope(marker, body)
 	if err != nil {
 		return forge.Note{}, err
 	}
-	fullBody := rendered + "\n\n" + body
 	form := url.Values{}
 	form.Set("body", fullBody)
 	path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/notes",
@@ -378,11 +381,10 @@ func (c *Client) createNote(project, mr string, marker forge.Marker, body string
 }
 
 func (c *Client) updateNote(project, mr, id string, marker forge.Marker, body string) (forge.Note, error) {
-	rendered, err := renderMarker(marker)
+	fullBody, err := render.Envelope(marker, body)
 	if err != nil {
 		return forge.Note{}, err
 	}
-	fullBody := rendered + "\n\n" + body
 	form := url.Values{}
 	form.Set("body", fullBody)
 	noteID := strings.TrimPrefix(id, "note/")
@@ -409,11 +411,10 @@ func (c *Client) updateNote(project, mr, id string, marker forge.Marker, body st
 // forge.Thread. POST /api/v4/projects/{project}/merge_requests/{mr}/discussions
 // with a form-encoded `body`.
 func (c *Client) CreateThread(project, mr string, marker forge.Marker, body string) (forge.Thread, error) {
-	rendered, err := renderMarker(marker)
+	fullBody, err := render.Envelope(marker, body)
 	if err != nil {
 		return forge.Thread{}, err
 	}
-	fullBody := rendered + "\n\n" + body
 	form := url.Values{}
 	form.Set("body", fullBody)
 	path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/discussions",

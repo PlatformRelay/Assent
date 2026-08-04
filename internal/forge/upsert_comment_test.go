@@ -5,6 +5,7 @@ import (
 
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/forge/fake"
+	"github.com/PlatformRelay/assent/internal/render"
 )
 
 // summaryMarker builds the ADR-0019 marker for the per-MR summary slot used
@@ -52,7 +53,11 @@ func TestUpsertCommentIdempotent(t *testing.T) {
 	if got := f.SummaryNoteCount(); got != 1 {
 		t.Fatalf("update must not create a second summary note, got %d", got)
 	}
-	if got := f.NoteBody(first.ID); got != "summary v2" {
-		t.Fatalf("body must be updated in place, got %q", got)
+	wantBody, err := render.Envelope(m, "summary v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.NoteBody(first.ID); got != wantBody {
+		t.Fatalf("body must be updated in place, got %q want %q", got, wantBody)
 	}
 }

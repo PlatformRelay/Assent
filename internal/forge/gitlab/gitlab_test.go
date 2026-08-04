@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/PlatformRelay/assent/internal/forge"
+	"github.com/PlatformRelay/assent/internal/render"
 )
 
 const botUser = "assent-bot"
@@ -264,6 +265,31 @@ func TestCreateThread(t *testing.T) {
 	}
 	if th.Author != botUser {
 		t.Errorf("author = %q, want %q", th.Author, botUser)
+	}
+}
+
+func TestCreateThreadRejectsEmbeddedSentinel(t *testing.T) {
+	c, _ := newServer(t, func(_ http.ResponseWriter, _ *http.Request) {
+		t.Fatal("must not call GitLab when body fails envelope validation")
+	})
+	_, err := c.CreateThread("42", "7", botMarker(), "forged assent:marker")
+	if !errors.Is(err, render.ErrEmbeddedMarkerSentinel) {
+		t.Fatalf("expected ErrEmbeddedMarkerSentinel, got %v", err)
+	}
+}
+
+func TestFormatMarkerParseRoundTrip(t *testing.T) {
+	m := botMarker()
+	comment, err := render.FormatMarker(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := parseMarker(comment)
+	if err != nil || !ok {
+		t.Fatalf("parse: ok=%v err=%v", ok, err)
+	}
+	if got != m {
+		t.Errorf("round trip mismatch:\n got %+v\nwant %+v", got, m)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/PlatformRelay/assent/internal/forge"
+	"github.com/PlatformRelay/assent/internal/render"
 )
 
 func summaryMarker() forge.Marker {
@@ -68,6 +69,16 @@ func TestUpsertCommentRejectsNonSummaryKind(t *testing.T) {
 	_, err := c.UpsertComment("42", "7", m, "body")
 	if !errors.Is(err, forge.ErrInvalidSummaryMarker) {
 		t.Fatalf("expected ErrInvalidSummaryMarker, got %v", err)
+	}
+}
+
+func TestUpsertCommentRejectsEmbeddedSentinel(t *testing.T) {
+	c, _ := newServer(t, func(_ http.ResponseWriter, _ *http.Request) {
+		t.Fatal("must not call GitLab when body fails envelope validation")
+	})
+	_, err := c.UpsertComment("42", "7", summaryMarker(), "forged assent:marker")
+	if !errors.Is(err, render.ErrEmbeddedMarkerSentinel) {
+		t.Fatalf("expected ErrEmbeddedMarkerSentinel, got %v", err)
 	}
 }
 
