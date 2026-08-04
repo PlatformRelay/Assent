@@ -1,7 +1,7 @@
 package main
 
 // test_guards_test.go covers the two D-060 FAIL-CLOSED guards the whole-pack replay
-// depends on for safety — combinePolicies' conflicting-entries error and
+// depends on for safety — catalogue.CombinePolicies' conflicting-entries error and
 // selectBindingForTest's "bindings differ beyond environment+threshold" error. The
 // happy-path corpus (test_corpus_test.go) exercises only the success branches; these
 // tests pin the ERROR returns directly, so deleting a guard (turning a masking/
@@ -11,11 +11,12 @@ package main
 import (
 	"testing"
 
+	"github.com/PlatformRelay/assent/internal/catalogue"
 	"github.com/PlatformRelay/assent/internal/core/policy"
 )
 
 // listEntry is the entry config every service-catalog rule doc authors identically;
-// combinePolicies MERGES them only when they AGREE.
+// catalogue.CombinePolicies MERGES them only when they AGREE.
 func listEntry(root, ptr string) policy.Entry {
 	return policy.Entry{Mode: "list", Root: root, Identity: policy.Identity{Pointer: ptr}}
 }
@@ -37,8 +38,8 @@ func TestCombinePoliciesFailsClosedOnConflictingEntries(t *testing.T) {
 			mpWithEntry("catalog-service", listEntry("/services", "/name")),
 			mpWithEntry("catalog-service", listEntry("/workloads", "/name")), // same label, different root
 		}
-		if _, err := combinePolicies(docs); err == nil {
-			t.Fatal("expected combinePolicies to fail closed on conflicting entry configs, got nil")
+		if _, err := catalogue.CombinePolicies(docs); err == nil {
+			t.Fatal("expected CombinePolicies to fail closed on conflicting entry configs, got nil")
 		}
 	})
 
@@ -47,7 +48,7 @@ func TestCombinePoliciesFailsClosedOnConflictingEntries(t *testing.T) {
 			mpWithEntry("catalog-service", listEntry("/services", "/name")),
 			mpWithEntry("catalog-service", listEntry("/services", "/name")),
 		}
-		out, err := combinePolicies(docs)
+		out, err := catalogue.CombinePolicies(docs)
 		if err != nil {
 			t.Fatalf("identical entry configs must merge, got %v", err)
 		}
@@ -57,7 +58,7 @@ func TestCombinePoliciesFailsClosedOnConflictingEntries(t *testing.T) {
 	})
 
 	t.Run("all-nil docs yield a nil policy (caller skips)", func(t *testing.T) {
-		out, err := combinePolicies([]*policy.MergePolicy{nil, nil})
+		out, err := catalogue.CombinePolicies([]*policy.MergePolicy{nil, nil})
 		if err != nil {
 			t.Fatalf("all-nil combine must not error, got %v", err)
 		}

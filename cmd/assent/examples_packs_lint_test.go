@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"path/filepath"
 	"testing"
+
+	"github.com/PlatformRelay/assent/internal/catalogue"
 )
 
 // examples_packs_lint_test.go is the E3 lane-C corpus guard: it pins the
@@ -40,7 +42,7 @@ func TestExamplesPacksLoadAndLintClean(t *testing.T) {
 			dir := filepath.Join(examplesPacksDir, name)
 
 			// Half 1: strict loader accepts every .assent/** document.
-			if _, err := loadCatalogueInput(dir); err != nil {
+			if _, err := catalogue.LoadFromDir(dir); err != nil {
 				t.Fatalf("%s: strict loader rejected a document: %v", name, err)
 			}
 

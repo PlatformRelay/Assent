@@ -64,14 +64,14 @@ func runTest(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	in, err := loadCatalogueInput(dir)
+	in, err := catalogue.LoadFromDir(dir)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "assent test:", err)
 		return 2
 	}
 	policies := map[string]*policy.MergePolicy{}
 	for _, p := range in.Packs {
-		combined, cerr := combinePolicies(p.Policies)
+		combined, cerr := catalogue.CombinePolicies(p.Policies)
 		if cerr != nil {
 			_, _ = fmt.Fprintf(stderr, "assent test: pack %q: %v\n", p.Name, cerr)
 			return 2
@@ -350,44 +350,6 @@ func runCoverage(dir string, policies map[string]*policy.MergePolicy, bind *poli
 		return 1
 	}
 	return 0
-}
-
-// combinePolicies unions a pack's MergePolicy documents (the example packs author one
-// rule file per obligation under .assent/packs/<pack>/rules/**, so a pack is SEVERAL
-// MergePolicy docs) into the SINGLE MergePolicy the whole-pack replay evaluates via
-// aggregate.Cover: the union of every doc's spec.rules plus the merged spec.entries.
-// The E2 loader keeps each doc separate; the whole-pack decision needs them together,
-// or every obligation but the first doc's is uncovered (a spurious REVIEW).
-//
-// Fail-closed on a real defect: every rule doc of a governed pack authors the SAME
-// spec.entries config, so combining REQUIRES them to AGREE — two docs giving the same
-// entry label DIFFERENT configs is a pack defect that errors here, never a silent pick
-// of one (which could diff a file under the wrong collection root). A nil/empty input
-// yields a nil policy (the caller skips it), matching the pre-combine behaviour.
-func combinePolicies(ps []*policy.MergePolicy) (*policy.MergePolicy, error) {
-	var nonNil int
-	out := &policy.MergePolicy{}
-	entries := map[string]policy.Entry{}
-	for _, p := range ps {
-		if p == nil {
-			continue
-		}
-		nonNil++
-		for label, e := range p.Spec.Entries {
-			if prev, ok := entries[label]; ok && prev != e {
-				return nil, fmt.Errorf("conflicting entries config for %q across rule documents (whole-pack replay needs one collection config per label)", label)
-			}
-			entries[label] = e
-		}
-		out.Spec.Rules = append(out.Spec.Rules, p.Spec.Rules...)
-	}
-	if nonNil == 0 {
-		return nil, nil
-	}
-	if len(entries) > 0 {
-		out.Spec.Entries = entries
-	}
-	return out, nil
 }
 
 // selectBindingForTest picks the single binding a whole-pack `assent test` replay

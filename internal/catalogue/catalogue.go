@@ -4,11 +4,11 @@
 // source for generated docs and any second-order tooling, so there is never a
 // hand-maintained rule registry that can drift from the authored packs.
 //
-// Purity: this package is pure — no clock/env/net/random. It consumes
-// already-loaded policy.* types (the E2 strict loader does the parse+validate);
-// the only I/O — the `.assent/**` directory walk and the loader calls — lives in
-// cmd/assent, the sanctioned boundary. Guarded by internal/core/purity_test.go
-// (which scans internal/catalogue) and TestCatalogueDoubleRunStable.
+// Purity: Build, MergePolicyForProfile, and CombinePolicies are pure — no
+// clock/env/net/random. LoadFromDir performs the `.assent/**` walk + E2 strict
+// loader calls (PCS-S01 / D-112); cmd/assent subcommands import it for catalogue,
+// test, and compare activation. Guarded by internal/core/purity_test.go (which
+// scans internal/catalogue for impure selectors) and TestCatalogueDoubleRunStable.
 //
 // Decide-and-log (E3-S07, judgment calls — see D-048):
 //

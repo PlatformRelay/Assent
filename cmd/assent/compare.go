@@ -5,31 +5,32 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/PlatformRelay/assent/internal/catalogue"
 	"github.com/PlatformRelay/assent/internal/compare"
 	"github.com/PlatformRelay/assent/internal/core/policy"
 )
 
 // compare.go is the thin filesystem+command shell for `assent compare <dir>`
-// (E6-S09 seed). The FS reads (the ONLY I/O) load an immutable ReplayBundle plus
-// the baseline/candidate policy activations and their shared binding; the pure
-// internal/compare library does the engine evaluation, delta classification, and
-// promotion-gate verdict. It maps the verdict to a process exit code:
+// (E6-S09 seed, PCS-S01 profile activation). The FS reads (the ONLY I/O) load an
+// immutable ReplayBundle, the repo catalogue via catalogue.LoadFromDir, baseline/
+// candidate PolicyProfile activations (or legacy MergePolicy seed fixtures), and
+// their shared binding; the pure internal/compare library evaluates, classifies,
+// and gates. Exit codes:
 //
 //	0 = gate PASS (candidate promotable — no widening),
 //	1 = gate FAIL (a newly-auto-mergeable widening — do NOT promote),
 //	2 = usage / load / fail-closed classification error (never a silent 0).
 //
-// SEED SCOPE (ADR-0018 / decisions.md D-055): one bundle, one baseline vs one
-// candidate, the newly-auto-mergeable + explanation-only classifiers, and the
-// single bounded-auto-merge-widening gate. The full PolicyComparisonSuite runner
-// (all six kinds, all five gates, acceptedDeltas) is its own epic.
+// Layout of <dir> for profile activation:
+//   - bundle.json, binding.yaml, baseline.yaml, candidate.yaml (flat seed files)
+//   - .assent/** packs the profiles activate via spec.packs[]
 //
-// Layout of <dir> (flat, four files):
-//   - bundle.json      the immutable ReplayBundle (pre-built evaluationInput + pins)
-//   - binding.yaml     the shared RulesetBinding (require/environment/class)
-//   - baseline.yaml    the baseline MergePolicy activation
-//   - candidate.yaml   the candidate MergePolicy activation
+// Legacy seed fixtures may still supply baseline.yaml/candidate.yaml as MergePolicy
+// docs (no .assent tree required) — behaviour unchanged until PCS-S07 migrates them.
 func runCompare(args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 || args[0] == "" {
 		_, _ = fmt.Fprintln(stderr, "assent compare: a directory argument is required (usage: assent compare <dir>)")
@@ -54,12 +55,32 @@ func runCompare(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	baseline, err := loadCompareProfile(dir, "baseline.yaml", bind)
+	baselineSide, err := readCompareSide(dir, "baseline.yaml")
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "assent compare:", err)
 		return 2
 	}
-	candidate, err := loadCompareProfile(dir, "candidate.yaml", bind)
+	candidateSide, err := readCompareSide(dir, "candidate.yaml")
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "assent compare:", err)
+		return 2
+	}
+
+	var catIn catalogue.Input
+	if baselineSide.profile != nil || candidateSide.profile != nil {
+		catIn, err = catalogue.LoadFromDir(dir)
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "assent compare:", err)
+			return 2
+		}
+	}
+
+	baseline, err := resolveCompareProfile(baselineSide, catIn, bind)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "assent compare:", err)
+		return 2
+	}
+	candidate, err := resolveCompareProfile(candidateSide, catIn, bind)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "assent compare:", err)
 		return 2
@@ -67,8 +88,6 @@ func runCompare(args []string, stdout, stderr io.Writer) int {
 
 	cmp, err := compare.Compare(in, baseline, candidate)
 	if err != nil {
-		// A fail-closed classification error (or a load/eval error) is NEVER a
-		// silent gate-pass — it exits non-zero (2), distinct from a gate FAIL (1).
 		_, _ = fmt.Fprintln(stderr, "assent compare:", err)
 		return 2
 	}
@@ -86,8 +105,72 @@ func runCompare(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// loadCompareBinding reads and strict-loads the shared RulesetBinding, routing to
-// its single covering binding (fail-closed on zero/many, like the other subcommands).
+type compareSide struct {
+	profile *policy.Profile
+	policy  *policy.MergePolicy
+}
+
+func readCompareSide(dir, file string) (compareSide, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, file)) // #nosec G703 G304 -- operator-supplied local compare dir, read-only.
+	if err != nil {
+		return compareSide{}, fmt.Errorf("read %s: %w", file, err)
+	}
+	kind, err := compareDocKind(raw)
+	if err != nil {
+		return compareSide{}, fmt.Errorf("%s: %w", file, err)
+	}
+	switch kind {
+	case "PolicyProfile":
+		p, lerr := policy.LoadProfile(raw)
+		if lerr != nil {
+			return compareSide{}, fmt.Errorf("%s: %w", file, lerr)
+		}
+		return compareSide{profile: p}, nil
+	case "MergePolicy":
+		mp, lerr := policy.LoadMergePolicy(raw)
+		if lerr != nil {
+			return compareSide{}, fmt.Errorf("%s: %w", file, lerr)
+		}
+		return compareSide{policy: mp}, nil
+	default:
+		return compareSide{}, fmt.Errorf("%s: unsupported kind %q (want PolicyProfile or legacy MergePolicy seed)", file, kind)
+	}
+}
+
+func resolveCompareProfile(side compareSide, catIn catalogue.Input, bind *policy.Binding) (compare.Profile, error) {
+	if side.profile != nil {
+		mp, err := catalogue.MergePolicyForProfile(side.profile, catIn)
+		if err != nil {
+			return compare.Profile{}, err
+		}
+		return compare.Profile{
+			Name:    side.profile.Metadata.Name,
+			Policy:  mp,
+			Bind:    bind,
+			Ceiling: catalogue.PhaseCeilingForProfile(side.profile, catIn),
+		}, nil
+	}
+	if side.policy != nil {
+		return compare.Profile{
+			Name:    side.policy.Metadata.Name,
+			Policy:  side.policy,
+			Bind:    bind,
+			Ceiling: policy.PhaseEnforce,
+		}, nil
+	}
+	return compare.Profile{}, fmt.Errorf("compare side declares neither PolicyProfile nor MergePolicy")
+}
+
+func compareDocKind(raw []byte) (string, error) {
+	var header struct {
+		Kind string `yaml:"kind"`
+	}
+	if err := yaml.Unmarshal(raw, &header); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(header.Kind), nil
+}
+
 func loadCompareBinding(dir string) (*policy.Binding, error) {
 	raw, err := os.ReadFile(filepath.Join(dir, "binding.yaml")) // #nosec G703 G304 -- operator-supplied local compare dir, read-only.
 	if err != nil {
@@ -98,25 +181,4 @@ func loadCompareBinding(dir string) (*policy.Binding, error) {
 		return nil, err
 	}
 	return selectBinding(rb)
-}
-
-// loadCompareProfile reads and strict-loads one side's MergePolicy activation and
-// wires it into a compare.Profile over the shared binding. The profile identity is
-// the loaded policy's metadata.name (the promotion-comparison label). Ceiling is
-// enforce (no cap) — a per-profile ceiling lever is the full runner's concern.
-func loadCompareProfile(dir, file string, bind *policy.Binding) (compare.Profile, error) {
-	raw, err := os.ReadFile(filepath.Join(dir, file)) // #nosec G703 G304 -- operator-supplied local compare dir, read-only.
-	if err != nil {
-		return compare.Profile{}, fmt.Errorf("read %s: %w", file, err)
-	}
-	mp, err := policy.LoadMergePolicy(raw)
-	if err != nil {
-		return compare.Profile{}, fmt.Errorf("%s: %w", file, err)
-	}
-	return compare.Profile{
-		Name:    mp.Metadata.Name,
-		Policy:  mp,
-		Bind:    bind,
-		Ceiling: policy.PhaseEnforce,
-	}, nil
 }

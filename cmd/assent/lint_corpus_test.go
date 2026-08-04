@@ -43,6 +43,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/PlatformRelay/assent/internal/catalogue"
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/core/policy"
 )
@@ -225,7 +226,7 @@ type loadedStarter struct {
 // binding. A load failure fails the test — proving the pack is lane-C conformant.
 func loadStarter(t *testing.T, starter string) loadedStarter {
 	t.Helper()
-	in, err := loadCatalogueInput(filepath.Join(examplesPacksDir, starter))
+	in, err := catalogue.LoadFromDir(filepath.Join(examplesPacksDir, starter))
 	if err != nil {
 		t.Fatalf("%s: strict loader rejected a document: %v", starter, err)
 	}

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/PlatformRelay/assent/internal/adoptertest"
+	"github.com/PlatformRelay/assent/internal/catalogue"
 	"github.com/PlatformRelay/assent/internal/core/policy"
 )
 
@@ -26,13 +27,13 @@ func TestE8ExitGateSafetySplit(t *testing.T) {
 			safetySplitPack, code, so.String(), se.String())
 	}
 
-	in, err := loadCatalogueInput(packDir)
+	in, err := catalogue.LoadFromDir(packDir)
 	if err != nil {
 		t.Fatalf("load catalogue: %v", err)
 	}
 	policies := map[string]*policy.MergePolicy{}
 	for _, p := range in.Packs {
-		combined, cerr := combinePolicies(p.Policies)
+		combined, cerr := catalogue.CombinePolicies(p.Policies)
 		if cerr != nil {
 			t.Fatalf("combine policies for pack %q: %v", p.Name, cerr)
 		}
