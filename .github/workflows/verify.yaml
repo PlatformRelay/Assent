@@ -29,6 +29,14 @@ jobs:
       - name: gitleaks # CLI directly — gitleaks-action requires a paid license for org repos
         run: go run github.com/zricethezav/gitleaks/v8@v8.30.1 detect --source . --no-banner --redact --log-opts="HEAD"
       - run: go test -race ./...
+      # E7-S04 — determinism gate (P4-E1-S12): double-run named engine + conformance goldens.
+      # Keep this block distinct — E7-S05 adds sanitization steps below/after.
+      - name: determinism gate (E7-S04 — P4-E1-S12 double-run)
+        run: |
+          go test -count=2 ./internal/core/aggregate/... -run 'TestDeterminismDoubleRun|TestD016ReproductionDoubleRunStable'
+          go test -count=2 ./internal/core/decision/... -run TestReportDoubleRunStable
+          go test -count=2 ./internal/forge/conformance/... -run 'TestConformanceTargetAdvancedRejected|TestConformanceRerunIdempotence|TestConformanceDuplicateRepair'
+          go test -count=2 ./internal/forge/... -run TestMergeFailsClosedDoubleRun
       - name: coverage gate (>=90% on internal/, D-010)
         run: |
           if ls internal/*/*.go >/dev/null 2>&1; then

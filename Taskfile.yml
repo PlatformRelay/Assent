@@ -64,6 +64,16 @@ tasks:
       - task: coverage
       - task: build
 
+  determinism:
+    desc: "Determinism gate (E7-S04): double-run engine + conformance goldens (-count=2); mirrors verify.yaml"
+    cmds:
+      - |
+        set -e
+        go test -count=2 ./internal/core/aggregate/... -run 'TestDeterminismDoubleRun|TestD016ReproductionDoubleRunStable'
+        go test -count=2 ./internal/core/decision/... -run TestReportDoubleRunStable
+        go test -count=2 ./internal/forge/conformance/... -run 'TestConformanceTargetAdvancedRejected|TestConformanceRerunIdempotence|TestConformanceDuplicateRepair'
+        go test -count=2 ./internal/forge/... -run TestMergeFailsClosedDoubleRun
+
   e2e-vet:
     desc: "Compile+vet all e2e-tagged packages (mirrors verify's go vet -tags e2e ./...)"
     cmds:
