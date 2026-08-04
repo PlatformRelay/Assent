@@ -123,6 +123,13 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :memo: chore(release): seed CHANGELOG.md from git-cliff
 - :memo: chore(release): refresh CHANGELOG.md with lane commits
 - :memo: chore(release): refresh CHANGELOG.md for lane tip
+- :memo: docs(e9-s11): log OQ-2 GitLab mirror defer (D-105)
+- :memo: docs(release): align install.md Go version with go.mod
+- :memo: docs(e9-s11): mark OQ-2 resolved like peer rows
+- :memo: docs(docs): product-only MkDocs nav + install page (E9-S08)
+- :memo: docs(readme): maturity table + alpha status (E9-S09)
+- :memo: docs(pcs): PolicyComparisonSuite full runner epic spec (D-057)
+- :memo: docs(pcs): fix spec review — purity, catalogue extraction, D-112/115
 
 ### Features
 - :sparkles: examples: onFail branches — one predicate, both outcomes, quota case explained (P1-7)
@@ -228,6 +235,16 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :sparkles: feat(cmd): semver ldflags and version contract tests
 - :sparkles: feat(ci): E9-S04 hardening audit, actionlint, Scorecard badge
 - :sparkles: feat(release): git-cliff tasks, verify gate, and cliff.toml polish
+- :sparkles: feat(release): checksum-verified install.sh and install docs
+- :sparkles: feat(release): add artifact verify harness (E9-S12)
+- :sparkles: feat(compare): classify missed and stricter intervention deltas (PCS-S02)
+- :sparkles: feat(compare): classify obligation uncovered and score threshold
+- :sparkles: feat(compare): emit schema-valid ComparisonRecord per case
+- :sparkles: feat(compare): five-gate evaluator with acceptedDeltas allowlist (PCS-S05)
+- :sparkles: feat(compare): PolicyComparisonSuite loader and RunSuite (PCS-S06)
+- :sparkles: feat(compare): CLI suite mode and ADR-0018 exit codes (PCS-S07)
+- :sparkles: feat(compare): adversarial corpus + CI dogfood (PCS-S08)
+- :sparkles: feat(compare): PCS-S09 exit gate closes D-057 deferred scope
 
 ### Fixes
 - :bug: specs(p3-e4): fix reviewer P1 (vacuous verify) + align schema/fixture paths
@@ -260,6 +277,7 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :bug: fix(forge): wire publication writes through render.Envelope (E8-S04)
 - :bug: fix(render): backslash-escape markdown link specials (E8-S05)
 - :bug: fix(render): satisfy gosec on golden refresh helper
+- :bug: fix(compare): classify points-only arithmetic as score-threshold
 
 ### Other
 - :truck: chore: rename project to assent (D-009) — folder, module path, CLI, .assent/, apiVersion
@@ -319,6 +337,11 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :test: test(render): E8-S14 exit gate + safety split
 - :test(release): add CI audit gate for single CodeQL workflow
 - :package: feat(release): goreleaser v2 snapshot config and verify harness
+- Merge remote-tracking branch 'origin/main' into lane-e9-s11
+- :clapper: feat(demos): add VHS tape sources for CLI demos (E9-S10)
+- Merge remote-tracking branch 'origin/main' into lane-e9-s10
+- Merge remote-tracking branch 'origin/main' into lane-e9-s11
+- :test_tube: test(release): E9-S13 autonomous exit gate
 
 ### Refactoring
 - :recycle: refactor(examples): migrate policies and archetypes to prove/onFailure
@@ -329,6 +352,8 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :recycle: refactor(examples): conform pack corpus to strict loader + D-051 facts (P5-E3-C)
 - :recycle: refactor(forge/conformance): move S09 harness into *_test.go
 - :recycle: refactor(release): keep changelog-verify out of task check
+- :recycle: refactor(pcs): extract catalogue loaders and profile activation
+- :recycle: refactor(compare): extract intervention classifiers to classify_intervention.go
 
 ### Security
 - :lock: docs(adr): provider trust model, authority matrix, resource limits, positions (security review A-03/A-04/A-05, P2-11)
