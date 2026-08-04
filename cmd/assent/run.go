@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -186,16 +187,19 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 
 	// 2b. Provider posture (ADR-0017 §6): a controlling/authorization fact whose
 	//     provider is configured `failure: open` is REJECTED — a controlling fact
-	//     must fail closed. Wired only when a --config is supplied.
+	//     must fail closed. Wired only when a --config is supplied. The loaded
+	//     Config is retained for E5-S05 fact resolution below.
+	var conf *policy.Config
 	if cfg.config != "" {
 		confBytes, cerr := client.FileAtRef(cfg.project, cfg.config, info.TargetBranch)
 		if cerr != nil {
 			return fmt.Errorf("load config from target ref %q: %w", info.TargetBranch, cerr)
 		}
-		conf, cerr := policy.LoadConfig(confBytes)
+		loaded, cerr := policy.LoadConfig(confBytes)
 		if cerr != nil {
 			return fmt.Errorf("config: %w", cerr)
 		}
+		conf = loaded
 		if perr := policy.ValidateProviderPosture(conf, mp); perr != nil {
 			return fmt.Errorf("provider posture: %w", perr)
 		}
@@ -281,9 +285,20 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		}
 	}
 
+	// 5c. E5-S05: resolve configured providers into EvaluationInput.Facts +
+	//     pins.factsResolvedAt at the cmd/assent edge (never inside internal/core).
+	//     Nil/empty providers → empty maps (byte-identical to pre-S05).
+	evalNow := clock().UTC()
+	facts, factsResolvedAt, ferr := resolveRunFacts(
+		context.Background(), conf, cfg.config, client, cfg.project, info.TargetBranch, evalNow,
+	)
+	if ferr != nil {
+		return fmt.Errorf("resolve providers: %w", ferr)
+	}
+
 	// 6. Decide (E2-S04 coverage over the decoded EvaluationInput), with the two
 	//    dominating fail-safe guards reasserted around it (see decide).
-	result, err := decide(cfg.subject, subjectClass, changeSet, mp, bind, ceiling, info)
+	result, err := decide(cfg.subject, subjectClass, changeSet, mp, bind, ceiling, info, facts)
 	if err != nil {
 		return fmt.Errorf("evaluate: %w", err)
 	}
@@ -295,6 +310,9 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	if err != nil {
 		return fmt.Errorf("merge-result gap: %w", err)
 	}
+	if factsResolvedAt == nil {
+		factsResolvedAt = map[string]string{}
+	}
 	pins := decision.Pins{
 		ToolVersion:     version,
 		ToolDigest:      sha256Prefix + sha256Hex([]byte(version)),
@@ -302,7 +320,7 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		SourceSha:       info.SourceSHA,
 		TargetSha:       info.TargetSHA,
 		MergeResult:     mergeGap,
-		FactsResolvedAt: map[string]string{},
+		FactsResolvedAt: factsResolvedAt,
 	}
 	report, err := decision.Build(result, pins)
 	if err != nil {
@@ -398,7 +416,10 @@ func selectBinding(rb *policy.RulesetBinding) (*policy.Binding, error) {
 // Otherwise the frozen engine decides over the decoded EvaluationInput with nil
 // ApprovalEvidence (GUARD 3: every require-review stays unsatisfied -> REVIEW) and
 // the pack phase ceiling. Every finding is then given a non-empty subject (N1).
-func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergePolicy, bind *policy.Binding, ceiling policy.Phase, info gitlab.MRInfo) (aggregate.Result, error) {
+//
+// facts is the E5-S05 host-resolved envelope (provider → name → Fact). Nil/empty
+// keeps the pre-S05 fail-safe empty map from buildEvaluationInput.
+func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergePolicy, bind *policy.Binding, ceiling policy.Phase, info gitlab.MRInfo, facts map[string]map[string]aggregate.Fact) (aggregate.Result, error) {
 	var res aggregate.Result
 	switch {
 	case subjectClass == classify.ClassAssentPolicy:
@@ -407,6 +428,9 @@ func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergeP
 		res = undecidableReview(subject)
 	default:
 		in := buildEvaluationInput(cs, mrFrom(info), bind.Require)
+		if len(facts) > 0 {
+			in.Facts = facts
+		}
 		r, err := aggregate.CoverWithPhaseCeiling(mp, bind, &in, nil, ceiling)
 		if err != nil {
 			return aggregate.Result{}, err

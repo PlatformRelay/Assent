@@ -24,10 +24,11 @@ type fakeGitLab struct {
 
 	sourceSHA, targetTip string
 	sourceBranch, target string
-	mergePolicy          string // MergePolicy served from the TARGET ref.
-	rulesetBinding       string // RulesetBinding served from the TARGET ref.
-	config               string // optional Config served from the TARGET ref.
-	baseFile, headFile   string // governed-file content at target/source ref.
+	mergePolicy          string            // MergePolicy served from the TARGET ref.
+	rulesetBinding       string            // RulesetBinding served from the TARGET ref.
+	config               string            // optional Config served from the TARGET ref.
+	providerDecls        map[string]string // optional host declarations (.assent/providers/<name>.json)
+	baseFile, headFile   string            // governed-file content at target/source ref.
 	governedPath         string
 
 	// recorded writes
@@ -101,6 +102,16 @@ func (f *fakeGitLab) serveFile(w http.ResponseWriter, r *http.Request, p string)
 		return
 	case strings.Contains(p, "ruleset-binding"):
 		f.serveFromTarget(w, ref, f.rulesetBinding)
+		return
+	case strings.Contains(p, "providers"):
+		// Host-owned declaration docs (D-065): .assent/providers/<name>.json
+		for name, raw := range f.providerDecls {
+			if strings.Contains(p, name) {
+				f.serveFromTarget(w, ref, raw)
+				return
+			}
+		}
+		http.Error(w, "unknown provider declaration "+p, http.StatusNotFound)
 		return
 	case strings.Contains(p, "config"):
 		f.serveFromTarget(w, ref, f.config)
