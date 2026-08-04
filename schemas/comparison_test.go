@@ -290,6 +290,32 @@ const canonicalPromotionGatesJSON = `[
 	}
 ]`
 
+// REQ-PCS-S05-03: acceptedDeltas without rule/subject identity is rejected at
+// suite load (never accept by kind alone).
+func TestComparisonSuiteAcceptedDeltaRequiresIdentity(t *testing.T) {
+	doc := `{
+		"apiVersion": "assent.dev/v1alpha1",
+		"kind": "PolicyComparisonSuite",
+		"metadata": {"name": "lifecycle-corpus", "version": "1"},
+		"spec": {
+			"cases": [
+				{"caseId": "c1", "replayBundleDigest": "sha256:aaa"}
+			],
+			"promotionGates": ` + canonicalPromotionGatesJSON + `,
+			"acceptedDeltas": [
+				{
+					"caseId": "c1",
+					"kind": "destructive-or-authorization-intervention-missed",
+					"rationale": "accept all of this kind — footgun"
+				}
+			]
+		}
+	}`
+	if err := validateJSON(ComparisonSuiteSchema, doc); err == nil {
+		t.Fatal("expected acceptedDeltas without rule/subject identity to be rejected (never by kind alone)")
+	}
+}
+
 func readComparisonSchemaFile(t *testing.T, rel string) string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(rel)) //nolint:gosec // test reads fixed schema tree

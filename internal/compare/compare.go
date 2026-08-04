@@ -8,10 +8,10 @@
 // maps to an exit code.
 //
 // PCS-S02/S03 grow the seed classifiers incrementally (ADR-0018 / D-117 priority
-// table); PCS-S04 emits schema-valid ComparisonRecords per case. The seed still
-// applies only bounded-auto-merge-widening. explanation-only never trips a gate;
-// unclassified real deltas FAIL CLOSED. acceptedDeltas allowlist and the full
-// five-gate evaluator are owed to PCS-S05+ (decisions.md D-057).
+// table); PCS-S04 emits schema-valid ComparisonRecords per case; PCS-S05 adds the
+// five-gate evaluator + acceptedDeltas allowlist (EvaluateGates). The seed still
+// applies only bounded-auto-merge-widening via Compare. explanation-only never
+// trips a gate; unclassified real deltas FAIL CLOSED.
 //
 // It sits UNDER internal/ (not internal/core): like internal/adoptertest it may
 // import internal/core/aggregate + internal/core/policy while internal/core stays
