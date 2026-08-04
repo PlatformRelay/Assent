@@ -119,6 +119,7 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :memo: docs(e9): add distribution & release INVEST spec
 - :memo: docs(e9): address review — deps, S07 split, counts
 - :memo: docs(e9): restore E8 marker + changelog drift REQ
+- :memo: chore(release): seed CHANGELOG.md from git-cliff
 
 ### Features
 - :sparkles: examples: onFail branches — one predicate, both outcomes, quota case explained (P1-7)
@@ -223,6 +224,7 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :sparkles: feat(run): wire buildDesired Summary and render CLI
 - :sparkles: feat(cmd): semver ldflags and version contract tests
 - :sparkles: feat(ci): E9-S04 hardening audit, actionlint, Scorecard badge
+- :sparkles: feat(release): git-cliff tasks, verify gate, and cliff.toml polish
 
 ### Fixes
 - :bug: specs(p3-e4): fix reviewer P1 (vacuous verify) + align schema/fixture paths
@@ -355,6 +357,7 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :white_check_mark: test(test): fail-closed guard tests for the D-060 combine + binding-collapse (P5-E6-S08 review F1)
 - :white_check_mark: test(cmd): unpin topic-registry green corpus + reconcile D-061
 - :white_check_mark: test(cmd): EFE-S05 exit gate — create/delete fixtures + coverage + determinism
+- :white_check_mark: test(release): changelog_test.sh for REQ-E9-S03-01..03
 ## [0.0.0] - 2026-08-04
 
 Pre-release development history before the first tagged alpha (`v0.1.0`, D-108). Milestone ADRs
