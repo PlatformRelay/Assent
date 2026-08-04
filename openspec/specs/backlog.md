@@ -308,7 +308,7 @@ no silent `config.schema.json` widen. **Engine-grade:** S01–S05, S07, S08, S10
 | E5-S06 | Builtin forge-groups | **[autonomous]** hermetic; live **[infra-gated]** | E5-S05 | ownership packs live |
 | E5-S07 | Builtin `repo-file` most-specific-first | **[autonomous · engine-grade]** | E5-S05 | **closes REF-GAP-2**; unlocks C5/C6 |
 | E5-S08 | Referenced-resource ownership (`resource→owner`) | **[autonomous · engine-grade]** | E5-S05/S07 | **closes REF-GAP-1**; unlocks C7 |
-| E5-S09 | Optional ownership-file / HTTP polish (defer OIDC/LDAP) | **[autonomous]** optional | E5-S05 | ADR-0004 polish |
+| E5-S09 | Optional ownership-file / HTTP polish (defer OIDC/LDAP) | **Deferred** (D-070) | E5-S05 | ADR-0004 polish |
 | E5-S10 | Exit gate: isolation CI + goldens + hermetic resolved facts + seed C5–C7 | **[autonomous · engine-grade]** | E5-S01..S08 | **the E5 exit gate** |
 
 **Dependency order**: S01 → S02 → S03 → S04 → S05 → {S06 ∥ S07} → S08 → S09? → S10.
