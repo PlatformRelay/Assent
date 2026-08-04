@@ -16,17 +16,26 @@ import (
 // surfaces the typed reason.
 func TestRunDoctorExitCodeGate(t *testing.T) {
 	t.Run("verified-protected non-author-editable pipeline arms (exit 0)", func(t *testing.T) {
+		t.Setenv("GITLAB_TOKEN", "")
+		t.Setenv("CI_PROJECT_ID", "")
+		t.Setenv("CI_MERGE_REQUEST_IID", "")
 		t.Setenv("ASSENT_PIPELINE_CONFIG_PROTECTED", "true")
 		t.Setenv("ASSENT_PIPELINE_CONFIG_AUTHOR_EDITABLE", "false")
 		t.Setenv("ASSENT_PIPELINE_TOKEN_PRIVILEGED", "false")
 
-		code, _, stderr := captureRun(t, []string{"doctor"})
+		code, stdout, stderr := captureRun(t, []string{"doctor"})
 		if code != 0 {
-			t.Fatalf("armed pipeline: run([\"doctor\"]) exit = %d, want 0 (armed); stderr=%q", code, stderr)
+			t.Fatalf("armed pipeline: run([\"doctor\"]) exit = %d, want 0 (armed); stderr=%q stdout=%q", code, stderr, stdout)
+		}
+		if !strings.Contains(stderr, "INSECURE") {
+			t.Errorf("env-only armed path must still print INSECURE banner; stderr=%q", stderr)
 		}
 	})
 
 	t.Run("unprotected/unverifiable pipeline refuses (exit 1) with typed reason on stderr", func(t *testing.T) {
+		t.Setenv("GITLAB_TOKEN", "")
+		t.Setenv("CI_PROJECT_ID", "")
+		t.Setenv("CI_MERGE_REQUEST_IID", "")
 		// PROTECTED unset -> reader reads false -> fail-safe not-protected.
 		t.Setenv("ASSENT_PIPELINE_CONFIG_PROTECTED", "")
 		t.Setenv("ASSENT_PIPELINE_CONFIG_AUTHOR_EDITABLE", "false")

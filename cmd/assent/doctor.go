@@ -1,6 +1,10 @@
 package main
 
-import "os"
+import (
+	"os"
+
+	"github.com/PlatformRelay/assent/internal/forge"
+)
 
 // PipelineDescription is the trust-relevant description of the pipeline running
 // assent: whether its configuration comes from a PROTECTED source outside the
@@ -44,6 +48,12 @@ const (
 	// never armed INDEPENDENT of the token; distinct from the generic unverified
 	// code so the adversarial path is explicit.
 	ReasonInsecureTopology ArmingReasonCode = "insecure-topology"
+	// ReasonDiscussionsGateMissing: forge probe reports C3 discussions-resolved
+	// merge gate absent (E4-S05 / ADR-0009).
+	ReasonDiscussionsGateMissing ArmingReasonCode = "discussions-gate-missing"
+	// ReasonTierCapabilityGap: forge probe detects a tier gap (C6/C7) — auto-
+	// merge and require-review proof are unsatisfiable on this tier.
+	ReasonTierCapabilityGap ArmingReasonCode = "tier-capability-gap"
 )
 
 // ArmingReason is one typed refusal reason with a human-readable detail.
@@ -62,6 +72,12 @@ type Capabilities struct {
 	ProtectedConfigVerified bool
 }
 
+// DuplicatePrevention values mirror P3-E5 / ADR-0019 doctor reporting.
+const (
+	DuplicatePreventionSerialized = "single-writer-serialized"
+	DuplicatePreventionBestEffort = "unserialized-best-effort"
+)
+
 // PreconditionReport is doctor's typed capability/precondition report and the
 // arming DECISION derived from it (ADR-0017 §9, ADR-0015 §8 execution-authority
 // matrix). ArmEligible is the single gate S06/S08 will consult before any
@@ -72,8 +88,15 @@ type PreconditionReport struct {
 	// ArmEligible is true only when EVERY arming precondition is met. Default is
 	// false (advisory-only) — arming is opt-in, refusal is the fail-safe.
 	ArmEligible bool
+	// AutoMergeEligible is false when forge tier gaps block require-review proof
+	// (C6/C7). Additive field for S06/S08 capability honesty (D-075).
+	AutoMergeEligible bool
+	// DuplicatePrevention reports the P3-E5 duplicate-thread guarantee level.
+	DuplicatePrevention string
 	// Reasons lists the typed refusals when not arm-eligible; empty when armed.
 	Reasons []ArmingReason
+	// CapabilityGaps lists typed tier gaps from forge probe (never silent APPROVE).
+	CapabilityGaps []forge.CapabilityGapReason
 	// Capabilities are the verified precondition flags (typed report, §9).
 	Capabilities Capabilities
 }
