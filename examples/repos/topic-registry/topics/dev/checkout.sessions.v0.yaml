@@ -1,13 +1,13 @@
 # Experimental topic that only exists in dev (no prod twin yet).
-name: checkout.sessions.v0
-owner: checkout-team
-partitions: 1
-replication_factor: 1
-retention_hours: 12
-cleanup_policy: delete
-schema:
-  format: json
-  subject: checkout.sessions.v0-value
-description: >
-  Prototype session-abandonment stream; promoted to prod only after the schema
-  stabilizes and the topic gets a v1 name.
+checkout.sessions.v0:
+  owner: checkout-team
+  partitions: 1
+  replication_factor: 1
+  retention_hours: 12
+  cleanup_policy: delete
+  schema:
+    format: json
+    subject: checkout.sessions.v0-value
+  description: >
+    Prototype session-abandonment stream; promoted to prod only after the schema
+    stabilizes and the topic gets a v1 name.

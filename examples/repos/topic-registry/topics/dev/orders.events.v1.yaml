@@ -1,12 +1,12 @@
 # Dev twin of the prod topic — smaller footprint, looser bounds.
-name: orders.events.v1
-owner: orders-team
-partitions: 3
-replication_factor: 1
-retention_hours: 48
-cleanup_policy: delete
-schema:
-  format: avro
-  subject: orders.events.v1-value
-description: >
-  Dev instance of the order lifecycle events topic.
+orders.events.v1:
+  owner: orders-team
+  partitions: 3
+  replication_factor: 1
+  retention_hours: 48
+  cleanup_policy: delete
+  schema:
+    format: avro
+    subject: orders.events.v1-value
+  description: >
+    Dev instance of the order lifecycle events topic.

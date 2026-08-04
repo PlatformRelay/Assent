@@ -1,12 +1,12 @@
-name: inventory.stock-levels.v2
-owner: inventory-team
-partitions: 6
-replication_factor: 3
-retention_hours: 24
-cleanup_policy: compact
-schema:
-  format: json
-  subject: inventory.stock-levels.v2-value
-description: >
-  Compacted current stock level per SKU. v2 adds the warehouse dimension; v1
-  was retired after the migration window.
+inventory.stock-levels.v2:
+  owner: inventory-team
+  partitions: 6
+  replication_factor: 3
+  retention_hours: 24
+  cleanup_policy: compact
+  schema:
+    format: json
+    subject: inventory.stock-levels.v2-value
+  description: >
+    Compacted current stock level per SKU. v2 adds the warehouse dimension; v1
+    was retired after the migration window.

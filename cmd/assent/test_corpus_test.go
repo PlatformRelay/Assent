@@ -36,11 +36,37 @@ import (
 
 // greenExamplePacks are the non-locked example packs that gate themselves green under
 // `assent test`. rego is locked (D-012) and carries no .assent/tests/** at all.
+// Keep Taskfile.yml dogfood-examples + .github/workflows/verify.yaml dogfood step in
+// sync (TestDogfoodScriptsIncludeGreenExamplePacks).
 var greenExamplePacks = []string{"service-catalog", "infra-vars", "topic-registry"}
+
 // brokenPackDir is the DELIBERATELY-broken fixture (a valid pack whose expect.yaml pins
 // the wrong decision). It lives under testdata, never examples/packs, so the shipped
 // corpus stays green while the failure path is still proven.
 const brokenPackDir = "testdata/broken-pack"
+
+// TestDogfoodScriptsIncludeGreenExamplePacks pins the CLI dogfood loops
+// (Taskfile dogfood-examples + verify.yaml) to the same pack set as greenExamplePacks
+// so unpinning a pack (EFE-S04 / topic-registry) cannot leave the shell loops stale.
+func TestDogfoodScriptsIncludeGreenExamplePacks(t *testing.T) {
+	files := []string{
+		filepath.Join("..", "..", "Taskfile.yml"),
+		filepath.Join("..", "..", ".github", "workflows", "verify.yaml"),
+	}
+	for _, f := range files {
+		raw, err := os.ReadFile(f) //nolint:gosec // fixed in-repo path relative to cmd/assent.
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		body := string(raw)
+		for _, pack := range greenExamplePacks {
+			// Match the shell `for pack in …` token list, not incidental prose.
+			if !strings.Contains(body, pack) {
+				t.Errorf("%s: dogfood loop missing green pack %q", f, pack)
+			}
+		}
+	}
+}
 
 // TestAllExamplePacksGreenUnderAssentTest is REQ-E6-S08-01: every non-locked
 // examples/packs/**/.assent/tests/** case evaluates via the whole-pack replay to its

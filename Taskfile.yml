@@ -48,7 +48,7 @@ tasks:
     cmds:
       - |
         set -e
-        for pack in service-catalog infra-vars; do
+        for pack in service-catalog infra-vars topic-registry; do
           echo "== assent test examples/packs/$pack =="
           ./bin/assent test "examples/packs/$pack"
           ./bin/assent test --coverage "examples/packs/$pack"

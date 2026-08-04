@@ -11,9 +11,11 @@ is one YAML file and teams request changes via merge request.
 3. Routine changes — a partition bump within quota on a topic the author's team owns —
    prove their obligations and auto-merge. Everything else gets an explained review thread.
 
-Entry semantics: `owner` names the owning team (resolved against a permission provider);
-`partitions` may only grow, within quota; `retention_hours` is bounded per environment;
-deleting a topic file is always a human-review event.
+Entry semantics: each file is **map-at-root** — the topic-name key is the entry identity
+(matching `examples/packs/topic-registry` `mode: map`, `root: ""`). Nested fields carry
+`owner` (owning team, resolved against a permission provider), `partitions` (may only grow
+within quota), and `retention_hours` (bounded per environment). Deleting a topic file is
+always a human-review event.
 
 ## Layout
 
@@ -23,12 +25,26 @@ topics/
   dev/    # looser bounds for experimentation
 ```
 
+Example file shape (map-at-root):
+
+```yaml
+orders.events.v1:
+  owner: orders-team
+  partitions: 12
+  replication_factor: 3
+  retention_hours: 168
+  cleanup_policy: delete
+  schema:
+    format: avro
+    subject: orders.events.v1-value
+```
+
 ## Rule archetypes exercised (docs/vision.md)
 
 - **Ownership** — `owner` field per entry; author must belong to the owning team.
 - **Bounded change** — `partitions` may increase up to quota, never decrease;
   `retention_hours` within a per-env band.
-- **No destruction** — removing a topic file (or a whole entry) requires human review.
+- **No destruction** — removing a topic file requires human review (`match.fileEvents`).
 - **Environment split** — `topics/prod/**` vs `topics/dev/**` paths.
 - **Schema validity** — every file must keep the topic schema valid.
 
