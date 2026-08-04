@@ -61,6 +61,11 @@ var (
 	// decision Reconcile does not handle in this slice. Fail closed rather than
 	// guess (an unknown decision must never widen to a write).
 	ErrUnsupportedDecision = errors.New("forge: unsupported decision for Reconcile")
+
+	// ErrRescanFailed is returned when the post-write rescan (P3-E5 step 9) finds
+	// the forge does not reflect the desired state. Writes may have occurred, but
+	// success is never reported without forge confirmation.
+	ErrRescanFailed = errors.New("forge: post-publication rescan mismatch — forge state does not reflect desired")
 )
 
 // Marker is the ADR-0019 correlation marker embedded in a bot-authored forge
@@ -133,6 +138,11 @@ type DesiredReviewState struct {
 
 	// Thread is the single desired thread for a REVIEW decision; nil otherwise.
 	Thread *DesiredThread
+
+	// ClearSlot when non-nil means the finding for this slot no longer fires —
+	// reconcile resolves any open bot thread for the slot (P3-E5 step 7). Mutually
+	// exclusive with Thread and the APPROVE path.
+	ClearSlot *Slot
 
 	// Approve is true for an APPROVE decision (arm the approval).
 	Approve bool
@@ -293,6 +303,8 @@ const (
 //     Any refusal returns a typed error with ZERO writes.
 func Reconcile(f Forge, clock Clocker, desired DesiredReviewState, pre Preconditions) (PublicationReceipt, error) {
 	switch {
+	case desired.ClearSlot != nil:
+		return reconcileClearSlot(f, clock, desired)
 	case desired.Thread != nil:
 		return reconcileThread(f, clock, desired)
 	case desired.Approve && desired.Merge != nil:
@@ -314,6 +326,18 @@ func reconcileThread(f Forge, clock Clocker, desired DesiredReviewState) (Public
 	}
 
 	want := desired.Thread.Marker.key()
+	wantSlot := desired.Thread.Marker.Slot
+
+	// Step 6 — supersede stale occurrences: same slot, different occurrence. Resolve
+	// any still-open stale threads so the fresh occurrence gets its own review record.
+	for _, t := range existing {
+		if t.Marker.Slot != wantSlot || t.Marker.Occurrence == want.occurrence || t.Resolved {
+			continue
+		}
+		if err := f.ResolveThread(desired.Project, desired.MR, t.ID); err != nil {
+			return PublicationReceipt{}, fmt.Errorf("forge: resolve stale occurrence %s: %w", t.ID, err)
+		}
+	}
 
 	// Collect ALL bot threads that occupy the desired (slot, occurrence) — not
 	// just the first seen. A race between unserialized publishers can leave two+
@@ -331,27 +355,178 @@ func reconcileThread(f Forge, clock Clocker, desired DesiredReviewState) (Public
 	case len(occupants) >= 2:
 		// Duplicate-repair path (S12-03): keep the lowest-forge-id artifact as
 		// canonical, resolve every other against it, and record each repair.
-		return repairDuplicates(f, clock, desired, occupants)
+		receipt, err := repairDuplicates(f, clock, desired, occupants)
+		if err != nil {
+			return PublicationReceipt{}, err
+		}
+		if err := rescanThreadDesired(f, desired, rescanModeRepair); err != nil {
+			return PublicationReceipt{}, err
+		}
+		return receipt, nil
 	case len(occupants) == 1:
-		// Idempotent: the slot/occurrence already has exactly one bot thread.
-		// Create nothing; report the existing id so the receipt still records the
-		// thread op (validates), while the fake proves zero new writes.
-		return receiptOf(Operation{
+		// Idempotent / preserve-resolution: the slot/occurrence already has exactly
+		// one bot thread. Create nothing; report the existing id so the receipt
+		// still records the thread op (validates), while the fake proves zero new
+		// writes. A reviewer-resolved thread stays resolved (P3-E5 step 5).
+		mode := rescanModeOpen
+		if occupants[0].Resolved {
+			mode = rescanModePreserveResolved
+		}
+		receipt := receiptOf(Operation{
 			Kind:        kindThread,
 			TargetID:    occupants[0].ID,
 			PerformedAt: rfc3339(clock),
-		}), nil
+		})
+		if err := rescanThreadDesired(f, desired, mode); err != nil {
+			return PublicationReceipt{}, err
+		}
+		return receipt, nil
 	}
 
 	created, err := f.CreateThread(desired.Project, desired.MR, desired.Thread.Marker, desired.Thread.Body)
 	if err != nil {
 		return PublicationReceipt{}, fmt.Errorf("forge: create thread: %w", err)
 	}
-	return receiptOf(Operation{
+	receipt := receiptOf(Operation{
 		Kind:        kindThread,
 		TargetID:    created.ID,
 		PerformedAt: rfc3339(clock),
-	}), nil
+	})
+	if err := rescanThreadDesired(f, desired, rescanModeOpen); err != nil {
+		return PublicationReceipt{}, err
+	}
+	return receipt, nil
+}
+
+type rescanThreadMode int
+
+const (
+	rescanModeOpen rescanThreadMode = iota
+	rescanModePreserveResolved
+	rescanModeRepair
+)
+
+// rescanThreadDesired re-lists bot threads (P3-E5 step 9) and fails closed when
+// the forge no longer reflects the desired slot/occurrence state.
+func rescanThreadDesired(f Forge, desired DesiredReviewState, mode rescanThreadMode) error {
+	threads, err := f.ListBotThreads(desired.Project, desired.MR)
+	if err != nil {
+		return fmt.Errorf("forge: rescan list bot threads: %w", err)
+	}
+	if err := verifyThreadRescan(threads, desired.Thread.Marker, mode); err != nil {
+		return fmt.Errorf("%w: %v", ErrRescanFailed, err)
+	}
+	return nil
+}
+
+func verifyThreadRescan(threads []Thread, marker Marker, mode rescanThreadMode) error {
+	want := marker.key()
+	slot := marker.Slot
+
+	for _, t := range threads {
+		if t.Marker.Slot == slot && t.Marker.Occurrence != want.occurrence && !t.Resolved {
+			return fmt.Errorf("stale occurrence thread %s still open", t.ID)
+		}
+	}
+
+	var matching []Thread
+	for _, t := range threads {
+		if t.Marker.key() == want {
+			matching = append(matching, t)
+		}
+	}
+
+	openMatching := matching[:0]
+	for _, t := range matching {
+		if !t.Resolved {
+			openMatching = append(openMatching, t)
+		}
+	}
+
+	switch mode {
+	case rescanModeRepair:
+		if len(openMatching) != 1 {
+			return fmt.Errorf("expected exactly one open canonical thread after repair, got %d open (%d total)", len(openMatching), len(matching))
+		}
+	case rescanModePreserveResolved:
+		if len(matching) != 1 {
+			return fmt.Errorf("expected exactly one thread for preserved slot, got %d", len(matching))
+		}
+		if !matching[0].Resolved {
+			return fmt.Errorf("thread %s must remain resolved (preserve-resolution)", matching[0].ID)
+		}
+	default: // rescanModeOpen
+		if len(openMatching) != 1 {
+			return fmt.Errorf("expected exactly one open thread for desired slot/occurrence, got %d open (%d total)", len(openMatching), len(matching))
+		}
+	}
+	return nil
+}
+
+// reconcileClearSlot resolves open bot threads for a slot that no longer appears
+// in DesiredReviewState (P3-E5 step 7).
+func reconcileClearSlot(f Forge, clock Clocker, desired DesiredReviewState) (PublicationReceipt, error) {
+	slot := *desired.ClearSlot
+	existing, err := f.ListBotThreads(desired.Project, desired.MR)
+	if err != nil {
+		return PublicationReceipt{}, fmt.Errorf("forge: list bot threads: %w", err)
+	}
+
+	var open []Thread
+	for _, t := range existing {
+		if t.Marker.Slot == slot && !t.Resolved {
+			open = append(open, t)
+		}
+	}
+
+	switch len(open) {
+	case 0:
+		// Idempotent clear: nothing open to resolve. Reference any bot thread for
+		// the slot so the receipt still validates (minItems:1).
+		for _, t := range existing {
+			if t.Marker.Slot == slot {
+				receipt := receiptOf(Operation{
+					Kind:        kindThread,
+					TargetID:    t.ID,
+					PerformedAt: rfc3339(clock),
+				})
+				if err := rescanClearSlot(f, desired); err != nil {
+					return PublicationReceipt{}, err
+				}
+				return receipt, nil
+			}
+		}
+		return PublicationReceipt{}, ErrUnsupportedDecision
+	case 1:
+		if err := f.ResolveThread(desired.Project, desired.MR, open[0].ID); err != nil {
+			return PublicationReceipt{}, fmt.Errorf("forge: resolve no-longer-desired %s: %w", open[0].ID, err)
+		}
+		receipt := receiptOf(Operation{
+			Kind:        kindThread,
+			TargetID:    open[0].ID,
+			PerformedAt: rfc3339(clock),
+		})
+		if err := rescanClearSlot(f, desired); err != nil {
+			return PublicationReceipt{}, err
+		}
+		return receipt, nil
+	default:
+		return PublicationReceipt{}, fmt.Errorf("forge: duplicate open threads for cleared slot %q", slot.Rule)
+	}
+}
+
+func rescanClearSlot(f Forge, desired DesiredReviewState) error {
+	slot := *desired.ClearSlot
+	threads, err := f.ListBotThreads(desired.Project, desired.MR)
+	if err != nil {
+		return fmt.Errorf("forge: rescan list bot threads: %w", err)
+	}
+	for _, t := range threads {
+		if t.Marker.Slot == slot && !t.Resolved {
+			return fmt.Errorf("%w: slot %q still has open thread %s", ErrRescanFailed, slot.Rule, t.ID)
+		}
+	}
+	return nil
 }
 
 // repairDuplicates deterministically repairs two+ bot artifacts occupying the

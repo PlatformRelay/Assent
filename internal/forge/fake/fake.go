@@ -56,6 +56,13 @@ type Forge struct {
 	// window, then the atomic MergeCAS guard observes the drift and must reject.
 	// Default nil = no race (the ordinary, non-racing path).
 	AfterCurrentHeads func(f *Forge)
+
+	// RescanListBotThreads, when non-nil, replaces the bot-thread listing on the
+	// first ListBotThreads call after a forge mutation within the same Reconcile
+	// (the post-write rescan — P3-E5 step 9). Used to simulate rescan mismatch.
+	RescanListBotThreads func(listed []forge.Thread) ([]forge.Thread, error)
+
+	mutationsSinceList int
 }
 
 // New returns a fake forge configured with the given bot identity and current
@@ -82,11 +89,14 @@ func (f *Forge) SeedThread(id, author string, marker forge.Marker, resolved bool
 	})
 }
 
+func (f *Forge) noteMutation() { f.mutationsSinceList++ }
+
 // ListBotThreads returns only threads authored by the configured bot — the
 // author-identity filter (ADR-0019). A contributor (non-bot) comment carrying a
 // syntactically perfect, schema-valid marker is EXCLUDED here and therefore has
 // zero effect on reconciliation. Filtering is by AUTHOR IDENTITY, never by
-// marker well-formedness.
+// marker well-formedness. When RescanListBotThreads is set, the first list after
+// a mutation within one Reconcile simulates the step-9 rescan listing.
 func (f *Forge) ListBotThreads(_, _ string) ([]forge.Thread, error) {
 	var out []forge.Thread
 	for _, t := range f.threads {
@@ -94,6 +104,11 @@ func (f *Forge) ListBotThreads(_, _ string) ([]forge.Thread, error) {
 			out = append(out, t)
 		}
 	}
+	if f.mutationsSinceList > 0 && f.RescanListBotThreads != nil {
+		f.mutationsSinceList = 0
+		return f.RescanListBotThreads(out)
+	}
+	f.mutationsSinceList = 0
 	return out, nil
 }
 
@@ -122,7 +137,10 @@ func (f *Forge) CurrentHeads(_, _ string) (source, target, digest string, err er
 func (f *Forge) ResolveThread(_, _, id string) error {
 	for i := range f.threads {
 		if f.threads[i].ID == id {
-			f.threads[i].Resolved = true
+			if !f.threads[i].Resolved {
+				f.threads[i].Resolved = true
+				f.noteMutation()
+			}
 			return nil
 		}
 	}
@@ -138,6 +156,7 @@ func (f *Forge) CreateThread(_, _ string, marker forge.Marker, _ string) (forge.
 		Author: f.BotAuthor,
 	}
 	f.threads = append(f.threads, t)
+	f.noteMutation()
 	return t, nil
 }
 
