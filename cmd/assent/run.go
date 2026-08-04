@@ -22,6 +22,7 @@ import (
 	"github.com/PlatformRelay/assent/internal/core/policy"
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/render"
 	"github.com/PlatformRelay/assent/schemas"
 )
 
@@ -378,7 +379,10 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		if result.Decision == aggregate.DecisionApprove && !controllingFactsFreshAt(mp, facts, clock().UTC()) {
 			armEligible = false
 		}
-		desired, pre := buildDesired(cfg, info, cfg.subject, head, result, recordJSON, armEligible)
+		desired, pre := buildDesired(
+			cfg, info, cfg.subject, head, result, recordJSON, armEligible,
+			report.Presentation, buildRenderContext(renderOpts(conf, bind), mp, bind, changeSet, facts, info, mrAuthor),
+		)
 		receipt, recErr = forge.Reconcile(client, clockAdapter{now: clock}, desired, pre)
 	}
 
@@ -617,7 +621,7 @@ func sanitizeSubjects(res aggregate.Result, fallback string) aggregate.Result {
 // NOT from --arm or readPipelineDescription() env vars (D-034/D-074). When the
 // forge probe refuses, Reconcile returns ErrArmingRefused → no write even if
 // --arm was passed.
-func buildDesired(cfg runConfig, info gitlab.MRInfo, subject string, head []byte, result aggregate.Result, recordJSON []byte, armEligible bool) (forge.DesiredReviewState, forge.Preconditions) {
+func buildDesired(cfg runConfig, info gitlab.MRInfo, subject string, head []byte, result aggregate.Result, recordJSON []byte, armEligible bool, pm decision.PresentationModel, rctx render.Context) (forge.DesiredReviewState, forge.Preconditions) {
 	digest := gitlab.SyntheticDigest(info.SourceSHA, info.TargetSHA)
 	desired := forge.DesiredReviewState{Project: cfg.project, MR: cfg.mr}
 
@@ -643,7 +647,7 @@ func buildDesired(cfg runConfig, info gitlab.MRInfo, subject string, head []byte
 	// rather than posting a duplicate), decision = digest of the DecisionRecord,
 	// entryRef = the governed-subject identity (the binding subject, a valid
 	// file:<path> idString), effect = the driving finding's effect.
-	effect, rule, code := drivingFinding(result)
+	effect, rule, _ := drivingFinding(result)
 	marker := forge.Marker{
 		Slot: forge.Slot{
 			Project:  cfg.project,
@@ -656,10 +660,24 @@ func buildDesired(cfg runConfig, info gitlab.MRInfo, subject string, head []byte
 		Decision:   sha256Prefix + sha256Hex(recordJSON),
 		Artifact:   forge.Artifact{Kind: "finding-thread", SchemaVersion: "v1alpha1"},
 	}
-	body := fmt.Sprintf("assent review required: rule %q (%s) — decision %s. Resolve after addressing the finding.",
-		rule, code, result.Decision)
-	desired.Thread = &forge.DesiredThread{Marker: marker, Body: body}
+	finding := presentationFinding(result)
+	if len(pm.Findings) > 0 {
+		finding = pm.Findings[0]
+	}
+	threadBody, err := render.RenderFindingThread(pm, finding, rctx)
+	if err != nil {
+		threadBody = fmt.Sprintf("Review required: rule %q (%s)", rule, finding.Code)
+	}
+	desired.Thread = &forge.DesiredThread{Marker: marker, Body: threadBody}
 	return desired, forge.Preconditions{}
+}
+
+func renderOpts(conf *policy.Config, bind *policy.Binding) render.Options {
+	opts := render.DefaultOptions()
+	if conf == nil || bind == nil {
+		return opts
+	}
+	return render.OptionsForEnvironment(conf, bind.Environment)
 }
 
 // drivingFinding picks the finding that drives the decision, for the thread's
