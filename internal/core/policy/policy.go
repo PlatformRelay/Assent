@@ -187,6 +187,25 @@ type Config struct {
 	Classes      []NamedMatch        `yaml:"classes"`
 	Providers    map[string]Provider `yaml:"providers"`
 	Profiles     []ProfileRef        `yaml:"profiles"`
+	Presentation *Presentation       `yaml:"presentation,omitempty"`
+}
+
+// Presentation holds tier-0 renderer knobs from config (ADR-0016 §1, D-088).
+type Presentation struct {
+	Verbosity         string                    `yaml:"verbosity,omitempty"`
+	Emoji             *bool                     `yaml:"emoji,omitempty"`
+	CollapseThreshold *int                      `yaml:"collapseThreshold,omitempty"`
+	Locale            string                    `yaml:"locale,omitempty"`
+	Environments      []PresentationEnvOverride `yaml:"environments,omitempty"`
+}
+
+// PresentationEnvOverride overrides global presentation knobs for one environment.
+type PresentationEnvOverride struct {
+	Name              string `yaml:"name"`
+	Verbosity         string `yaml:"verbosity,omitempty"`
+	Emoji             *bool  `yaml:"emoji,omitempty"`
+	CollapseThreshold *int   `yaml:"collapseThreshold,omitempty"`
+	Locale            string `yaml:"locale,omitempty"`
 }
 
 // NamedMatch is a named path-glob scope (an environment or a class).
