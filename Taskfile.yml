@@ -40,7 +40,7 @@ tasks:
   build:
     desc: Build the CLI
     cmds:
-      - CGO_ENABLED=0 go build -o bin/assent ./cmd/assent
+      - CGO_ENABLED=0 go build -ldflags "-X main.version=${ASSENT_VERSION:-0.0.0-dev}" -o bin/assent ./cmd/assent
 
   dogfood-examples:
     desc: "Dogfood gate (P5-E6-S08): every non-locked example pack gates itself green under the real `assent test` (+ --coverage) CLI"

@@ -16,6 +16,9 @@ import (
 	"github.com/PlatformRelay/assent/internal/forge/gitlab"
 )
 
+// version is the CLI semver surfaced by `assent version`. Release builds inject it via
+// -ldflags "-X main.version=…" (Taskfile.yml ASSENT_VERSION, goreleaser D-099); dev
+// builds keep this default with no git dirty suffix — the tag is source of truth (E9-S01).
 var version = "0.0.0-dev"
 
 func main() {
