@@ -220,28 +220,38 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	// 3. The governed file path is the --subject entryRef with the "file:" prefix
 	//    stripped (REQ-06: the frozen MergePolicy has no subject field, so the
 	//    governed subject is supplied explicitly). Fetch base (target ref) and head
-	//    (source ref) content. This is the pre-existing ADR-0008 §4 single-file API
-	//    read — REQ-06 does not change file sourcing.
+	//    (source ref) content. A 404 maps to nil bytes (absent) — the EFE-S03
+	//    presence signal — rather than a hard error, so a true whole-file
+	//    add/delete can mint a FileEvent below.
 	governed := strings.TrimPrefix(cfg.subject, "file:")
 	if governed == cfg.subject {
 		return fmt.Errorf("--subject %q must be a file:<path> entryRef", cfg.subject)
 	}
-	base, err := client.FileAtRef(cfg.project, governed, info.TargetBranch)
+	base, err := fileAtRefOrAbsent(client, cfg.project, governed, info.TargetBranch)
 	if err != nil {
 		return fmt.Errorf("load governed base %q: %w", governed, err)
 	}
-	head, err := client.FileAtRef(cfg.project, governed, info.SourceBranch)
+	head, err := fileAtRefOrAbsent(client, cfg.project, governed, info.SourceBranch)
 	if err != nil {
 		return fmt.Errorf("load governed head %q: %w", governed, err)
 	}
+	// When --checkout is set, the LOCAL tree is the presence authority for the
+	// governed subject (EFE-S03 / ADR-0008 §4): FileAtRef alone cannot express
+	// nil-vs-empty through every forge mock, and the changed-file fold already
+	// reads this tree. Override base/head from the checkout's FileContents.
+	if cfg.checkout != "" {
+		base, head, err = dirCheckout{root: cfg.checkout}.FileContents(governed)
+		if err != nil {
+			return fmt.Errorf("read governed %q from checkout: %w", governed, err)
+		}
+	}
 
-	// 4. Diff → ChangeSet. change.Diff returns an opaque ChangeSet ACCOMPANIED BY a wrapped
-	//    ErrOpaque, so an undecidable governed-subject diff takes this error branch and fails
-	//    CLOSED as a hard error (exit non-zero) — it never reaches the evaluator, so there is no
-	//    approve/merge. (The opaque → REVIEW mapping applies on the E1-S08 checkout-fold
-	//    path, which sets changeSet.Opaque without erroring; see step 5b.)
-	changeSet, err := change.Diff(governed, base, head)
-	if err != nil {
+	// 4. Diff → ChangeSet (or mint a whole-file FileEvent on one-sided presence).
+	//    An opaque Diff is fail-safe REVIEW via decide (changeSet.Opaque), not a
+	//    hard error — matching the E1-S08 checkout-fold soft-opaque path and the
+	//    adoptertest undecidable guard. A non-opaque error still fails CLOSED.
+	changeSet, err := changeSetForGoverned(governed, base, head)
+	if err != nil && !errors.Is(err, change.ErrOpaque) {
 		return fmt.Errorf("diff governed file %q: %w", governed, err)
 	}
 
@@ -330,6 +340,31 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		return fmt.Errorf("reconcile: %w", recErr)
 	}
 	return nil
+}
+
+// fileAtRefOrAbsent loads a file at ref, mapping a forge 404 to nil bytes (the
+// file is ABSENT at that ref — EFE-S03 presence signal). Any other error
+// propagates. Empty-but-present content (HTTP 200 with []byte{}) stays non-nil.
+func fileAtRefOrAbsent(client forgePort, project, path, ref string) ([]byte, error) {
+	raw, err := client.FileAtRef(project, path, ref)
+	if err != nil {
+		if errors.Is(err, gitlab.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return raw, nil
+}
+
+// changeSetForGoverned builds the governed subject's ChangeSet: on unambiguous
+// one-sided presence it mints change.FileEvent (the sole path=="" minter); otherwise
+// it falls through to change.Diff. Shared by the live Diff→ChangeSet path so the
+// checkout fold's OneSidedLifecycle skip and the evaluator's input agree.
+func changeSetForGoverned(file string, base, head []byte) (change.ChangeSet, error) {
+	if kind, ok := change.OneSidedLifecycle(base, head); ok {
+		return change.ChangeSet{Changes: []change.Change{change.FileEvent(file, kind)}}, nil
+	}
+	return change.Diff(file, base, head)
 }
 
 // selectBinding routes to the single covering RulesetBinding. Full

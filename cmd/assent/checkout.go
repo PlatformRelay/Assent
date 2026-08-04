@@ -27,8 +27,9 @@ type localCheckout interface {
 	// the MR's head changed relative to its base — read from the local tree.
 	ChangedFiles() ([]string, error)
 	// FileContents returns one changed file's base and head bytes from the local
-	// tree. A side that is absent (a whole-file add/delete) yields nil bytes,
-	// which the differ treats as opaque (fail-safe) rather than a silent no-op.
+	// tree. A side that is absent (a whole-file add/delete) yields nil bytes —
+	// the EFE-S03 presence signal (nil-vs-non-nil, never empty bytes). An
+	// empty-but-present file yields a non-nil (possibly zero-length) slice.
 	FileContents(path string) (base, head []byte, err error)
 }
 
@@ -74,8 +75,9 @@ func (d dirCheckout) ChangedFiles() ([]string, error) {
 }
 
 // FileContents reads one file's base and head bytes from the local subtrees. A
-// missing side returns nil (not an error): the differ maps nil/empty content to
-// an opaque diff, which is the fail-safe outcome for a whole-file add/delete.
+// missing side returns nil (not an error): nil is ABSENT (one-sided lifecycle →
+// FileEvent); a present empty file returns non-nil []byte{} and stays a value
+// diff / opaque — never a fabricated delete (EFE-S03).
 func (d dirCheckout) FileContents(path string) ([]byte, []byte, error) {
 	base, err := readIfPresent(filepath.Join(d.baseDir(), filepath.FromSlash(path)))
 	if err != nil {
@@ -178,6 +180,13 @@ func foldCheckout(co localCheckout) (checkoutFold, error) {
 		base, head, err := co.FileContents(path)
 		if err != nil {
 			return checkoutFold{}, fmt.Errorf("read %q from checkout: %w", path, err)
+		}
+		// One-sided presence is a CLEAN whole-file lifecycle (EFE-S03), not an
+		// opaque diff. Marking it opaque would short-circuit Cover before a
+		// fileEvents rule can select the governed FileEvent the Diff→ChangeSet
+		// path mints. Presence is nil-vs-non-nil (never empty bytes).
+		if _, ok := change.OneSidedLifecycle(base, head); ok {
+			continue
 		}
 		// Diff each changed file to detect an opaque (undecidable) diff. Diff only
 		// ever errors via its opaque path, so an ErrOpaque is fail-safe, not a hard

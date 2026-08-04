@@ -223,32 +223,12 @@ func Evaluate(c Case) (aggregate.Result, error) {
 	return res, nil
 }
 
-// oneSidedFileEvent detects an UNAMBIGUOUS whole-file lifecycle from one-sided
-// presence: exactly one of base/head ABSENT. An absent base + present head is a
-// file-ADD; a present base + absent head is a file-DELETE. It returns (kind, true)
-// ONLY for that unambiguous case; every other shape falls through to change.Diff —
-// both present (a value diff or opaque), both absent (undecidable), or an
-// empty-but-PRESENT side.
-//
-// THE AMBIGUITY INVARIANT (EFE-S02, Judgment call (a)): the presence signal is
-// nil-vs-non-nil, NEVER len()==0. An empty-but-present document ({} / empty bytes)
-// is non-nil and MUST NOT be mistaken for a delete — treating it as one is a
-// fail-OPEN. This is the S06 nil-interface (`null`=absent) vs empty-map
-// (`{}`=empty document) line: marshalInlineContent returns literal nil only for a
-// `null` side and never a non-nil-empty slice for any present value, so nil is a
-// clean absence signal. A rename is never synthesized here — a case governs one
-// file, so at most one file-event is ever minted.
+// oneSidedFileEvent is the harness thin wrapper over change.OneSidedLifecycle —
+// the shared nil-vs-non-nil presence detector (EFE-S02/S03). Kept as a local name
+// so assemble call sites stay readable; the invariant lives in internal/change so
+// cmd/assent cannot drift from the harness.
 func oneSidedFileEvent(base, head []byte) (change.Kind, bool) {
-	baseAbsent := base == nil
-	headAbsent := head == nil
-	switch {
-	case baseAbsent && !headAbsent:
-		return change.KindAdd, true
-	case !baseAbsent && headAbsent:
-		return change.KindDelete, true
-	default:
-		return "", false
-	}
+	return change.OneSidedLifecycle(base, head)
 }
 
 // assemble builds the case's EvaluationInput from the base/↔head/ diff, the
