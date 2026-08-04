@@ -30,9 +30,9 @@ const examplesPacksDir = "../../examples/packs"
 // phase, a facts reference reverted off `.value`, an uncovered obligation) fails
 // here by name.
 func TestExamplesPacksLoadAndLintClean(t *testing.T) {
-	// The packs brought fully into E3 conformance by lane C (phase added on every
-	// rule; every facts reference on the D-051 Option B `.value` convention).
-	conformant := []string{"service-catalog", "infra-vars"}
+	// All non-locked starter packs: service-catalog + infra-vars (E3 lane C) and
+	// topic-registry (EFE-S04 — D-052 pin fully retired; load+lint+evaluate green).
+	conformant := []string{"service-catalog", "infra-vars", "topic-registry"}
 
 	for _, name := range conformant {
 		name := name
@@ -53,35 +53,5 @@ func TestExamplesPacksLoadAndLintClean(t *testing.T) {
 				t.Errorf("%s: a clean pack must emit no lint diagnostics, got:\n%s", name, stderr.String())
 			}
 		})
-	}
-}
-
-// TestTopicRegistryLoadsAndLintsClean repoints the former D-052 known-blocker pin
-// (EFE-S01). topic-registry's `non-destructive` rule matches whole-topic DELETION
-// via `match.fileEvents{kinds:[delete]}` — the whole-file lifecycle domain E2
-// deferred. EFE-S01 lands the fileEvents loader accept (kinds ⊆ {add, delete}) +
-// engine matcher, so the pack now LOADS and lints CLEAN (lint is a STATIC
-// presence check — it never evaluates a case).
-//
-// Honest boundary: topic-registry is NOT yet in the green *evaluated* corpus. Its
-// delete case still evaluates opaque -> REVIEW because EFE-S01 does NOT mint a
-// whole-file delete event from base/head (that is EFE-S02) and does not wire the
-// live checkout (EFE-S03). topic-registry moves into
-// TestExamplesPacksLoadAndLintClean's evaluated set at EFE-S04, not here.
-func TestTopicRegistryLoadsAndLintsClean(t *testing.T) {
-	dir := filepath.Join(examplesPacksDir, "topic-registry")
-
-	// LOADS: the strict loader now accepts the fileEvents{kinds:[delete]} rule.
-	if _, err := loadCatalogueInput(dir); err != nil {
-		t.Fatalf("topic-registry must load under the strict loader after EFE-S01, got: %v", err)
-	}
-
-	// LINTS CLEAN: `assent lint` exits 0 with no diagnostics (static checks only).
-	var stdout, stderr bytes.Buffer
-	if code := runLint([]string{dir}, &stdout, &stderr); code != 0 {
-		t.Fatalf("topic-registry: assent lint exit = %d, want 0; diagnostics:\n%s", code, stderr.String())
-	}
-	if stderr.Len() != 0 {
-		t.Errorf("topic-registry: a clean pack must emit no lint diagnostics, got:\n%s", stderr.String())
 	}
 }

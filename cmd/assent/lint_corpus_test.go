@@ -10,7 +10,7 @@ package main
 //
 // REQ-E3-S08-02 asks that every non-locked archetype pack "loads + evaluates via
 // Cover to its expected decision". The conformant packs (service-catalog +
-// infra-vars; topic-registry pinned/excluded per D-052) carry `.assent/tests/**`
+// infra-vars + topic-registry; D-052 retired by EFE-S04) carry `.assent/tests/**`
 // base/head/facts/expect fixtures — but those are the E6 ADOPTER test format
 // (`assent test`, an explicit E3 non-goal). They do NOT map directly onto an
 // aggregate.EvaluationInput, for two concrete reasons discovered here and reported

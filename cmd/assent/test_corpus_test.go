@@ -18,10 +18,9 @@ package main
 // expected.yaml seed manifest — the two are the known filename/root split. The manifest
 // stays the P3-E3 golden seed; REQ-04 cross-checks the pack decisions against it.
 //
-// TOPIC-REGISTRY / D-052: topic-registry is EXCLUDED from the green corpus. It is
-// `mode: document` and its non-destructive rule needs the E1-DEFERRED fileEvents domain,
-// so the strict loader HARD-REJECTS it (asserted by TestExamplesPacksKnownBlockers). It
-// stays the pinned known-blocker — the tracked corpus gap, NOT deleted.
+// TOPIC-REGISTRY / D-052 (EFE-S04): topic-registry is IN the green corpus. Its
+// non-destructive rule is re-authored to provable fileEvents{kinds:[add,delete]} with
+// prove.when `kind != "delete"`; file-ADD proves and file-DELETE fails under assent test.
 
 import (
 	"bytes"
@@ -30,14 +29,14 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/PlatformRelay/assent/internal/adoptertest"
 )
 
 // greenExamplePacks are the non-locked example packs that gate themselves green under
-// `assent test`. topic-registry is excluded (D-052, see file header); rego is locked
-// (D-012) and carries no .assent/tests/** at all.
-var greenExamplePacks = []string{"service-catalog", "infra-vars"}
-
+// `assent test`. rego is locked (D-012) and carries no .assent/tests/** at all.
+var greenExamplePacks = []string{"service-catalog", "infra-vars", "topic-registry"}
 // brokenPackDir is the DELIBERATELY-broken fixture (a valid pack whose expect.yaml pins
 // the wrong decision). It lives under testdata, never examples/packs, so the shipped
 // corpus stays green while the failure path is still proven.
@@ -105,15 +104,39 @@ func TestDeliberatelyBrokenPackFailsWithDiff(t *testing.T) {
 	}
 }
 
-// TestExampleCorpusReconcilesArchetypeManifest is REQ-E6-S08-04: the examples/packs/**
-// corpus decisions reconcile with the docs/planning/archetype-goldens.md seed manifest.
-// The manifest is transcribed here (its Manifest version 1 table); each mapped
-// obligation's proving + negative expect.yaml decision MUST equal the manifest's, so a
-// drift on either side is caught. The ONE logged divergence (D-061) is documented and
-// asserted so it can never rot silently: service-catalog's non-destructive is
-// ENTRY-removal (require-review) whereas the manifest's no-destruction is FILE-level
-// deletion (block) — the deferred fileEvents domain (D-052 / topic-registry), a
-// different, stricter obligation.
+// TestTopicRegistryFileEventsGreen is REQ-EFE-S04-01 (closes D-052): topic-registry's
+// re-authored non-destructive (kinds:[add,delete], when: kind != "delete") evaluates
+// its file-DELETE case to REVIEW and its file-ADD proving case to APPROVE (satisfied/
+// silent) under assent test. File-lifecycle fixtures use inline cases.yaml (null side).
+func TestTopicRegistryFileEventsGreen(t *testing.T) {
+	dir := filepath.Join(examplesPacksDir, "topic-registry")
+	var so, se bytes.Buffer
+	if code := runTest([]string{dir}, &so, &se); code != 0 {
+		t.Fatalf("assent test topic-registry: exit = %d, want 0\nstdout:\n%s\nstderr:\n%s", code, so.String(), se.String())
+	}
+	out := so.String()
+	for _, want := range []string{
+		"PASS topics/non-destructive (",
+		"PASS topics/non-destructive-delete (",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("topic-registry fileEvents green missing %q; got:\n%s", want, out)
+		}
+	}
+	// Pin polarities from the authored inline expects so a silent flip cannot rot.
+	if got := decisionOfInlineCase(t, "topic-registry", "non-destructive"); got != "APPROVE" {
+		t.Errorf("file-ADD proving decision = %s, want APPROVE", got)
+	}
+	if got := decisionOfInlineCase(t, "topic-registry", "non-destructive-delete"); got != "REVIEW" {
+		t.Errorf("file-DELETE failing decision = %s, want REVIEW", got)
+	}
+}
+
+// TestExampleCorpusReconcilesArchetypeManifest is REQ-E6-S08-04 / REQ-EFE-S04-02:
+// the examples/packs/** corpus decisions reconcile with archetype-goldens.md.
+// D-061 is CLOSED by expressing BOTH shapes: entry-removal → REVIEW (service-catalog
+// non-destructive) AND file-delete → BLOCK (manifest no-destruction), asserted so
+// neither side can rot silently.
 func TestExampleCorpusReconcilesArchetypeManifest(t *testing.T) {
 	// Manifest (archetype-goldens.md v1): archetype obligation -> {prove, negative}.
 	type gold struct{ prove, negative string }
@@ -123,6 +146,7 @@ func TestExampleCorpusReconcilesArchetypeManifest(t *testing.T) {
 		"allow-listed-fields": {"APPROVE", "REVIEW"},
 		"bounded-change":      {"APPROVE", "REVIEW"},
 		"freshness":           {"APPROVE", "REVIEW"},
+		"no-destruction":      {"APPROVE", "BLOCK"},
 	}
 
 	// Each pack case dir -> the archetype obligation it reconciles against.
@@ -138,20 +162,6 @@ func TestExampleCorpusReconcilesArchetypeManifest(t *testing.T) {
 		{"infra-vars", "vars/bounded-change", "bounded-change"},
 	}
 
-	decisionOf := func(t *testing.T, pack, rel string) string {
-		t.Helper()
-		p := filepath.Join(examplesPacksDir, pack, ".assent", "tests", rel, "expect.yaml")
-		raw, err := os.ReadFile(p) //nolint:gosec // fixed in-repo example-pack fixture path.
-		if err != nil {
-			t.Fatalf("read %s: %v", p, err)
-		}
-		exp, err := adoptertest.LoadExpectation(raw)
-		if err != nil {
-			t.Fatalf("%s: %v", p, err)
-		}
-		return exp.Decision
-	}
-
 	for _, r := range refs {
 		r := r
 		t.Run(r.pack+"/"+r.archetype, func(t *testing.T) {
@@ -159,23 +169,86 @@ func TestExampleCorpusReconcilesArchetypeManifest(t *testing.T) {
 			if !ok {
 				t.Fatalf("archetype %q not in transcribed manifest", r.archetype)
 			}
-			if got := decisionOf(t, r.pack, r.caseDir); got != g.prove {
+			if got := decisionOfPackCase(t, r.pack, r.caseDir); got != g.prove {
 				t.Errorf("%s proving decision = %s, manifest %s = %s", r.caseDir, got, r.archetype, g.prove)
 			}
-			if got := decisionOf(t, r.pack, r.caseDir+"/negative"); got != g.negative {
+			if got := decisionOfPackCase(t, r.pack, r.caseDir+"/negative"); got != g.negative {
 				t.Errorf("%s/negative decision = %s, manifest %s negative = %s", r.caseDir, got, r.archetype, g.negative)
 			}
 		})
 	}
 
-	// The ONE logged divergence (D-061): non-destructive (entry-removal, REVIEW) vs the
-	// manifest's no-destruction (file-deletion, BLOCK). Asserted so a future change to
-	// either side surfaces here rather than silently diverging further.
-	t.Run("non-destructive divergence is logged", func(t *testing.T) {
-		if got := decisionOf(t, "service-catalog", "catalog/non-destructive/negative"); got != "REVIEW" {
-			t.Errorf("non-destructive/negative = %s, want REVIEW (entry-removal require-review; the manifest's file-level no-destruction is BLOCK — deferred fileEvents, D-052)", got)
+	// D-061 reconciled (REQ-EFE-S04-02): TWO shapes, separately asserted.
+	// (1) Entry-removal stays REVIEW (valueChanges require-review) — not the manifest's
+	// file-delete BLOCK. (2) File-delete BLOCK matches archetype no-destruction/delete.
+	t.Run("non-destructive entry-removal stays REVIEW", func(t *testing.T) {
+		if got := decisionOfPackCase(t, "service-catalog", "catalog/non-destructive/negative"); got != "REVIEW" {
+			t.Errorf("entry-removal negative = %s, want REVIEW (valueChanges require-review; distinct from file-delete BLOCK)", got)
 		}
 	})
+	t.Run("non-destructive file-delete is BLOCK per manifest", func(t *testing.T) {
+		g := manifest["no-destruction"]
+		if got := decisionOfInlineCase(t, "service-catalog", "file-non-destructive"); got != g.prove {
+			t.Errorf("file-non-destructive proving = %s, manifest no-destruction = %s", got, g.prove)
+		}
+		if got := decisionOfInlineCase(t, "service-catalog", "file-non-destructive-delete"); got != g.negative {
+			t.Errorf("file-non-destructive-delete = %s, manifest no-destruction negative = %s (D-061)", got, g.negative)
+		}
+	})
+}
+
+// decisionOfPackCase reads an examples/packs/<pack>/.assent/tests/<rel>/expect.yaml
+// decision (directory-form cases).
+func decisionOfPackCase(t *testing.T, pack, rel string) string {
+	t.Helper()
+	p := filepath.Join(examplesPacksDir, pack, ".assent", "tests", rel, "expect.yaml")
+	raw, err := os.ReadFile(p) //nolint:gosec // fixed in-repo example-pack fixture path.
+	if err != nil {
+		t.Fatalf("read %s: %v", p, err)
+	}
+	exp, err := adoptertest.LoadExpectation(raw)
+	if err != nil {
+		t.Fatalf("%s: %v", p, err)
+	}
+	return exp.Decision
+}
+
+// decisionOfInlineCase reads the expect.decision for a named case inside
+// examples/packs/<pack>/.assent/tests/<packSegment>/cases.yaml (E6-S06 shorthand).
+// packSegment is the first path segment under tests/ (topics / catalog / vars).
+func decisionOfInlineCase(t *testing.T, pack, caseName string) string {
+	t.Helper()
+	segment := map[string]string{
+		"topic-registry":  "topics",
+		"service-catalog": "catalog",
+		"infra-vars":      "vars",
+	}[pack]
+	if segment == "" {
+		t.Fatalf("no tests segment mapping for pack %q", pack)
+	}
+	p := filepath.Join(examplesPacksDir, pack, ".assent", "tests", segment, "cases.yaml")
+	raw, err := os.ReadFile(p) //nolint:gosec // fixed in-repo example-pack fixture path.
+	if err != nil {
+		t.Fatalf("read %s: %v", p, err)
+	}
+	var doc struct {
+		Cases []struct {
+			Name   string `yaml:"name"`
+			Expect struct {
+				Decision string `yaml:"decision"`
+			} `yaml:"expect"`
+		} `yaml:"cases"`
+	}
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("%s: %v", p, err)
+	}
+	for _, c := range doc.Cases {
+		if c.Name == caseName {
+			return c.Expect.Decision
+		}
+	}
+	t.Fatalf("%s: no case named %q", p, caseName)
+	return ""
 }
 
 // TestAssentTestGateDoubleRun is half of REQ-E6-S08-05: the whole gate double-runs
