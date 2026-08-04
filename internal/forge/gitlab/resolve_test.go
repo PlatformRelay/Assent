@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -39,10 +40,50 @@ func baseResolveRequest() forge.ResolveRequest {
 
 func premiumEligibleHandler(t *testing.T, authorApproved bool) http.HandlerFunc {
 	t.Helper()
+	return premiumApprovalHandler(t, premiumApprovalFixture{
+		approvedBy: approvedByUsers(authorApproved, false, true),
+	})
+}
+
+type premiumApprovalFixture struct {
+	approvedBy         string
+	eligibleApprovers  string
+	approvalsRequired  int
+	approvalStateStatus int // 0 = OK
+}
+
+func approvedByUsers(author, bot, bob bool) string {
+	var rows []string
+	if author {
+		rows = append(rows, `{"user":{"id":101,"username":"alice"}}`)
+	}
+	if bot {
+		rows = append(rows, `{"user":{"id":999,"username":"`+resolveBot+`"}}`)
+	}
+	if bob {
+		rows = append(rows, `{"user":{"id":202,"username":"bob"}}`)
+	}
+	if len(rows) == 0 {
+		return "[]"
+	}
+	return "[" + strings.Join(rows, ",") + "]"
+}
+
+func defaultEligibleApprovers() string {
+	return `[{"id":101,"username":"alice"},{"id":202,"username":"bob"},{"id":999,"username":"` + resolveBot + `"}]`
+}
+
+func premiumApprovalHandler(t *testing.T, fix premiumApprovalFixture) http.HandlerFunc {
+	t.Helper()
 	src, tgt, _ := resolvePins()
-	approvedBy := `[{"user":{"id":202,"username":"bob"}}]`
-	if authorApproved {
-		approvedBy = `[{"user":{"id":101,"username":"alice"}},{"user":{"id":202,"username":"bob"}}]`
+	if fix.approvedBy == "" {
+		fix.approvedBy = approvedByUsers(false, false, true)
+	}
+	if fix.eligibleApprovers == "" {
+		fix.eligibleApprovers = defaultEligibleApprovers()
+	}
+	if fix.approvalsRequired == 0 {
+		fix.approvalsRequired = 1
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		wantToken(t, r)
@@ -55,12 +96,16 @@ func premiumEligibleHandler(t *testing.T, authorApproved bool) http.HandlerFunc 
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/repository/branches/main":
 			_, _ = w.Write([]byte(`{"commit":{"id":"` + tgt + `"}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/merge_requests/7/approval_rules":
-			_, _ = w.Write([]byte(`[{"id":1,"name":"security-review","rule_type":"regular","approvals_required":1}]`))
+			_, _ = w.Write([]byte(`[{"id":1,"name":"security-review","rule_type":"regular","approvals_required":` + strconv.Itoa(fix.approvalsRequired) + `}]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/merge_requests/7/approval_state":
+			if fix.approvalStateStatus == http.StatusNotFound || fix.approvalStateStatus == http.StatusForbidden {
+				http.Error(w, "unavailable", fix.approvalStateStatus)
+				return
+			}
 			_, _ = w.Write([]byte(`{"rules":[{
-				"id":1,"name":"security-review","rule_type":"regular","approvals_required":1,"approved":true,
-				"eligible_approvers":[{"id":101,"username":"alice"},{"id":202,"username":"bob"}],
-				"approved_by":` + approvedBy + `
+				"id":1,"name":"security-review","rule_type":"regular","approvals_required":` + strconv.Itoa(fix.approvalsRequired) + `,"approved":true,
+				"eligible_approvers":` + fix.eligibleApprovers + `,
+				"approved_by":` + fix.approvedBy + `
 			}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/user":
 			_, _ = w.Write([]byte(`{"id":999,"username":"` + resolveBot + `"}`))
@@ -160,6 +205,105 @@ func TestResolveExcludesAuthorApproval(t *testing.T) {
 	}
 	if len(ev.ApprovedBy) != 1 || ev.ApprovedBy[0].Username != "bob" {
 		t.Errorf("ApprovedBy = %+v, want bob only", ev.ApprovedBy)
+	}
+}
+
+// Engine-grade: bot-only (or bot+insufficient human) approved_by must not yield
+// schema-valid satisfiable evidence — dossier §4 bot exclusion / ADR-0015 §5.
+func TestResolveExcludesBotApproval(t *testing.T) {
+	t.Run("bot-only approved_by returns CapabilityGap", func(t *testing.T) {
+		c, _ := newServer(t, premiumApprovalHandler(t, premiumApprovalFixture{
+			approvedBy: approvedByUsers(false, true, false),
+		}))
+
+		got, err := c.Resolve(baseResolveRequest())
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if err := got.WellFormed(); err != nil {
+			t.Fatalf("WellFormed: %v", err)
+		}
+		if got.HasEvidence() || !got.HasGap() {
+			t.Fatalf("bot-only approval must not produce evidence, got evidence=%v gap=%v", got.Evidence, got.Gap)
+		}
+		if got.Gap.Reason != forge.GapApprovalRulesUnavailable {
+			t.Errorf("Gap.Reason = %q, want %q", got.Gap.Reason, forge.GapApprovalRulesUnavailable)
+		}
+	})
+
+	t.Run("bot plus insufficient human approvals returns CapabilityGap", func(t *testing.T) {
+		c, _ := newServer(t, premiumApprovalHandler(t, premiumApprovalFixture{
+			approvedBy:        approvedByUsers(false, true, true),
+			approvalsRequired: 2,
+		}))
+
+		got, err := c.Resolve(baseResolveRequest())
+		if err != nil {
+			t.Fatalf("Resolve: %v", err)
+		}
+		if got.HasEvidence() || !got.HasGap() {
+			t.Fatalf("bot+one human with threshold 2 must gap, got evidence=%v gap=%v", got.Evidence, got.Gap)
+		}
+	})
+}
+
+// Paper-gate: filterApproved must drop bot rows — deleting isExcludedApprover bot
+// branches lets bot-only approval produce non-empty approved (this test fails).
+func TestFilterApprovedExcludesBotPaperGate(t *testing.T) {
+	t.Parallel()
+	rows := []approvedRow{{User: gitlabUser{ID: 999, Username: resolveBot}}}
+	eligible := []gitlabUser{
+		{ID: 999, Username: resolveBot},
+		{ID: 202, Username: "bob"},
+	}
+	got := filterApproved(rows, eligible, 101, "alice", "alice", 999, resolveBot)
+	if len(got) != 0 {
+		t.Fatalf("bot-only approved_by must filter to empty (paper-gate), got %+v", got)
+	}
+}
+
+// Author-only forge acceptance must gap after client-side author exclusion.
+func TestResolveAuthorOnlyReturnsGap(t *testing.T) {
+	c, _ := newServer(t, premiumApprovalHandler(t, premiumApprovalFixture{
+		approvedBy: approvedByUsers(true, false, false),
+	}))
+
+	got, err := c.Resolve(baseResolveRequest())
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got.HasEvidence() || !got.HasGap() {
+		t.Fatalf("author-only approval must gap, got evidence=%v gap=%v", got.Evidence, got.Gap)
+	}
+	if got.Gap.Reason != forge.GapApprovalRulesUnavailable {
+		t.Errorf("Gap.Reason = %q, want %q", got.Gap.Reason, forge.GapApprovalRulesUnavailable)
+	}
+}
+
+// Premium approval_rules present but approval_state unavailable → typed gap.
+func TestResolveApprovalStateUnavailableGap(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
+		status := status
+		name := "404"
+		if status == http.StatusForbidden {
+			name = "403"
+		}
+		t.Run(name, func(t *testing.T) {
+			c, _ := newServer(t, premiumApprovalHandler(t, premiumApprovalFixture{
+				approvalStateStatus: status,
+			}))
+
+			got, err := c.Resolve(baseResolveRequest())
+			if err != nil {
+				t.Fatalf("Resolve: %v", err)
+			}
+			if got.HasEvidence() || !got.HasGap() {
+				t.Fatalf("approval_state %d must gap, got evidence=%v gap=%v", status, got.Evidence, got.Gap)
+			}
+			if got.Gap.Reason != forge.GapApprovalRulesUnavailable {
+				t.Errorf("Gap.Reason = %q, want %q", got.Gap.Reason, forge.GapApprovalRulesUnavailable)
+			}
+		})
 	}
 }
 
