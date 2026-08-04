@@ -70,10 +70,25 @@ func evalLeaf(env *cel.Env, in EvaluationInput, ch EvalChange, envLabel, expr st
 
 // bindLeafActivation builds the CEL activation for one change: the change-scoped
 // fields from ch (old/new/entry/oldEntry typed via toCEL, path/kind/file/env
-// strings), plus the shared changes/facts/mr. entry/oldEntry bind the change's
-// new/old value trees (exact for whole-entry/rename changes; a documented
-// approximation for sub-value changes until per-EntryRef entry-tree
-// reconstruction lands in a later story).
+// strings), plus the shared changes/facts/mr. entry/oldEntry bind the
+// reconstructed whole-entry object for the change's EntryRef WHEN ONE IS PRESENT
+// (ch.Entry/ch.OldEntry, populated by the Part-B adopter-test harness), and fall
+// back to the change's scalar new/old value trees when absent — so every existing
+// evaluation (all current callers leave Entry nil) is byte-identical and only a
+// populated entry object changes the binding (fail-safe: an absent entry can
+// never fabricate a permissive bind).
+// entryOr returns the reconstructed entry object when one is present, else the
+// scalar fallback (ch.New/ch.Old). A nil entry is the current, all-callers state
+// and yields the exact pre-S02 scalar binding — an absent/unreconstructable
+// entry NEVER fabricates a permissive binding (fail-safe: the additive richer
+// bind can only be added, never removed).
+func entryOr(entry, fallback any) any {
+	if entry != nil {
+		return entry
+	}
+	return fallback
+}
+
 func bindLeafActivation(in EvaluationInput, ch EvalChange, envLabel string) map[string]any {
 	changesList := make([]any, len(in.ChangeSet.Changes))
 	for i, c := range in.ChangeSet.Changes {
@@ -89,8 +104,8 @@ func bindLeafActivation(in EvaluationInput, ch EvalChange, envLabel string) map[
 	return map[string]any{
 		"old":      toCEL(ch.Old),
 		"new":      toCEL(ch.New),
-		"entry":    toCEL(ch.New),
-		"oldEntry": toCEL(ch.Old),
+		"entry":    toCEL(entryOr(ch.Entry, ch.New)),
+		"oldEntry": toCEL(entryOr(ch.OldEntry, ch.Old)),
 		"path":     ch.Path,
 		"kind":     ch.Kind,
 		"file":     ch.File,

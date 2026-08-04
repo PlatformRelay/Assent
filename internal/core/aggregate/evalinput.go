@@ -33,6 +33,13 @@ type EvalChange struct {
 	Kind    string `json:"kind"`
 	Old     any    `json:"old"`
 	New     any    `json:"new"`
+	// Entry is the reconstructed whole-entry object for this change's EntryRef;
+	// nil = not reconstructed (fall back to New). In-memory enrichment only, NOT
+	// part of the frozen wire contract — hence json:"-" (LoadEvaluationInput's
+	// strict decode never reads it; the frozen schema is untouched).
+	Entry any `json:"-"`
+	// OldEntry is the pre-image entry object; nil = fall back to Old. In-memory only.
+	OldEntry any `json:"-"`
 }
 
 // Fact is a resolved provider fact (typed states; value absent unless resolved).
