@@ -51,7 +51,7 @@ func TestReconcileSupersedesStaleOccurrence(t *testing.T) {
 		f.SeedThread("note/8001", botID, staleMarker(), false)
 
 		before := f.ThreadCount()
-		receipt, err := forge.Reconcile(f, testClock(), desiredThreadFor(freshMarker()), forge.Preconditions{})
+		receipt, err := forge.Reconcile(f, testClock(), desiredThreadFor(freshMarker(), nil), forge.Preconditions{})
 		if err != nil {
 			t.Fatalf("Reconcile: %v", err)
 		}
@@ -95,7 +95,7 @@ func TestReconcileSupersedesStaleOccurrence(t *testing.T) {
 		f := fake.New(botID, "src", "tgt", "sha256:merge")
 		f.SeedThread("note/8001", botID, staleMarker(), true)
 
-		receipt, err := forge.Reconcile(f, testClock(), desiredThreadFor(freshMarker()), forge.Preconditions{})
+		receipt, err := forge.Reconcile(f, testClock(), desiredThreadFor(freshMarker(), nil), forge.Preconditions{})
 		if err != nil {
 			t.Fatalf("Reconcile: %v", err)
 		}

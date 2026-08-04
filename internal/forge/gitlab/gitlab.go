@@ -40,10 +40,10 @@ import (
 // Client is a GitLab REST v4 adapter bound to one endpoint + PAT + bot identity.
 // It implements forge.Forge. The zero value is not usable — construct with New.
 type Client struct {
-	endpoint  string       // e.g. https://gitlab.com (no trailing slash, no /api/v4).
-	token     string       // PAT, sent as the PRIVATE-TOKEN header. NEVER logged.
-	botAuthor string       // username whose notes count as bot-authored (ADR-0019 filter).
-	http      *http.Client // injected transport; tests point it at an httptest.Server.
+	endpoint   string           // e.g. https://gitlab.com (no trailing slash, no /api/v4).
+	token      string           // PAT, sent as the PRIVATE-TOKEN header. NEVER logged.
+	botAuthor  string           // username whose notes count as bot-authored (ADR-0019 filter).
+	http       *http.Client     // injected transport; tests point it at an httptest.Server.
 	observedAt func() time.Time // optional clock hook (tests); nil → time.Now().UTC in Resolve.
 }
 
@@ -268,6 +268,137 @@ func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 		page++
 	}
 	return out, nil
+}
+
+// mrNote is the subset of a GitLab MR note the adapter reads.
+type mrNote struct {
+	ID     int    `json:"id"`
+	Body   string `json:"body"`
+	Author struct {
+		Username string `json:"username"`
+	} `json:"author"`
+}
+
+// ListBotNotes returns bot-authored MR notes filtered by AUTHOR IDENTITY
+// (ADR-0019): a note counts iff its author username equals the configured
+// botAuthor. It paginates the notes endpoint until the last page.
+func (c *Client) ListBotNotes(project, mr string) ([]forge.Note, error) {
+	var out []forge.Note
+	page := 1
+	for {
+		path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/notes?per_page=100&page=%d",
+			url.PathEscape(project), url.PathEscape(mr), page)
+		status, raw, err := c.do(http.MethodGet, path, nil, "")
+		if err != nil {
+			return nil, err
+		}
+		if status != http.StatusOK {
+			return nil, fmt.Errorf("gitlab: list notes %s!%s: unexpected status %d", project, mr, status)
+		}
+		var notes []mrNote
+		if err := json.Unmarshal(raw, &notes); err != nil {
+			return nil, fmt.Errorf("gitlab: decode notes %s!%s: %w", project, mr, err)
+		}
+		if len(notes) == 0 {
+			break
+		}
+		for _, n := range notes {
+			if n.Author.Username != c.botAuthor {
+				continue
+			}
+			marker, ok, err := parseMarker(n.Body)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+			out = append(out, forge.Note{
+				ID:     fmt.Sprintf("note/%d", n.ID),
+				Marker: marker,
+				Author: n.Author.Username,
+				Body:   n.Body,
+			})
+		}
+		if len(notes) < 100 {
+			break
+		}
+		page++
+	}
+	return out, nil
+}
+
+// UpsertComment creates or edits-in-place exactly one summary-comment note on
+// the MR. When a bot note with artifact.kind summary-comment already exists, it
+// is updated via PUT; otherwise a new note is POSTed.
+func (c *Client) UpsertComment(project, mr string, marker forge.Marker, body string) (forge.Note, error) {
+	existing, err := c.ListBotNotes(project, mr)
+	if err != nil {
+		return forge.Note{}, err
+	}
+	for _, n := range existing {
+		if n.Marker.Artifact.Kind == marker.Artifact.Kind && marker.Artifact.Kind == "summary-comment" {
+			return c.updateNote(project, mr, n.ID, marker, body)
+		}
+	}
+	return c.createNote(project, mr, marker, body)
+}
+
+func (c *Client) createNote(project, mr string, marker forge.Marker, body string) (forge.Note, error) {
+	rendered, err := renderMarker(marker)
+	if err != nil {
+		return forge.Note{}, err
+	}
+	fullBody := rendered + "\n\n" + body
+	form := url.Values{}
+	form.Set("body", fullBody)
+	path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/notes",
+		url.PathEscape(project), url.PathEscape(mr))
+	status, raw, err := c.do(http.MethodPost, path, strings.NewReader(form.Encode()),
+		"application/x-www-form-urlencoded")
+	if err != nil {
+		return forge.Note{}, err
+	}
+	if status != http.StatusCreated && status != http.StatusOK {
+		return forge.Note{}, fmt.Errorf("gitlab: create note %s!%s: unexpected status %d", project, mr, status)
+	}
+	var n mrNote
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return forge.Note{}, fmt.Errorf("gitlab: decode created note %s!%s: %w", project, mr, err)
+	}
+	return forge.Note{
+		ID:     fmt.Sprintf("note/%d", n.ID),
+		Marker: marker,
+		Author: c.botAuthor,
+		Body:   fullBody,
+	}, nil
+}
+
+func (c *Client) updateNote(project, mr, id string, marker forge.Marker, body string) (forge.Note, error) {
+	rendered, err := renderMarker(marker)
+	if err != nil {
+		return forge.Note{}, err
+	}
+	fullBody := rendered + "\n\n" + body
+	form := url.Values{}
+	form.Set("body", fullBody)
+	noteID := strings.TrimPrefix(id, "note/")
+	path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/notes/%s",
+		url.PathEscape(project), url.PathEscape(mr), url.PathEscape(noteID))
+	status, _, err := c.do(http.MethodPut, path, strings.NewReader(form.Encode()),
+		"application/x-www-form-urlencoded")
+	if err != nil {
+		return forge.Note{}, err
+	}
+	if status != http.StatusOK {
+		return forge.Note{}, fmt.Errorf("gitlab: update note %s on %s!%s: unexpected status %d", id, project, mr, status)
+	}
+	return forge.Note{
+		ID:     id,
+		Marker: marker,
+		Author: c.botAuthor,
+		Body:   fullBody,
+	}, nil
 }
 
 // CreateThread posts a new resolvable discussion whose body is the marker

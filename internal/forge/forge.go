@@ -117,6 +117,14 @@ type DesiredThread struct {
 	Body   string
 }
 
+// DesiredSummary is the per-MR summary comment (P3-E5 step 3,
+// artifact.kind: summary-comment). It is edited in place on every run when
+// populated — never re-posted as a second note.
+type DesiredSummary struct {
+	Marker Marker
+	Body   string
+}
+
 // DesiredMerge is the SHA-pinned merge derived from an APPROVE decision. It
 // carries ALL THREE compare-and-swap values (ADR-0017 §1, ADR-0015 §2): a
 // source-only pin (`merge?sha=` alone) is INSUFFICIENT, so SourceSha, TargetSha
@@ -148,6 +156,10 @@ type DesiredReviewState struct {
 	Approve bool
 	// Merge is the SHA-pinned merge for an APPROVE decision; nil otherwise.
 	Merge *DesiredMerge
+
+	// Summary is the per-MR summary comment when step 3 applies; nil when the
+	// caller has not populated the summary slot (E8-S12 additive preamble).
+	Summary *DesiredSummary
 }
 
 // Preconditions carry the out-of-band arming decision plus the pinned SHAs and
@@ -228,6 +240,24 @@ type Forge interface {
 	// has moved it returns ErrSHAMoved and performs NO merge. On success it
 	// returns the forge-assigned merge id.
 	MergeCAS(project, mr string, m DesiredMerge) (string, error)
+
+	// ListBotNotes returns bot-authored MR notes (non-resolvable comments)
+	// filtered by AUTHOR IDENTITY (ADR-0019). A contributor note carrying a
+	// well-formed marker is excluded — same filter as ListBotThreads.
+	ListBotNotes(project, mr string) ([]Note, error)
+
+	// UpsertComment creates OR edits-in-place exactly one note keyed by the
+	// marker's artifact kind (summary-comment upserts one per MR; never posts a
+	// second summary note). Returns the note with its stable forge-assigned id.
+	UpsertComment(project, mr string, marker Marker, body string) (Note, error)
+}
+
+// Note is a bot-authored MR note (non-thread comment) as recorded by the forge.
+type Note struct {
+	ID     string
+	Marker Marker
+	Author string
+	Body   string
 }
 
 // Thread is a forge thread as recorded by the forge: its forge-assigned id, the
@@ -302,16 +332,58 @@ const (
 //     pins AND a compare-and-swap that honours source+target+mergeResultDigest.
 //     Any refusal returns a typed error with ZERO writes.
 func Reconcile(f Forge, clock Clocker, desired DesiredReviewState, pre Preconditions) (PublicationReceipt, error) {
+	var preambleOps []Operation
+	if desired.Summary != nil {
+		op, err := reconcileSummaryPreamble(f, clock, desired)
+		if err != nil {
+			return PublicationReceipt{}, err
+		}
+		preambleOps = append(preambleOps, op)
+	}
+
+	var receipt PublicationReceipt
+	var err error
 	switch {
 	case desired.ClearSlot != nil:
-		return reconcileClearSlot(f, clock, desired)
+		receipt, err = reconcileClearSlot(f, clock, desired)
 	case desired.Thread != nil:
-		return reconcileThread(f, clock, desired)
+		receipt, err = reconcileThread(f, clock, desired)
 	case desired.Approve && desired.Merge != nil:
-		return reconcileApproveMerge(f, clock, desired, pre)
+		receipt, err = reconcileApproveMerge(f, clock, desired, pre)
 	default:
 		return PublicationReceipt{}, ErrUnsupportedDecision
 	}
+	if err != nil {
+		return PublicationReceipt{}, err
+	}
+	if len(preambleOps) == 0 {
+		return receipt, nil
+	}
+	all := append(preambleOps, receipt.Operations...)
+	return receiptOf(all...), nil
+}
+
+// reconcileSummaryPreamble implements P3-E5 step 2 (list bot notes) then step 3
+// (upsert the one summary-comment in place). It runs before the mutually
+// exclusive Thread | ClearSlot | Approve path when desired.Summary is set.
+func reconcileSummaryPreamble(f Forge, clock Clocker, desired DesiredReviewState) (Operation, error) {
+	if _, err := f.ListBotNotes(desired.Project, desired.MR); err != nil {
+		return Operation{}, fmt.Errorf("forge: list bot notes: %w", err)
+	}
+	return reconcileSummary(f, clock, desired)
+}
+
+func reconcileSummary(f Forge, clock Clocker, desired DesiredReviewState) (Operation, error) {
+	summary := desired.Summary
+	note, err := f.UpsertComment(desired.Project, desired.MR, summary.Marker, summary.Body)
+	if err != nil {
+		return Operation{}, fmt.Errorf("forge: upsert summary: %w", err)
+	}
+	return Operation{
+		Kind:        kindThread,
+		TargetID:    note.ID,
+		PerformedAt: rfc3339(clock),
+	}, nil
 }
 
 // reconcileThread posts exactly one resolvable thread for the REVIEW slot, or

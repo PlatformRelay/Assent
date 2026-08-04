@@ -22,7 +22,7 @@ import (
 // per-value citation to the frozen fixture line. Reconcile is a PER-SLOT port
 // (DesiredReviewState carries exactly one Thread), so a multi-slot fixture is
 // replayed one finding-thread slot at a time and the artifact deltas are summed;
-// the summary-comment has no Reconcile path and is out of this model.
+// the summary-comment slot is published via the additive Summary preamble (E8-S12).
 
 // ---- rerun-idempotence.yaml markers (run1.artifactsCreated) ----
 
@@ -68,12 +68,21 @@ func rerunCommentMarker() forge.Marker {
 }
 
 // desiredThreadFor builds a per-slot DesiredReviewState for the given marker —
-// one call to Reconcile publishes one slot (the port is per-slot).
-func desiredThreadFor(m forge.Marker) forge.DesiredReviewState {
+// one call to Reconcile publishes one slot (the port is per-slot). When summary
+// is non-nil the E8-S12 publication preamble upserts the summary slot first.
+func desiredThreadFor(m forge.Marker, summary *forge.DesiredSummary) forge.DesiredReviewState {
 	return forge.DesiredReviewState{
 		Project: proj,
 		MR:      mrIID,
 		Thread:  &forge.DesiredThread{Marker: m, Body: "obligation not proven"},
+		Summary: summary,
+	}
+}
+
+func rerunSummary() *forge.DesiredSummary {
+	return &forge.DesiredSummary{
+		Marker: summaryMarker(),
+		Body:   "placeholder summary",
 	}
 }
 
@@ -90,17 +99,19 @@ func TestReconcileReplaysP3E5Fixtures(t *testing.T) {
 		// note/9001 `resolved: true`, line 62) — so this run must exercise the
 		// state-table row-3 PRESERVE-RESOLUTION branch (line 71), not re-open or
 		// re-derive it. note/9002 stays unresolved (row 2, leave-untouched). The
-		// summary-comment note/9000 has no Reconcile path and is not seeded.
+		// summary-comment note/9000 is seeded and updated in place via Summary preamble.
 		f := fake.New(botID, "src", "tgt", "sha256:merge")
+		f.SeedNote("note/9000", botID, summaryMarker(), "old summary")
 		f.SeedThread("note/9001", botID, rerunChallengeMarker(), true) // reviewer-resolved
 		f.SeedThread("note/9002", botID, rerunCommentMarker(), false)
 
-		before := f.ThreadCount()
+		beforeThreads := f.ThreadCount()
+		beforeSummaries := f.SummaryNoteCount()
 
 		// run2: re-publish BOTH slots with the identical DesiredReviewState.
 		slots := []forge.Marker{rerunChallengeMarker(), rerunCommentMarker()}
 		for _, m := range slots {
-			r, err := forge.Reconcile(f, testClock(), desiredThreadFor(m), forge.Preconditions{})
+			r, err := forge.Reconcile(f, testClock(), desiredThreadFor(m, rerunSummary()), forge.Preconditions{})
 			if err != nil {
 				t.Fatalf("Reconcile(%s): %v", m.Slot.Rule, err)
 			}
@@ -110,9 +121,15 @@ func TestReconcileReplaysP3E5Fixtures(t *testing.T) {
 		}
 
 		// expected.newArtifactsCreated: 0 (line 82) — every slot already occupied.
-		newArtifacts := f.ThreadCount() - before
+		newArtifacts := f.ThreadCount() - beforeThreads
 		if newArtifacts != 0 {
-			t.Fatalf("rerun must create zero new artifacts, created %d", newArtifacts)
+			t.Fatalf("rerun must create zero new thread artifacts, created %d", newArtifacts)
+		}
+		if got := f.SummaryNoteCount() - beforeSummaries; got != 0 {
+			t.Fatalf("rerun must not create a new summary note, created %d", got)
+		}
+		if got := f.NoteBody("note/9000"); got != "placeholder summary" {
+			t.Fatalf("summary must be updated in place (summaryUpdated: true), got %q", got)
 		}
 		// expected.duplicateSlotOccupancy: 0 (line 83) — exactly the two seeded
 		// bot threads remain, one per slot.
@@ -131,9 +148,9 @@ func TestReconcileReplaysP3E5Fixtures(t *testing.T) {
 	t.Run("crash-then-rerun/gap-fill-one-slot", func(t *testing.T) {
 		// Pre-state = crash-then-rerun.yaml step2ExistingArtifacts: run1 crashed
 		// after creating the challenge finding-thread (note/7001) and the summary
-		// (note/7000, no Reconcile path — not seeded). The comment slot was never
-		// reached, so no artifact exists for it.
+		// (note/7000). The comment slot was never reached, so no artifact exists for it.
 		f := fake.New(botID, "src", "tgt", "sha256:merge")
+		f.SeedNote("note/7000", botID, crashSummaryMarker(), "crash summary")
 		f.SeedThread("note/7001", botID, crashChallengeMarker(), false)
 
 		before := f.ThreadCount()
@@ -142,7 +159,7 @@ func TestReconcileReplaysP3E5Fixtures(t *testing.T) {
 		// -> idempotent, zero new; the comment slot has no occupant -> one create.
 		var created int
 		for _, m := range []forge.Marker{crashChallengeMarker(), crashCommentMarker()} {
-			r, err := forge.Reconcile(f, testClock(), desiredThreadFor(m), forge.Preconditions{})
+			r, err := forge.Reconcile(f, testClock(), desiredCrashThreadFor(m), forge.Preconditions{})
 			if err != nil {
 				t.Fatalf("Reconcile(%s): %v", m.Slot.Rule, err)
 			}
@@ -200,6 +217,32 @@ func crashCommentMarker() forge.Marker {
 		Occurrence: occCrashComment,
 		Decision:   decHex,
 		Artifact:   forge.Artifact{Kind: "finding-thread", SchemaVersion: "v1alpha1"},
+	}
+}
+
+func crashSummaryMarker() forge.Marker {
+	return forge.Marker{
+		Slot: forge.Slot{
+			Project: "platform/orders-service",
+			MR:      "551",
+			Rule:    "assent/summary",
+			Effect:  "comment",
+		},
+		Occurrence: decHex,
+		Decision:   decHex,
+		Artifact:   forge.Artifact{Kind: "summary-comment", SchemaVersion: "v1alpha1"},
+	}
+}
+
+func desiredCrashThreadFor(m forge.Marker) forge.DesiredReviewState {
+	return forge.DesiredReviewState{
+		Project: "platform/orders-service",
+		MR:      "551",
+		Thread:  &forge.DesiredThread{Marker: m, Body: "obligation not proven"},
+		Summary: &forge.DesiredSummary{
+			Marker: crashSummaryMarker(),
+			Body:   "placeholder summary",
+		},
 	}
 }
 

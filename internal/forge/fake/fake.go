@@ -25,6 +25,7 @@ type Forge struct {
 	BotAuthor string
 
 	threads []forge.Thread
+	notes   []forge.Note
 
 	// Current forge CAS state: the source/target SHA and merge-result digest the
 	// forge currently holds. MergeCAS accepts only if the desired pins all match
@@ -89,6 +90,17 @@ func (f *Forge) SeedThread(id, author string, marker forge.Marker, resolved bool
 	})
 }
 
+// SeedNote records a pre-existing bot or contributor MR note for summary-port
+// tests. Author identity governs whether ListBotNotes returns it.
+func (f *Forge) SeedNote(id, author string, marker forge.Marker, body string) {
+	f.notes = append(f.notes, forge.Note{
+		ID:     id,
+		Marker: marker,
+		Author: author,
+		Body:   body,
+	})
+}
+
 func (f *Forge) noteMutation() { f.mutationsSinceList++ }
 
 // ListBotThreads returns only threads authored by the configured bot — the
@@ -110,6 +122,48 @@ func (f *Forge) ListBotThreads(_, _ string) ([]forge.Thread, error) {
 	}
 	f.mutationsSinceList = 0
 	return out, nil
+}
+
+// ListBotNotes returns only notes authored by the configured bot — the same
+// author-identity filter as ListBotThreads (ADR-0019).
+func (f *Forge) ListBotNotes(_, _ string) ([]forge.Note, error) {
+	var out []forge.Note
+	for _, n := range f.notes {
+		if n.Author == f.BotAuthor {
+			out = append(out, n)
+		}
+	}
+	return out, nil
+}
+
+// UpsertComment creates or edits-in-place exactly one summary-comment note per
+// MR. When a bot note with artifact.kind summary-comment already exists, its
+// body is updated and the same forge id is returned — never a second note.
+func (f *Forge) UpsertComment(_, _ string, marker forge.Marker, body string) (forge.Note, error) {
+	for i := range f.notes {
+		if f.notes[i].Author != f.BotAuthor {
+			continue
+		}
+		if f.notes[i].Marker.Artifact.Kind != marker.Artifact.Kind {
+			continue
+		}
+		if marker.Artifact.Kind == "summary-comment" {
+			f.notes[i].Marker = marker
+			f.notes[i].Body = body
+			f.noteMutation()
+			return f.notes[i], nil
+		}
+	}
+	f.seq++
+	n := forge.Note{
+		ID:     fmt.Sprintf("note/%d", 8000+f.seq),
+		Marker: marker,
+		Author: f.BotAuthor,
+		Body:   body,
+	}
+	f.notes = append(f.notes, n)
+	f.noteMutation()
+	return n, nil
 }
 
 // CurrentHeads returns the forge's current source SHA, target SHA and
@@ -229,6 +283,27 @@ func (f *Forge) IsResolved(id string) bool {
 		}
 	}
 	return false
+}
+
+// SummaryNoteCount returns bot-authored notes with artifact.kind summary-comment.
+func (f *Forge) SummaryNoteCount() int {
+	n := 0
+	for _, note := range f.notes {
+		if note.Author == f.BotAuthor && note.Marker.Artifact.Kind == "summary-comment" {
+			n++
+		}
+	}
+	return n
+}
+
+// NoteBody returns the stored body for a note id (test assertion helper).
+func (f *Forge) NoteBody(id string) string {
+	for _, n := range f.notes {
+		if n.ID == id {
+			return n.Body
+		}
+	}
+	return ""
 }
 
 // static assertion that the fake implements the port.
