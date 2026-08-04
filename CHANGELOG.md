@@ -22,6 +22,7 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - build(deps): bump github/codeql-action/init from 4.37.3 to 4.37.4
 - build(deps): bump github/codeql-action/analyze to 4.37.4 to match init
 - build(deps): bump golang.org/x/text from 0.39.0 to 0.40.0
+- :wrench: chore(release): wire changelog-verify into task check
 
 ### Documentation
 - :memo: docs: design round 2 — effects/routing/modes/config/ports ADRs, Apache-2.0, walkthrough, naming
@@ -120,6 +121,8 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :memo: docs(e9): address review — deps, S07 split, counts
 - :memo: docs(e9): restore E8 marker + changelog drift REQ
 - :memo: chore(release): seed CHANGELOG.md from git-cliff
+- :memo: chore(release): refresh CHANGELOG.md with lane commits
+- :memo: chore(release): refresh CHANGELOG.md for lane tip
 
 ### Features
 - :sparkles: examples: onFail branches — one predicate, both outcomes, quota case explained (P1-7)
@@ -325,6 +328,7 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :recycle: refactor(lint): reverse fact-model convention to Option B (value at .value) — D-051 supersedes D-049
 - :recycle: refactor(examples): conform pack corpus to strict loader + D-051 facts (P5-E3-C)
 - :recycle: refactor(forge/conformance): move S09 harness into *_test.go
+- :recycle: refactor(release): keep changelog-verify out of task check
 
 ### Security
 - :lock: docs(adr): provider trust model, authority matrix, resource limits, positions (security review A-03/A-04/A-05, P2-11)
