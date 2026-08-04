@@ -469,26 +469,130 @@ func TestCoverNilOnFailureFailsSafe(t *testing.T) {
 	}
 }
 
-// TestCoverFileEventsRejected — the E1-deferred fileEvents match domain is
-// rejected (Cover errors), never silently treated as matching nothing.
-func TestCoverFileEventsRejected(t *testing.T) {
-	pol := &policy.MergePolicy{
+// TestMatchChangesFileEventsDisjoint — REQ-EFE-S01-03. The fileEvents matcher
+// selects a whole-file (path=="") add/delete iff kind ∈ kinds AND the file glob
+// matches; and domain disjointness holds BOTH ways — a value-glob domain never
+// selects a path=="" file-event, and fileEvents never selects a path!="" value
+// change. The value-domain guards are guard-DEPENDENT here (glob "**" matches ""):
+// absent the ch.Path!="" guard these cases would leak.
+func TestMatchChangesFileEventsDisjoint(t *testing.T) {
+	fileAdd := EvalChange{Subject: "file:topics/orders.yaml", File: "topics/orders.yaml", Path: "", Kind: "add"}
+	fileDelete := EvalChange{Subject: "file:topics/orders.yaml", File: "topics/orders.yaml", Path: "", Kind: "delete"}
+	fileModify := EvalChange{Subject: "file:topics/orders.yaml", File: "topics/orders.yaml", Path: "", Kind: "modify"}
+	valueAdd := EvalChange{Subject: "topics/orders.yaml", File: "topics/orders.yaml", Path: "/partitions", Kind: "add"}
+
+	feAddDelete := policy.Match{FileEvents: &policy.FileEventsMatch{Paths: []string{"topics/*.yaml"}, Kinds: []string{"add", "delete"}}}
+	feDeleteOnly := policy.Match{FileEvents: &policy.FileEventsMatch{Paths: []string{"topics/*.yaml"}, Kinds: []string{"delete"}}}
+	feWrongGlob := policy.Match{FileEvents: &policy.FileEventsMatch{Paths: []string{"schemas/*.yaml"}, Kinds: []string{"add", "delete"}}}
+	files := policy.Match{Files: &policy.FilesMatch{Paths: []string{"topics/*.yaml"}}}
+	values := policy.Match{Values: &policy.ValuesMatch{Pointers: []string{"**"}}}
+	valueChanges := policy.Match{ValueChanges: &policy.ValueChangesMatch{Pointers: []string{"**"}, Kinds: []string{"add"}}}
+
+	cases := []struct {
+		name    string
+		m       policy.Match
+		changes []EvalChange
+		want    int
+	}{
+		{"fileEvents selects the whole-file add", feAddDelete, []EvalChange{fileAdd}, 1},
+		{"fileEvents selects the whole-file delete", feAddDelete, []EvalChange{fileDelete}, 1},
+		{"fileEvents kind not in kinds -> no select", feDeleteOnly, []EvalChange{fileAdd}, 0},
+		{"fileEvents glob does not match -> no select", feWrongGlob, []EvalChange{fileAdd}, 0},
+		// disjoint direction 1: fileEvents never selects a value-level (path!="") change.
+		{"fileEvents does not select a value-level add", feAddDelete, []EvalChange{valueAdd}, 0},
+		// disjoint direction 2: value domains never select a path=="" file-event
+		// (guard-dependent — files ignores path; values/valueChanges globs match "").
+		{"files does not select a path=='' add", files, []EvalChange{fileAdd}, 0},
+		{"files does not select a path=='' delete", files, []EvalChange{fileDelete}, 0},
+		{"values does not select a path=='' modify", values, []EvalChange{fileModify}, 0},
+		{"valueChanges does not select a path=='' add", valueChanges, []EvalChange{fileAdd}, 0},
+		// sanity: the value domains DO still select their value-level change.
+		{"files still selects a value-level change", files, []EvalChange{valueAdd}, 1},
+		{"valueChanges still selects a value-level add", valueChanges, []EvalChange{valueAdd}, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := matchChanges(tc.m, tc.changes)
+			if err != nil {
+				t.Fatalf("matchChanges: %v", err)
+			}
+			if len(got) != tc.want {
+				t.Fatalf("selected %d, want %d (%+v)", len(got), tc.want, got)
+			}
+		})
+	}
+}
+
+// TestCoverFileEventsEndToEnd — REQ-EFE-S01-05. Driving Cover with a fileEvents
+// rule over a hand-built whole-file EvalChange proves the domain through the full
+// decision path: a whole-file ADD proves the obligation -> APPROVE; a whole-file
+// DELETE fails the obligation fail-safe -> REVIEW; a `when` that reads new on a
+// delete errors -> REVIEW (fail-safe). This also confirms bindLeafActivation
+// binds a file-event (nil old/new/entry, path=="", string kind/file) unchanged.
+func TestCoverFileEventsEndToEnd(t *testing.T) {
+	// prove.when: kind != "delete" proves the obligation for an add, fails for a delete.
+	polKind := &policy.MergePolicy{
 		Spec: policy.MergePolicySpec{
 			Rules: []policy.Rule{{
-				Name:      "fe",
+				Name:      "topic-lifecycle",
 				Phase:     policy.PhaseEnforce,
-				Match:     policy.Match{FileEvents: &policy.FileEventsMatch{Paths: []string{"**"}, Kinds: []string{"delete"}}},
-				Prove:     &policy.Prove{Obligation: "ownership", When: policy.AssertTree{Leaf: &policy.Leaf{CEL: "true"}}},
-				OnFailure: &policy.OnFailure{Effect: policy.EffectBlock, Code: "c"},
+				Match:     policy.Match{FileEvents: &policy.FileEventsMatch{Paths: []string{"topics/*.yaml"}, Kinds: []string{"add", "delete"}}},
+				Prove:     &policy.Prove{Obligation: "reviewed-deletion", When: policy.AssertTree{Leaf: &policy.Leaf{CEL: `kind != "delete"`}}},
+				OnFailure: &policy.OnFailure{Effect: policy.EffectRequireReview, Code: "topic.deletion-needs-review"},
 			}},
 		},
 	}
-	bind := &policy.Binding{Require: []string{"ownership"}}
-	in := &EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{
-		{Subject: "s:1", File: "a.yaml", Path: "", Kind: "delete"},
+	bind := &policy.Binding{Require: []string{"reviewed-deletion"}, Environment: "prod"}
+	subject := "file:topics/orders.yaml"
+
+	addIn := &EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{
+		{Subject: subject, File: "topics/orders.yaml", Path: "", Kind: "add"},
 	}}}
-	if _, err := Cover(pol, bind, in); err == nil {
-		t.Fatal("match.fileEvents must be rejected by Cover")
+	got, err := Cover(polKind, bind, addIn)
+	if err != nil {
+		t.Fatalf("Cover(add): %v", err)
+	}
+	if got.Decision != DecisionApprove {
+		t.Fatalf("whole-file add proves reviewed-deletion -> want APPROVE, got %q (%+v)", got.Decision, got.Findings)
+	}
+
+	delIn := &EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{
+		{Subject: subject, File: "topics/orders.yaml", Path: "", Kind: "delete"},
+	}}}
+	got, err = Cover(polKind, bind, delIn)
+	if err != nil {
+		t.Fatalf("Cover(delete): %v", err)
+	}
+	if got.Decision != DecisionReview {
+		t.Fatalf("whole-file delete must fail safe -> want REVIEW, got %q (%+v)", got.Decision, got.Findings)
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Effect != EffectRequireReview || got.Findings[0].Subject != subject {
+		t.Fatalf("want one require-review finding on %q, got %+v", subject, got.Findings)
+	}
+
+	// A `when` that reads `new` on a delete (new is nil) errors -> predicate.error
+	// -> REVIEW (fail-safe) — proving the existing binding binds a file-event's nil
+	// old/new/entry with no evaluate.go change.
+	polReadsNew := &policy.MergePolicy{
+		Spec: policy.MergePolicySpec{
+			Rules: []policy.Rule{{
+				Name:      "topic-lifecycle-reads-new",
+				Phase:     policy.PhaseEnforce,
+				Match:     policy.Match{FileEvents: &policy.FileEventsMatch{Paths: []string{"topics/*.yaml"}, Kinds: []string{"delete"}}},
+				Prove:     &policy.Prove{Obligation: "reviewed-deletion", When: policy.AssertTree{Leaf: &policy.Leaf{CEL: `new.enabled == true`}}},
+				OnFailure: &policy.OnFailure{Effect: policy.EffectBlock, Code: "unreached"},
+			}},
+		},
+	}
+	got, err = Cover(polReadsNew, bind, delIn)
+	if err != nil {
+		t.Fatalf("Cover(reads-new): %v", err)
+	}
+	if got.Decision != DecisionReview {
+		t.Fatalf("reading new on a delete must error -> REVIEW (fail-safe), got %q (%+v)", got.Decision, got.Findings)
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Code != "predicate.error" {
+		t.Fatalf("want one predicate.error require-review finding, got %+v", got.Findings)
 	}
 }
 

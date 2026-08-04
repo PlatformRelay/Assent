@@ -18,8 +18,14 @@ type schemaValidator interface {
 }
 
 // LoadMergePolicy validates raw (YAML or JSON) against the frozen MergePolicy
-// schema, then decodes it into engine types. An authored match.fileEvents
-// domain — allowed by the schema but deferred by E1 — is rejected here.
+// schema, then decodes it into engine types. A match.fileEvents domain is
+// accepted when its kinds are a subset of the whole-file lifecycle kinds the
+// engine can emit and match ({add, delete}); a kinds entry of modify or rename —
+// for which no whole-file event is ever minted (EFE-S01) — is rejected here with
+// a located error. This loader-level NARROWING sits on top of the frozen schema
+// (which still accepts the full add/modify/delete/rename enum): it closes a
+// vacuous-cover fail-open — a required obligation proven only by an un-emittable
+// kind would otherwise be silently covered -> APPROVE (Judgment call (b)).
 func LoadMergePolicy(raw []byte) (*MergePolicy, error) {
 	if err := validate("merge-policy", schemas.MergePolicySchema, raw); err != nil {
 		return nil, err
@@ -30,10 +36,22 @@ func LoadMergePolicy(raw []byte) (*MergePolicy, error) {
 	}
 	for i, r := range mp.Spec.Rules {
 		if r.Match.FileEvents != nil {
-			return nil, fmt.Errorf("merge-policy: rule %q (index %d): match.fileEvents domain is deferred (E1 fast-follow, not implemented in E2); use files, values, or valueChanges", r.Name, i)
+			for _, k := range r.Match.FileEvents.Kinds {
+				if !fileEventKindEmittable(k) {
+					return nil, fmt.Errorf("merge-policy: rule %q (index %d): match.fileEvents kind %q is not supported — only add and delete whole-file events are emitted; modify and rename are deferred", r.Name, i, k)
+				}
+			}
 		}
 	}
 	return &mp, nil
+}
+
+// fileEventKindEmittable reports whether a fileEvents kind names a whole-file
+// lifecycle event the engine can actually emit and match. Only add and delete
+// qualify (EFE-S01); modify and rename are deferred (no minting path exists), so
+// a rule naming them is rejected at load rather than left to match nothing.
+func fileEventKindEmittable(kind string) bool {
+	return kind == "add" || kind == "delete"
 }
 
 // LoadRulesetBinding validates and decodes a RulesetBinding.

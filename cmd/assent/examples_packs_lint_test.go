@@ -56,25 +56,32 @@ func TestExamplesPacksLoadAndLintClean(t *testing.T) {
 	}
 }
 
-// TestExamplesPacksKnownBlockers documents packs that lane C could NOT bring into
-// conformance because a defect BEYOND phase+facts blocks them, deliberately not
-// hacked around (per lane C's "stop and report, don't hack" rule). The assertion
-// is that the pack STILL fails to load — so when the underlying deferral is lifted
-// (or the rule re-authored), this test goes red and forces the pack into the
-// conformant set above rather than letting the blocker rot silently.
+// TestTopicRegistryLoadsAndLintsClean repoints the former D-052 known-blocker pin
+// (EFE-S01). topic-registry's `non-destructive` rule matches whole-topic DELETION
+// via `match.fileEvents{kinds:[delete]}` — the whole-file lifecycle domain E2
+// deferred. EFE-S01 lands the fileEvents loader accept (kinds ⊆ {add, delete}) +
+// engine matcher, so the pack now LOADS and lints CLEAN (lint is a STATIC
+// presence check — it never evaluates a case).
 //
-//   - topic-registry: its `non-destructive` rule matches whole-topic DELETION via
-//     `match.fileEvents{kinds:[delete]}` — the whole-file lifecycle domain the E2
-//     loader explicitly DEFERS (E1 fast-follow). topic-registry is document-mode
-//     (one topic = one file), so deletion is inherently a fileEvents event with no
-//     valueChanges analog, and the obligation is `require`d by the bindings (it
-//     cannot be dropped without failing obligation-coverage). Fixing it is a
-//     re-authoring that only becomes possible once E2 implements the fileEvents
-//     domain, so it is out of lane C's scope.
-func TestExamplesPacksKnownBlockers(t *testing.T) {
+// Honest boundary: topic-registry is NOT yet in the green *evaluated* corpus. Its
+// delete case still evaluates opaque -> REVIEW because EFE-S01 does NOT mint a
+// whole-file delete event from base/head (that is EFE-S02) and does not wire the
+// live checkout (EFE-S03). topic-registry moves into
+// TestExamplesPacksLoadAndLintClean's evaluated set at EFE-S04, not here.
+func TestTopicRegistryLoadsAndLintsClean(t *testing.T) {
 	dir := filepath.Join(examplesPacksDir, "topic-registry")
-	if _, err := loadCatalogueInput(dir); err == nil {
-		t.Fatalf("topic-registry now loads under the strict loader — the fileEvents-delete blocker appears resolved; " +
-			"re-author its non-destructive rule for E2 and move topic-registry into TestExamplesPacksLoadAndLintClean")
+
+	// LOADS: the strict loader now accepts the fileEvents{kinds:[delete]} rule.
+	if _, err := loadCatalogueInput(dir); err != nil {
+		t.Fatalf("topic-registry must load under the strict loader after EFE-S01, got: %v", err)
+	}
+
+	// LINTS CLEAN: `assent lint` exits 0 with no diagnostics (static checks only).
+	var stdout, stderr bytes.Buffer
+	if code := runLint([]string{dir}, &stdout, &stderr); code != 0 {
+		t.Fatalf("topic-registry: assent lint exit = %d, want 0; diagnostics:\n%s", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("topic-registry: a clean pack must emit no lint diagnostics, got:\n%s", stderr.String())
 	}
 }

@@ -146,22 +146,36 @@ func TestStrictDecodeRejectsUnknownAndDuplicate(t *testing.T) {
 	}
 }
 
-// REQ-E2-S01-03: an authored match.fileEvents domain (E1-deferred) is rejected
-// at load naming the deferred domain; files/values/valueChanges load normally.
-func TestFileEventsDomainRejectedAtLoad(t *testing.T) {
-	base := `{
+// fileEventsPolicyBase is the shared MergePolicy skeleton whose single rule's
+// match is substituted per case. Used by the EFE-S01 loader tests below.
+const fileEventsPolicyBase = `{
   "apiVersion": "assent.dev/v1alpha1",
   "kind": "MergePolicy",
   "metadata": {"name": "t"},
   "spec": {"rules": [{"name": "r", "phase": "enforce", "match": {%s}, "effect": "comment"}]}
 }`
-	fileEvents := strings.Replace(base, "%s", `"fileEvents": {"paths": ["topics/**"], "kinds": ["delete"]}`, 1)
-	_, err := policy.LoadMergePolicy([]byte(fileEvents))
-	if err == nil {
-		t.Fatal("expected match.fileEvents to be rejected")
-	}
-	if !strings.Contains(err.Error(), "fileEvents") {
-		t.Errorf("rejection must name the fileEvents domain, got: %v", err)
+
+// REQ-EFE-S01-01: a match.fileEvents domain whose kinds ⊆ {add, delete} now
+// LOADS (superseding E2's REQ-E2-S01-03 whole-domain reject) and surfaces
+// Match.FileEvents.{Paths,Kinds}; files/values/valueChanges still load normally.
+func TestFileEventsAddDeleteAcceptedAtLoad(t *testing.T) {
+	for _, kinds := range []string{`["add"]`, `["delete"]`, `["add", "delete"]`} {
+		doc := strings.Replace(fileEventsPolicyBase, "%s",
+			`"fileEvents": {"paths": ["topics/**"], "kinds": `+kinds+`}`, 1)
+		mp, err := policy.LoadMergePolicy([]byte(doc))
+		if err != nil {
+			t.Fatalf("fileEvents kinds %s must load, got: %v", kinds, err)
+		}
+		fe := mp.Spec.Rules[0].Match.FileEvents
+		if fe == nil {
+			t.Fatalf("kinds %s: Match.FileEvents not surfaced", kinds)
+		}
+		if len(fe.Paths) != 1 || fe.Paths[0] != "topics/**" {
+			t.Errorf("kinds %s: paths not surfaced, got %v", kinds, fe.Paths)
+		}
+		if len(fe.Kinds) == 0 {
+			t.Errorf("kinds %s: kinds not surfaced", kinds)
+		}
 	}
 
 	for _, ok := range []string{
@@ -169,10 +183,42 @@ func TestFileEventsDomainRejectedAtLoad(t *testing.T) {
 		`"values": {"pointers": ["/partitions"]}`,
 		`"valueChanges": {"pointers": ["/partitions"], "kinds": ["modify"]}`,
 	} {
-		doc := strings.Replace(base, "%s", ok, 1)
+		doc := strings.Replace(fileEventsPolicyBase, "%s", ok, 1)
 		if _, err := policy.LoadMergePolicy([]byte(doc)); err != nil {
 			t.Errorf("supported match %s must load, got: %v", ok, err)
 		}
+	}
+}
+
+// REQ-EFE-S01-02: a match.fileEvents whose kinds names modify or rename (not a
+// subset of {add, delete}) is REJECTED at load with a located error naming the
+// rule and the offending kind — the vacuous-cover fail-open closer (Judgment
+// call (b)). The frozen schema still accepts the enum; the loader narrows.
+func TestFileEventsModifyRenameRejectedAtLoad(t *testing.T) {
+	for _, bad := range []string{"modify", "rename"} {
+		doc := strings.Replace(fileEventsPolicyBase, "%s",
+			`"fileEvents": {"paths": ["topics/**"], "kinds": ["`+bad+`"]}`, 1)
+		_, err := policy.LoadMergePolicy([]byte(doc))
+		if err == nil {
+			t.Fatalf("fileEvents kind %q must be rejected at load", bad)
+		}
+		if !strings.Contains(err.Error(), "fileEvents") {
+			t.Errorf("kind %q: error must name the fileEvents domain, got: %v", bad, err)
+		}
+		if !strings.Contains(err.Error(), bad) {
+			t.Errorf("kind %q: error must name the offending kind, got: %v", bad, err)
+		}
+		if !strings.Contains(err.Error(), `"r"`) {
+			t.Errorf("kind %q: error must locate the offending rule, got: %v", bad, err)
+		}
+	}
+
+	// A mixed kinds list containing an un-emittable kind is rejected too (the
+	// add/delete members do not launder the modify member into acceptance).
+	doc := strings.Replace(fileEventsPolicyBase, "%s",
+		`"fileEvents": {"paths": ["topics/**"], "kinds": ["add", "modify"]}`, 1)
+	if _, err := policy.LoadMergePolicy([]byte(doc)); err == nil {
+		t.Fatal("fileEvents kinds [add, modify] must be rejected (modify is un-emittable)")
 	}
 }
 

@@ -443,20 +443,47 @@ func subjectsOf(matched []EvalChange) []string {
 }
 
 // matchChanges returns, in input order, the changes the rule's match domain
-// selects. An unsupported (fileEvents) or absent match domain is an error — the
-// loader should have rejected it, so reaching here is a policy defect, not a
-// fail-open "matches nothing".
+// selects. An absent match domain is an error — the loader should have rejected
+// it, so reaching here is a policy defect, not a fail-open "matches nothing".
+//
+// The domains are DISJOINT on the whole-file discriminator ch.Path (== "" for a
+// whole-file event, != "" for a value-level change; evaluation-input.schema.json
+// $defs.change.path). fileEvents selects ONLY whole-file (path=="") events; the
+// value-level domains (files/values/valueChanges) select ONLY value-level
+// (path!="") changes. This disjointness is a fail-safety invariant enforced in
+// BOTH directions: a value glob can never select a whole-file event, and
+// fileEvents can never select a value-level add/delete. It is a no-op on every
+// change the differ mints today (all have path!="").
 func matchChanges(m policy.Match, changes []EvalChange) ([]EvalChange, error) {
 	switch {
 	case m.FileEvents != nil:
-		return nil, fmt.Errorf("match.fileEvents is deferred (E1 fast-follow); use files, values, or valueChanges")
+		fe := m.FileEvents
+		return selectMatched(changes, func(ch EvalChange) bool {
+			// Whole-file discriminator: a fileEvents rule selects ONLY a whole-file
+			// event (path==""), never a value-level change (disjointness direction 1).
+			if ch.Path != "" {
+				return false
+			}
+			if !contains(fe.Kinds, ch.Kind) {
+				return false
+			}
+			return matchesAnyGlob(fe.Paths, ch.File)
+		}), nil
 	case m.Files != nil:
 		return selectMatched(changes, func(ch EvalChange) bool {
+			// Value-level domain: never selects a whole-file event (path==""), so a
+			// file glob cannot poach a fileEvents change (disjointness direction 2).
+			if ch.Path == "" {
+				return false
+			}
 			return matchesAnyGlob(m.Files.Paths, ch.File)
 		}), nil
 	case m.ValueChanges != nil:
 		vc := m.ValueChanges
 		return selectMatched(changes, func(ch EvalChange) bool {
+			if ch.Path == "" { // value-level only (disjointness direction 2)
+				return false
+			}
 			// pointers are GLOBS over the field pointer (ch.Path), consistent with
 			// E1's classify.MatchValuePointers and internal/glob — an authored
 			// pointer like "/config/*/enabled" is valid (the schema imposes no
@@ -482,6 +509,9 @@ func matchChanges(m policy.Match, changes []EvalChange) ([]EvalChange, error) {
 			return nil, fmt.Errorf("match.values declares neither pointers nor paths")
 		}
 		return selectMatched(changes, func(ch EvalChange) bool {
+			if ch.Path == "" { // value-level only (disjointness direction 2)
+				return false
+			}
 			if ch.Kind != kindModify {
 				return false
 			}
@@ -494,7 +524,7 @@ func matchChanges(m policy.Match, changes []EvalChange) ([]EvalChange, error) {
 			return true
 		}), nil
 	default:
-		return nil, fmt.Errorf("rule match declares no supported domain (files, values, or valueChanges)")
+		return nil, fmt.Errorf("rule match declares no supported domain (files, values, valueChanges, or fileEvents)")
 	}
 }
 

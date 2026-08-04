@@ -291,17 +291,39 @@ const kindModify = "modify"
 
 // ruleMatchesAny reports whether the rule's match domain selects >=1 change. It
 // MIRRORS aggregate.matchChanges (internal/core/aggregate/coverage.go) — the SAME
-// files/values/valueChanges glob semantics + the same implied kind:modify for the
-// values domain — so the harness's "did this rule apply" agrees with what the engine
-// actually evaluated. An unsupported (fileEvents) or absent domain is an ERROR
-// (fail-closed), exactly as the engine's matchChanges errors: reaching it means a
-// policy defect the loader should have rejected, never a fail-open "matched nothing".
+// files/values/valueChanges glob semantics, the same implied kind:modify for the
+// values domain, the same fileEvents whole-file (path=="") selection, and the same
+// both-way domain disjointness on ch.Path — so the harness's "did this rule apply"
+// agrees byte-for-byte with what the engine actually evaluated. An absent domain
+// is an ERROR (fail-closed), exactly as the engine's matchChanges errors: reaching
+// it means a policy defect the loader should have rejected, never a fail-open
+// "matched nothing".
 func ruleMatchesAny(m policy.Match, changes []aggregate.EvalChange) (bool, error) {
 	switch {
 	case m.FileEvents != nil:
-		return false, fmt.Errorf("match.fileEvents is deferred (E1 fast-follow); unsupported for coverage")
+		fe := m.FileEvents
+		for i := range changes {
+			ch := changes[i]
+			// Whole-file discriminator: fileEvents selects ONLY a whole-file event
+			// (path==""), never a value-level change (disjointness direction 1).
+			if ch.Path != "" {
+				continue
+			}
+			if !containsStr(fe.Kinds, ch.Kind) {
+				continue
+			}
+			if matchesAnyGlob(fe.Paths, ch.File) {
+				return true, nil
+			}
+		}
+		return false, nil
 	case m.Files != nil:
 		for i := range changes {
+			// Value-level domain: never selects a whole-file event (path==""), so a
+			// file glob cannot poach a fileEvents change (disjointness direction 2).
+			if changes[i].Path == "" {
+				continue
+			}
 			if matchesAnyGlob(m.Files.Paths, changes[i].File) {
 				return true, nil
 			}
@@ -311,6 +333,9 @@ func ruleMatchesAny(m policy.Match, changes []aggregate.EvalChange) (bool, error
 		vc := m.ValueChanges
 		for i := range changes {
 			ch := changes[i]
+			if ch.Path == "" { // value-level only (disjointness direction 2)
+				continue
+			}
 			if !matchesAnyGlob(vc.Pointers, ch.Path) {
 				continue
 			}
@@ -332,6 +357,9 @@ func ruleMatchesAny(m policy.Match, changes []aggregate.EvalChange) (bool, error
 		}
 		for i := range changes {
 			ch := changes[i]
+			if ch.Path == "" { // value-level only (disjointness direction 2)
+				continue
+			}
 			if ch.Kind != kindModify {
 				continue
 			}
@@ -345,7 +373,7 @@ func ruleMatchesAny(m policy.Match, changes []aggregate.EvalChange) (bool, error
 		}
 		return false, nil
 	default:
-		return false, fmt.Errorf("rule match declares no supported domain (files, values, or valueChanges)")
+		return false, fmt.Errorf("rule match declares no supported domain (files, values, valueChanges, or fileEvents)")
 	}
 }
 

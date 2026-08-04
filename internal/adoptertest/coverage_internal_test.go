@@ -15,11 +15,13 @@ import (
 // matched-nothing (a false "covered", the exact failure --coverage exists to
 // prevent) goes RED instead of shipping green.
 
-// TestRuleMatchesAnyDomains covers the four match domains (files, values,
-// valueChanges, fileEvents) — with both a matching and a non-matching change where
-// applicable — and the THREE fail-closed error branches (fileEvents → error,
-// values with no selector → error, no-domain → error), each asserting an ERROR
-// (never a silent false), per D-059's "a match-derivation defect errors the gate".
+// TestRuleMatchesAnyDomains covers the value-level match domains (files, values,
+// valueChanges) — with both a matching and a non-matching change where applicable
+// — and the TWO fail-closed error branches (values with no selector → error,
+// no-domain → error), each asserting an ERROR (never a silent false), per D-059's
+// "a match-derivation defect errors the gate". The fileEvents domain (no longer a
+// fail-closed error since EFE-S01) has its own selection + disjointness coverage
+// in TestRuleMatchesAnyFileEventsDisjoint / TestRuleMatchesAnyMirrorsEngineFileEvents.
 func TestRuleMatchesAnyDomains(t *testing.T) {
 	// changes reused across cases: a modify of /partitions in config.json, and an add
 	// of /name in other.json.
@@ -96,12 +98,6 @@ func TestRuleMatchesAnyDomains(t *testing.T) {
 
 		// --- fail-closed error branches (D-059) ---
 		{
-			name:    "fileEvents domain errors (deferred, unsupported)",
-			match:   policy.Match{FileEvents: &policy.FileEventsMatch{Kinds: []string{"delete"}}},
-			changes: both,
-			wantErr: true,
-		},
-		{
 			name:    "values with neither pointers nor paths errors (never a wildcard)",
 			match:   policy.Match{Values: &policy.ValuesMatch{}},
 			changes: both,
@@ -129,6 +125,109 @@ func TestRuleMatchesAnyDomains(t *testing.T) {
 			}
 			if got != tc.wantMatch {
 				t.Fatalf("match = %v, want %v", got, tc.wantMatch)
+			}
+		})
+	}
+}
+
+// fileEventsMirrorCase is one shared (match, changes, wantMatch) row driving both
+// the mirror-only disjointness test and the engine-agreement test below.
+type fileEventsMirrorCase struct {
+	name      string
+	match     policy.Match
+	changes   []aggregate.EvalChange
+	wantMatch bool
+}
+
+// fileEventsMirrorCases is the shared EFE-S01 table: fileEvents selection plus
+// domain disjointness in BOTH directions. Value-domain globs use "**" (which
+// matches both the empty pointer and a real pointer), so the path=="" disjointness
+// rows are guard-DEPENDENT — absent the ch.Path!="" guard they would leak.
+func fileEventsMirrorCases() []fileEventsMirrorCase {
+	fileAdd := aggregate.EvalChange{Subject: "file:topics/orders.yaml", File: "topics/orders.yaml", Path: "", Kind: "add"}
+	fileDelete := aggregate.EvalChange{Subject: "file:topics/orders.yaml", File: "topics/orders.yaml", Path: "", Kind: "delete"}
+	fileModify := aggregate.EvalChange{Subject: "file:topics/orders.yaml", File: "topics/orders.yaml", Path: "", Kind: "modify"}
+	valueAdd := aggregate.EvalChange{Subject: "topics/orders.yaml", File: "topics/orders.yaml", Path: "/partitions", Kind: "add"}
+
+	feAddDelete := policy.Match{FileEvents: &policy.FileEventsMatch{Paths: []string{"topics/*.yaml"}, Kinds: []string{"add", "delete"}}}
+	feDeleteOnly := policy.Match{FileEvents: &policy.FileEventsMatch{Paths: []string{"topics/*.yaml"}, Kinds: []string{"delete"}}}
+	feWrongGlob := policy.Match{FileEvents: &policy.FileEventsMatch{Paths: []string{"schemas/*.yaml"}, Kinds: []string{"add", "delete"}}}
+	files := policy.Match{Files: &policy.FilesMatch{Paths: []string{"topics/*.yaml"}}}
+	values := policy.Match{Values: &policy.ValuesMatch{Pointers: []string{"**"}}}
+	valueChanges := policy.Match{ValueChanges: &policy.ValueChangesMatch{Pointers: []string{"**"}, Kinds: []string{"add"}}}
+
+	return []fileEventsMirrorCase{
+		{"fileEvents selects whole-file add", feAddDelete, []aggregate.EvalChange{fileAdd}, true},
+		{"fileEvents selects whole-file delete", feAddDelete, []aggregate.EvalChange{fileDelete}, true},
+		{"fileEvents kind not in kinds", feDeleteOnly, []aggregate.EvalChange{fileAdd}, false},
+		{"fileEvents glob no match", feWrongGlob, []aggregate.EvalChange{fileAdd}, false},
+		{"fileEvents does not select value-level add", feAddDelete, []aggregate.EvalChange{valueAdd}, false},
+		{"files does not select path=='' add", files, []aggregate.EvalChange{fileAdd}, false},
+		{"files does not select path=='' delete", files, []aggregate.EvalChange{fileDelete}, false},
+		{"values does not select path=='' modify", values, []aggregate.EvalChange{fileModify}, false},
+		{"valueChanges does not select path=='' add", valueChanges, []aggregate.EvalChange{fileAdd}, false},
+		{"files still selects value-level change", files, []aggregate.EvalChange{valueAdd}, true},
+		{"valueChanges still selects value-level add", valueChanges, []aggregate.EvalChange{valueAdd}, true},
+	}
+}
+
+// TestRuleMatchesAnyFileEventsDisjoint — REQ-EFE-S01-03 (mirror side). The E6
+// mirror implements the identical fileEvents + path=="" selection and both-way
+// disjointness the engine matcher does.
+func TestRuleMatchesAnyFileEventsDisjoint(t *testing.T) {
+	for _, tc := range fileEventsMirrorCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ruleMatchesAny(tc.match, tc.changes)
+			if err != nil {
+				t.Fatalf("ruleMatchesAny: %v", err)
+			}
+			if got != tc.wantMatch {
+				t.Fatalf("mirror match = %v, want %v", got, tc.wantMatch)
+			}
+		})
+	}
+}
+
+// TestRuleMatchesAnyMirrorsEngineFileEvents — REQ-EFE-S01-04. The load-bearing E6
+// mirror (ruleMatchesAny) agrees with the real engine matcher on every fileEvents
+// + disjointness case. The engine's selection is observed through aggregate.Cover:
+// a matched change under a when:false / onFailure:block enforce rule yields a
+// non-APPROVE decision; an unmatched rule leaves the (covered) obligation
+// non-firing -> APPROVE. Any drift between mirror and engine (a false "covered",
+// the exact failure --coverage exists to prevent) fails here.
+func TestRuleMatchesAnyMirrorsEngineFileEvents(t *testing.T) {
+	for _, tc := range fileEventsMirrorCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			mirror, err := ruleMatchesAny(tc.match, tc.changes)
+			if err != nil {
+				t.Fatalf("ruleMatchesAny: %v", err)
+			}
+
+			pol := &policy.MergePolicy{
+				Spec: policy.MergePolicySpec{
+					Rules: []policy.Rule{{
+						Name:      "r",
+						Phase:     policy.PhaseEnforce,
+						Match:     tc.match,
+						Prove:     &policy.Prove{Obligation: "o", When: policy.AssertTree{Leaf: &policy.Leaf{CEL: "false"}}},
+						OnFailure: &policy.OnFailure{Effect: policy.EffectBlock, Code: "c"},
+					}},
+				},
+			}
+			bind := &policy.Binding{Require: []string{"o"}}
+			in := &aggregate.EvaluationInput{ChangeSet: aggregate.ChangeSet{Changes: tc.changes}}
+			res, err := aggregate.Cover(pol, bind, in)
+			if err != nil {
+				t.Fatalf("aggregate.Cover: %v", err)
+			}
+			// A matched when:false change fires block -> non-APPROVE; 0 matched leaves
+			// the covered obligation non-firing -> APPROVE.
+			engine := res.Decision != aggregate.DecisionApprove
+			if engine != mirror {
+				t.Fatalf("engine matched=%v but mirror matched=%v (decision=%q)", engine, mirror, res.Decision)
+			}
+			if mirror != tc.wantMatch {
+				t.Fatalf("mirror match = %v, want %v", mirror, tc.wantMatch)
 			}
 		})
 	}
