@@ -1,0 +1,14 @@
+apiVersion: assent.dev/v1alpha1
+kind: Config
+environments:
+  - name: prod
+    match: { paths: ["topics/prod/**"] }
+  - name: dev
+    match: { paths: ["topics/**"] }
+classes:
+  - name: kafka-topic
+    match: { paths: ["topics/**/*.yaml"] }
+providers:
+  author:
+    type: builtin/gitlab-groups
+    failure: closed

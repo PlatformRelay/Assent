@@ -150,9 +150,11 @@ func TestCorePurity(t *testing.T) {
 	// "../change" is the sibling differ tree, "../glob" is the shared glob
 	// matcher the decision path (aggregate coverage) depends on for determinism,
 	// and "../lint" is the E3 policy-lint check library (pure: it takes
-	// already-read bytes/types, all I/O lives in cmd/assent) — all guarded pure
-	// (no clock/rand/env/net).
-	for _, dir := range []string{".", "../change", "../glob", "../lint"} {
+	// already-read bytes/types, all I/O lives in cmd/assent); "../catalogue" is
+	// the E3-S07 generated rule catalogue (pure: it walks already-loaded policy.*
+	// types, the `.assent/**` walk + loader calls live in cmd/assent) — all
+	// guarded pure (no clock/rand/env/net).
+	for _, dir := range []string{".", "../change", "../glob", "../lint", "../catalogue"} {
 		vs := scanTree(t, dir)
 		if len(vs) > 0 {
 			sort.Slice(vs, func(i, j int) bool { return vs[i].pos < vs[j].pos })

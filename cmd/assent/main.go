@@ -63,6 +63,16 @@ func run(args []string) int {
 		// error diagnostic so a policy defect fails CI before it reaches an MR.
 		return runLint(args[1:], os.Stdout, os.Stderr)
 	}
+	if len(args) > 0 && args[0] == "catalogue" {
+		// `assent catalogue <dir>` (E3-S07): discover the repo's `.assent/**` tree,
+		// load every policy document via the E2 strict loader, and emit the pure
+		// internal/catalogue generated rule catalogue (D-017 B10) as JSON on stdout
+		// for the docs pipeline. The directory walk + loader calls (the only I/O)
+		// live in runCatalogue; the generator is pure. A distinct subcommand, NOT
+		// `assent lint --catalogue` — generation is a docs artifact, not a gate
+		// (D-048).
+		return runCatalogue(args[1:], os.Stdout, os.Stderr)
+	}
 	if len(args) > 0 && args[0] == "doctor" {
 		// Precondition/arming report (ADR-0015 §4/§8, ADR-0017 §9). The env
 		// boundary lives here (readPipelineDescription); Doctor is pure and

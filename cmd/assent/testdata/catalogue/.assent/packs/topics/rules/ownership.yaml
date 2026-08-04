@@ -1,0 +1,23 @@
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: topics-ownership
+spec:
+  entries:
+    kafka-topic:
+      mode: document
+      root: ""
+      identity:
+        pointer: /name
+  rules:
+    - name: author-owns-entry
+      phase: enforce
+      match:
+        files:
+          paths: ["topics/**/*.yaml"]
+      prove:
+        obligation: ownership
+        when: "entry.owner in facts.author.groups"
+      onFailure:
+        effect: require-review
+        code: ownership.unauthorized

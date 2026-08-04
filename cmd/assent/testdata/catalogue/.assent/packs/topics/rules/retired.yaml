@@ -1,0 +1,12 @@
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: topics-retired
+spec:
+  rules:
+    - name: legacy-naming
+      phase: off
+      match:
+        files:
+          paths: ["topics/**/*.yaml"]
+      effect: comment
