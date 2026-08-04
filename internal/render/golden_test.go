@@ -120,7 +120,7 @@ func TestGenerateRenderGolden(t *testing.T) {
 			t.Fatalf("%s: RenderFindingThread: %v", name, err)
 		}
 		out := filepath.Join(dir, "expect.finding-thread.md")
-		if err := os.WriteFile(out, []byte(normalizeGoldenMarkdown(got)), 0o600); err != nil { // #nosec G306 -- golden refresh; path is fixture tree
+		if err := os.WriteFile(out, []byte(normalizeGoldenMarkdown(got)), 0o600); err != nil { //nolint:gosec // G306/G703 — golden refresh; out is under fixed renderExamplesRoot/<case>/
 			t.Fatalf("%s: write expect: %v", name, err)
 		}
 		if !bytes.HasSuffix([]byte(got), []byte("\n")) {
