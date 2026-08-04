@@ -61,7 +61,7 @@ tasks:
         done
 
   check:
-    desc: "Gate: fmt + vet + lint + test + build + changelog sync (must pass before every commit)"
+    desc: "Gate: fmt + vet + lint + test + build (must pass before every commit)"
     cmds:
       - task: fmt
       - task: vet
@@ -69,7 +69,6 @@ tasks:
       - task: test
       - task: coverage
       - task: build
-      - task: changelog-verify
 
   determinism:
     desc: "Determinism gate (E7-S04): double-run engine + conformance goldens (-count=2); mirrors verify.yaml"

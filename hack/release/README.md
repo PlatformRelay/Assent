@@ -13,9 +13,17 @@ template emits **categorized subject lines only — no commit SHAs** (D-101, oss
 | --- | --- |
 | `task changelog` | Preview the **Unreleased** section (stdout) |
 | `task changelog-write` | Regenerate `CHANGELOG.md` from tags + unreleased commits |
-| `bash hack/release/verify-changelog.sh` | Fail closed if `CHANGELOG.md` drifts from `cliff.toml` output |
+| `task changelog-verify` | Fail closed if `CHANGELOG.md` drifts from `cliff.toml` output (release gate) |
+| `bash hack/release/verify-changelog.sh` | Same check as `task changelog-verify` (script entry point) |
 
-CI and pre-release gates should run `verify-changelog.sh` (or `task changelog-verify` when wired).
+**Not in `task check`:** regenerating `CHANGELOG.md` is a separate commit (`task changelog-write`).
+Running verify inside every local `task check` would chicken-egg — any commit after
+`changelog-write` fails until the next regeneration. Instead:
+
+- **Local / PR:** run `task changelog-verify` (or `bash hack/release/changelog_test.sh`) when
+  touching release docs or before opening a release-prep PR.
+- **CI (E9-S05):** the release workflow and/or `verify.yaml` changelog job will run
+  `task changelog-verify` on PRs and main — not bundled into the standard `task check` path.
 
 ### Release workflow hook (E9-S05)
 
