@@ -17,3 +17,8 @@ func IsForgeGroupsType(typ string) bool {
 		return false
 	}
 }
+
+// IsResourceOwnerType reports whether typ is the resource→owner builtin.
+func IsResourceOwnerType(typ string) bool {
+	return typ == TypeResourceOwner
+}

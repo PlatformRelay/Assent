@@ -1,0 +1,5 @@
+# Hermetic ownership registry for L0 resource→owner tests (REQ-E5-S08-01).
+owners:
+  kafka-topic:orders.events.v1: team-orders
+  kafka-topic:payments.settled.v2: team-payments
+  service-catalog:orders-api: platform-team
