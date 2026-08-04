@@ -187,6 +187,56 @@ func TestUpdateRefusedInCI(t *testing.T) {
 	}
 }
 
+// underCoveredRepo is a pack whose single enforce obligation rule has ONLY a proving
+// case (within-cap) and no failing case — so `--coverage` must fail it.
+const underCoveredRepo = "testdata/coverage/undercovered"
+
+// TestCoverageCommandExitCodes (REQ-E6-S07-03) proves `assent test --coverage` exit
+// codes end-to-end: 0 on a pack where every enforce obligation rule is exercised in
+// BOTH polarities, non-zero on an under-covered pack, with a deterministic report
+// naming the missing polarity.
+func TestCoverageCommandExitCodes(t *testing.T) {
+	t.Run("a fully both-polarity pack exits 0", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runTest([]string{"--coverage", adopterRepo}, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0 (every rule both-polarity)\nstdout:%s\nstderr:%s", code, stdout.String(), stderr.String())
+		}
+		out := stdout.String()
+		if !strings.Contains(out, "COVERED  capped/partitions-within-cap") {
+			t.Fatalf("stdout missing the COVERED line:\n%s", out)
+		}
+		if !strings.Contains(out, "coverage: OK") {
+			t.Fatalf("stdout missing the OK summary:\n%s", out)
+		}
+	})
+
+	t.Run("an under-covered pack exits non-zero naming the missing failing polarity", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runTest([]string{"--coverage", underCoveredRepo}, &stdout, &stderr)
+		if code == 0 {
+			t.Fatalf("exit = 0, want non-zero (a rule is missing its failing polarity)\nstdout:%s", stdout.String())
+		}
+		out := stdout.String()
+		if !strings.Contains(out, "MISSING  capped/partitions-within-cap") || !strings.Contains(out, "no failing case") {
+			t.Fatalf("stdout must name the rule and its missing failing polarity:\n%s", out)
+		}
+		if !strings.Contains(out, "coverage: FAIL") {
+			t.Fatalf("stdout missing the FAIL summary:\n%s", out)
+		}
+	})
+
+	t.Run("the coverage report double-runs byte-identical", func(t *testing.T) {
+		var a, b bytes.Buffer
+		var e1, e2 bytes.Buffer
+		runTest([]string{"--coverage", adopterRepo}, &a, &e1)
+		runTest([]string{"--coverage", adopterRepo}, &b, &e2)
+		if a.String() != b.String() {
+			t.Fatalf("coverage output not byte-identical across runs:\n#1 %s\n#2 %s", a.String(), b.String())
+		}
+	})
+}
+
 // readCaseFile reads a case file's bytes for a byte-identity assertion.
 func readCaseFile(t *testing.T, path string) []byte {
 	t.Helper()

@@ -207,12 +207,36 @@ type Outcome struct {
 // S01 case stays byte-identical). With no entries, no MR, and a nil Approval, this
 // is exactly the S01 Cover path.
 func Evaluate(c Case) (aggregate.Result, error) {
+	in, decidable, err := assemble(c)
+	if err != nil {
+		return aggregate.Result{}, err
+	}
+	if !decidable {
+		// Mirror the CLI run path's undecidable guard (run.go's decide): an opaque OR
+		// EMPTY changeset is fail-safe REVIEW, never a silent APPROVE.
+		return aggregate.Result{Decision: aggregate.DecisionReview}, nil
+	}
+	res, err := aggregate.CoverWithApproval(c.Policy, c.Bind, &in, c.Approval)
+	if err != nil {
+		return aggregate.Result{}, fmt.Errorf("cover %q: %w", c.Name, err)
+	}
+	return res, nil
+}
+
+// assemble builds the case's EvaluationInput from the base/↔head/ diff, the
+// stubbed resolved facts, and the reconstructed entry tree — the pure input side
+// shared by Evaluate and the S07 coverage witness (RunCaseCoverage), so the
+// coverage path sees the EXACT same ChangeSet and Result the plain run does.
+// decidable is false for an OPAQUE or EMPTY changeset (an undecidable input):
+// Cover treats a 0-change set as "the obligation does not apply" and reduces to a
+// VACUOUS APPROVE, so both callers map decidable==false to the fail-safe outcome
+// (REVIEW / no exercised rule) rather than a silent pass. The field check also
+// hardens the opaque arm rather than relying solely on the Opaque⟹ErrOpaque
+// invariant.
+func assemble(c Case) (in aggregate.EvaluationInput, decidable bool, err error) {
 	cfg, entered := singleEntryConfig(c.Policy)
 
-	var (
-		cs  change.ChangeSet
-		err error
-	)
+	var cs change.ChangeSet
 	if entered {
 		cs, err = change.DiffEntries(c.File, c.Base, c.Head, cfg)
 	} else {
@@ -220,22 +244,16 @@ func Evaluate(c Case) (aggregate.Result, error) {
 	}
 	if err != nil {
 		// The differ returns a wrapped ErrOpaque alongside the fail-safe ChangeSet;
-		// that is an undecidable INPUT, not a harness failure -> REVIEW.
+		// that is an undecidable INPUT, not a harness failure.
 		if errors.Is(err, change.ErrOpaque) {
-			return aggregate.Result{Decision: aggregate.DecisionReview}, nil
+			return aggregate.EvaluationInput{}, false, nil
 		}
-		return aggregate.Result{}, fmt.Errorf("diff %s: %w", c.File, err)
+		return aggregate.EvaluationInput{}, false, fmt.Errorf("diff %s: %w", c.File, err)
 	}
-	// Mirror the CLI run path's undecidable guard (run.go's decide): an opaque OR
-	// EMPTY changeset is fail-safe REVIEW, never a silent APPROVE. Cover treats a
-	// 0-change set as "the obligation does not apply" and reduces to APPROVE — a
-	// VACUOUS pass (a no-op base==head case) in a harness whose whole job is to prove
-	// a policy was actually exercised. The field check also hardens the opaque arm
-	// above rather than relying solely on the Opaque⟹ErrOpaque invariant.
 	if cs.Opaque || len(cs.Changes) == 0 {
-		return aggregate.Result{Decision: aggregate.DecisionReview}, nil
+		return aggregate.EvaluationInput{}, false, nil
 	}
-	in := evaldecode.BuildEvaluationInput(cs, c.MR, requireOf(c.Bind))
+	in = evaldecode.BuildEvaluationInput(cs, c.MR, requireOf(c.Bind))
 	if len(c.Facts) > 0 {
 		in.Facts = c.Facts
 	}
@@ -246,11 +264,7 @@ func Evaluate(c Case) (aggregate.Result, error) {
 		// stays nil (scalar fallback), never a partial/permissive entry (REQ-07).
 		populateEntries(&in, cs, c, cfg)
 	}
-	res, err := aggregate.CoverWithApproval(c.Policy, c.Bind, &in, c.Approval)
-	if err != nil {
-		return aggregate.Result{}, fmt.Errorf("cover %q: %w", c.Name, err)
-	}
-	return res, nil
+	return in, true, nil
 }
 
 // RunCase evaluates the case, asserts the produced Decision equals expect.yaml's
@@ -265,6 +279,15 @@ func RunCase(c Case) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, fmt.Errorf("case %q: %w", c.Name, err)
 	}
+	return outcomeFrom(c, res)
+}
+
+// outcomeFrom builds the case Outcome from an already-produced Result: it asserts
+// the coarse decision first, then appends the S03 matcher's finding/absent/score
+// reasons. Shared by RunCase and RunCaseCoverage (S07) so a single evaluation
+// yields the same Outcome on both paths. A fail-closed matcher error (an
+// unevaluable findings[].path assertion, D-054) propagates — never a silent pass.
+func outcomeFrom(c Case, res aggregate.Result) (Outcome, error) {
 	actual := string(res.Decision)
 
 	var reasons []string

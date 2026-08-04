@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/PlatformRelay/assent/internal/adoptertest"
+	"github.com/PlatformRelay/assent/internal/catalogue"
 	"github.com/PlatformRelay/assent/internal/core/policy"
 )
 
@@ -31,16 +32,25 @@ import (
 // 2 = usage/discovery/CI-guard refusal.
 func runTest(args []string, stdout, stderr io.Writer) int {
 	update := false
+	coverage := false
 	var positional []string
 	for _, a := range args {
-		if a == "--update" {
+		switch a {
+		case "--update":
 			update = true
-			continue
+		case "--coverage":
+			coverage = true
+		default:
+			positional = append(positional, a)
 		}
-		positional = append(positional, a)
+	}
+	// --coverage is a READ-ONLY completeness gate (S07): it never writes goldens, so
+	// it supersedes --update (and its CI write-guard) when both are passed.
+	if coverage {
+		update = false
 	}
 	if len(positional) < 1 || positional[0] == "" {
-		_, _ = fmt.Fprintln(stderr, "assent test: a directory argument is required (usage: assent test [--update] <repo>)")
+		_, _ = fmt.Fprintln(stderr, "assent test: a directory argument is required (usage: assent test [--update] [--coverage] <repo>)")
 		return 2
 	}
 	dir := positional[0]
@@ -83,6 +93,13 @@ func runTest(args []string, stdout, stderr io.Writer) int {
 	if len(cases) == 0 {
 		_, _ = fmt.Fprintln(stderr, "assent test: no .assent/tests/** cases found under", dir)
 		return 2
+	}
+
+	// --coverage (S07): the both-polarity completeness gate runs its own case walk
+	// (RunCaseCoverage) so it can attribute each PASSING case's polarities, then gates
+	// on every enforce obligation rule being tested in BOTH polarities. Read-only.
+	if coverage {
+		return runCoverage(dir, policies, bind, cases, in, stdout, stderr)
 	}
 
 	anyFail := false
@@ -205,6 +222,131 @@ func runTest(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// runCoverage is the `assent test --coverage` both-polarity completeness gate (S07,
+// the run-time counterpart to E3-S06's static tests-per-rule presence check). It
+// walks the same directory + inline cases as the plain run (RunCaseCoverage), and
+// for every PASSING case accumulates which enforce obligation rules it witnessed
+// firing (failing polarity) and proven-silent (proving polarity). It then reports,
+// per rule, whether BOTH polarities were exercised, and exits non-zero if any rule
+// is missing one (or if any case failed / errored). The gate is fail-safe toward
+// NOT-covered (D-059): an unwitnessed polarity is never assumed covered.
+func runCoverage(dir string, policies map[string]*policy.MergePolicy, bind *policy.Binding, cases []discoveredCase, in catalogue.Input, stdout, stderr io.Writer) int {
+	// Enforce obligation rule UNIVERSE from the catalogue (D-059): only an
+	// enforce-effective-phase obligation rule can both drive a finding and satisfy an
+	// obligation, so both-polarity applies to it; off/observe/non-obligation rules are
+	// excluded (requiring both-polarity for a rule that cannot fire enforcing would make
+	// the gate un-satisfiable). enforceOblByPack scopes the universe per pack for the
+	// per-case witness.
+	cat := catalogue.Build(in)
+	var universe []adoptertest.CoverageRule
+	enforceOblByPack := map[string]map[string]bool{}
+	for _, re := range cat.Rules {
+		if re.EffectivePhase != "enforce" || re.Obligation == "" {
+			continue
+		}
+		universe = append(universe, adoptertest.CoverageRule{Pack: re.Pack, Rule: re.Rule})
+		if enforceOblByPack[re.Pack] == nil {
+			enforceOblByPack[re.Pack] = map[string]bool{}
+		}
+		enforceOblByPack[re.Pack][re.Rule] = true
+	}
+
+	anyFail := false
+	var credits []adoptertest.CoverageCredit
+	accumulate := func(pack string, out adoptertest.Outcome, w adoptertest.CaseWitness, exp adoptertest.Expectation) {
+		if !out.Pass {
+			// A case whose own assertions did not hold is not valid coverage evidence
+			// (and fails the run in its own right); print the located diff UX.
+			anyFail = true
+			report, rerr := adoptertest.RenderFailure(exp, out)
+			if rerr != nil {
+				_, _ = fmt.Fprintf(stderr, "assent test: %s: render failure: %v\n", out.Name, rerr)
+				return
+			}
+			_, _ = fmt.Fprint(stdout, report)
+			return
+		}
+		_, _ = fmt.Fprintf(stdout, "PASS %s (%s)\n", out.Name, out.Actual)
+		for _, r := range w.Failing {
+			credits = append(credits, adoptertest.CoverageCredit{Pack: pack, Rule: r, Failing: true})
+		}
+		for _, r := range w.Proving {
+			credits = append(credits, adoptertest.CoverageCredit{Pack: pack, Rule: r, Proving: true})
+		}
+	}
+
+	for _, cf := range cases {
+		pol, ok := policies[cf.pack]
+		if !ok {
+			_, _ = fmt.Fprintf(stderr, "assent test: %s: no pack %q loaded under .assent/packs/**\n", cf.name, cf.pack)
+			anyFail = true
+			continue
+		}
+		facts, ferr := adoptertest.MapFacts(cf.factsRaw)
+		if ferr != nil {
+			_, _ = fmt.Fprintf(stderr, "assent test: %s: %v\n", cf.name, ferr)
+			anyFail = true
+			continue
+		}
+		out, w, rerr := adoptertest.RunCaseCoverage(adoptertest.Case{
+			Name:   cf.name,
+			Policy: pol,
+			Bind:   bind,
+			File:   cf.file,
+			Base:   cf.base,
+			Head:   cf.head,
+			Facts:  facts,
+			Expect: cf.expect,
+		}, enforceOblByPack[cf.pack])
+		if rerr != nil {
+			_, _ = fmt.Fprintf(stderr, "assent test: %s: %v\n", cf.name, rerr)
+			anyFail = true
+			continue
+		}
+		accumulate(cf.pack, out, w, cf.expect)
+	}
+
+	inlineFiles, err := discoverInlineCasesFiles(dir)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "assent test:", err)
+		return 2
+	}
+	for _, icf := range inlineFiles {
+		pol, ok := policies[icf.pack]
+		if !ok {
+			_, _ = fmt.Fprintf(stderr, "assent test: %s/cases.yaml: no pack %q loaded under .assent/packs/**\n", icf.pack, icf.pack)
+			anyFail = true
+			continue
+		}
+		inlineCases, lerr := adoptertest.LoadInlineCases(icf.raw, pol, bind)
+		if lerr != nil {
+			_, _ = fmt.Fprintf(stderr, "assent test: %s/cases.yaml: %v\n", icf.pack, lerr)
+			anyFail = true
+			continue
+		}
+		for _, c := range inlineCases {
+			c.Name = icf.pack + "/" + c.Name
+			out, w, rerr := adoptertest.RunCaseCoverage(c, enforceOblByPack[icf.pack])
+			if rerr != nil {
+				_, _ = fmt.Fprintf(stderr, "assent test: %s: %v\n", c.Name, rerr)
+				anyFail = true
+				continue
+			}
+			accumulate(icf.pack, out, w, c.Expect)
+		}
+	}
+
+	rep := adoptertest.BuildCoverageReport(universe, credits)
+	_, _ = fmt.Fprint(stdout, adoptertest.RenderCoverage(rep))
+	if !rep.Complete() {
+		anyFail = true
+	}
+	if anyFail {
+		return 1
+	}
+	return 0
+}
+
 // inlineCasesFile is one discovered `.assent/tests/<pack>/cases.yaml`: its pack (the
 // first path segment under tests/) and its raw bytes. The pure library strict-decodes
 // the bytes and assembles the cases.
@@ -219,14 +361,13 @@ type inlineCasesFile struct {
 // up — the two discovery paths are disjoint.
 func discoverInlineCasesFiles(dir string) ([]inlineCasesFile, error) {
 	root := filepath.Join(dir, ".assent", "tests")
-	// #nosec G703 -- dir is an operator-supplied CLI path to their own repo, read-only.
-	info, err := os.Stat(root)
+	info, err := os.Stat(root) // #nosec G703 -- dir is an operator-supplied CLI path to their own repo, read-only.
 	if err != nil || !info.IsDir() {
 		return nil, nil // no tests tree ⇒ no inline cases (the directory path already reported it)
 	}
 
 	// Collect the (pack, path) pairs in the walk; read the bytes AFTER it, so the file
-	// read is not a race-prone operation inside the WalkDir callback (gosec G122).
+	// read is not done inside the WalkDir callback.
 	type located struct{ pack, path string }
 	var found []located
 	// #nosec G703 -- operator-supplied local path, read-only walk.
