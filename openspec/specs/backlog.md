@@ -359,7 +359,7 @@ in verify, optional kind lab (D-038), L3 live harness (absorbs E4-S11). REQ IDs
 | --- | --- | --- | --- | --- |
 | E7-S01 | Spike-B e2e profile: `task e2e-vet` + operator docs | **[autonomous]** | P4-E1-S09, P2-E2 | e2e wiring cannot rot; **do first** |
 | E7-S02 | Sample-repo generator: seed all three `examples/repos/` shapes | **[autonomous]** | E7-S01, P1-E1 | L3 seeding without hand-copy |
-| E7-S03 | ⚠️ Conformance catalog + remaining hermetic adversarial cases (§4 pipeline, §8 fork advisory, §4 max_age arming) | **[autonomous · engine-grade]** | E4-S07..S10, E7-S01 | ADR-0005 executable catalog |
+| E7-S03 | ⚠️ Conformance catalog + new hermetic adversarial cases (§4 pipeline **catalog-index E4-S05-05**, §8 fork advisory, §4 max_age arming) | **[autonomous · engine-grade]** | E4-S05..S10, E7-S01 | ADR-0005 executable catalog |
 | E7-S04 | Determinism gate: explicit CI `-count=2` step | **[autonomous]** | E4 conformance, E2-S10 | closes P4-E1-S12 CI gap |
 | E7-S05 | Security jobs: sanitization in verify + confirm gitleaks/e2e-vet | **[autonomous]** | P1-E1-S01-02, E7-S01 | D-002 hygiene in CI |
 | E7-S06 | kind local lab scaffold (`task kind-up/down`) | **[infra-gated: docker+kind]** | E7-S01, S02 | D-038 local demo (optional) |
@@ -367,7 +367,7 @@ in verify, optional kind lab (D-038), L3 live harness (absorbs E4-S11). REQ IDs
 | E7-S08 | Exit gate: autonomous infra wired + catalog green | **[autonomous · engine-grade]** | E7-S01..S05, S03 | **the E7 autonomous exit gate** |
 
 **Dependency order**: S01 → S02 → S03 → {S04 ∥ S05} → S08; S06 after S01 when operator claims
-kind lab; S07 after S02+S03 when infra available. **Judgment calls D-080–D084** in
+kind lab; S07 after S02+S03 when infra available. **Judgment calls D-080–D086** in
 `docs/decisions/decisions.md`. **Do first: S01** (smallest wiring slice, unblocks generator +
 docs).
 

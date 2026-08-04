@@ -65,15 +65,22 @@ the autonomous critical path. Logged **D-083**.
 (e) **DECIDED — Conformance catalog is forge-neutral; GitHub adapter cases are stubbed.** Each
 case records `gitlab | both | github-deferred`; live GitHub proof waits for E10 unlock. Logged
 **D-084**.
+(f) **DECIDED — Catalog lives at `internal/forge/conformance/catalog.yaml`.** Co-located with the
+executable suite (ADR-0005); not under `docs/contracts/` (that tree is frozen fixture prose).
+Logged **D-085**.
+(g) **DECIDED — `.github/workflows/verify.yaml` is the authoritative CI superset** (determinism,
+sanitization, e2e-vet, gitleaks, race tests, coverage). `task check` stays the local pre-commit
+unit gate (fmt/vet/lint/test/coverage/build) and is **not** extended to duplicate verify-only
+steps — PR merge requires verify green. Logged **D-086**.
 
 **Dependency order**: **S01 → S02 → S03 → {S04 ∥ S05} → S08**; **S06** after S01 when operator
 claims kind lab; **S07** after S02 + S03 when infra available (may reuse E4-S11 evidence).
 **Closes P4-E1-S12 CI wiring gap: S04. Closes P1-E1-S01-02 sanitization-in-CI gap: S05.**
 
-**Coordination note:** S03 may add `cmd/assent/*conformance*` or `doctor_*` tests — stay
-file-disjoint from active E8 lanes; prefer extending `internal/forge/conformance` for forge-
-local cases and `cmd/assent/run_*` only for run-path trust-boundary cases already patterned in
-E4-S08.
+**Coordination note:** S03 adds catalog rows for tests outside `internal/forge/conformance`
+(e.g. `cmd/assent/doctor_forge_test.go`, `run_self_vouch_test.go`) — **catalog-index only**,
+no duplicate §4 doctor test. New run-path cases (§8, §4 max_age) follow E4-S08 patterns in
+`cmd/assent/run_*`.
 
 **Engine-grade / fail-safety review:** S03 (adversarial catalog cases), S07 (live SHA-guard +
 self-vouch replay), S08 (exit gate).
@@ -141,17 +148,21 @@ Requirements:
 with hermetic proof where possible **so that** ADR-0005 is the executable port definition and later
 epics know where L3 cases live.
 
-**Goal**: (1) Add `internal/forge/conformance/catalog.yaml` (or `docs/contracts/forge-conformance/catalog.yaml`)
+**Goal**: (1) Add `internal/forge/conformance/catalog.yaml` (judgment call (f), **D-085**)
 listing each case: id, ADR clause, level (L1/L3), REQ id, test function, forge scope
-(`gitlab|both|github-deferred`). Index all E4-S07–S09 + S08 cases. (2) Implement **new hermetic**
-cases not yet catalogued:
-- **ADR-0015 §4** — unprotected pipeline config → doctor `ArmEligible=false` (httptest Snapshot).
+(`gitlab|both|github-deferred`). Index all E4-S05–S09 + S08 cases, including E4-only tests
+outside `internal/forge/conformance` (e.g. doctor, run self-vouch). (2) Implement **new hermetic**
+cases not yet covered by any green test:
 - **ADR-0015 §8** — fork/untrusted contributor context → run path performs **zero** forge writes
   (advisory-only).
 - **ADR-0017 §4** — controlling fact past `facts.max_age` → arming blocked (injected clock;
-  `cmd/assent` or aggregate test, catalogued alongside forge cases).
+  `cmd/assent` test, catalogued alongside forge cases).
 
-Do **not** duplicate E4 SHA-guard / P3-E5 replay / self-vouch tests — reference them in the catalog.
+**Catalog-index only (no duplicate test):** **ADR-0015 §4** unprotected pipeline → index existing
+**REQ-E4-S05-05** / `TestDoctorForgeInsecureCITopology` in `cmd/assent/doctor_forge_test.go`.
+
+Do **not** duplicate E4 SHA-guard / P3-E5 replay / self-vouch / §4 pipeline tests — reference them
+in the catalog.
 
 **Dependencies**: E4-S07–S10 (existing cases), E7-S01.
 
@@ -162,9 +173,11 @@ Requirements:
 - **REQ-E7-S03-01** — catalog indexes E4 SHA-guard cases with REQ-E4-S07-* ids and test names.
   Test: catalog file; Verify:
   `grep -q TestConformanceTargetAdvancedRejected internal/forge/conformance/catalog.yaml`; Level: doc
-- **REQ-E7-S03-02** *(fail-safe · ADR-0015 §4)* — doctor reports `ArmEligible=false` when pipeline
-  config is author-editable (forge probe). Test: `cmd/assent/doctor_pipeline_test.go`; Verify:
-  `go test ./cmd/assent/... -run TestDoctorUnprotectedPipelineBlocksArming`; Level: L1
+- **REQ-E7-S03-02** *(catalog-index · ADR-0015 §4)* — catalog row indexes **REQ-E4-S05-05** /
+  `TestDoctorForgeInsecureCITopology` (author-editable-only CI → insecure topology /
+  `ArmEligible=false`); **no new duplicate doctor test**. Test: `catalog.yaml`; Verify:
+  `grep -q TestDoctorForgeInsecureCITopology internal/forge/conformance/catalog.yaml &&
+  grep -q REQ-E4-S05-05 internal/forge/conformance/catalog.yaml`; Level: doc
 - **REQ-E7-S03-03** *(fail-safe · ADR-0015 §8)* — fork/untrusted MR context → zero Approve/Merge/
   Reconcile writes. Test: `cmd/assent/run_authority_test.go`; Verify:
   `go test ./cmd/assent/... -run TestRunForkContextAdvisoryOnly`; Level: L1
@@ -181,10 +194,16 @@ Requirements:
 **As a** maintainer **I want** a named CI step that double-runs engine + conformance goldens
 **so that** nondeterminism fails the PR gate visibly (P4-E1-S12, GUIDELINES §5).
 
-**Goal**: Add a verify workflow step (and `task determinism`) running a curated `-count=2` package
-list: at minimum `TestDeterminismDoubleRun`, `TestConformanceTargetAdvancedRejected`,
-`TestConformanceRerunIdempotence`, `TestD016ReproductionDoubleRunStable`, and forge receipt
-double-runs. Step name must be greppable (`determinism gate`).
+**Goal**: Add a verify workflow step (and `task determinism` local mirror) running `-count=2` over
+named packages and gate tests:
+- `./internal/core/aggregate/...` — `TestDeterminismDoubleRun`, `TestD016ReproductionDoubleRunStable`
+- `./internal/core/decision/...` — `TestReportDoubleRunStable`
+- `./internal/forge/conformance/...` — `TestConformanceTargetAdvancedRejected`,
+  `TestConformanceRerunIdempotence`, `TestConformanceDuplicateRepair`
+- `./internal/forge/...` — `TestMergeFailsClosedDoubleRun` (SHA-guard receipt)
+
+Step name must be greppable (`determinism gate`). Judgment call (g): verify.yaml is authoritative;
+`task determinism` mirrors the step for local pre-push, not `task check`.
 
 **Dependencies**: E4 conformance, E2-S10, P4-E1-S12 intent.
 
@@ -195,7 +214,7 @@ Requirements:
 - **REQ-E7-S04-01** — verify workflow contains an explicit determinism step. Test:
   `.github/workflows/verify.yaml`; Verify:
   `grep -qi determinism .github/workflows/verify.yaml`; Level: L0
-- **REQ-E7-S04-02** — step runs `./internal/...` double-run gate tests with `-count=2`. Test: same;
+- **REQ-E7-S04-02** — step runs the named packages with `-count=2` (see Goal list). Test: same;
   Verify: `task determinism`; Level: L0
 - **REQ-E7-S04-03** — injecting map-order nondeterminism would fail the gate (regression guard
   documented in test comment — existing `TestDeterminismDoubleRun`). Test:
@@ -210,8 +229,9 @@ Requirements:
 **so that** D-002 hygiene and ADR-0017 §115–116 cannot regress silently.
 
 **Goal**: Wire `hack/check-sanitization.sh` into `.github/workflows/verify.yaml`; confirm gitleaks
-step remains (already present); add `task check` optional hook or document that verify is superset.
-No new secret scanners — E9 owns further hardening.
+step remains (already present). Document that **verify is the CI superset** (judgment call (g),
+**D-086**); `task check` is not extended with verify-only steps. No new secret scanners — E9 owns
+further hardening.
 
 **Dependencies**: P1-E1-S01-02, E7-S01.
 
@@ -282,21 +302,24 @@ Requirements:
 **As a** maintainer **I want** the autonomous half of E7 proven in CI **so that** E8/E9 can
 claim L3 homes without re-litigating infra.
 
-**Goal**: (1) `task check` + verify run S04 determinism + S05 sanitization; (2) conformance
-catalog complete and every L1 case green; (3) `task e2e-vet` + generator dry-runs green; (4)
-backlog marks E7 autonomous slice closed; (5) `git diff schemas/` == 0.
+**Goal**: (1) **verify.yaml** (authoritative CI superset, D-086) enforces S04 determinism +
+S05 sanitization + e2e-vet; (2) conformance catalog complete and every L1 case green (indexed or
+new); (3) `task e2e-vet` + generator dry-runs green locally; (4) `task check` green (local unit
+gate — unchanged scope); (5) backlog marks E7 autonomous slice closed; (6) `git diff schemas/` == 0.
 
 **Dependencies**: E7-S01..S05, S03.
 
-**Definition of done**: exit-gate checklist green; D-080–D084 recorded; S06/S07 optional notes
+**Definition of done**: exit-gate checklist green; D-080–D086 recorded; S06/S07 optional notes
 in backlog.
 
 Requirements:
-- **REQ-E7-S08-01** — verify enforces determinism + sanitization + e2e-vet (S04+S05). Test: CI;
-  Verify: `task check`; Level: L1
-- **REQ-E7-S08-02** — conformance catalog lists all E4 + E7 L1 cases with green tests. Test:
-  `internal/forge/conformance/...`; Verify:
-  `go test ./internal/forge/conformance/... ./cmd/assent/... -run 'Conformance|Doctor|Authority|Arming'`; Level: L1
+- **REQ-E7-S08-01** — verify enforces determinism + sanitization + e2e-vet (S04+S05); merge
+  blocked on verify failure (D-086). Test: `.github/workflows/verify.yaml`; Verify:
+  `grep -qi determinism .github/workflows/verify.yaml &&
+  grep -q check-sanitization .github/workflows/verify.yaml`; Level: L1
+- **REQ-E7-S08-02** — conformance catalog lists all E4 + E7 L1 cases with green tests (indexed or
+  new). Test: `internal/forge/conformance/catalog.yaml`; Verify:
+  `go test ./internal/forge/conformance/... ./cmd/assent/... -run 'Conformance|ForgeInsecure|ForkContext|ExpiredFact|AssentPolicySelfModification'`; Level: L1
 - **REQ-E7-S08-03** — backlog + later-phases mark E7 spec authoritative and autonomous slice
   closable without live L3. Test: `openspec/specs/backlog.md`; Verify:
   `grep -q p5-e7-e2e-conformance/spec.md openspec/specs/backlog.md`; Level: doc
