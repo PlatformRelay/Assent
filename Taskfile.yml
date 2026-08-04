@@ -64,6 +64,11 @@ tasks:
       - task: coverage
       - task: build
 
+  e2e-vet:
+    desc: "Compile+vet all e2e-tagged packages (mirrors verify's go vet -tags e2e ./...)"
+    cmds:
+      - go vet -tags e2e ./...
+
   e2e:
     desc: E2E tests against a real GitLab (build tag e2e) — see test/e2e/README.md
     cmds:
