@@ -69,6 +69,11 @@ tasks:
     cmds:
       - go vet -tags e2e ./...
 
+  e2e-seed:
+    desc: "Seed a sample GitLab project from examples/repos/ (see hack/e2e/seed-sample-repo.sh)"
+    cmds:
+      - ./hack/e2e/seed-sample-repo.sh {{.CLI_ARGS}}
+
   e2e:
     desc: E2E tests against a real GitLab (build tag e2e) — see test/e2e/README.md
     cmds:
