@@ -104,6 +104,54 @@ func TestFindingDiffEnumeratesDeltas(t *testing.T) {
 	}
 }
 
+// TestRenderFailureRendersFindingDeltas (REQ-E6-S04-02): a case whose DECISION
+// matches but whose FINDINGS differ drives the located finding diff THROUGH
+// RenderFailure — the rendered report STRING must print each missing /
+// effect-mismatch / unexpected delta, named to the rule (covers diff.go's
+// len(deltas)>0 render branch, distinct from the findingDiff-helper unit test).
+func TestRenderFailureRendersFindingDeltas(t *testing.T) {
+	const threshold = 10
+	// Decision matches (REVIEW). Findings diverge: rule-a fired as comment (author
+	// expected block -> effect-mismatch), rule-b never fired (missing), rule-c fired
+	// but was not listed (unexpected, since exact).
+	res := result(aggregate.DecisionReview,
+		finding("rule-a", "", "comment", 0),
+		finding("rule-c", "", "comment", 0),
+	)
+	expected := Expectation{
+		Decision: "REVIEW",
+		Exact:    true,
+		Findings: []ExpectFinding{
+			{Rule: "rule-a", Effect: "block"},
+			{Rule: "rule-b", Effect: "challenge"},
+		},
+	}
+	out := Outcome{
+		Name:         "pack/finding-mismatch",
+		Pass:         false,
+		Expected:     "REVIEW",
+		Actual:       "REVIEW",
+		ActualExpect: ActualExpectation(res, threshold),
+	}
+
+	report, err := RenderFailure(expected, out)
+	if err != nil {
+		t.Fatalf("RenderFailure: %v", err)
+	}
+	if !strings.Contains(report, "  findings:\n") {
+		t.Fatalf("report missing the rendered findings section:\n%s", report)
+	}
+	for _, want := range []string{
+		"effect-mismatch:", "rule-a", // rule-a: expected block, got comment
+		"missing:", "rule-b", // rule-b never fired
+		"unexpected:", "rule-c", // rule-c fired but was not listed (exact)
+	} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("rendered report missing %q:\n%s", want, report)
+		}
+	}
+}
+
 // TestDiffOutputDoubleRunStable (REQ-E6-S04-04): the diff output is deterministic —
 // canonical ordering, double-run byte-identical, across the block and the report.
 func TestDiffOutputDoubleRunStable(t *testing.T) {
