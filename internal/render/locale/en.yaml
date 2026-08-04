@@ -1,0 +1,16 @@
+# English chrome strings for the default renderer theme (ADR-0016 §5, E8-S03).
+# Keys are stable ids consumed by E8-S08 (finding-thread) and E8-S13 (summary).
+
+resolve_thread: "Resolve this thread to confirm."
+why_this_check: "Why this check exists & how to fix"
+full_documentation: "Full documentation"
+evaluation_details: "Evaluation details"
+matched_change: "matched change"
+facts_used: "facts used"
+score_contribution: "score contribution"
+collapsed_paths: "Additional paths"
+summary_headline: "Policy evaluation"
+summary_decision: "Decision"
+summary_score: "Score"
+summary_threshold: "Threshold"
+summary_findings: "Findings"
