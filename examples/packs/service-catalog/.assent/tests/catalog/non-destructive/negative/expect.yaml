@@ -1,4 +1,4 @@
-# storefront-web removed from services[] — whole-entry removal.
+# storefront-web removed from services[] — whole-entry removal → require-review.
 decision: REVIEW
 findings:
   - rule: no-entry-removal

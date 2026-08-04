@@ -5,27 +5,13 @@
       "name": "orders-api",
       "owner": "orders-team",
       "tier": 1,
-      "oncall": "orders-rotation",
-      "endpoints": [
-        "https://orders.example.com/api"
-      ],
-      "tags": [
-        "checkout-path",
-        "public"
-      ]
+      "oncall": "orders-rotation"
     },
     {
       "name": "payments-gateway",
       "owner": "payments-team",
       "tier": 1,
-      "oncall": "payments-rotation",
-      "endpoints": [
-        "https://pay.example.com/api"
-      ],
-      "tags": [
-        "checkout-path",
-        "pci-scope"
-      ]
+      "oncall": "payments-rotation"
     }
   ]
 }

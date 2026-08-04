@@ -1,3 +1,4 @@
+# Author (orders-team) does not own storefront-web (storefront-team) → require-review.
 decision: REVIEW
 findings:
   - rule: author-owns-entry

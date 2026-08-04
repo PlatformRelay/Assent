@@ -1,6 +1,8 @@
-# Non-destructive — whole-entry removal from the multi-entry catalog file.
-# size(new) >= size(old) under /services: reorder alone still proves (identity.pointer=/name
-# keeps EntryRef stable — adversarial: reordering must not change finding subjects).
+# Non-destructive — whole-entry REMOVAL from the multi-entry catalog file requires
+# human review. Matches ENTRY-level changes (identity.pointer=/name keeps the EntryRef
+# stable, so a reorder is not a change); an entry ADD PROVES (kind != delete) and a
+# DELETE FAILS (require-review) — exercisable in BOTH polarities. A field modify lives
+# at the deeper /services/<name>/<field> pointer, so it is not matched by this rule.
 apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
 metadata:
@@ -17,14 +19,11 @@ spec:
       phase: enforce
       match:
         valueChanges:
-          pointers: ["/services"]
-          kinds: [modify]
+          pointers: ["/services/*"]
+          kinds: [add, delete]
       prove:
         obligation: non-destructive
-        when:
-          all:
-            - cel: size(new) >= size(old)
-              message: "catalog entry removal requires human review"
+        when: 'kind != "delete"'
       onFailure:
         effect: require-review
         code: destruction.forbidden

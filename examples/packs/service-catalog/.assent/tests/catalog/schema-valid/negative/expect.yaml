@@ -1,3 +1,4 @@
+# schema.valid fact false → catalog-v1 blocks.
 decision: BLOCK
 findings:
   - rule: catalog-v1

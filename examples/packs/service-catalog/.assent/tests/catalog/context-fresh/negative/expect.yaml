@@ -1,3 +1,4 @@
+# Controlling oncall fact unresolved (absent) → oncall-exists fails → require-review.
 decision: REVIEW
 findings:
   - rule: oncall-exists

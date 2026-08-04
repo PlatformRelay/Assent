@@ -1,2 +1,3 @@
+# schema.valid fact resolved true → schema-valid proves → APPROVE.
 decision: APPROVE
 findings: []

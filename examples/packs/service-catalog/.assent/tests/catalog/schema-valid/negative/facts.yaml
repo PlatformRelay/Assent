@@ -1,6 +1,7 @@
 author:
   login: alice
   groups: [orders-team]
+oncall:
+  orders_rotation: "ready"
 schema:
   valid: false
-  id: catalog/v1

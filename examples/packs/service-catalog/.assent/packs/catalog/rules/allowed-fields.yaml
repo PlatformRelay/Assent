@@ -1,5 +1,10 @@
-# Allow-listed fields — only oncall/endpoints/tags may change for automerge.
-# Sensitive pointers (/owner, /tier) escalate to require-review (P1-E2 inventory).
+# Allow-listed fields — only /oncall may change freely for automerge; a change to any
+# other field (e.g. /owner, /tier) escalates to require-review (P1-E2 inventory).
+#
+# Provable allow-list (not a constant-false deny): a matched field change PROVES when
+# the changed pointer is the safe /oncall field and FAILS (require-review) for a
+# sensitive one — so the rule is exercisable in BOTH polarities (`assent test
+# --coverage`), which a `when: false` deny predicate never is (it can only ever fire).
 apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
 metadata:
@@ -16,11 +21,11 @@ spec:
       phase: enforce
       match:
         valueChanges:
-          pointers: ["/owner", "/tier"]
+          pointers: ["/services/*/*"]
           kinds: [modify]
       prove:
         obligation: allowed-fields
-        when: "false"
+        when: 'path.endsWith("/oncall")'
       onFailure:
         effect: require-review
         code: allowed-fields.sensitive

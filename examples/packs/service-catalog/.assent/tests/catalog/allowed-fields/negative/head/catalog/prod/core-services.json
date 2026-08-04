@@ -3,41 +3,21 @@
   "services": [
     {
       "name": "orders-api",
-      "owner": "platform-team",
-      "tier": 1,
-      "oncall": "orders-rotation",
-      "endpoints": [
-        "https://orders.example.com/api"
-      ],
-      "tags": [
-        "checkout-path",
-        "public"
-      ]
+      "owner": "orders-team",
+      "tier": 2,
+      "oncall": "orders-rotation"
     },
     {
       "name": "payments-gateway",
       "owner": "payments-team",
       "tier": 1,
-      "oncall": "payments-rotation",
-      "endpoints": [
-        "https://pay.example.com/api"
-      ],
-      "tags": [
-        "checkout-path",
-        "pci-scope"
-      ]
+      "oncall": "payments-rotation"
     },
     {
       "name": "storefront-web",
       "owner": "storefront-team",
       "tier": 2,
-      "oncall": "storefront-rotation",
-      "endpoints": [
-        "https://www.example.com"
-      ],
-      "tags": [
-        "public"
-      ]
+      "oncall": "storefront-rotation"
     }
   ]
 }

@@ -116,25 +116,28 @@ func TestArchetypePacksEvaluateToExpectedDecision(t *testing.T) {
 			want:   aggregate.DecisionReview,
 		},
 		{
-			// allowed-fields positive: only a safe field (endpoints) changed — the
-			// /owner,/tier valueChanges rule does not match, so nothing fires.
+			// allowed-fields positive: only the safe /oncall field changed — the
+			// allow-list `when: path.endsWith("/oncall")` proves, so nothing fires.
 			name: "allowed-fields/safe-field", starter: "service-catalog", rule: "only-safe-fields", obligation: "allowed-fields",
-			change: aggregate.EvalChange{Subject: "catalog-service:orders-api", File: scFile, Path: "/services/orders-api/endpoints", Kind: "modify", New: "b", Old: "a"},
+			change: aggregate.EvalChange{Subject: "catalog-service:orders-api", File: scFile, Path: "/services/orders-api/oncall", Kind: "modify", New: "orders-primary", Old: "orders-rotation"},
 			want:   aggregate.DecisionApprove,
 		},
 		{
+			// A sensitive field (/tier) is not on the allow-list → require-review.
 			name: "allowed-fields/sensitive", starter: "service-catalog", rule: "only-safe-fields", obligation: "allowed-fields",
-			change: aggregate.EvalChange{Subject: "catalog-service:orders-api", File: scFile, Path: "/owner", Kind: "modify", New: "payments-team", Old: "orders-team"},
+			change: aggregate.EvalChange{Subject: "catalog-service:orders-api", File: scFile, Path: "/services/orders-api/tier", Kind: "modify", New: int64(2), Old: int64(1)},
 			want:   aggregate.DecisionReview,
 		},
 		{
-			name: "non-destructive/reorder", starter: "service-catalog", rule: "no-entry-removal", obligation: "non-destructive",
-			change: aggregate.EvalChange{Subject: "catalog-service:services", File: scFile, Path: "/services", Kind: "modify", New: []any{int64(1), int64(2), int64(3)}, Old: []any{int64(3), int64(2), int64(1)}},
+			// A new entry ADD is not a removal — `when: kind != "delete"` proves.
+			name: "non-destructive/add", starter: "service-catalog", rule: "no-entry-removal", obligation: "non-destructive",
+			change: aggregate.EvalChange{Subject: "catalog-service:reports-api", File: scFile, Path: "/services/reports-api", Kind: "add", New: map[string]any{"name": "reports-api"}, Old: nil},
 			want:   aggregate.DecisionApprove,
 		},
 		{
+			// A whole-entry DELETE is a removal → require-review.
 			name: "non-destructive/removal", starter: "service-catalog", rule: "no-entry-removal", obligation: "non-destructive",
-			change: aggregate.EvalChange{Subject: "catalog-service:services", File: scFile, Path: "/services", Kind: "modify", New: []any{int64(1), int64(2)}, Old: []any{int64(1), int64(2), int64(3)}},
+			change: aggregate.EvalChange{Subject: "catalog-service:storefront-web", File: scFile, Path: "/services/storefront-web", Kind: "delete", New: nil, Old: map[string]any{"name": "storefront-web"}},
 			want:   aggregate.DecisionReview,
 		},
 		// -------- infra-vars (pack vars) --------

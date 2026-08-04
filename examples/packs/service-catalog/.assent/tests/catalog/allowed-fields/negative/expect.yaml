@@ -1,4 +1,4 @@
-# /owner changed (not on allow-list; ownership transfer)
+# /tier is a sensitive (non-allow-listed) field → only-safe-fields → require-review.
 decision: REVIEW
 findings:
   - rule: only-safe-fields
