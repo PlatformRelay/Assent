@@ -286,6 +286,30 @@ confirm-or-relax-to-APPROVE).
 **Dependency order**: S01 → S02 → {S03 ∥, S04} → S05. **Do first: S01** (engine lane, hand-built inputs, no
 semantic change — ahead of the S02 minting lane, D-053 precedent). **Closes D-052 + D-061: S04.**
 
+## Phase 5 — E5 provider host + builtins stories
+
+Full INVEST stories in [p5-e5-provider-host/spec.md](p5-e5-provider-host/spec.md). Promotes Spike C into
+product (`ResolveFacts`, projection minimization, HTTP/exec + isolation, sensitive tier), wires facts into
+`assent run`, and closes **REF-GAP-1** (`resource→owner`) + **REF-GAP-2** (`builtin/repo-file`). E6 stays
+`facts.yaml`-stubbed (ADR-0014). **Judgment call (a):** digest-pin/declarations via internal host config first —
+no silent `config.schema.json` widen. **Engine-grade:** S01–S05, S07, S08, S10.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| E5-S01 | ⚠️ Promote Spike `ResolveFacts` + negotiation + state goldens | **[autonomous · engine-grade]** | P3 schemas, Spike C | host core; **do first** |
+| E5-S02 | Projection-minimized query + maxAge defaults + fullContent gate | **[autonomous · engine-grade]** | E5-S01 | minimization + freshness |
+| E5-S03 | HTTP/exec transports + ScrubEnv + isolation CI + digest-pin | **[autonomous · engine-grade]** | E5-S01, S02 | ADR-0015 §7 |
+| E5-S04 | ⚠️ Sensitive tier (15m, propagate `Fact.Sensitive`) — INBOX F1/F2 | **[autonomous · engine-grade]** | E5-S02 | sensitive must-hold |
+| E5-S05 | Wire host into `assent run` (Facts + `factsResolvedAt`); E6 fence | **[autonomous · engine-grade]** | E5-S01..S04 | live facts path |
+| E5-S06 | Builtin forge-groups | **[autonomous]** hermetic; live **[infra-gated]** | E5-S05 | ownership packs live |
+| E5-S07 | Builtin `repo-file` most-specific-first | **[autonomous · engine-grade]** | E5-S05 | **closes REF-GAP-2**; unlocks C5/C6 |
+| E5-S08 | Referenced-resource ownership (`resource→owner`) | **[autonomous · engine-grade]** | E5-S05/S07 | **closes REF-GAP-1**; unlocks C7 |
+| E5-S09 | Optional ownership-file / HTTP polish (defer OIDC/LDAP) | **[autonomous]** optional | E5-S05 | ADR-0004 polish |
+| E5-S10 | Exit gate: isolation CI + goldens + hermetic resolved facts + seed C5–C7 | **[autonomous · engine-grade]** | E5-S01..S08 | **the E5 exit gate** |
+
+**Dependency order**: S01 → S02 → S03 → S04 → S05 → {S06 ∥ S07} → S08 → S09? → S10.
+**Closes REF-GAP-2: S07. Closes REF-GAP-1: S08. Sensitive tier: S04.**
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
