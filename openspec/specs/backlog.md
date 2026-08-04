@@ -210,6 +210,31 @@ goldens. **Do first: S01** (smallest independently-valuable slice, retires the t
 later story consumes) alongside **E2-F** (a one-line fixture correction, startable day one).
 
 
+## Phase 5 — E3 policy surface (`assent lint` + rule catalogue) stories
+
+Full INVEST stories in [p5-e3-policy-surface/spec.md](p5-e3-policy-surface/spec.md). E3's loader / CEL
+backend / tree walker / interpolation seeds are **already delivered by E2** — E3 is the human-facing
+**`assent lint`** pass (8 hard errors over the `.assent/**` authoring surface, caught statically
+BEFORE any MR) + the **generated rule catalogue** (D-017 B10). Pure Go/CLI, no live infra. Closes the
+items E2 lanes deferred "to E3 lint" (S04 → S03 message-scope; S03 → S05 non-dot-facts + the
+fact-model `.value` decision; S05 → widen the fail-open scan). Reuses `policy.ValidateProviderPosture`,
+`aggregate.ResolveProfile`, the E2 CEL compile path; adds `cmd/assent/{lint,catalogue}.go`,
+`internal/lint/**`, `internal/catalogue/**`. **Every story `[autonomous]`.**
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| E3-S01 | `assent lint` scaffold + tolerant fail-many ingestion + obligation-coverage hard error (anchor) | **[autonomous]** `🟡 decide: subcommand + tolerant ingestion` | E2-S01, E2-S04 | the lint diagnostic accumulator every check plugs into; **do first** |
+| E3-S02 | Structural hard errors: reserved-class, no-implicit-enforce-phase, unkeyed-lists | **[autonomous]** | E3-S01 | ADR-0015 §1 / 0018 §1 / 0017 §5 static catches |
+| E3-S03 | Fact-model `.value` DECISION + non-dot facts-reference lint (closes S05 non-dot) | **[autonomous]** `🔴 DECIDED (fact-model D-nnn)` | E3-S01 | makes the S05 controlling-fact scan sound; precedes S04 |
+| E3-S04 | Predicate-scope + `{{ }}` message-template lint (closes S03 message-scope) | **[autonomous]** | E3-S01, E3-S03 | ADR-0016 §2 undeclared-identifier catch; new exported compile helper in `aggregate` |
+| E3-S05 | Config-posture: fail-open (WIDENED to 3 controlling archetypes) + single-writer-profile | **[autonomous]** | E3-S01, E3-S03 | ADR-0017 §6 / 0018 §2; reuses ValidateProviderPosture + ResolveProfile |
+| E3-S06 | Tests-per-rule hard error (static presence, NOT the `assent test` runner) | **[autonomous]** | E3-S01 | ADR-0010/0014 |
+| E3-S07 | Generated rule catalogue (D-017 B10) — additive-tolerant, single source for docs+lint | **[autonomous]** `🟡 decide: catalogue surface` | E2-S01 | parallelizable; `assent catalogue` |
+| E3-C | Pack-conformance lane: add required `phase` + apply S03 fact-model decision to `examples/packs/**` (all 11 rule files omit `phase` today) | **[autonomous]** | E3-S03 | E3's analog to E2 lane F; land before S08 |
+| E3-S08 | Exit gate: hard-error fixture corpus + archetype packs load+evaluate (internal `Cover`) + catalogue generates | **[autonomous]** | E3-S01..S07 + C | **the E3 exit gate** |
+
+**Dependency order**: S01 → {S02, S05, S06}; S03 → S04; S07 ∥ (loader-only); C after S03, before S08; S08 last. **Do first: S01.**
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
