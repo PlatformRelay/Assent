@@ -74,14 +74,22 @@ merge when forge probe data is available.
 (c) **DECIDED — Free-tier GitLab: `capabilityGap` blocks auto-merge and `require-review` evidence is
 unsatisfiable.** Per forge dossier §1 C6/C7: without Premium approval rules the adapter cannot prove
 eligible approval → never APPROVE via missing evidence; doctor reports the gap explicitly.
-(d) **🟡 decide-and-log in-lane — changed-file enumeration source.** Prefer GitLab MR diffs API
-(`GET .../merge_requests/:iid/changes` → `changes[].new_path`/`old_path`) for Snapshot; fall back to
-compare API only if diffs shape is insufficient. Implementers log the choice in `decisions.md` if the
-API choice affects self-vouch detection.
+(d) **DECIDED — changed-file enumeration uses MR diffs API.** Snapshot changed paths come from
+`GET .../merge_requests/:iid/changes` (`changes[].new_path` / `old_path`); compare API is not the
+v1 path unless a future lane proves diffs insufficient (logged D-076).
+(e) **DECIDED — changed-file composition: `--checkout` precedence.** When `--checkout` is set
+(E1-S08), the local checkout tree is the **sole** authority for changed-file enumeration — Snapshot
+path-list is ignored for classifier input (checkout remains the presence/content authority per
+ADR-0008 §4). When `--checkout` is **unset** and a forge token is present, Snapshot changed-files
+apply. Never merge/union the two lists (conflicting sources → fail-safe under-coverage). Logged D-077.
 
 **Dependency order**: **S01 → S02 → S03 → S04 → S05 → S06 → {S07 ∥ S08 ∥ S09} → S10**; **S11**
 after S10 when infra available. **Closes D-034 (forge-backed path): S05+S06. Closes D-042 live self-vouch
 gap: S08.**
+
+**Coordination note:** S06 edits `cmd/assent/run.go` — **not file-disjoint** with landed **E5-S05**
+(provider host wiring). Implementers extend the existing orchestration path (facts resolve at the
+edge, then forge Snapshot/Resolve, then classify/evaluate/Reconcile); do not fork a second run loop.
 
 **Engine-grade / fail-safety review:** S03 (approval evidence), S04 (reconciliation), S05 (arming),
 S06 (run wiring), S07 (SHA-guard), S08 (assent-policy BLOCK), S10 (exit gate).
@@ -221,9 +229,12 @@ Requirements:
 **As an** operator **I want** `assent doctor` to report forge-derived capabilities and refuse arming when
 the GitLab project lacks required merge gates **so that** author-editable CI cannot self-arm.
 
-**Goal**: When a forge Snapshot is available, `Doctor` consumes probe results (protected-pipeline signal
-from project CI config path where detectable, discussions-resolved gate, approval-rules tier, duplicate
-prevention guarantee = serialized topology per P3-E5) instead of env self-assertion (judgment call (b)).
+**Goal**: When a forge Snapshot is available, `Doctor` consumes probe results: protected-pipeline
+signal from forge dossier **C17** mechanisms (external CI config file in another project
+`path/file.yml@group/project`, or Ultimate pipeline-execution policies — detectable via project
+CI/CD settings API where exposed; author-editable in-repo `.gitlab-ci.yml` alone → insecure
+topology), discussions-resolved gate (C3), approval-rules tier (C6/C7), duplicate prevention
+guarantee = serialized topology per P3-E5 — instead of env self-assertion (judgment call (b)).
 Provider-less `assent doctor` keeps today's env diagnostic path but prints an explicit INSECURE banner.
 Typed `PreconditionReport` gains additive capability fields (`AutoMergeEligible`, `DuplicatePrevention`).
 
@@ -244,36 +255,62 @@ Requirements:
 - **REQ-E4-S05-04** — `duplicate_prevention` guarantee field populated per P3-E5 (serialized / explicit
   unsupported). Test: same; Verify:
   `go test ./cmd/assent/... -run TestDoctorDuplicatePreventionReport`; Level: L1
+- **REQ-E4-S05-05** — protected-pipeline probe detects author-editable-only CI (no C17 external config)
+  → `ArmEligible=false` with typed insecure-topology reason. Test: same; Verify:
+  `go test ./cmd/assent/... -run TestDoctorForgeInsecureCITopology`; Level: L1
 
 ---
 
 ## E4-S06 — ⚠️ Wire Snapshot/Resolve into `assent run` [autonomous · engine-grade]
 
+> **⚠️ Closes D-034 on the run path (with S05).** Doctor-only arming is insufficient — approve/merge
+> writes must consume forge-probed preconditions when a token is present, not `--arm` sandbox or env
+> placeholder alone.
+
 **As a** repo operator **I want** live MR evaluation to use forge Snapshot data and Resolve approval
 evidence **so that** require-review and assent-policy routing reflect real forge state.
 
-**Goal**: At the `cmd/assent` edge: Snapshot → enumerate changed files for classifier (closes D-042 F1
-live path when combined with S08 golden); Resolve → populate `ApprovalContext` before `CoverWithApproval`;
-honest `capabilityGap` on DecisionRecord when tier lacks merge-result digest or approval rules; preserve
-provider-less / fake-forge test paths. E6 / `assent test` untouched.
+**Goal**: At the `cmd/assent` edge (extends landed E5-S05 orchestration in `run.go`, same file):
+Snapshot → changed-file set for classifier when `--checkout` is unset (judgment call (e);
+`--checkout` set → E1-S08 local tree wins); Resolve → populate `ApprovalContext` before
+`CoverWithApproval`; when a forge PAT/token is present, **forge-probed** `PreconditionReport` from
+S05 gates `Preconditions.ArmEligible` for approve/merge writes — replacing the P4 `--arm` sandbox
+override and the D-034 env placeholder on the real write path (D-074); honest `capabilityGap` on
+DecisionRecord when tier lacks merge-result digest or approval rules; preserve provider-less /
+fake-forge test paths. E6 / `assent test` untouched.
 
-**Dependencies**: E4-S02, E4-S03, E4-S05; E5-S05 (facts path may run in parallel when file-disjoint).
+**Dependencies**: E4-S02, E4-S03, E4-S05; E5-S05 (same `run.go` — coordinate, do not fork).
 
 **Definition of done**: httptest run path evaluates with forge-resolved evidence affecting decision;
-changed-file list drives classifier; `assent test` fence test still green.
+changed-file list drives classifier per composition rule (e); forge-probed arming gates writes;
+`--arm` alone never arms when forge probe refuses; `assent test` fence test still green.
 
 Requirements:
 - **REQ-E4-S06-01** — forge Resolve supplies `ApprovalEvidence` that can satisfy a require-review fixture
   decision when eligible. Test: `cmd/assent/run_forge_test.go`; Verify:
   `go test ./cmd/assent/... -run TestRunResolveApprovalEvidence`; Level: L1
-- **REQ-E4-S06-02** — Snapshot changed files feed classifier (not single hardcoded subject only). Test:
-  same; Verify: `go test ./cmd/assent/... -run TestRunSnapshotChangedFiles`; Level: L1
+- **REQ-E4-S06-02** — when `--checkout` is **unset**, Snapshot changed files feed classifier (not
+  single hardcoded subject only); when `--checkout` is **set**, checkout enumeration is sole authority
+  and Snapshot path-list is not used for classifier input (E1-S08 precedence, judgment call (e)).
+  Test: same; Verify: `go test ./cmd/assent/... -run TestRunSnapshotChangedFiles`; Level: L1
 - **REQ-E4-S06-03** *(compat · E6 fence)* — `assent test` never calls live forge Resolve. Test:
   `cmd/assent/test_forge_fence_test.go`; Verify:
   `go test ./cmd/assent/... -run TestAssentTestNeverCallsForgeResolve`; Level: L1
 - **REQ-E4-S06-04** — tier gap → DecisionRecord carries honest `capabilityGap`; never APPROVE on missing
   approval evidence. Test: `cmd/assent/run_forge_test.go`; Verify:
   `go test ./cmd/assent/... -run TestRunTierGapNeverApproves`; Level: L1
+- **REQ-E4-S06-05** *(ENGINE · fail-safe · closes D-034/D-074)* — when a forge PAT/token is present
+  and decision is APPROVE, approve/merge writes use `PreconditionReport.ArmEligible` from the
+  **forge-probed** doctor path (S05 Snapshot), not `readPipelineDescription()` env vars and not
+  `--arm` alone. Test: `cmd/assent/run_forge_test.go`; Verify:
+  `go test ./cmd/assent/... -run TestRunForgeProbedArmingGatesWrites`; Level: L1
+- **REQ-E4-S06-06** *(fail-safe)* — forge probe reports `ArmEligible=false` (missing C3 gate, C17
+  insecure topology, tier gap) → zero approve/merge writes even if `--arm` is passed; run degrades
+  advisory-only with typed refusal (`ErrArmingRefused`). Test: same; Verify:
+  `go test ./cmd/assent/... -run TestRunForgeProbeRefusesArmDespiteFlag`; Level: L1
+- **REQ-E4-S06-07** — `--checkout` set + Snapshot returns extra paths not in checkout → classifier
+  uses checkout paths only (Snapshot extras ignored; no union). Test: same; Verify:
+  `go test ./cmd/assent/... -run TestRunCheckoutPrecedenceOverSnapshot`; Level: L1
 
 ---
 
@@ -363,7 +400,8 @@ adapter path.
 Requirements:
 - **REQ-E4-S10-01** — all `internal/forge/**` + `cmd/assent/*forge*` tests enforced in verify. Test: CI;
   Verify: `task check`; Level: L1
-- **REQ-E4-S10-02** — hermetic run path end-to-end with forge Resolve affecting decision. Test:
+- **REQ-E4-S10-02** — hermetic run path end-to-end with forge Resolve affecting decision **and**
+  forge-probed arming gating writes (S06-05/06). Test:
   `cmd/assent/run_forge_test.go`; Verify:
   `go test ./cmd/assent/... -run TestE4ExitGateHermeticForgePath`; Level: L1
 - **REQ-E4-S10-03** — conformance package runs under `./...` with zero skipped autonomous cases. Test:

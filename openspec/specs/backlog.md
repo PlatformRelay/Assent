@@ -332,8 +332,8 @@ deferred to E8. **Engine-grade:** S03, S04, S05, S06, S08, S10.
 | E4-S02 | GitLab Snapshot L2 cassettes (MR, changed files, capabilities) | **[autonomous]** | E4-S01 | honest SHAs + tier flags |
 | E4-S03 | ⚠️ GitLab Resolve ApprovalEvidence eligibility chain | **[autonomous · engine-grade]** | E4-S01, S02 | ADR-0017 §3 require-review proof |
 | E4-S04 | ⚠️ Reconcile P3-E5 gaps (supersession, resolve stale, rescan) | **[autonomous · engine-grade]** | E4-S01 | ADR-0019 steps 6/7/9 |
-| E4-S05 | ⚠️ Doctor forge-probed capability report (closes D-034 forge path) | **[autonomous · engine-grade]** | E4-S02 | ADR-0017 §9 arming honesty |
-| E4-S06 | ⚠️ Wire Snapshot/Resolve into `assent run`; E6 fence | **[autonomous · engine-grade]** | E4-S02, S03, S05 | live forge evaluation path |
+| E4-S05 | ⚠️ Doctor forge-probed capability report (closes D-034 forge path) | **[autonomous · engine-grade]** | E4-S02 | ADR-0017 §9 arming honesty; C17 probe |
+| E4-S06 | ⚠️ Wire Snapshot/Resolve + forge-probed arming into `assent run` | **[autonomous · engine-grade]** | E4-S02, S03, S05; **E5-S05 (`run.go`)** | live forge path; **closes D-034 run path**; checkout precedence (D-077) |
 | E4-S07 | Conformance: target/source advanced → SHA-guard rejection | **[autonomous]** | E4-S04, S06 | ADR-0015 §2 executable |
 | E4-S08 | Conformance: `.assent/**` MR → assent-policy BLOCK | **[autonomous · engine-grade]** | E4-S06 | **closes D-042 F1** |
 | E4-S09 | Conformance: P3-E5 replay + spoofed marker ignored | **[autonomous]** | E4-S04 | ADR-0019 + ADR-0005 suite |
@@ -341,7 +341,7 @@ deferred to E8. **Engine-grade:** S03, S04, S05, S06, S08, S10.
 | E4-S11 | Live GitLab L3 conformance re-run | **[infra-gated: live GitLab / token]** | E4-S10 | L3 adapter proof (optional) |
 
 **Dependency order**: S01 → S02 → S03 → S04 → S05 → S06 → {S07 ∥ S08 ∥ S09} → S10; S11 after S10 when
-infra available. **Closes D-034 (forge-backed): S05+S06. Closes D-042 F1: S08.**
+infra available. **Closes D-034 (forge-backed): S05+S06 (run-path arming = S06). Closes D-042 F1: S08.**
 
 > **E4 status: SPEC READY** — autonomous implementers may claim after spec lands on `main`.
 
