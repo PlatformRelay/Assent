@@ -1,7 +1,13 @@
-# partitions 12 -> 64 exceeds the resolved cap 32 -> challenge fires -> REVIEW
+# partitions 12 -> 64 exceeds the resolved cap 32 -> challenge fires -> REVIEW.
+# Must-contain: the partitions-within-cap challenge must be among the findings.
+# score pins the risk arithmetic: one firing of points:1 -> total 1, threshold 4.
+# NB: no findings[].path — D-054 makes a path assertion error-as-unsupported until
+# aggregate.Finding carries a Path field (its own engine lane, see OQ).
 decision: REVIEW
 findings:
   - rule: partitions-within-cap
     obligation: capped
     effect: challenge
-    path: "/partitions"
+score:
+  total: 1
+  threshold: 4

@@ -50,3 +50,45 @@ func TestExpectYamlStrictDecodedAgainstFrozenSchema(t *testing.T) {
 		}
 	})
 }
+
+// TestLoadExpectationProjectsMatcherFields proves the S03 matcher fields survive the
+// YAML load path intact — the struct tags (including the exotic `message~` tilde key)
+// bind, so a real expect.yaml reaches Match with every assertion populated. Without
+// this a silently-unbound tag would DROP a safety assertion (absent/exact) and the
+// case would pass vacuously — exactly the silent-approve D-054 guards against.
+func TestLoadExpectationProjectsMatcherFields(t *testing.T) {
+	e, err := adoptertest.LoadExpectation([]byte(`decision: REVIEW
+exact: true
+absent: [never-fires, also-absent]
+findings:
+  - rule: size-bounded
+    obligation: bounded
+    effect: challenge
+    message~: "grew by [0-9]+"
+score:
+  total: 3
+  threshold: 5
+`))
+	if err != nil {
+		t.Fatalf("LoadExpectation: %v", err)
+	}
+	if !e.Exact {
+		t.Error("exact:true did not bind")
+	}
+	if len(e.Absent) != 2 || e.Absent[0] != "never-fires" || e.Absent[1] != "also-absent" {
+		t.Errorf("absent did not bind: %v", e.Absent)
+	}
+	if len(e.Findings) != 1 {
+		t.Fatalf("findings did not bind: %v", e.Findings)
+	}
+	f := e.Findings[0]
+	if f.Rule != "size-bounded" || f.Obligation != "bounded" || f.Effect != "challenge" {
+		t.Errorf("finding identity did not bind: %+v", f)
+	}
+	if f.Message != "grew by [0-9]+" {
+		t.Errorf("message~ tilde tag did not bind: %q", f.Message)
+	}
+	if e.Score == nil || e.Score.Total != 3 || e.Score.Threshold != 5 {
+		t.Errorf("score did not bind: %+v", e.Score)
+	}
+}

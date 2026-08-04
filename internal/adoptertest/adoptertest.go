@@ -39,11 +39,46 @@ import (
 // internal/core dependency beyond the exported aggregate types.
 const stateResolved = "resolved"
 
-// Expectation is the decoded expect.yaml. S01 consumes only Decision (the coarse
-// assertion); findings/absent/score are matched by S03, so they are validated by the
-// frozen schema here but not yet projected onto this struct.
+// Expectation is the decoded expect.yaml (the frozen #/$defs/expectation). S01
+// consumed only Decision; S03 projects the finding/absent/score/message assertions
+// onto this struct so Match can check them against the engine's aggregate.Result.
+// These fields are decoded from the SAME frozen contract LoadExpectation already
+// strict-validates — no new schema is authored, only the Go projection widened.
 type Expectation struct {
 	Decision string `yaml:"decision"`
+	// Findings is must-contain by DEFAULT (each listed finding must fire; extras
+	// allowed). Exact:true closes the list (nothing else may fire). An OMITTED
+	// exact never silently closes it (the frozen must-contain default).
+	Findings []ExpectFinding `yaml:"findings"`
+	Exact    bool            `yaml:"exact"`
+	// Absent names rules that must NOT fire.
+	Absent []string `yaml:"absent"`
+	// Score pins the risk arithmetic. A pointer so an ABSENT score never silently
+	// asserts the zero {total:0, threshold:0} (which would fail-open on a real
+	// non-zero total): nil ⇒ no score assertion.
+	Score *ExpectScore `yaml:"score"`
+}
+
+// ExpectFinding is one expected finding (#/$defs/finding). Rule+Effect identify it;
+// Obligation, when set, further constrains the match. Path is DECIDED
+// error-as-unsupported (D-054): aggregate.Finding carries no Path, so a Path
+// assertion errors the case (fail-closed) rather than silently passing. Message
+// (the frozen `message~` key) is a DISCOURAGED substring/regex match on the rendered
+// finding message — a presentation assertion, never a safety one (not counted by
+// --coverage, ADR-0014 amendment).
+type ExpectFinding struct {
+	Rule       string `yaml:"rule"`
+	Obligation string `yaml:"obligation"`
+	Effect     string `yaml:"effect"`
+	Path       string `yaml:"path"`
+	Message    string `yaml:"message~"`
+}
+
+// ExpectScore pins the aggregated risk arithmetic: Total is the summed points and
+// Threshold the binding's approve threshold (ADR-0007 sum(points) <= threshold).
+type ExpectScore struct {
+	Total     int `yaml:"total"`
+	Threshold int `yaml:"threshold"`
 }
 
 // LoadExpectation strict-decodes an expect.yaml against the FROZEN
@@ -133,13 +168,18 @@ type Case struct {
 	Approval *aggregate.ApprovalContext
 }
 
-// Outcome is a single case's evaluated result: whether the produced Decision matched
-// the expectation, plus the values for reporting (the rich diff UX is S04).
+// Outcome is a single case's evaluated result: whether the produced Decision AND the
+// S03 finding/absent/score/message assertions matched, plus the values for reporting
+// (the rich diff UX is S04). Reasons carries every mismatch (empty ⇒ Pass), in the
+// deterministic decision-then-matcher order.
 type Outcome struct {
 	Name     string
 	Pass     bool
 	Expected string
 	Actual   string
+	// Reasons enumerates the mismatches that failed the case (decision first, then
+	// the matcher's finding/absent/score reasons). Empty exactly when Pass is true.
+	Reasons []string
 }
 
 // Evaluate assembles the EvaluationInput from the case's base/↔head/ diff, attaches
@@ -202,20 +242,48 @@ func Evaluate(c Case) (aggregate.Result, error) {
 	return res, nil
 }
 
-// RunCase evaluates the case and asserts the produced Decision equals expect.yaml's
-// decision. S01 asserts the decision only; the finding/absent/score matcher is S03.
+// RunCase evaluates the case, asserts the produced Decision equals expect.yaml's
+// decision, THEN runs the S03 finding/absent/score/message matcher over the same
+// Result. The decision is checked first (the coarse safety assertion); the matcher's
+// reasons are appended after it. A fail-closed matcher error (an unevaluable
+// findings[].path assertion, D-054) propagates as a case error — never a silent
+// pass. Pass is true exactly when the decision matched AND the matcher found no
+// mismatch.
 func RunCase(c Case) (Outcome, error) {
 	res, err := Evaluate(c)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("case %q: %w", c.Name, err)
 	}
 	actual := string(res.Decision)
+
+	var reasons []string
+	if actual != c.Expect.Decision {
+		reasons = append(reasons, fmt.Sprintf("decision: expected %s, got %s", c.Expect.Decision, actual))
+	}
+
+	matchReasons, err := Match(c.Expect, res, thresholdOf(c.Bind))
+	if err != nil {
+		return Outcome{}, fmt.Errorf("case %q: %w", c.Name, err)
+	}
+	reasons = append(reasons, matchReasons...)
+
 	return Outcome{
 		Name:     c.Name,
-		Pass:     actual == c.Expect.Decision,
+		Pass:     len(reasons) == 0,
 		Expected: c.Expect.Decision,
 		Actual:   actual,
+		Reasons:  reasons,
 	}, nil
+}
+
+// thresholdOf returns the binding's risk approve threshold (nil-safe). The engine
+// reduces to REVIEW when sum(points) exceeds it (ADR-0007); Match reads it because
+// aggregate.Result exposes no threshold of its own.
+func thresholdOf(b *policy.Binding) int {
+	if b == nil {
+		return 0
+	}
+	return b.Risk.Threshold
 }
 
 // requireOf returns the binding's required obligations (nil-safe).
