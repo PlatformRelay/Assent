@@ -1,0 +1,36 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "ReplayBundle",
+  "pins": {
+    "toolVersion": "0.0.0-e6-seed",
+    "toolDigest": "sha256:aaaa",
+    "policySha": "sha256:bbbb",
+    "sourceSha": "cccc",
+    "targetSha": "dddd",
+    "mergeResultDigest": "sha256:eeee",
+    "factsResolvedAt": {}
+  },
+  "evaluationInput": {
+    "apiVersion": "assent.dev/v1alpha1",
+    "kind": "EvaluationInput",
+    "changeSet": {
+      "changes": [
+        {
+          "subject": "topic-registry:orders.events.v1",
+          "file": "topics/prod/orders.events.v1.yaml",
+          "path": "/partitions",
+          "kind": "modify",
+          "old": 12,
+          "new": 6
+        }
+      ]
+    },
+    "facts": {},
+    "mr": {
+      "author": "alice",
+      "sourceBranch": "topic/shrink",
+      "targetBranch": "main"
+    },
+    "require": ["non-destructive"]
+  }
+}

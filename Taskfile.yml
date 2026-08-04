@@ -75,6 +75,13 @@ tasks:
       - task: coverage
       - task: build
       - task: dogfood-comparison
+      - task: compare-exitgate-test
+
+  compare-exitgate-test:
+    desc: "PCS-S09 exit gate: full suite + E6 seed dir + schema drift guard (REQ-PCS-S09-01..03)"
+    deps: [build]
+    cmds:
+      - bash hack/compare/exitgate_test.sh
 
   determinism:
     desc: "Determinism gate (E7-S04): double-run engine + conformance goldens (-count=2); mirrors verify.yaml"
