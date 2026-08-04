@@ -20,6 +20,7 @@ package lint
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -44,9 +45,142 @@ func normalizeLoaderError(msg string) string {
 }
 
 // schemaInvalid records one schema-invalid diagnostic located to path, with the
-// strict-loader error normalized (URI stripped) so it is deterministic.
+// strict-loader error made deterministic: the absolute schema URI is stripped
+// (normalizeLoaderError) AND the sibling cause lines are canonicalized into a
+// stable order (canonicalizeSchemaError). The latter is REQUIRED because the
+// jsonschema validator emits a multi-cause error's sibling causes in
+// map-iteration (non-deterministic) order — a doc with two defects (e.g. a
+// missing phase AND a missing identity) would otherwise render its schema-invalid
+// message in a different line order run-to-run, breaking the diagnostic model's
+// determinism (REQ-E3-S01-05 / REQ-E3-S02-04) and S08's cross-environment golden.
 func schemaInvalid(rep *Report, path string, err error) {
-	rep.addError(CodeSchemaInvalid, Location{File: path}, normalizeLoaderError(err.Error()))
+	rep.addError(CodeSchemaInvalid, Location{File: path}, canonicalizeSchemaError(normalizeLoaderError(err.Error())))
+}
+
+// canonicalizeSchemaError re-orders the sibling cause lines of a jsonschema error
+// into a deterministic order. The validator renders causes as an indentation tree
+// ("- at '<loc>': <detail>", nested causes indented two spaces further) but emits
+// siblings in non-deterministic map order; this parses that tree by indentation
+// and sorts siblings (recursively) by their rendered subtree, preserving the
+// header line first. Pure string transform — no clock/rand/env/net.
+func canonicalizeSchemaError(msg string) string {
+	lines := strings.Split(msg, "\n")
+	if len(lines) <= 1 {
+		return msg
+	}
+	roots := parseIndentForest(lines[1:])
+	sortIndentForest(roots)
+	var b strings.Builder
+	b.WriteString(lines[0])
+	for _, r := range roots {
+		b.WriteString("\n")
+		b.WriteString(renderIndentNode(r))
+	}
+	return b.String()
+}
+
+// indentNode is one line of a jsonschema error plus its more-indented children.
+type indentNode struct {
+	line     string
+	indent   int
+	children []*indentNode
+}
+
+// parseIndentForest builds the indentation forest of a jsonschema error's cause
+// lines: each line is a child of the nearest preceding line with a smaller
+// indent. Blank lines are skipped.
+func parseIndentForest(lines []string) []*indentNode {
+	var roots, stack []*indentNode
+	for _, ln := range lines {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		ind := len(ln) - len(strings.TrimLeft(ln, " "))
+		n := &indentNode{line: ln, indent: ind}
+		for len(stack) > 0 && stack[len(stack)-1].indent >= ind {
+			stack = stack[:len(stack)-1]
+		}
+		if len(stack) == 0 {
+			roots = append(roots, n)
+		} else {
+			top := stack[len(stack)-1]
+			top.children = append(top.children, n)
+		}
+		stack = append(stack, n)
+	}
+	return roots
+}
+
+// sortIndentForest sorts siblings (recursively, children first) by their rendered
+// subtree, giving a total canonical order independent of the validator's emission
+// order.
+func sortIndentForest(nodes []*indentNode) {
+	for _, n := range nodes {
+		sortIndentForest(n.children)
+	}
+	sort.SliceStable(nodes, func(i, j int) bool {
+		return renderIndentNode(nodes[i]) < renderIndentNode(nodes[j])
+	})
+}
+
+// renderIndentNode renders a node and its (already-sorted) children back to text.
+func renderIndentNode(n *indentNode) string {
+	var b strings.Builder
+	b.WriteString(n.line)
+	for _, c := range n.children {
+		b.WriteString("\n")
+		b.WriteString(renderIndentNode(c))
+	}
+	return b.String()
+}
+
+// removeSchemaInvalidForPhase is the E3-S02 phase double-count dedupe hook (see
+// structural.go): when no-implicit-enforce-phase fires for a doc, the same
+// missing-phase defect the strict loader captured as a schema-invalid on that doc
+// is dropped — but ONLY when the missing phase is that schema-invalid's SOLE
+// cause. A doc that is missing phase AND has an unrelated schema violation keeps
+// its schema-invalid in full, so the co-located defect is never hidden
+// (fail-many preserved). Idempotent: firing for several rules of one doc removes
+// the single schema-invalid at most once.
+func (r *Report) removeSchemaInvalidForPhase(path string) {
+	kept := r.diags[:0]
+	for _, d := range r.diags {
+		if d.Code == CodeSchemaInvalid && d.Location.File == path && isPhaseOnlyLoaderError(d.Message) {
+			continue // drop: the actionable no-implicit-enforce-phase supersedes it
+		}
+		kept = append(kept, d)
+	}
+	r.diags = kept
+}
+
+// isPhaseOnlyLoaderError reports whether a normalized strict-loader message
+// attributes the refusal SOLELY to one or more missing `phase` properties. The
+// jsonschema validator bundles ALL failures into one message as `- at '<loc>':
+// <detail>` lines (with `validation failed` wrapper lines around nested causes);
+// the error is phase-only iff at least one leaf detail is `missing property
+// 'phase'` and no leaf detail is anything else. A non-empty INVALID phase yields
+// `value must be one of ...` (an enum violation), which this correctly does NOT
+// treat as phase-only, so it is never deduped.
+func isPhaseOnlyLoaderError(msg string) bool {
+	hasPhase := false
+	for _, line := range strings.Split(msg, "\n") {
+		// A complaint line is `... at '<loc>': <detail>`; the loc is a
+		// space-free JSON pointer, so the first "': " reliably splits loc/detail.
+		// Lines without it (the header) are not complaints.
+		idx := strings.Index(line, "': ")
+		if idx < 0 {
+			continue
+		}
+		switch strings.TrimSpace(line[idx+len("': "):]) {
+		case "validation failed":
+			// A nesting wrapper around child causes — not itself a leaf complaint.
+		case "missing property 'phase'":
+			hasPhase = true
+		default:
+			return false // some other defect — not phase-only, keep the schema-invalid
+		}
+	}
+	return hasPhase
 }
 
 // model is the tolerant-ingestion result: the loaded bindings (with their source
@@ -56,6 +190,10 @@ func schemaInvalid(rep *Report, path string, err error) {
 type model struct {
 	bindings []boundBinding
 	packs    map[string]*loadedPack
+	// docs is the E3-S02 per-document view (source path + rules + entries + pack
+	// phase) the structural checks consume. It is populated alongside packs by
+	// ingest; see structural.go's ingestedDoc for why it is a separate view.
+	docs []ingestedDoc
 }
 
 // boundBinding is one Binding paired with the file it was authored in.
@@ -94,9 +232,7 @@ func ingest(sources []Source, rep *Report) *model {
 				schemaInvalid(rep, s.Path, lerr)
 			}
 		case "Pack":
-			if _, lerr := policy.LoadPack(s.Bytes); lerr != nil {
-				schemaInvalid(rep, s.Path, lerr)
-			}
+			ingestPack(s, m, rep)
 		default:
 			// Unrecognized/absent kind — a non-policy doc (a tests/** fixture, a
 			// README fragment). Not lint's surface; skipped, not an error.
@@ -131,8 +267,23 @@ func ingestMergePolicy(s Source, m *model, rep *Report) {
 			m.packs[name] = p
 		}
 		p.rules = append(p.rules, mp.Spec.Rules...)
+		// The E3-S02 per-doc view: rules + entries with this doc's real path.
+		m.docs = append(m.docs, ingestedDoc{path: s.Path, rules: mp.Spec.Rules, entries: mp.Spec.Entries})
 	}
 	if _, lerr := policy.LoadMergePolicy(s.Bytes); lerr != nil {
+		schemaInvalid(rep, s.Path, lerr)
+	}
+}
+
+// ingestPack tolerantly decodes a Pack manifest into the E3-S02 per-doc view
+// (its spec.phase + name, for no-implicit-enforce-phase) AND runs the strict
+// loader, capturing any refusal as one schema-invalid diagnostic.
+func ingestPack(s Source, m *model, rep *Report) {
+	var pk policy.Pack
+	if err := yaml.Unmarshal(s.Bytes, &pk); err == nil {
+		m.docs = append(m.docs, ingestedDoc{path: s.Path, isPack: true, packPhase: pk.Spec.Phase, packName: pk.Metadata.Name})
+	}
+	if _, lerr := policy.LoadPack(s.Bytes); lerr != nil {
 		schemaInvalid(rep, s.Path, lerr)
 	}
 }

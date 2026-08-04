@@ -146,6 +146,7 @@ func Lint(sources []Source) *Report {
 	model := ingest(sources, rep)
 	checkObligationCoverage(model, rep)
 	checkFactsReferences(model, rep)
+	checkStructural(model, rep)
 	return rep
 }
 

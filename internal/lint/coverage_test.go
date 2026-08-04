@@ -147,9 +147,14 @@ spec:
 // validator derives from the process CWD at runtime) — else lint output is
 // machine-dependent and S08's cross-environment golden corpus breaks. The
 // actionable "at '<path>': <detail>" remainder is retained.
+//
+// The vehicle is a bad onFailure.effect enum (NOT a missing phase): E3-S02's
+// no-implicit-enforce-phase now owns the missing-phase defect and DEDUPES the
+// phase-only schema-invalid, so a missing-phase fixture would no longer produce a
+// schema-invalid at all. The bad-enum violation exercises the identical
+// URI-stripping path while keeping a schema-invalid alive to assert over.
 func TestSchemaInvalidMessageIsEnvironmentIndependent(t *testing.T) {
-	// A MergePolicy rule missing the required `phase` — the exact pre-lane-C defect.
-	missingPhase := Source{
+	badEnum := Source{
 		Path: ".assent/packs/p/rules/owns.yaml",
 		Bytes: []byte(`apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
@@ -158,6 +163,7 @@ metadata:
 spec:
   rules:
     - name: owns
+      phase: enforce
       match:
         files:
           paths: ["topics/**/*.yaml"]
@@ -165,12 +171,12 @@ spec:
         obligation: ownership
         when: "entry.owner in facts.author.groups"
       onFailure:
-        effect: require-review
+        effect: bogus-effect
         code: ownership.unproven
 `),
 	}
 	var found bool
-	for _, d := range Lint([]Source{missingPhase}).Diagnostics() {
+	for _, d := range Lint([]Source{badEnum}).Diagnostics() {
 		if d.Code != CodeSchemaInvalid {
 			continue
 		}
@@ -178,12 +184,12 @@ spec:
 		if strings.Contains(d.Message, "file://") {
 			t.Errorf("schema-invalid message must not embed an absolute file:// URI (CWD-dependent), got: %q", d.Message)
 		}
-		if !strings.Contains(d.Message, "phase") {
-			t.Errorf("schema-invalid message must retain the actionable detail (missing property 'phase'), got: %q", d.Message)
+		if !strings.Contains(d.Message, "onFailure/effect") {
+			t.Errorf("schema-invalid message must retain the actionable detail (the offending path), got: %q", d.Message)
 		}
 	}
 	if !found {
-		t.Fatal("a rule missing `phase` must produce a schema-invalid diagnostic")
+		t.Fatal("a rule with a bad onFailure.effect enum must produce a schema-invalid diagnostic")
 	}
 }
 
