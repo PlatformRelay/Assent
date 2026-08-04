@@ -135,6 +135,9 @@ func CallExec(ctx context.Context, opts ExecOpts, q FactQuery) ([]byte, error) {
 
 // FileDigestSHA256 returns the sha256:<hex> digest of the file at path.
 func FileDigestSHA256(path string) (string, error) {
+	// #nosec G304 -- path is an operator-declared digest-pinned exec binary from
+	// host Config.Exec (D-065), not remote/attacker input; CallExec refuses on
+	// digest mismatch before spawn.
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("exec digest: read %q: %w", path, err)

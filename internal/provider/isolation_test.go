@@ -38,7 +38,7 @@ func TestMain(m *testing.M) {
 
 func maliciousDigest(t *testing.T) string {
 	t.Helper()
-	raw, err := os.ReadFile(maliciousExecBin)
+	raw, err := os.ReadFile(maliciousExecBin) //nolint:gosec // TestMain-built binary under testdata/; not remote input.
 	if err != nil {
 		t.Fatalf("read malicious bin: %v", err)
 	}
