@@ -6,6 +6,7 @@ import (
 	"regexp"
 
 	"github.com/PlatformRelay/assent/internal/forge"
+	"github.com/PlatformRelay/assent/internal/render"
 )
 
 // markerSentinel is the opening token of the hidden-HTML marker (ADR-0016 §1,
@@ -14,7 +15,7 @@ import (
 // `<!-- assent:marker {json} -->` outside any user-customisable slot. The
 // Reconcile port reads it ONLY to answer "which slot/occurrence/decision
 // produced this artifact"; it is never presentation and never decision input.
-const markerSentinel = "assent:marker"
+const markerSentinel = render.MarkerSentinel
 
 // markerRe extracts the JSON payload of the marker HTML comment from a note
 // body. It is anchored on the exact sentinel so a stray HTML comment in a
@@ -45,27 +46,14 @@ type markerJSON struct {
 	} `json:"artifact"`
 }
 
-// renderMarker serialises a forge.Marker to the hidden-HTML comment form. The
-// JSON is marshalled deterministically (encoding/json emits struct fields in
-// declaration order), so render/parse round-trips byte-for-byte — the
-// (slot, occurrence) idempotence key depends on that stability.
+// renderMarker serialises a forge.Marker to the hidden-HTML comment form. Marker
+// bytes are owned by internal/render (D-094); gitlab delegates assembly here.
 func renderMarker(m forge.Marker) (string, error) {
-	var mj markerJSON
-	mj.Slot.Project = m.Slot.Project
-	mj.Slot.MR = m.Slot.MR
-	mj.Slot.Rule = m.Slot.Rule
-	mj.Slot.EntryRef = m.Slot.EntryRef
-	mj.Slot.Effect = m.Slot.Effect
-	mj.Occurrence = m.Occurrence
-	mj.Decision = m.Decision
-	mj.Artifact.Kind = m.Artifact.Kind
-	mj.Artifact.SchemaVersion = m.Artifact.SchemaVersion
-
-	payload, err := json.Marshal(mj)
+	comment, err := render.FormatMarker(m)
 	if err != nil {
 		return "", fmt.Errorf("gitlab: render marker: %w", err)
 	}
-	return fmt.Sprintf("<!-- %s %s -->", markerSentinel, payload), nil
+	return comment, nil
 }
 
 // parseMarker extracts and decodes the ADR-0019 marker from a note body. It
