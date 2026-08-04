@@ -13,15 +13,15 @@ func TestSnapshotFake(t *testing.T) {
 	t.Parallel()
 
 	const (
-		proj       = "platform/orders-service"
-		mr         = "482"
-		srcSHA     = "abc123deadbeef"
-		tgtSHA     = "def456cafebabe"
-		srcBranch  = "feature/orders"
-		tgtBranch  = "main"
-		mergeDig   = "sha256:merge-result-digest-fixed"
-		author     = "alice"
-		bot        = "assent-bot"
+		proj      = "platform/orders-service"
+		mr        = "482"
+		srcSHA    = "abc123deadbeef"
+		tgtSHA    = "def456cafebabe"
+		srcBranch = "feature/orders"
+		tgtBranch = "main"
+		mergeDig  = "sha256:merge-result-digest-fixed"
+		author    = "alice"
+		bot       = "assent-bot"
 	)
 
 	f := fake.New(bot, srcSHA, tgtSHA, mergeDig)

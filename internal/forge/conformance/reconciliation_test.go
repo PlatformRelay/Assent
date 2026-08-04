@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PlatformRelay/assent/internal/core/decision"
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/forge/fake"
 	gitlab "github.com/PlatformRelay/assent/internal/forge/gitlab"
@@ -108,16 +109,82 @@ func dupMarker() forge.Marker {
 	}
 }
 
-func desiredThreadFor(m forge.Marker) forge.DesiredReviewState {
+func rerunSummaryMarker() forge.Marker {
+	return forge.Marker{
+		Slot: forge.Slot{
+			Project: proj,
+			MR:      mrIID,
+			Rule:    "assent/summary",
+			Effect:  "comment",
+		},
+		Occurrence: decHex,
+		Decision:   decHex,
+		Artifact:   forge.Artifact{Kind: "summary-comment", SchemaVersion: "v1alpha1"},
+	}
+}
+
+func crashSummaryMarker() forge.Marker {
+	return forge.Marker{
+		Slot: forge.Slot{
+			Project: "platform/orders-service",
+			MR:      "551",
+			Rule:    "assent/summary",
+			Effect:  "comment",
+		},
+		Occurrence: decHex,
+		Decision:   decHex,
+		Artifact:   forge.Artifact{Kind: "summary-comment", SchemaVersion: "v1alpha1"},
+	}
+}
+
+func fixtureSummaryBody() string {
+	pm := decision.PresentationModel{
+		APIVersion: "assent.dev/v1alpha1",
+		Kind:       "PresentationModel",
+		Decision:   "REVIEW",
+		Findings: []decision.Finding{{
+			Rule:    "topic-safety/retention-shrink-challenge",
+			Effect:  "challenge",
+			Subject: "topic-registry:orders.events.v1",
+			Code:    "retention-shrink",
+			Points:  10,
+		}},
+	}
+	body, err := render.RenderSummary(pm, render.Context{
+		Options:       render.DefaultOptions(),
+		RiskThreshold: 10,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return body
+}
+
+func rerunSummary() *forge.DesiredSummary {
+	return &forge.DesiredSummary{
+		Marker: rerunSummaryMarker(),
+		Body:   fixtureSummaryBody(),
+	}
+}
+
+func crashSummary() *forge.DesiredSummary {
+	return &forge.DesiredSummary{
+		Marker: crashSummaryMarker(),
+		Body:   fixtureSummaryBody(),
+	}
+}
+
+func desiredThreadFor(m forge.Marker, summary *forge.DesiredSummary) forge.DesiredReviewState {
 	return forge.DesiredReviewState{
 		Project: m.Slot.Project,
 		MR:      m.Slot.MR,
 		Thread:  &forge.DesiredThread{Marker: m, Body: "obligation not proven"},
+		Summary: summary,
 	}
 }
 
 func dupDesired() forge.DesiredReviewState {
-	return desiredThreadFor(dupMarker())
+	return desiredThreadFor(dupMarker(), nil)
 }
 
 func replayRerunIdempotence(f forge.Forge) (newArtifacts int, err error) {
@@ -125,8 +192,12 @@ func replayRerunIdempotence(f forge.Forge) (newArtifacts int, err error) {
 	if err != nil {
 		return 0, err
 	}
+	beforeSummaries, err := botSummaryCount(f, proj, mrIID)
+	if err != nil {
+		return 0, err
+	}
 	for _, m := range []forge.Marker{rerunChallengeMarker(), rerunCommentMarker()} {
-		r, err := forge.Reconcile(f, testClock(), desiredThreadFor(m), forge.Preconditions{})
+		r, err := forge.Reconcile(f, testClock(), desiredThreadFor(m, rerunSummary()), forge.Preconditions{})
 		if err != nil {
 			return 0, fmt.Errorf("Reconcile(%s): %w", m.Slot.Rule, err)
 		}
@@ -137,6 +208,18 @@ func replayRerunIdempotence(f forge.Forge) (newArtifacts int, err error) {
 	after, err := botThreadCount(f, proj, mrIID)
 	if err != nil {
 		return 0, err
+	}
+	if got := botSummaryCountMust(f, proj, mrIID) - beforeSummaries; got != 0 {
+		return 0, fmt.Errorf("rerun must not create a new summary note, created %d", got)
+	}
+	wantSummary, err := render.Envelope(rerunSummaryMarker(), fixtureSummaryBody())
+	if err != nil {
+		return 0, err
+	}
+	if ff, ok := f.(*fake.Forge); ok {
+		if got := ff.NoteBody("note/9000"); got != wantSummary {
+			return 0, fmt.Errorf("summary must be updated in place (summaryUpdated: true), got %q", got)
+		}
 	}
 	return after - before, nil
 }
@@ -149,7 +232,7 @@ func replayCrashThenRerun(f forge.Forge) (newArtifacts int, err error) {
 		return 0, err
 	}
 	for _, m := range []forge.Marker{crashChallengeMarker(), crashCommentMarker()} {
-		r, err := forge.Reconcile(f, testClock(), desiredThreadFor(m), forge.Preconditions{})
+		r, err := forge.Reconcile(f, testClock(), desiredThreadFor(m, crashSummary()), forge.Preconditions{})
 		if err != nil {
 			return 0, fmt.Errorf("Reconcile(%s): %w", m.Slot.Rule, err)
 		}
@@ -191,6 +274,40 @@ func botThreadCount(f forge.Forge, project, mr string) (int, error) {
 	return len(threads), nil
 }
 
+func botSummaryCount(f forge.Forge, project, mr string) (int, error) {
+	notes, err := f.ListBotNotes(project, mr)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, note := range notes {
+		if note.Marker.Artifact.Kind == "summary-comment" {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func botSummaryCountMust(f forge.Forge, project, mr string) int {
+	n, err := botSummaryCount(f, project, mr)
+	if err != nil {
+		panic(err)
+	}
+	return n
+}
+
+func threadOpTarget(receipt forge.PublicationReceipt, wantID string) string {
+	for _, op := range receipt.Operations {
+		if op.TargetID == wantID {
+			return op.TargetID
+		}
+	}
+	if len(receipt.Operations) > 0 {
+		return receipt.Operations[0].TargetID
+	}
+	return ""
+}
+
 // ---- GitLab httptest harness (list/create/resolve path for conformance) ----
 
 type gitlabDiscussion struct {
@@ -200,14 +317,23 @@ type gitlabDiscussion struct {
 	author   string
 }
 
+type gitlabNote struct {
+	id     int
+	body   string
+	author string
+}
+
 type gitlabHarness struct {
-	project      string
-	mr           string
-	botAuthor    string
-	discussions  []gitlabDiscussion
-	nextID       int
-	createCalls  int
-	resolveCalls int
+	project         string
+	mr              string
+	botAuthor       string
+	discussions     []gitlabDiscussion
+	notes           []gitlabNote
+	nextID          int
+	createCalls     int
+	resolveCalls    int
+	noteCreateCalls int
+	noteUpdateCalls int
 }
 
 func newGitLabHarness(project, mr string) *gitlabHarness {
@@ -220,6 +346,15 @@ func (h *gitlabHarness) seed(id, author string, marker forge.Marker, resolved bo
 		return err
 	}
 	h.discussions = append(h.discussions, gitlabDiscussion{id: id, body: body, resolved: resolved, author: author})
+	return nil
+}
+
+func (h *gitlabHarness) seedNote(id int, author string, marker forge.Marker, body string) error {
+	fullBody, err := render.Envelope(marker, body)
+	if err != nil {
+		return err
+	}
+	h.notes = append(h.notes, gitlabNote{id: id, body: fullBody, author: author})
 	return nil
 }
 
@@ -240,6 +375,8 @@ func (h *gitlabHarness) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	escapedBase := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/discussions",
 		url.PathEscape(h.project), url.PathEscape(h.mr))
+	notesBase := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/notes",
+		url.PathEscape(h.project), url.PathEscape(h.mr))
 	path := r.URL.EscapedPath()
 	switch {
 	case r.Method == http.MethodGet && path == escapedBase:
@@ -248,6 +385,12 @@ func (h *gitlabHarness) handle(w http.ResponseWriter, r *http.Request) {
 		h.createDiscussion(w, r)
 	case r.Method == http.MethodPut && strings.HasPrefix(path, escapedBase+"/"):
 		h.resolveDiscussion(w, r, path, escapedBase)
+	case r.Method == http.MethodGet && path == notesBase:
+		h.serveNotes(w, r)
+	case r.Method == http.MethodPost && path == notesBase:
+		h.createNote(w, r)
+	case r.Method == http.MethodPut && strings.HasPrefix(path, notesBase+"/"):
+		h.updateNote(w, r, path, notesBase)
 	default:
 		http.Error(w, "unexpected "+r.Method+" "+path, http.StatusInternalServerError)
 	}
@@ -317,7 +460,70 @@ func (h *gitlabHarness) resolveDiscussion(w http.ResponseWriter, r *http.Request
 	http.NotFound(w, r)
 }
 
-// TestConformanceRerunIdempotence replays the frozen P3-E5 rerun-idempotence and
+func (h *gitlabHarness) serveNotes(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page <= 0 {
+		page = 1
+	}
+	perPage := 100
+	start := (page - 1) * perPage
+	if start >= len(h.notes) {
+		_, _ = w.Write([]byte(`[]`))
+		return
+	}
+	end := start + perPage
+	if end > len(h.notes) {
+		end = len(h.notes)
+	}
+	out := make([]map[string]any, 0, end-start)
+	for _, n := range h.notes[start:end] {
+		out = append(out, map[string]any{
+			"id":     n.id,
+			"body":   n.body,
+			"author": map[string]any{"username": n.author},
+		})
+	}
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (h *gitlabHarness) createNote(w http.ResponseWriter, r *http.Request) {
+	h.noteCreateCalls++
+	body, _ := io.ReadAll(r.Body)
+	form, _ := url.ParseQuery(string(body))
+	h.nextID++
+	id := h.nextID
+	h.notes = append(h.notes, gitlabNote{id: id, body: form.Get("body"), author: h.botAuthor})
+	w.WriteHeader(http.StatusCreated)
+	_, _ = io.WriteString(w, fmt.Sprintf(`{"id":%d}`, id))
+}
+
+func (h *gitlabHarness) updateNote(w http.ResponseWriter, r *http.Request, path, notesBase string) {
+	h.noteUpdateCalls++
+	body, _ := io.ReadAll(r.Body)
+	form, _ := url.ParseQuery(string(body))
+	rawID := strings.TrimPrefix(path, notesBase+"/")
+	idStr, err := url.PathUnescape(rawID)
+	if err != nil {
+		http.Error(w, "bad note id", http.StatusBadRequest)
+		return
+	}
+	var id int
+	if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil {
+		http.Error(w, "bad note id", http.StatusBadRequest)
+		return
+	}
+	for i := range h.notes {
+		if h.notes[i].id == id {
+			h.notes[i].body = form.Get("body")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"id":%d}`, id))
+			return
+		}
+	}
+	http.NotFound(w, r)
+}
+
+// ---- GitLab httptest harness (list/create/resolve path for conformance) ----
 // crash-then-rerun fixtures (REQ-E4-S09-01). A plain rerun creates zero new bot
 // threads; a crash-then-rerun fills exactly the one gap slot without duplicating
 // partial work.
@@ -325,6 +531,7 @@ func TestConformanceRerunIdempotence(t *testing.T) {
 	t.Run("fake/rerun-idempotence", func(t *testing.T) {
 		// Pre-state = rerun-idempotence.yaml run2.step2ExistingArtifacts (lines 58-66).
 		f := fake.New(botID, "src", "tgt", "sha256:merge")
+		f.SeedNote("note/9000", botID, rerunSummaryMarker(), "old summary")
 		f.SeedThread("note/9001", botID, rerunChallengeMarker(), true) // reviewer-resolved
 		f.SeedThread("note/9002", botID, rerunCommentMarker(), false)
 
@@ -347,6 +554,7 @@ func TestConformanceRerunIdempotence(t *testing.T) {
 	t.Run("fake/crash-then-rerun", func(t *testing.T) {
 		// Pre-state = crash-then-rerun.yaml step2ExistingArtifacts (lines 55-61).
 		f := fake.New(botID, "src", "tgt", "sha256:merge")
+		f.SeedNote("note/7000", botID, crashSummaryMarker(), "crash summary")
 		f.SeedThread("note/7001", botID, crashChallengeMarker(), false)
 
 		created, err := replayCrashThenRerun(f)
@@ -364,6 +572,9 @@ func TestConformanceRerunIdempotence(t *testing.T) {
 
 	t.Run("gitlab/rerun-idempotence", func(t *testing.T) {
 		h := newGitLabHarness(proj, mrIID)
+		if err := h.seedNote(9000, botID, rerunSummaryMarker(), "old summary"); err != nil {
+			t.Fatal(err)
+		}
 		if err := h.seed("note/9001", botID, rerunChallengeMarker(), true); err != nil {
 			t.Fatal(err)
 		}
@@ -382,10 +593,19 @@ func TestConformanceRerunIdempotence(t *testing.T) {
 		if h.createCalls != 0 {
 			t.Fatalf("gitlab rerun must not POST new discussions, createCalls=%d", h.createCalls)
 		}
+		if h.noteCreateCalls != 0 {
+			t.Fatalf("gitlab rerun must not POST new summary notes, noteCreateCalls=%d", h.noteCreateCalls)
+		}
+		if h.noteUpdateCalls == 0 {
+			t.Fatal("gitlab rerun must update summary in place (summaryUpdated: true)")
+		}
 	})
 
 	t.Run("gitlab/crash-then-rerun", func(t *testing.T) {
 		h := newGitLabHarness("platform/orders-service", "551")
+		if err := h.seedNote(7000, botID, crashSummaryMarker(), "crash summary"); err != nil {
+			t.Fatal(err)
+		}
 		if err := h.seed("note/7001", botID, crashChallengeMarker(), false); err != nil {
 			t.Fatal(err)
 		}
@@ -500,14 +720,14 @@ func TestConformanceSpoofedMarkerIgnored(t *testing.T) {
 		f.SeedThread("note/6660", "contributor-mallory", m, false)
 
 		before := f.ThreadCount()
-		receipt, err := forge.Reconcile(f, testClock(), desiredThreadFor(m), forge.Preconditions{})
+		receipt, err := forge.Reconcile(f, testClock(), desiredThreadFor(m, rerunSummary()), forge.Preconditions{})
 		if err != nil {
 			t.Fatalf("Reconcile: %v", err)
 		}
 		if after := f.ThreadCount(); after != before {
 			t.Fatalf("spoofed marker must not create threads on rerun: before=%d after=%d", before, after)
 		}
-		if got := receipt.Operations[0].TargetID; got != "note/9002" {
+		if got := threadOpTarget(receipt, "note/9002"); got != "note/9002" {
 			t.Fatalf("receipt must target bot thread note/9002, got %q (contributor would be note/6660)", got)
 		}
 	})
@@ -516,7 +736,7 @@ func TestConformanceSpoofedMarkerIgnored(t *testing.T) {
 		f := fake.New(botID, "src", "tgt", "sha256:merge")
 		f.SeedThread("note/6660", "contributor-mallory", m, false)
 
-		_, err := forge.Reconcile(f, testClock(), desiredThreadFor(m), forge.Preconditions{})
+		_, err := forge.Reconcile(f, testClock(), desiredThreadFor(m, nil), forge.Preconditions{})
 		if err != nil {
 			t.Fatalf("Reconcile: %v", err)
 		}
@@ -539,7 +759,7 @@ func TestConformanceSpoofedMarkerIgnored(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		receipt, err := forge.Reconcile(c, testClock(), desiredThreadFor(m), forge.Preconditions{})
+		receipt, err := forge.Reconcile(c, testClock(), desiredThreadFor(m, nil), forge.Preconditions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -553,7 +773,7 @@ func TestConformanceSpoofedMarkerIgnored(t *testing.T) {
 		if h.createCalls != 0 {
 			t.Fatalf("contributor marker must not prevent idempotent reuse; createCalls=%d", h.createCalls)
 		}
-		if got := receipt.Operations[0].TargetID; got != "note/9002" {
+		if got := threadOpTarget(receipt, "note/9002"); got != "note/9002" {
 			t.Fatalf("receipt must target bot thread note/9002, got %q", got)
 		}
 		threads, err := c.ListBotThreads(m.Slot.Project, m.Slot.MR)
@@ -572,7 +792,7 @@ func TestConformanceSpoofedMarkerIgnored(t *testing.T) {
 		}
 		c := h.client(t)
 
-		_, err := forge.Reconcile(c, testClock(), desiredThreadFor(m), forge.Preconditions{})
+		_, err := forge.Reconcile(c, testClock(), desiredThreadFor(m, nil), forge.Preconditions{})
 		if err != nil {
 			t.Fatalf("Reconcile: %v", err)
 		}

@@ -83,7 +83,7 @@ func desiredThreadFor(m forge.Marker, summary *forge.DesiredSummary) forge.Desir
 func rerunSummary() *forge.DesiredSummary {
 	return &forge.DesiredSummary{
 		Marker: summaryMarker(),
-		Body:   "placeholder summary",
+		Body:   fixtureSummaryBody(),
 	}
 }
 
@@ -129,7 +129,7 @@ func TestReconcileReplaysP3E5Fixtures(t *testing.T) {
 		if got := f.SummaryNoteCount() - beforeSummaries; got != 0 {
 			t.Fatalf("rerun must not create a new summary note, created %d", got)
 		}
-		wantSummary, err := render.Envelope(summaryMarker(), "placeholder summary")
+		wantSummary, err := render.Envelope(summaryMarker(), fixtureSummaryBody())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -246,7 +246,7 @@ func desiredCrashThreadFor(m forge.Marker) forge.DesiredReviewState {
 		Thread:  &forge.DesiredThread{Marker: m, Body: "obligation not proven"},
 		Summary: &forge.DesiredSummary{
 			Marker: crashSummaryMarker(),
-			Body:   "placeholder summary",
+			Body:   fixtureSummaryBody(),
 		},
 	}
 }

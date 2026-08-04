@@ -111,13 +111,13 @@ type gitlabUser struct {
 }
 
 type approvalStateRule struct {
-	ID                 int           `json:"id"`
-	Name               string        `json:"name"`
-	RuleType           string        `json:"rule_type"`
-	ApprovalsRequired  int           `json:"approvals_required"`
-	Approved           bool          `json:"approved"`
-	EligibleApprovers  []gitlabUser  `json:"eligible_approvers"`
-	ApprovedBy         []approvedRow `json:"approved_by"`
+	ID                int           `json:"id"`
+	Name              string        `json:"name"`
+	RuleType          string        `json:"rule_type"`
+	ApprovalsRequired int           `json:"approvals_required"`
+	Approved          bool          `json:"approved"`
+	EligibleApprovers []gitlabUser  `json:"eligible_approvers"`
+	ApprovedBy        []approvedRow `json:"approved_by"`
 }
 
 type approvedRow struct {

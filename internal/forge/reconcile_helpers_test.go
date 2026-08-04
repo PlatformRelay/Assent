@@ -7,7 +7,9 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/PlatformRelay/assent/internal/core/decision"
 	"github.com/PlatformRelay/assent/internal/forge"
+	"github.com/PlatformRelay/assent/internal/render"
 	"github.com/PlatformRelay/assent/schemas"
 )
 
@@ -57,6 +59,31 @@ func reviewState() forge.DesiredReviewState {
 		MR:      mrIID,
 		Thread:  &forge.DesiredThread{Marker: reviewMarker(), Body: "obligation not proven"},
 	}
+}
+
+// fixtureSummaryBody returns the default-theme rendered summary body used by
+// P3-E5 idempotence replays (E8-S13 — renderer output, not a placeholder).
+func fixtureSummaryBody() string {
+	pm := decision.PresentationModel{
+		APIVersion: "assent.dev/v1alpha1",
+		Kind:       "PresentationModel",
+		Decision:   "REVIEW",
+		Findings: []decision.Finding{{
+			Rule:    "topic-safety/retention-shrink-challenge",
+			Effect:  "challenge",
+			Subject: "topic-registry:orders.events.v1",
+			Code:    "retention-shrink",
+			Points:  10,
+		}},
+	}
+	body, err := render.RenderSummary(pm, render.Context{
+		Options:       render.DefaultOptions(),
+		RiskThreshold: 10,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return body
 }
 
 // validateReceipt validates a PublicationReceipt's JSON bytes against the frozen

@@ -46,9 +46,9 @@ func premiumEligibleHandler(t *testing.T, authorApproved bool) http.HandlerFunc 
 }
 
 type premiumApprovalFixture struct {
-	approvedBy         string
-	eligibleApprovers  string
-	approvalsRequired  int
+	approvedBy          string
+	eligibleApprovers   string
+	approvalsRequired   int
 	approvalStateStatus int // 0 = OK
 }
 

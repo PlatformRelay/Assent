@@ -38,7 +38,7 @@ func TestTransportErrors(t *testing.T) {
 		t.Error("CurrentHeads: want transport error")
 	}
 	m := forge.DesiredMerge{SourceSha: "s", TargetSha: "t", MergeResultDigest: "d"}
-		if _, err := c.MergeCAS("42", "7", m); err == nil {
+	if _, err := c.MergeCAS("42", "7", m); err == nil {
 		t.Error("MergeCAS: want transport error")
 	}
 	if _, err := c.Snapshot("42", "7"); err == nil {

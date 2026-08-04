@@ -15,7 +15,7 @@ func desiredWithSummary(thread *forge.DesiredThread) forge.DesiredReviewState {
 		MR:      mrIID,
 		Summary: &forge.DesiredSummary{
 			Marker: summaryMarker(),
-			Body:   "placeholder summary body",
+			Body:   fixtureSummaryBody(),
 		},
 	}
 	if thread != nil {
@@ -68,7 +68,7 @@ func TestReconcileSummaryPreamble(t *testing.T) {
 		if got := f.SummaryNoteCount() - beforeSummaries; got != 0 {
 			t.Fatalf("rerun must not create a new summary note, created %d", got)
 		}
-		wantSummary, err := render.Envelope(summaryMarker(), "placeholder summary body")
+		wantSummary, err := render.Envelope(summaryMarker(), fixtureSummaryBody())
 		if err != nil {
 			t.Fatal(err)
 		}
