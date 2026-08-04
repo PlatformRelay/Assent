@@ -50,11 +50,13 @@ type runConfig struct {
 }
 
 // forgePort is the subset of behaviour `assent run` needs from a forge: the
-// full write port plus the two orchestration reads (GetMR, FileAtRef). The
-// concrete *gitlab.Client satisfies it; tests drive it against an httptest
+// full write port plus orchestration reads (GetMR, FileAtRef, Snapshot, Resolve).
+// The concrete *gitlab.Client satisfies it; tests drive it against an httptest
 // GitLab through the same concrete client (no live network).
 type forgePort interface {
 	forge.Forge
+	forge.Snapshotter
+	forge.Resolver
 	GetMR(project, mr string) (gitlab.MRInfo, error)
 	FileAtRef(project, path, ref string) ([]byte, error)
 }
@@ -161,6 +163,17 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		return fmt.Errorf("read MR: %w", err)
 	}
 
+	// 1b. E4-S06: forge Snapshot — changed-file set for classifier (when --checkout
+	//     unset) and capability flags for forge-probed arming (D-034/D-074 on the
+	//     run path). Resolve reads the same MR; no env placeholder on writes.
+	snapshot, err := client.Snapshot(cfg.project, cfg.mr)
+	if err != nil {
+		return fmt.Errorf("forge snapshot: %w", err)
+	}
+	mrAuthor := snapshot.Heads.Author
+	mergeDigest := gitlab.SyntheticDigest(info.SourceSHA, info.TargetSHA)
+	probe := forge.PreconditionFromCapabilities(snapshot.Capabilities)
+
 	// 2. Load the frozen MergePolicy + RulesetBinding from the TARGET ref
 	//    (ADR-0015 §1) — NEVER the source branch — under strict decode (E2-S01).
 	//    Fail CLOSED on any load/validate error: no forge writes.
@@ -262,15 +275,15 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	// 5. Classify (path-only) and fold the checkout's safety signals.
 	subjectClass := classify.Classify(changeSet)
 
-	// 5b. E1-S08 (OPT-IN): when --checkout is set, enumerate the MR's FULL
-	//     changed-file set from the LOCAL CHECKOUT (ADR-0008 §4) and fold it into
-	//     the two safety signals the evaluator honours BEFORE any predicate:
-	//       - any `.assent/**` path dominates the class to assent-policy -> BLOCK
-	//         (a smuggled policy edit cannot vouch itself);
-	//       - any opaque changed file forces the run fail-safe (never dropped).
-	//     The governed subject's own ChangeSet stays the predicate input. When
-	//     --checkout is unset this whole step is skipped — exactly the pre-E1-S08
-	//     single-file path.
+	// 5b. Changed-file-set safety fold (E1-S08 + E4-S06 judgment call (e)):
+	//       - `--checkout` set → LOCAL tree is sole authority (E1-S08); Snapshot
+	//         path-list is NOT used for classifier input (D-077, no union);
+	//       - `--checkout` unset → Snapshot changed files feed the path-only
+	//         classifier (assent-policy dominance over the MR's full forge-reported
+	//         set, not the governed subject alone).
+	//     Opaque detection stays on the local checkout fold only; Snapshot paths
+	//     carry no byte-level diff here. The governed subject's ChangeSet stays the
+	//     predicate input in both modes.
 	if cfg.checkout != "" {
 		fold, ferr := foldCheckout(dirCheckout{root: cfg.checkout}, governed)
 		if ferr != nil {
@@ -282,6 +295,11 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		if fold.opaque && !changeSet.Opaque {
 			changeSet.Opaque = true
 			changeSet.OpaqueReason = "changed-file set opaque: " + fold.opaqueReason
+		}
+	} else {
+		fold := foldSnapshotPaths(snapshot.ChangedFiles)
+		if fold.class == classify.ClassAssentPolicy {
+			subjectClass = classify.ClassAssentPolicy
 		}
 	}
 
@@ -297,9 +315,16 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		return fmt.Errorf("resolve providers: %w", ferr)
 	}
 
+	// 5d. E4-S06: Resolve forge-proven ApprovalEvidence (or explicit gap) before
+	//     CoverWithApproval — never silent APPROVE on missing proof (E2-S07).
+	appr, err := resolveRunApproval(client, cfg, info, mergeDigest, mrAuthor)
+	if err != nil {
+		return fmt.Errorf("resolve approval: %w", err)
+	}
+
 	// 6. Decide (E2-S04 coverage over the decoded EvaluationInput), with the two
 	//    dominating fail-safe guards reasserted around it (see decide).
-	result, err := decide(cfg.subject, subjectClass, changeSet, mp, bind, ceiling, info, facts)
+	result, err := decide(cfg.subject, subjectClass, changeSet, mp, bind, ceiling, info, facts, appr, mrAuthor)
 	if err != nil {
 		return fmt.Errorf("evaluate: %w", err)
 	}
@@ -341,7 +366,7 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	//    derived from the JUDGED HEAD CONTENT (stable across tool/policy bumps —
 	//    the grammar's "occurrence = judged-content digest"), the decision digest
 	//    from the DecisionRecord bytes, and entryRef from the governed subject.
-	desired, pre := buildDesired(cfg, info, cfg.subject, head, result, recordJSON)
+	desired, pre := buildDesired(cfg, info, cfg.subject, head, result, recordJSON, probe.ArmEligible)
 	receipt, recErr := forge.Reconcile(client, clockAdapter{now: clock}, desired, pre)
 
 	// 9. Emit the DecisionRecord + a one-line summary. A refusal from Reconcile
@@ -414,13 +439,13 @@ func selectBinding(rb *policy.RulesetBinding) (*policy.Binding, error) {
 //     short-circuits to the fail-safe REVIEW here, matching the skeleton's
 //     failSafe(), never a silent APPROVE.
 //
-// Otherwise the frozen engine decides over the decoded EvaluationInput with nil
-// ApprovalEvidence (GUARD 3: every require-review stays unsatisfied -> REVIEW) and
-// the pack phase ceiling. Every finding is then given a non-empty subject (N1).
+// Otherwise the frozen engine decides over the decoded EvaluationInput with
+// forge-resolved ApprovalEvidence (E4-S06) and the pack phase ceiling. Every
+// finding is then given a non-empty subject (N1).
 //
 // facts is the E5-S05 host-resolved envelope (provider → name → Fact). Nil/empty
 // keeps the pre-S05 fail-safe empty map from buildEvaluationInput.
-func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergePolicy, bind *policy.Binding, ceiling policy.Phase, info gitlab.MRInfo, facts map[string]map[string]aggregate.Fact) (aggregate.Result, error) {
+func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergePolicy, bind *policy.Binding, ceiling policy.Phase, info gitlab.MRInfo, facts map[string]map[string]aggregate.Fact, appr *aggregate.ApprovalContext, mrAuthor string) (aggregate.Result, error) {
 	var res aggregate.Result
 	switch {
 	case subjectClass == classify.ClassAssentPolicy:
@@ -428,11 +453,11 @@ func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergeP
 	case cs.Opaque || len(cs.Changes) == 0:
 		res = undecidableReview(subject)
 	default:
-		in := buildEvaluationInput(cs, mrFrom(info), bind.Require)
+		in := buildEvaluationInput(cs, mrFrom(info, mrAuthor), bind.Require)
 		if len(facts) > 0 {
 			in.Facts = facts
 		}
-		r, err := aggregate.CoverWithPhaseCeiling(mp, bind, &in, nil, ceiling)
+		r, err := aggregate.CoverWithPhaseCeiling(mp, bind, &in, appr, ceiling)
 		if err != nil {
 			return aggregate.Result{}, err
 		}
@@ -441,12 +466,48 @@ func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergeP
 	return sanitizeSubjects(res, subject), nil
 }
 
-// mrFrom builds the engine's aggregate.MR from the forge MR metadata. The author
-// is not carried on gitlab.MRInfo (it is only needed for require-review
-// self-approval exclusion, and this lane injects nil ApprovalEvidence), so it is
-// left empty — a require-review obligation stays unsatisfied regardless.
-func mrFrom(info gitlab.MRInfo) aggregate.MR {
+// resolveRunApproval maps a require-review subject + pinned SHAs to forge-proven
+// ApprovalEvidence or an explicit capability gap (never silent APPROVE).
+func resolveRunApproval(client forgePort, cfg runConfig, info gitlab.MRInfo, mergeDigest, mrAuthor string) (*aggregate.ApprovalContext, error) {
+	res, err := client.Resolve(forge.ResolveRequest{
+		Project:           cfg.project,
+		MR:                cfg.mr,
+		Subject:           cfg.subject,
+		SourceSha:         info.SourceSHA,
+		TargetSha:         info.TargetSHA,
+		MergeResultDigest: mergeDigest,
+		MRAuthor:          mrAuthor,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := res.WellFormed(); err != nil {
+		return nil, err
+	}
+	appr := &aggregate.ApprovalContext{
+		SourceSha: info.SourceSHA,
+		Evidence:  map[string]*aggregate.ApprovalEvidence{},
+	}
+	if res.HasEvidence() {
+		appr.Evidence[cfg.subject] = res.Evidence
+		return appr, nil
+	}
+	if res.HasGap() {
+		// Tier / API gap → verifyingCapability:none so require-review records a
+		// capability gap distinctly (never APPROVE on missing proof).
+		appr.Evidence[cfg.subject] = &aggregate.ApprovalEvidence{
+			VerifyingCapability: "none",
+			Pins:                aggregate.ApprovalPins{SourceSha: info.SourceSHA},
+		}
+	}
+	return appr, nil
+}
+
+// mrFrom builds the engine's aggregate.MR from the forge MR metadata plus the
+// MR author (Snapshot heads) for require-review self-approval exclusion.
+func mrFrom(info gitlab.MRInfo, author string) aggregate.MR {
 	return aggregate.MR{
+		Author:       author,
 		SourceBranch: info.SourceBranch,
 		TargetBranch: info.TargetBranch,
 	}
@@ -517,16 +578,11 @@ func sanitizeSubjects(res aggregate.Result, fallback string) aggregate.Result {
 //     human body naming the driving rule/code. No approve/merge.
 //   - APPROVE → approve + a SHA-pinned merge, gated by arming.
 //
-// Arming: ArmEligible is TRUE only when --arm was passed AND the decision is
-// APPROVE. Without --arm the APPROVE path degrades to advisory (Reconcile
-// returns ErrArmingRefused → no write).
-//
-// The CAS pins (SourceSha/TargetSha/MergeResultDigest) are the values the
-// adapter's CurrentHeads reports. The merge-result digest is the adapter's
-// SYNTHETIC digest (GitLab exposes no real one) — non-empty and consistent with
-// what forge.Reconcile re-reads via CurrentHeads, so the merge is reachable
-// while the DecisionRecord separately carries the honest null+capabilityGap.
-func buildDesired(cfg runConfig, info gitlab.MRInfo, subject string, head []byte, result aggregate.Result, recordJSON []byte) (forge.DesiredReviewState, forge.Preconditions) {
+// Arming: ArmEligible comes from the forge-probed PreconditionReport (E4-S05/S06),
+// NOT from --arm or readPipelineDescription() env vars (D-034/D-074). When the
+// forge probe refuses, Reconcile returns ErrArmingRefused → no write even if
+// --arm was passed.
+func buildDesired(cfg runConfig, info gitlab.MRInfo, subject string, head []byte, result aggregate.Result, recordJSON []byte, armEligible bool) (forge.DesiredReviewState, forge.Preconditions) {
 	digest := gitlab.SyntheticDigest(info.SourceSHA, info.TargetSHA)
 	desired := forge.DesiredReviewState{Project: cfg.project, MR: cfg.mr}
 
@@ -538,11 +594,7 @@ func buildDesired(cfg runConfig, info gitlab.MRInfo, subject string, head []byte
 			MergeResultDigest: digest,
 		}
 		pre := forge.Preconditions{
-			// D-034 SEAM: --arm is a SANDBOX override for the walking skeleton. It
-			// does NOT satisfy real protected-source verification (S05
-			// INSECURE-PLACEHOLDER still deferred): never wire readPipelineDescription
-			// into a real merge. ArmEligible is TRUE only when --arm AND APPROVE.
-			ArmEligible:       cfg.arm,
+			ArmEligible:       armEligible,
 			SourceSha:         info.SourceSHA,
 			TargetSha:         info.TargetSHA,
 			MergeResultDigest: digest,
@@ -621,7 +673,7 @@ func emitRecord(cfg runConfig, recordJSON []byte, stdout io.Writer) error {
 		_, err := stdout.Write(append(recordJSON, '\n'))
 		return err
 	}
-	return os.WriteFile(cfg.emit, recordJSON, 0o600)
+	return os.WriteFile(cfg.emit, recordJSON, 0o600) // #nosec G703 -- operator-supplied --emit path by design
 }
 
 // validateRecord validates DecisionRecord JSON against the frozen schema.

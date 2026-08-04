@@ -274,6 +274,7 @@ func TestLiveCheckoutMintsFileEvent(t *testing.T) {
 		f := newFakeGitLab(t)
 		f.mergePolicy = mergePolicyFileEvents
 		f.rulesetBinding = rulesetBindingReviewedDeletion
+		f.approvalEligible = false
 		f.baseFile = present
 		f.headFile = present
 
@@ -373,6 +374,9 @@ func TestLiveCheckoutFileEventDoubleRun(t *testing.T) {
 				f := newFakeGitLab(t)
 				f.mergePolicy = mergePolicyFileEvents
 				f.rulesetBinding = rulesetBindingReviewedDeletion
+				if tc.name == "delete" {
+					f.approvalEligible = false
+				}
 				f.baseFile = present
 				f.headFile = present
 				checkout := writeCheckout(t, tc.files)

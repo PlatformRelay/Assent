@@ -107,14 +107,13 @@ func TestSubjectOf(t *testing.T) {
 	}
 }
 
-// mrFrom threads branch names from the forge MR metadata (author intentionally
-// empty — require-review self-approval exclusion is E4, this lane injects nil evidence).
+// mrFrom threads branch names and MR author from forge Snapshot heads (E4-S06).
 func TestMRFrom(t *testing.T) {
-	mr := mrFrom(gitlab.MRInfo{SourceBranch: "feature", TargetBranch: "main"})
+	mr := mrFrom(gitlab.MRInfo{SourceBranch: "feature", TargetBranch: "main"}, "alice")
 	if mr.SourceBranch != "feature" || mr.TargetBranch != "main" {
 		t.Errorf("mrFrom = %+v, want source=feature target=main", mr)
 	}
-	if mr.Author != "" {
-		t.Errorf("author = %q, want empty (not carried on MRInfo)", mr.Author)
+	if mr.Author != "alice" {
+		t.Errorf("author = %q, want alice from Snapshot heads", mr.Author)
 	}
 }

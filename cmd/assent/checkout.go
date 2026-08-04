@@ -216,3 +216,17 @@ func foldCheckout(co localCheckout, governed string) (checkoutFold, error) {
 	fold.opaqueReason = strings.Join(reasons, "; ")
 	return fold, nil
 }
+
+// foldSnapshotPaths applies the E4-S06 path-only classifier fold over forge
+// Snapshot changed files when --checkout is unset. Any `.assent/**` path in the
+// Snapshot set dominates to assent-policy (BLOCK). Opaque detection is not
+// available from paths alone — that remains the checkout fold's job.
+func foldSnapshotPaths(paths []string) checkoutFold {
+	fold := checkoutFold{class: classify.ClassUnclassified}
+	for _, path := range paths {
+		if classify.FileClass(path) == classify.ClassAssentPolicy {
+			fold.class = classify.ClassAssentPolicy
+		}
+	}
+	return fold
+}

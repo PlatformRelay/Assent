@@ -43,6 +43,14 @@ type fakeGitLab struct {
 	// stateful discussions — POST appends; GET lists; PUT ?resolved=true marks resolved.
 	botAuthor   string
 	discussions []fakeDiscussion
+
+	// E4-S06 forge Snapshot/Resolve probe configuration.
+	projectJSON        string
+	changedFiles       []string
+	freeTier           bool
+	mrAuthor           string
+	approvalEligible   bool
+	approvalRulesStatus int
 }
 
 type fakeDiscussion struct {
@@ -51,18 +59,41 @@ type fakeDiscussion struct {
 	resolved bool
 }
 
+const fakeForgePremiumProjectJSON = `{
+	"only_allow_merge_if_all_discussions_are_resolved":true,
+	"merge_trains_enabled":true,
+	"ci_config_path":".gitlab-ci.yml@group/external-ci"
+}`
+
+const fakeForgeIneligibleProjectJSON = `{
+	"only_allow_merge_if_all_discussions_are_resolved":false,
+	"merge_trains_enabled":true,
+	"ci_config_path":".gitlab-ci.yml@group/external-ci"
+}`
+
+const fakeForgeInsecureProjectJSON = `{
+	"only_allow_merge_if_all_discussions_are_resolved":true,
+	"merge_trains_enabled":true,
+	"ci_config_path":".gitlab-ci.yml"
+}`
+
 func newFakeGitLab(t *testing.T) *fakeGitLab {
 	t.Helper()
 	f := &fakeGitLab{
-		sourceSHA:      "srcSHA",
-		targetTip:      "tgtTIP",
-		sourceBranch:   "feature",
-		target:         "main",
-		governedPath:   "topics/orders.yaml",
-		mergePolicy:    mergePolicyChallenge,
-		rulesetBinding: rulesetBindingNonDestructive,
-		botAuthor:      "assent-bot",
+		sourceSHA:            "srcSHA",
+		targetTip:            "tgtTIP",
+		sourceBranch:         "feature",
+		target:               "main",
+		governedPath:         "topics/orders.yaml",
+		mergePolicy:          mergePolicyChallenge,
+		rulesetBinding:       rulesetBindingNonDestructive,
+		botAuthor:            "assent-bot",
+		projectJSON:          fakeForgePremiumProjectJSON,
+		mrAuthor:             "alice",
+		approvalEligible:     true,
+		approvalRulesStatus:  http.StatusOK,
 	}
+	f.changedFiles = []string{f.governedPath}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -75,9 +106,20 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"iid": 7, "project_id": 42, "sha": f.sourceSHA,
 			"source_branch": f.sourceBranch, "target_branch": f.target,
+			"author": map[string]any{"id": 101, "username": f.mrAuthor},
 		})
 	case p == "/api/v4/projects/42/repository/branches/main" && r.Method == http.MethodGet:
 		_ = json.NewEncoder(w).Encode(map[string]any{"commit": map[string]any{"id": f.targetTip}})
+	case p == "/api/v4/projects/42" && r.Method == http.MethodGet:
+		_, _ = w.Write([]byte(f.projectJSONBody()))
+	case p == "/api/v4/projects/42/merge_requests/7/changes" && r.Method == http.MethodGet:
+		f.serveMRChanges(w)
+	case strings.HasPrefix(p, "/api/v4/projects/42/merge_requests/7/approval_rules") && r.Method == http.MethodGet:
+		f.serveApprovalRules(w)
+	case p == "/api/v4/projects/42/merge_requests/7/approval_state" && r.Method == http.MethodGet:
+		f.serveApprovalState(w)
+	case p == "/api/v4/user" && r.Method == http.MethodGet:
+		_, _ = w.Write([]byte(`{"id":999,"username":"` + f.botAuthor + `"}`))
 	case strings.HasPrefix(p, "/api/v4/projects/42/repository/files/") && strings.HasSuffix(p, "/raw"):
 		f.serveFile(w, r, p)
 	case p == "/api/v4/projects/42/merge_requests/7/discussions" && r.Method == http.MethodGet:
@@ -105,6 +147,54 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "unexpected "+r.Method+" "+p, http.StatusInternalServerError)
 	}
+}
+
+func (f *fakeGitLab) projectJSONBody() string {
+	if f.projectJSON != "" {
+		return f.projectJSON
+	}
+	return fakeForgePremiumProjectJSON
+}
+
+func (f *fakeGitLab) serveMRChanges(w http.ResponseWriter) {
+	files := f.changedFiles
+	if len(files) == 0 {
+		files = []string{f.governedPath}
+	}
+	changes := make([]map[string]string, len(files))
+	for i, path := range files {
+		changes[i] = map[string]string{"old_path": path, "new_path": path}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"changes": changes})
+}
+
+func (f *fakeGitLab) serveApprovalRules(w http.ResponseWriter) {
+	if f.freeTier || f.approvalRulesStatus == http.StatusNotFound {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if f.approvalRulesStatus != 0 && f.approvalRulesStatus != http.StatusOK {
+		http.Error(w, "unavailable", f.approvalRulesStatus)
+		return
+	}
+	_, _ = w.Write([]byte(`[{"id":1,"name":"security-review","rule_type":"regular","approvals_required":1}]`))
+}
+
+func (f *fakeGitLab) serveApprovalState(w http.ResponseWriter) {
+	if f.freeTier {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	approvedBy := `[]`
+	if f.approvalEligible {
+		approvedBy = `[{"user":{"id":202,"username":"bob"}}]`
+	}
+	body := `{"rules":[{
+		"id":1,"name":"security-review","rule_type":"regular","approvals_required":1,"approved":true,
+		"eligible_approvers":[{"id":101,"username":"alice"},{"id":202,"username":"bob"},{"id":999,"username":"` + f.botAuthor + `"}],
+		"approved_by":` + approvedBy + `
+	}]}`
+	_, _ = w.Write([]byte(body))
 }
 
 // serveDiscussions returns stored MR discussions in GitLab REST shape so
@@ -272,6 +362,24 @@ const rulesetBindingNonDestructive = `{
   ]
 }`
 
+const mergePolicyRequireReviewOnFalse = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "MergePolicy",
+  "metadata": { "name": "topic-safety" },
+  "spec": {
+    "entries": { "topic-registry": { "mode": "document", "root": "", "identity": { "pointer": "/metadata/name" } } },
+    "rules": [
+      {
+        "name": "human-approval-required",
+        "phase": "enforce",
+        "match": { "files": { "paths": ["topics/orders.yaml"] } },
+        "prove": { "obligation": "ownership", "when": "false" },
+        "onFailure": { "effect": "require-review", "code": "needs-human-approval" }
+      }
+    ]
+  }
+}`
+
 const rulesetBindingOwnership = `{
   "apiVersion": "assent.dev/v1alpha1",
   "kind": "RulesetBinding",
@@ -381,21 +489,22 @@ func TestRunApproveArmedMerges(t *testing.T) {
 	}
 }
 
-// APPROVE WITHOUT --arm: same increase → APPROVE, but no --arm → ArmEligible
-// false → Reconcile refuses (ErrArmingRefused) → ZERO approve/merge writes. The
-// run still exits 0 (advisory) and emits the schema-valid record.
+// APPROVE with forge probe refusing: same increase → APPROVE decision, but
+// forge-probed ArmEligible=false → Reconcile refuses (ErrArmingRefused) → ZERO
+// approve/merge writes. --arm alone cannot override (E4-S06 / D-034).
 func TestRunApproveUnarmedNoWrite(t *testing.T) {
 	f := newFakeGitLab(t)
+	f.projectJSON = fakeForgeIneligibleProjectJSON
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n"
 
 	var out bytes.Buffer
-	code := runRun(runArgs(), env("tok"), fixedClock(), &out, &out, f.factory())
+	code := runRun(runArgs("--arm"), env("tok"), fixedClock(), &out, &out, f.factory())
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0 (advisory)\n%s", code, out.String())
 	}
 	if f.approvals != 0 || f.merges != 0 {
-		t.Errorf("unarmed APPROVE must not write: approvals=%d merges=%d", f.approvals, f.merges)
+		t.Errorf("forge-ineligible APPROVE must not write even with --arm: approvals=%d merges=%d", f.approvals, f.merges)
 	}
 	if !strings.Contains(out.String(), "advisory-only") {
 		t.Errorf("expected advisory-only summary:\n%s", out.String())
@@ -405,14 +514,14 @@ func TestRunApproveUnarmedNoWrite(t *testing.T) {
 	}
 }
 
-// GUARD 3: the live path injects NIL ApprovalEvidence, so a require-review
-// obligation is UNSATISFIED (nil-fail-safe, never default-satisfied) → REVIEW. The
-// owner fact is unresolved (facts empty until E5), the predicate errors, and the
-// require-review finding stands. No approve/merge.
+// GUARD 3 (updated E4-S06): without forge-resolved ApprovalEvidence a
+// require-review obligation stays UNSATISFIED → REVIEW even when forge arming
+// would allow writes. No approve/merge on REVIEW.
 func TestRunNilEvidenceRequiresReview(t *testing.T) {
 	f := newFakeGitLab(t)
 	f.mergePolicy = mergePolicyOwnership
 	f.rulesetBinding = rulesetBindingOwnership
+	f.approvalEligible = false
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n" // a change the ownership rule's match.files selects
 
