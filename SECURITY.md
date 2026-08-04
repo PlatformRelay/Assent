@@ -55,7 +55,7 @@ bundles** (`.sigstore.json`), **SPDX SBOMs** (syft via goreleaser), and **SLSA p
 | SHA256 checksums | always | `sha256sum -c checksums.txt` (or `shasum -a 256`) |
 | Cosign (keyless) | tagged release | `cosign verify-blob` with bundle (see below) |
 | SBOM (SPDX JSON) | tagged release | inspect `*.spdx.json`; optional syft/grype scan |
-| SLSA provenance | tagged release | `gh attestation verify` (see below) |
+| SLSA provenance | tagged release | `gh attestation verify` on subjects in `checksums.txt` (see below) |
 
 Maintainers and CI verify goreleaser output with `task release-verify` (or
 `hack/release/verify-artifacts.sh`) after `task release-snapshot` or a tagged release download.
@@ -96,12 +96,19 @@ cosign verify-blob \
 ls -1 *.spdx.json
 # Optional: syft sbom validate assent_X.Y.Z_linux_amd64.tar.gz.spdx.json
 
-# 4) SLSA provenance — GitHub artifact attestation (mkurator pattern, D-109)
-gh attestation verify checksums.txt --owner PlatformRelay
-gh attestation verify release-provenance.intoto.jsonl --owner PlatformRelay
+# 4) SLSA provenance — `actions/attest` with `subject-checksums` attests the files
+#    *listed inside* checksums.txt (archives + SBOMs), not checksums.txt itself.
+#    `release-provenance.intoto.jsonl` is the exported bundle for offline verification.
+gh attestation verify "${ARCHIVE}" \
+  --owner PlatformRelay \
+  --bundle release-provenance.intoto.jsonl
 
-# Or verify all release files listed in checksums.txt at once:
-gh attestation verify checksums.txt --owner PlatformRelay
+# Verify every attested subject from the checksum manifest (archives + *.spdx.json):
+while read -r _ name; do
+  name="${name#\*}"
+  [[ -n "$name" ]] || continue
+  gh attestation verify "$name" --owner PlatformRelay --bundle release-provenance.intoto.jsonl
+done < checksums.txt
 ```
 
 Install helper: `hack/install.sh --archive … --checksums …` verifies SHA256 first; add

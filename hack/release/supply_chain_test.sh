@@ -40,8 +40,13 @@ test_release_workflow() {
     || fail "$wf must attest dist/checksums.txt (mkurator pattern)"
 
   # PR snapshot path must not gain write/OIDC scopes or attempt signing.
-  if grep -A20 'name: goreleaser snapshot' "$wf" | grep -q 'id-token: write'; then
-    fail "snapshot job must not request id-token: write"
+  local snapshot_block
+  snapshot_block="$(awk '/^  snapshot:/{flag=1} flag; /^  release:/{if(flag) exit} flag' "$wf")"
+  [[ -n "$snapshot_block" ]] || fail "could not extract snapshot job from $wf"
+  echo "$snapshot_block" | grep -q 'contents: read' \
+    || fail "snapshot job must keep contents: read"
+  if echo "$snapshot_block" | grep -qE 'contents: write|attestations: write|id-token: write'; then
+    fail "snapshot job must not grant contents:write, attestations:write, or id-token:write"
   fi
   grep -q 'skip=publish,sign,sbom' "$wf" \
     || fail "snapshot job must skip sign,sbom (no OIDC locally on PR path)"
@@ -58,6 +63,15 @@ test_security_md() {
     || fail "SECURITY.md must document SBOM verification"
   grep -q -i 'slsa\|attestation' SECURITY.md \
     || fail "SECURITY.md must document SLSA / attestation verification"
+  grep -q 'gh attestation verify.*ARCHIVE' SECURITY.md \
+    || fail "SECURITY.md must verify SLSA subjects (archives), not checksums.txt"
+  if grep -q 'gh attestation verify checksums.txt' SECURITY.md; then
+    fail "SECURITY.md must not treat checksums.txt as SLSA subject (subject-checksums pattern)"
+  fi
+  if grep -q 'gh attestation verify release-provenance' SECURITY.md \
+    && ! grep -q '--bundle release-provenance' SECURITY.md; then
+    fail "SECURITY.md must not verify provenance bundle as subject; use --bundle"
+  fi
   echo "OK: SECURITY.md release verification commands"
 }
 
