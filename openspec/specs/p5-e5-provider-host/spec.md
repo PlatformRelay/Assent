@@ -112,7 +112,10 @@ provider and stale facts cannot silently arm.
 
 **Goal**: `BuildQuery` ∩ declared projections; refuse `fullContent` without `trusted-full-content`;
 apply host `maxAge` defaults (principal/authz **1h**, registry **24h**, `sensitive:true` **15m**,
-global cap **24h**) when the declaration omits/exceeds. Cross-check declaration vs response.
+global cap **24h**) when the declaration **omits** a maxAge. A declaration that **exceeds** the
+type default / sensitive 15m / 24h global cap is **rejected at load** (not clamped) —
+`docs/planning/provider-contract.md` already settles exceed→rejected. Cross-check the provider's
+echoed declaration against the host config (Spike C load-bearing check).
 
 **Dependencies**: E5-S01.
 
@@ -122,7 +125,8 @@ build/load; maxAge defaults + cap pinned by table-driven tests matching `provide
 Requirements:
 - **REQ-E5-S02-01** — projection minimization: only declared pointers appear in `FactQuery`. Test: `internal/provider/query_test.go`; Verify: `go test ./internal/provider/... -run TestBuildQueryMinimized`; Level: L0
 - **REQ-E5-S02-02** *(fail-safe)* — `fullContent` without `trusted-full-content` refused. Test: `internal/provider/query_test.go`; Verify: `go test ./internal/provider/... -run TestFullContentCapabilityGate`; Level: L0
-- **REQ-E5-S02-03** — host maxAge defaults + 24h cap match `provider-contract.md` (sensitive default may land fully in S04 if declaration.sensitive lands there — then S02 pins non-sensitive rows). Test: `internal/provider/maxage_test.go`; Verify: `go test ./internal/provider/... -run TestMaxAgeDefaults`; Level: L0
+- **REQ-E5-S02-03** — host maxAge defaults + 24h cap match `provider-contract.md`; a declaration that **exceeds** the applicable default/cap is **rejected at load** (never clamped). Sensitive 15m row may land fully in S04; S02 pins non-sensitive rows + the exceed→reject rule. Test: `internal/provider/maxage_test.go`; Verify: `go test ./internal/provider/... -run 'TestMaxAgeDefaults|TestMaxAgeExceedRejected'`; Level: L0
+- **REQ-E5-S02-04** — host cross-checks the provider's echoed declaration against config (type/cardinality/subject/sensitive/maxAge); mismatch → `invalid` (never silently accept). Test: `internal/provider/declaration_test.go`; Verify: `go test ./internal/provider/... -run TestDeclarationCrossCheck`; Level: L0
 
 ---
 
@@ -135,7 +139,8 @@ Requirements:
 digest-pinned exec binaries **so that** forge write tokens cannot leak into providers.
 
 **Goal**: Promote `CallHTTP` / `CallExec` + `ScrubEnv` (drop `TOKEN|SECRET` names; never inherit host
-env); argv must not carry credentials; digest-pin verify before exec (Judgment call (a) — pin via
+env); **argv must not carry credentials** (Spike C residual — real host keeps secrets out of
+provider argv, not only env); digest-pin verify before exec (Judgment call (a) — pin via
 internal declaration if Config schema stays frozen); promote Spike `maliciousexec` isolation harness
 into CI (`task` / verify step).
 
@@ -147,7 +152,8 @@ exec refused; HTTP timeout → `unavailable` (not resolved).
 Requirements:
 - **REQ-E5-S03-01** *(SECURITY)* — exec/HTTP child env is scrubbed; forge write-token canaries never appear. Test: `internal/provider/isolation_test.go` (+ CI job); Verify: `go test ./internal/provider/... -run TestIsolationNoWriteToken`; Level: L1
 - **REQ-E5-S03-02** *(SECURITY)* — exec binary digest mismatch or missing pin → refuse (facts unavailable). Test: `internal/provider/exec_test.go`; Verify: `go test ./internal/provider/... -run TestExecDigestPin`; Level: L0
-- **REQ-E5-S03-03** — transport timeout → `unavailable`, never `resolved`. Test: `internal/provider/transport_test.go`; Verify: `go test ./internal/provider/... -run TestTransportTimeoutUnavailable`; Level: L0
+- **REQ-E5-S03-03** *(SECURITY · argv hygiene)* — provider argv never carries credentials / forge write-token canaries (adversarial canary in argv must not appear in the spawned process args). Test: `internal/provider/isolation_test.go`; Verify: `go test ./internal/provider/... -run TestIsolationNoCredentialInArgv`; Level: L1
+- **REQ-E5-S03-04** — transport timeout → `unavailable`, never `resolved`. Test: `internal/provider/transport_test.go`; Verify: `go test ./internal/provider/... -run TestTransportTimeoutUnavailable`; Level: L0
 
 ---
 
@@ -170,7 +176,7 @@ redaction handoff to E8 (no renderer work here).
 non-sensitive unchanged.
 
 Requirements:
-- **REQ-E5-S04-01** *(fail-safe · INBOX F1/F2)* — sensitive declaration applies ≤15m maxAge; longer declared maxAge refused or clamped fail-closed (pick clamp-vs-refuse in-lane, log). Test: `internal/provider/sensitive_test.go`; Verify: `go test ./internal/provider/... -run TestSensitiveMaxAge`; Level: L0
+- **REQ-E5-S04-01** *(fail-safe · INBOX F1/F2)* — sensitive declaration applies ≤15m maxAge; a longer declared maxAge is **rejected at load** (not clamped) per `provider-contract.md`. Test: `internal/provider/sensitive_test.go`; Verify: `go test ./internal/provider/... -run TestSensitiveMaxAge`; Level: L0
 - **REQ-E5-S04-02** — resolved sensitive facts set `Fact.Sensitive=true` for the CEL/E8 handoff. Test: `internal/provider/sensitive_test.go`; Verify: `go test ./internal/provider/... -run TestSensitivePropagates`; Level: L0
 
 ---
@@ -292,3 +298,4 @@ Requirements:
 - **REQ-E5-S10-01** — isolation + state-machine goldens enforced in `task check` / verify. Test: CI + `internal/provider/...`; Verify: `task check`; Level: L1
 - **REQ-E5-S10-02** — hermetic path evaluates with resolved provider facts (not empty map). Test: `cmd/assent/run_provider_test.go` / examples fixture; Verify: `go test ./cmd/assent/... -run TestE5ExitGateResolvedFacts`; Level: L1
 - **REQ-E5-S10-03** — REF-EX C5–C7 seeded OR decide-and-log deferral with concrete blocker. Test: `examples/archetypes/**` (if seeded); Verify: pack/fixture tests OR decision row; Level: L1
+- **REQ-E5-S10-04** — controlling `failure:open` still refused (E3 lint regression; later-phases exit gate). Test: `internal/lint/...` / posture; Verify: `go test ./internal/lint/... -run 'TestProviderPosture|TestFailOpen'`; Level: L1

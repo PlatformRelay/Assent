@@ -180,14 +180,15 @@ occurrence-supersession, deterministic duplicate repair, spoofed contributor mar
 ignored). Seeds: snapshot; marker-keyed thread reconcile (ADR-0019); approval evidence
 (P3-E1 ApprovalEvidence contract); pinned merge; doctor.
 
-### E5 — Provider host + builtins — Planned
-Typed provider protocol from Spike C frozen in P3-E1: builtin providers (forge groups,
-OIDC/Keycloak, LDAP, ownership file) + HTTP/exec tier; projection-minimized requests;
-`resolved|unavailable|invalid|expired` fact states with `observedAt`/`expiresAt`/`maxAge`
-as arming preconditions; write-token isolation (ADR-0015 §7) and digest-pinned exec
-binaries; controlling facts never fail open. **Exit gate**: isolation harness from Spike C
-promoted to CI; state-machine golden per fact state; lint rejects fail-open on controlling
-facts. Seeds: host; each builtin as its own slice; HTTP; exec; freshness arming.
+### E5 — Provider host + builtins — Planned → **decomposed** ([p5-e5-provider-host/spec.md](p5-e5-provider-host/spec.md))
+Typed provider protocol from Spike C frozen in P3-E1: first-wave builtins = **forge-groups +
+`repo-file` + resource→owner** (closes REF-GAP-1/2); HTTP/exec tier; ownership-file optional;
+**OIDC/Keycloak/LDAP deferred** until a named consumer (S09). Projection-minimized requests;
+`resolved|unavailable|invalid|expired` with `observedAt`/`expiresAt`/`maxAge` as arming
+preconditions; write-token isolation + argv hygiene (ADR-0015 §7) and digest-pinned exec;
+sensitive tier 15m (INBOX F1/F2); controlling facts never fail open. **Exit gate**: isolation
+harness in CI; state-machine goldens; lint rejects fail-open on controlling facts; hermetic
+resolved-facts path; seed REF-EX C5–C7. Seeds: host S01–S05; builtins S06–S08; exit S10.
 
 ### E6 — Adopter test harness `assent test` + examples — Planned
 The frozen ADR-0014 fixture format executed by the production pipeline with providers/forge
