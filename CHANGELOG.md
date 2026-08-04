@@ -130,6 +130,7 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :memo: docs(readme): maturity table + alpha status (E9-S09)
 - :memo: docs(pcs): PolicyComparisonSuite full runner epic spec (D-057)
 - :memo: docs(pcs): fix spec review — purity, catalogue extraction, D-112/115
+- :memo: chore(release): sync CHANGELOG.md for PCS unreleased commits (RELSE-01)
 
 ### Features
 - :sparkles: examples: onFail branches — one predicate, both outcomes, quota case explained (P1-7)
