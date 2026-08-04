@@ -24,7 +24,9 @@ type fakeGitLab struct {
 
 	sourceSHA, targetTip string
 	sourceBranch, target string
-	policy               string // policy.yaml content served from the TARGET ref.
+	mergePolicy          string // MergePolicy served from the TARGET ref.
+	rulesetBinding       string // RulesetBinding served from the TARGET ref.
+	config               string // optional Config served from the TARGET ref.
 	baseFile, headFile   string // governed-file content at target/source ref.
 	governedPath         string
 
@@ -39,11 +41,13 @@ type fakeGitLab struct {
 func newFakeGitLab(t *testing.T) *fakeGitLab {
 	t.Helper()
 	f := &fakeGitLab{
-		sourceSHA:    "srcSHA",
-		targetTip:    "tgtTIP",
-		sourceBranch: "feature",
-		target:       "main",
-		governedPath: "topics/orders.yaml",
+		sourceSHA:      "srcSHA",
+		targetTip:      "tgtTIP",
+		sourceBranch:   "feature",
+		target:         "main",
+		governedPath:   "topics/orders.yaml",
+		mergePolicy:    mergePolicyChallenge,
+		rulesetBinding: rulesetBindingNonDestructive,
 	}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(f.srv.Close)
@@ -85,15 +89,21 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// serveFile routes the three loaded documents (MergePolicy, RulesetBinding, the
+// optional Config) — all from the TARGET ref (ADR-0015 §1) — plus the governed
+// file (base from target, head from source). Routing is by path substring: the
+// three document paths carry distinctive names, the governed path does not.
 func (f *fakeGitLab) serveFile(w http.ResponseWriter, r *http.Request, p string) {
 	ref := r.URL.Query().Get("ref")
-	// The policy path (loaded from the TARGET ref).
-	if strings.Contains(p, "policy.yaml") {
-		if ref != f.target {
-			http.Error(w, "policy MUST load from the target ref, got "+ref, http.StatusBadRequest)
-			return
-		}
-		_, _ = w.Write([]byte(f.policy))
+	switch {
+	case strings.Contains(p, "merge-policy"):
+		f.serveFromTarget(w, ref, f.mergePolicy)
+		return
+	case strings.Contains(p, "ruleset-binding"):
+		f.serveFromTarget(w, ref, f.rulesetBinding)
+		return
+	case strings.Contains(p, "config"):
+		f.serveFromTarget(w, ref, f.config)
 		return
 	}
 	// The governed file: base from target ref, head from source branch.
@@ -105,6 +115,16 @@ func (f *fakeGitLab) serveFile(w http.ResponseWriter, r *http.Request, p string)
 	default:
 		http.Error(w, "unexpected ref "+ref, http.StatusBadRequest)
 	}
+}
+
+// serveFromTarget enforces the ADR-0015 §1 target-ref trust boundary: a policy
+// document is loaded ONLY from the target ref, never the MR source branch.
+func (f *fakeGitLab) serveFromTarget(w http.ResponseWriter, ref, content string) {
+	if ref != f.target {
+		http.Error(w, "policy documents MUST load from the target ref, got "+ref, http.StatusBadRequest)
+		return
+	}
+	_, _ = w.Write([]byte(content))
 }
 
 // factory builds a real *gitlab.Client pointed at the fake server — the exact
@@ -120,19 +140,85 @@ func fixedClock() runClock {
 	return func() time.Time { return t }
 }
 
-const policyOrders = `subject: "file:topics/orders.yaml"
-require: [partitions-not-decreased]
-rules:
-  - name: partitions-monotonic
-    obligation: partitions-not-decreased
-    when: "int(new) >= int(old)"
-    onFailure: { effect: challenge, code: PARTITIONS_DECREASED }
+// mergePolicyChallenge is a frozen MergePolicy of the D-016 shape: a
+// valueChanges /partitions modify rule proving `non-destructive` via the bare
+// `new >= old`, CHALLENGE on failure (so a partition shrink -> REVIEW). Generic,
+// no employer names (D-002).
+const mergePolicyChallenge = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "MergePolicy",
+  "metadata": { "name": "topic-safety" },
+  "spec": {
+    "entries": { "topic-registry": { "mode": "document", "root": "", "identity": { "pointer": "/metadata/name" } } },
+    "rules": [
+      {
+        "name": "partitions-must-not-shrink",
+        "phase": "enforce",
+        "match": { "valueChanges": { "pointers": ["/partitions"], "kinds": ["modify"] } },
+        "prove": { "obligation": "non-destructive", "when": "new >= old" },
+        "onFailure": { "effect": "challenge", "code": "partition-count-shrunk" }
+      }
+    ]
+  }
+}`
+
+// mergePolicyOwnership proves `ownership` from a controlling owner fact via
+// require-review on failure — the D-016 owner-rule shape. With empty facts (E5
+// not wired) the predicate errors -> require-review unsatisfied -> REVIEW.
+const mergePolicyOwnership = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "MergePolicy",
+  "metadata": { "name": "topic-safety" },
+  "spec": {
+    "entries": { "topic-registry": { "mode": "document", "root": "", "identity": { "pointer": "/metadata/name" } } },
+    "rules": [
+      {
+        "name": "topic-owner-must-approve",
+        "phase": "enforce",
+        "match": { "files": { "paths": ["topics/orders.yaml"] } },
+        "prove": { "obligation": "ownership", "when": "facts.owner.team.state == 'resolved'" },
+        "onFailure": { "effect": "require-review", "code": "ownership-approval-missing" }
+      }
+    ]
+  }
+}`
+
+const rulesetBindingNonDestructive = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "RulesetBinding",
+  "bindings": [
+    { "class": "topic-registry", "environment": "prod", "packs": ["topic-safety"], "risk": { "threshold": 10 }, "require": ["non-destructive"] }
+  ]
+}`
+
+const rulesetBindingOwnership = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "RulesetBinding",
+  "bindings": [
+    { "class": "topic-registry", "environment": "prod", "packs": ["topic-safety"], "risk": { "threshold": 10 }, "require": ["ownership"] }
+  ]
+}`
+
+// configOwnerFailOpen configures the controlling `owner` provider failure:open —
+// a posture ValidateProviderPosture must REJECT (a controlling fact must fail closed).
+const configOwnerFailOpen = `apiVersion: assent.dev/v1alpha1
+kind: Config
+environments:
+  - name: prod
+    match: { paths: ["topics/**"] }
+classes:
+  - name: topic-registry
+    match: { paths: ["topics/**.yaml"] }
+providers:
+  owner:
+    type: builtin/gitlab-groups
+    failure: open
 `
 
 func runArgs(extra ...string) []string {
 	return append([]string{
 		"--project", "42", "--mr", "7", "--bot-author", "assent-bot",
-		"--policy", ".assent/policy.yaml",
+		"--subject", "file:topics/orders.yaml",
 	}, extra...)
 }
 
@@ -150,7 +236,6 @@ func env(token string) func(string) string {
 // schema-valid (validated inside orchestrate before any write).
 func TestRunReviewCreatesThread(t *testing.T) {
 	f := newFakeGitLab(t)
-	f.policy = policyOrders
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 6\n"
 
@@ -174,9 +259,8 @@ func TestRunReviewCreatesThread(t *testing.T) {
 	if !strings.Contains(out.String(), "capabilityGap") {
 		t.Errorf("expected capabilityGap in record:\n%s", out.String())
 	}
-	// The posted marker must carry the GOVERNED-SUBJECT entryRef (not a branch)
-	// and a content-derived occurrence = sha256(head content) — the grammar's
-	// stable-across-tool/policy-bump occurrence, so a rerun recognises the thread.
+	// The posted marker must carry the GOVERNED-SUBJECT entryRef (the --subject
+	// entryRef, not a branch) and a content-derived occurrence = sha256(head content).
 	if !strings.Contains(f.lastThreadBody, `"entryRef":"file:topics/orders.yaml"`) {
 		t.Errorf("marker entryRef not the governed subject:\n%s", f.lastThreadBody)
 	}
@@ -191,7 +275,6 @@ func TestRunReviewCreatesThread(t *testing.T) {
 // pinned to the source SHA.
 func TestRunApproveArmedMerges(t *testing.T) {
 	f := newFakeGitLab(t)
-	f.policy = policyOrders
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n"
 
@@ -222,7 +305,6 @@ func TestRunApproveArmedMerges(t *testing.T) {
 // run still exits 0 (advisory) and emits the schema-valid record.
 func TestRunApproveUnarmedNoWrite(t *testing.T) {
 	f := newFakeGitLab(t)
-	f.policy = policyOrders
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n"
 
@@ -242,9 +324,86 @@ func TestRunApproveUnarmedNoWrite(t *testing.T) {
 	}
 }
 
+// GUARD 3: the live path injects NIL ApprovalEvidence, so a require-review
+// obligation is UNSATISFIED (nil-fail-safe, never default-satisfied) → REVIEW. The
+// owner fact is unresolved (facts empty until E5), the predicate errors, and the
+// require-review finding stands. No approve/merge.
+func TestRunNilEvidenceRequiresReview(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.mergePolicy = mergePolicyOwnership
+	f.rulesetBinding = rulesetBindingOwnership
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 24\n" // a change the ownership rule's match.files selects
+
+	var out bytes.Buffer
+	code := runRun(runArgs("--arm"), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "\"decision\":\"REVIEW\"") {
+		t.Errorf("nil ApprovalEvidence must leave require-review UNSATISFIED → REVIEW:\n%s", out.String())
+	}
+	if f.approvals != 0 || f.merges != 0 {
+		t.Errorf("unsatisfied require-review must not approve/merge even with --arm: approvals=%d merges=%d", f.approvals, f.merges)
+	}
+}
+
+// The provider posture wiring (ADR-0017 §6): a controlling owner provider
+// configured failure:open is REJECTED at load (--config), failing CLOSED with no
+// forge writes — a controlling fact may not fail open.
+func TestRunControllingFactFailOpenRejected(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.mergePolicy = mergePolicyOwnership
+	f.rulesetBinding = rulesetBindingOwnership
+	f.config = configOwnerFailOpen
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 24\n"
+
+	var out bytes.Buffer
+	code := runRun(runArgs("--arm", "--config", ".assent/config.yaml"), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code == 0 {
+		t.Fatalf("a controlling failure:open provider must fail closed (non-zero), got 0\n%s", out.String())
+	}
+	if f.approvals != 0 || f.merges != 0 || f.discussionsPosted != 0 {
+		t.Errorf("rejected posture must produce NO writes: a=%d m=%d d=%d", f.approvals, f.merges, f.discussionsPosted)
+	}
+	if !strings.Contains(out.String(), "posture") {
+		t.Errorf("expected a provider-posture error:\n%s", out.String())
+	}
+}
+
+// N1: an uncovered required obligation (the challenge policy proves only
+// `non-destructive`, but the binding requires `ownership`) yields a coverage
+// finding with an empty subject inside the engine. orchestrate sanitizes it to a
+// per-obligation sentinel so the produced DecisionRecord PASSES schema validation
+// (validateRecord runs before any write — a code-0 run proves the record validated)
+// → REVIEW. This exercises the N1 sentinel path end-to-end through the serializer.
+func TestRunUncoveredObligationRecordValidates(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.rulesetBinding = rulesetBindingOwnership // require [ownership]; challenge policy proves only non-destructive
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 24\n" // a grow: the non-destructive rule proves, so only ownership is uncovered
+
+	var out bytes.Buffer
+	code := runRun(runArgs(), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (a valid REVIEW record) \n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "\"decision\":\"REVIEW\"") {
+		t.Errorf("an uncovered required obligation must fail safe to REVIEW:\n%s", out.String())
+	}
+	// The sanitized per-obligation sentinel subject appears in the validated record.
+	if !strings.Contains(out.String(), `"subject":"obligation:ownership"`) {
+		t.Errorf("expected the N1 sentinel subject for the uncovered obligation:\n%s", out.String())
+	}
+	if f.approvals != 0 || f.merges != 0 {
+		t.Errorf("uncovered obligation must not approve/merge: approvals=%d merges=%d", f.approvals, f.merges)
+	}
+}
+
 func TestRunMissingFlags(t *testing.T) {
 	var out bytes.Buffer
-	// Missing --project.
+	// Missing --project (and --subject).
 	code := runRun([]string{"--mr", "7", "--bot-author", "b"}, env("tok"), fixedClock(), &out, &out, newFakeGitLab(t).factory())
 	if code == 0 {
 		t.Fatalf("missing --project should be non-zero, got 0\n%s", out.String())
@@ -264,23 +423,22 @@ func TestRunMissingToken(t *testing.T) {
 
 func TestRunUnparseablePolicyNoWrite(t *testing.T) {
 	f := newFakeGitLab(t)
-	f.policy = "\tthis: is: not: valid: yaml: ["
+	f.mergePolicy = "\tthis: is: not: valid: yaml: ["
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n"
 
 	var out bytes.Buffer
 	code := runRun(runArgs("--arm"), env("tok"), fixedClock(), &out, &out, f.factory())
 	if code == 0 {
-		t.Fatalf("unparseable policy should fail (non-zero), got 0\n%s", out.String())
+		t.Fatalf("unloadable merge-policy should fail (non-zero), got 0\n%s", out.String())
 	}
 	if f.approvals != 0 || f.merges != 0 || f.discussionsPosted != 0 {
-		t.Errorf("unparseable policy must produce NO writes: a=%d m=%d d=%d", f.approvals, f.merges, f.discussionsPosted)
+		t.Errorf("unloadable policy must produce NO writes: a=%d m=%d d=%d", f.approvals, f.merges, f.discussionsPosted)
 	}
 }
 
 func TestRunEmitToFile(t *testing.T) {
 	f := newFakeGitLab(t)
-	f.policy = policyOrders
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 6\n"
 

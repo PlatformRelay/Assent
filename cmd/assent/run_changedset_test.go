@@ -43,7 +43,6 @@ func writeCheckout(t *testing.T, files map[string][2]string) string {
 // contrast, now proven on cmd/assent.
 func TestRunEnumeratesChangedFileSetAndBlocksOnPolicyEdit(t *testing.T) {
 	f := newFakeGitLab(t)
-	f.policy = policyOrders
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n" // governed alone => APPROVE
 
@@ -75,7 +74,6 @@ func TestRunEnumeratesChangedFileSetAndBlocksOnPolicyEdit(t *testing.T) {
 // the primary REQ-02 evidence; this pins the checkout-mode non-policy case.)
 func TestRunChangedFileSetNonPolicyApprovesLikeSingleFile(t *testing.T) {
 	f := newFakeGitLab(t)
-	f.policy = policyOrders
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n"
 
@@ -104,7 +102,6 @@ func TestRunOpaqueFileAmongManyFailsSafe(t *testing.T) {
 	// opaque -> REVIEW; --arm cannot merge.
 	t.Run("opaque-non-policy", func(t *testing.T) {
 		f := newFakeGitLab(t)
-		f.policy = policyOrders
 		f.baseFile = "partitions: 12\n"
 		f.headFile = "partitions: 24\n"
 
@@ -133,7 +130,6 @@ func TestRunOpaqueFileAmongManyFailsSafe(t *testing.T) {
 	// opacity. Either way the run fails safe (never APPROVE).
 	t.Run("opaque-policy-adversarial", func(t *testing.T) {
 		f := newFakeGitLab(t)
-		f.policy = policyOrders
 		f.baseFile = "partitions: 12\n"
 		f.headFile = "partitions: 24\n"
 
@@ -169,7 +165,6 @@ func TestRunChangedFileSetDoubleRunStable(t *testing.T) {
 	}
 	run := func() string {
 		f := newFakeGitLab(t)
-		f.policy = policyOrders
 		f.baseFile = "partitions: 12\n"
 		f.headFile = "partitions: 24\n"
 		checkout := writeCheckout(t, files)

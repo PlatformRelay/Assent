@@ -1,93 +1,120 @@
 package main
 
 import (
-	"strings"
 	"testing"
 
+	"github.com/PlatformRelay/assent/internal/change"
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
+	"github.com/PlatformRelay/assent/internal/core/policy"
+	"github.com/PlatformRelay/assent/internal/forge/gitlab"
 )
 
-const goodPolicy = `subject: "file:topics/orders.events.v1.yaml"
-require: [partitions-not-decreased]
-rules:
-  - name: partitions-monotonic
-    obligation: partitions-not-decreased
-    when: "int(new) >= int(old)"
-    onFailure: { effect: challenge, code: PARTITIONS_DECREASED }
-`
-
-func TestParsePolicyGood(t *testing.T) {
-	b, err := ParsePolicy([]byte(goodPolicy))
+// selectBinding routes to the single covering binding and fails CLOSED on zero or
+// ambiguous (multi-binding) documents — the (class, environment) matcher is not
+// wired in this lane, so it never silently picks one.
+func TestSelectBindingSingle(t *testing.T) {
+	rb := &policy.RulesetBinding{Bindings: []policy.Binding{{
+		Class: "topic-registry", Environment: "prod", Require: []string{"non-destructive"},
+	}}}
+	got, err := selectBinding(rb)
 	if err != nil {
-		t.Fatalf("ParsePolicy: %v", err)
+		t.Fatalf("selectBinding: %v", err)
 	}
-	if b.Subject != "file:topics/orders.events.v1.yaml" {
-		t.Errorf("subject = %q", b.Subject)
-	}
-	if len(b.Require) != 1 || b.Require[0] != "partitions-not-decreased" {
-		t.Errorf("require = %v", b.Require)
-	}
-	if len(b.Rules) != 1 {
-		t.Fatalf("rules = %d, want 1", len(b.Rules))
-	}
-	r := b.Rules[0]
-	if r.Name != "partitions-monotonic" || r.Obligation != "partitions-not-decreased" {
-		t.Errorf("rule name/obligation = %q/%q", r.Name, r.Obligation)
-	}
-	if r.When != "int(new) >= int(old)" {
-		t.Errorf("when = %q", r.When)
-	}
-	if r.OnFailure.Effect != aggregate.EffectChallenge {
-		t.Errorf("effect = %q, want challenge", r.OnFailure.Effect)
-	}
-	if r.OnFailure.Code != "PARTITIONS_DECREASED" {
-		t.Errorf("code = %q", r.OnFailure.Code)
+	if got.Class != "topic-registry" || got.Environment != "prod" {
+		t.Errorf("selected = %+v, want the single topic-registry/prod binding", got)
 	}
 }
 
-func TestParsePolicyFailClosed(t *testing.T) {
-	cases := map[string]string{
-		"bad yaml":           "\tnot: yaml: [",
-		"no subject":         "require: [x]\nrules: []\n",
-		"empty require":      "subject: file:a\nrequire: []\nrules: []\n",
-		"unknown effect":     "subject: file:a\nrequire: [x]\nrules:\n  - name: r\n    obligation: x\n    when: \"true\"\n    onFailure: { effect: nuke, code: C }\n",
-		"missing code":       "subject: file:a\nrequire: [x]\nrules:\n  - name: r\n    obligation: x\n    when: \"true\"\n    onFailure: { effect: block }\n",
-		"missing when":       "subject: file:a\nrequire: [x]\nrules:\n  - name: r\n    obligation: x\n    onFailure: { effect: block, code: C }\n",
-		"missing name":       "subject: file:a\nrequire: [x]\nrules:\n  - obligation: x\n    when: \"true\"\n    onFailure: { effect: block, code: C }\n",
-		"unknown field":      "subject: file:a\nrequire: [x]\nbogus: true\nrules: []\n",
-		"missing obligation": "subject: file:a\nrequire: [x]\nrules:\n  - name: r\n    when: \"true\"\n    onFailure: { effect: block, code: C }\n",
+func TestSelectBindingFailsClosed(t *testing.T) {
+	cases := map[string]*policy.RulesetBinding{
+		"nil":       nil,
+		"zero":      {Bindings: nil},
+		"ambiguous": {Bindings: []policy.Binding{{Class: "a"}, {Class: "b"}}},
 	}
-	for name, raw := range cases {
+	for name, rb := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := ParsePolicy([]byte(raw)); err == nil {
-				t.Fatalf("%s: expected error, got nil", name)
+			if _, err := selectBinding(rb); err == nil {
+				t.Fatalf("%s: expected selectBinding to fail closed, got nil", name)
 			}
 		})
 	}
 }
 
-func TestParsePolicyAllEffects(t *testing.T) {
-	for effStr, effEnum := range map[string]aggregate.Effect{
-		"comment":        aggregate.EffectComment,
-		"challenge":      aggregate.EffectChallenge,
-		"block":          aggregate.EffectBlock,
-		"require-review": aggregate.EffectRequireReview,
-	} {
-		raw := "subject: file:a\nrequire: [x]\nrules:\n  - name: r\n    obligation: x\n    when: \"true\"\n    onFailure: { effect: " + effStr + ", code: C }\n"
-		b, err := ParsePolicy([]byte(raw))
-		if err != nil {
-			t.Fatalf("effect %q: %v", effStr, err)
+// sanitizeSubjects gives every finding a non-empty subject (N1): an uncovered
+// obligation (empty subject) gets a per-obligation sentinel so two uncovered
+// obligations never collide on the (rule, subject) uniqueKey; a finding already
+// carrying a subject is untouched; a subjectless, obligationless finding falls back.
+func TestSanitizeSubjects(t *testing.T) {
+	res := aggregate.Result{Findings: []aggregate.Finding{
+		{Rule: "aggregate.uncovered", Obligation: "ownership", Effect: aggregate.EffectRequireReview},
+		{Rule: "aggregate.uncovered", Obligation: "non-destructive", Effect: aggregate.EffectRequireReview},
+		{Rule: "real", Obligation: "x", Subject: "file:topics/a.yaml", Effect: aggregate.EffectBlock},
+		{Rule: "bare", Effect: aggregate.EffectRequireReview}, // no subject, no obligation
+	}}
+	out := sanitizeSubjects(res, "file:fallback.yaml")
+	want := []string{"obligation:ownership", "obligation:non-destructive", "file:topics/a.yaml", "file:fallback.yaml"}
+	for i, w := range want {
+		if out.Findings[i].Subject != w {
+			t.Errorf("finding[%d].Subject = %q, want %q", i, out.Findings[i].Subject, w)
 		}
-		if b.Rules[0].OnFailure.Effect != effEnum {
-			t.Errorf("effect %q mapped to %q", effStr, b.Rules[0].OnFailure.Effect)
+	}
+	// No finding may end up with an empty subject (the schema minLength:1 invariant).
+	for _, f := range out.Findings {
+		if f.Subject == "" {
+			t.Errorf("finding still has empty subject: %+v", f)
 		}
 	}
 }
 
-func TestParsePolicyErrorMentionsRule(t *testing.T) {
-	raw := "subject: file:a\nrequire: [x]\nrules:\n  - name: myrule\n    obligation: x\n    when: \"true\"\n    onFailure: { effect: bogus, code: C }\n"
-	_, err := ParsePolicy([]byte(raw))
-	if err == nil || !strings.Contains(err.Error(), "myrule") {
-		t.Fatalf("error should name the rule: %v", err)
+// The reserved-class self-edit result reconstructs the aggregate.Aggregate block
+// exactly (GUARD 1): BLOCK with the assent-policy.self-edit finding on the subject.
+func TestReservedClassBlock(t *testing.T) {
+	res := reservedClassBlock("file:topics/orders.yaml")
+	if res.Decision != aggregate.DecisionBlock {
+		t.Fatalf("decision = %q, want BLOCK", res.Decision)
+	}
+	if len(res.Findings) != 1 {
+		t.Fatalf("findings = %d, want 1", len(res.Findings))
+	}
+	f := res.Findings[0]
+	if f.Rule != aggregate.ReservedPolicyClass || f.Effect != aggregate.EffectBlock || f.Code != "assent-policy.self-edit" {
+		t.Errorf("reserved finding = %+v, want assent-policy self-edit block", f)
+	}
+	if f.Subject != "file:topics/orders.yaml" {
+		t.Errorf("subject = %q, want the governed subject", f.Subject)
+	}
+}
+
+// The undecidable (opaque/empty) result fails safe to REVIEW with an auditable
+// finding — never a silent APPROVE.
+func TestUndecidableReview(t *testing.T) {
+	res := undecidableReview("file:topics/orders.yaml")
+	if res.Decision != aggregate.DecisionReview {
+		t.Fatalf("decision = %q, want REVIEW", res.Decision)
+	}
+	if len(res.Findings) != 1 || res.Findings[0].Code != "changeset.undecidable" {
+		t.Errorf("findings = %+v, want one changeset.undecidable finding", res.Findings)
+	}
+}
+
+// subjectOf prefers a collection EntryRef and falls back to file:<path>.
+func TestSubjectOf(t *testing.T) {
+	if got := subjectOf(change.Change{EntryRef: "topic-registry:orders.events.v1", File: "topics/x.yaml"}); got != "topic-registry:orders.events.v1" {
+		t.Errorf("subjectOf(entryRef) = %q, want the EntryRef", got)
+	}
+	if got := subjectOf(change.Change{File: "topics/x.yaml"}); got != "file:topics/x.yaml" {
+		t.Errorf("subjectOf(no entryRef) = %q, want file:<path> fallback", got)
+	}
+}
+
+// mrFrom threads branch names from the forge MR metadata (author intentionally
+// empty — require-review self-approval exclusion is E4, this lane injects nil evidence).
+func TestMRFrom(t *testing.T) {
+	mr := mrFrom(gitlab.MRInfo{SourceBranch: "feature", TargetBranch: "main"})
+	if mr.SourceBranch != "feature" || mr.TargetBranch != "main" {
+		t.Errorf("mrFrom = %+v, want source=feature target=main", mr)
+	}
+	if mr.Author != "" {
+		t.Errorf("author = %q, want empty (not carried on MRInfo)", mr.Author)
 	}
 }
