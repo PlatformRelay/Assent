@@ -1,7 +1,8 @@
 package lint
 
 // facts_ref.go is the E3-S03 facts-reference hard error over every when/cel leaf,
-// and the enforcement half of the fact-model `.value` DECISION (D-048).
+// and the enforcement half of the fact-model `.value` DECISION (D-051, Option B,
+// which SUPERSEDES D-049's Option A).
 //
 // Detection is AST-based: each leaf is PARSED with cel-go's own parser (the same
 // parser eval uses — parse only, no checker/declarations) and the parsed AST is
@@ -35,15 +36,21 @@ package lint
 //	    BY CONSTRUCTION: after lint passes, every facts reference is a Select AND
 //	    every dot provider is captured by policy.factRefRe.
 //
-//	facts-reference-shape — a dot reference spelling the `.value` accessor
-//	    (facts.<p>.<n>.value). D-048 decides Option A (auto-unwrap): an authored
-//	    facts.<provider>.<name> already addresses the typed fact VALUE directly;
-//	    `.value` was the rejected Option-B spelling. `state`/`expiresAt`/
-//	    `observedAt`/`reason`/`sensitive` are reserved envelope-escape accessors at
-//	    the third segment and are PERMITTED (they read envelope metadata, e.g. the
-//	    D-016 fixture's facts.owner.team.state); only `.value` is rejected, and
-//	    value-tree indexing/navigation PAST facts.<provider>.<name> (e.g.
-//	    facts.author.groups[0]) is permitted.
+//	facts-reference-shape — a dot reference whose third segment is not a permitted
+//	    accessor. D-051 decides Option B (SUPERSEDES D-049's Option A): the fact
+//	    VALUE is at facts.<p>.<n>.value and value-tree navigation goes THROUGH
+//	    `.value` (facts.<p>.<n>.value.<field> / facts.<p>.<n>.value[i]). The third
+//	    segment must be `value` (with optional deeper .field/[i] navigation) OR one
+//	    of the reserved envelope escapes `state`/`expiresAt`/`observedAt`/`reason`/
+//	    `sensitive` (which read envelope metadata, e.g. the D-016 fixture's
+//	    facts.owner.team.state). ANY other third segment (e.g.
+//	    facts.band.max_replicas.max — must be `…value.max`), and a bare
+//	    facts.<p>.<n> with NO third segment (the envelope map — an author almost
+//	    always means `.value`, e.g. facts.author.groups[0] must be
+//	    `…groups.value[0]`), are rejected. The engine is UNCHANGED: factsToCEL
+//	    already binds the fact envelope with `.value` bound only for `resolved`
+//	    facts, and S10 already reproduces the D-016 golden with it — Option B is the
+//	    zero-engine-change convention.
 //
 // Purity: cel-go's PARSER is deterministic and pure; internal/lint importing
 // cel-go is purity-safe (TestCorePurity forbids clock/rand/env/net SELECTORS, not
@@ -54,6 +61,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/google/cel-go/cel"
 	celast "github.com/google/cel-go/common/ast"
@@ -69,14 +77,33 @@ const (
 	// index, bare whole-map, or a non-contiguous `facts . <p>` the whitespace-
 	// sensitive runtime scan misses) — evades the E2-S05 provider-posture scan.
 	CodeFactsReferenceSyntax = "facts-reference-syntax"
-	// CodeFactsReferenceShape: a dot reference spelling the `.value` accessor,
-	// which D-048's auto-unwrap convention forbids.
+	// CodeFactsReferenceShape: a dot reference whose third segment is neither the
+	// `.value` value accessor nor a reserved envelope escape (or a bare
+	// facts.<p>.<n> naming no accessor at all) — which the D-051 Option B
+	// convention forbids (value navigation must go through `.value`).
 	CodeFactsReferenceShape = "facts-reference-shape"
 )
 
-// reservedValueAccessor is the single third-segment accessor D-048 forbids: under
-// auto-unwrap the value is facts.<p>.<n> itself, so `.value` is never authored.
-const reservedValueAccessor = "value"
+// factValueAccessor is the third-segment accessor that addresses a fact's typed
+// value under the D-051 Option B convention (SUPERSEDES D-049 Option A): the value
+// lives at facts.<p>.<n>.value, and value-tree navigation goes THROUGH it
+// (facts.<p>.<n>.value.<field> / facts.<p>.<n>.value[i]). It is bound only for a
+// `resolved` fact — reading it on a non-resolved fact errors → fail-safe
+// (the E2-S05 property, unchanged; this lint only shapes the authored spelling).
+const factValueAccessor = "value"
+
+// reservedEnvelopeEscapes are the third-segment accessors that read envelope
+// metadata directly (not the value). Permitted alongside `.value`; every OTHER
+// third segment — and a bare facts.<p>.<n> with no third segment (the envelope
+// map, which an author almost always did not mean) — is a facts-reference-shape
+// error under D-051.
+var reservedEnvelopeEscapes = map[string]bool{
+	"state":      true,
+	"expiresAt":  true,
+	"observedAt": true,
+	"reason":     true,
+	"sensitive":  true,
+}
 
 // runtimeFactRefRe MUST stay byte-identical to internal/core/policy.factRefRe: it
 // models EXACTLY what the E2-S05 provider-posture scan captures at runtime, so the
@@ -183,13 +210,13 @@ func classifyFactsIdent(n celast.NavigableExpr, celText string, loc Location, as
 	if ok && par.Kind() == celast.SelectKind && par.AsSelect().Operand().ID() == n.ID() {
 		segs := selectChainFields(n) // [provider, name, accessor, ...]
 		if len(segs) >= 1 {
+			// Set unconditionally, BEFORE the shape check — this feeds the
+			// whitespace soundness cross-check (rule C), so a shape-flagged dot
+			// reference must still register its provider here or the syntax rule
+			// would silently weaken.
 			astDotProviders[segs[0]] = true
 		}
-		if len(segs) >= 3 && segs[2] == reservedValueAccessor {
-			rep.addError(CodeFactsReferenceShape, loc, fmt.Sprintf(
-				"facts reference `facts.%s.%s.value` in when/cel leaf %q spells the `.value` accessor; under the auto-unwrap convention (D-048) facts.<provider>.<name> already addresses the typed fact value — drop `.value` (the rejected Option-B spelling); `.state`/`.expiresAt`/`.observedAt` remain reserved envelope escapes",
-				segs[0], segs[1], celText))
-		}
+		checkFactsShape(segs, celText, loc, rep)
 		return
 	}
 
@@ -210,11 +237,44 @@ func classifyFactsIdent(n celast.NavigableExpr, celText string, loc Location, as
 		celText))
 }
 
+// checkFactsShape enforces the D-051 Option B fact-model convention on a dot
+// reference facts.<provider>.<name>[.accessor…] (segs = [provider, name,
+// accessor, …]). The fact VALUE lives at facts.<p>.<n>.value and value-tree
+// navigation goes THROUGH `.value`, so the third segment must be `value` (with
+// optional deeper .field/[i] navigation) or a reserved envelope escape; ANY other
+// third segment — or a bare facts.<p>.<n> with no third segment (the envelope map,
+// which an author almost always did not mean) — is a facts-reference-shape error.
+// This SUPERSEDES the D-049 Option A auto-unwrap (value was facts.<p>.<n> itself,
+// `.value` rejected); the orthogonal facts-reference-SYNTAX rule is unaffected.
+func checkFactsShape(segs []string, celText string, loc Location, rep *Report) {
+	if len(segs) >= 3 {
+		third := segs[2]
+		if third == factValueAccessor || reservedEnvelopeEscapes[third] {
+			return // `.value` (with optional deeper nav) or an envelope escape — permitted
+		}
+		rep.addError(CodeFactsReferenceShape, loc, fmt.Sprintf(
+			"facts reference `facts.%s.%s.%s…` in when/cel leaf %q navigates the fact value without going through `.value`; under the Option B convention (D-051) the value is at facts.%s.%s.value — address it as `facts.%s.%s.value.%s…` (only `.value` and the reserved envelope escapes state/expiresAt/observedAt/reason/sensitive are permitted at the third segment)",
+			segs[0], segs[1], third, celText, segs[0], segs[1], segs[0], segs[1], third))
+		return
+	}
+
+	// len(segs) < 3: a bare facts.<provider> or facts.<provider>.<name> — the
+	// envelope map, naming no value accessor.
+	name := "<name>"
+	if len(segs) >= 2 {
+		name = segs[1]
+	}
+	rep.addError(CodeFactsReferenceShape, loc, fmt.Sprintf(
+		"bare `facts.%s` reference in when/cel leaf %q names no value accessor (it addresses the fact envelope map, not the value); under the Option B convention (D-051) address the value via `facts.%s.%s.value`, or read an envelope escape (state/expiresAt/observedAt/reason/sensitive)",
+		strings.Join(segs, "."), celText, segs[0], name))
+}
+
 // selectChainFields walks upward from a facts Ident, collecting the dot-selected
 // field names in order (provider, name, accessor, ...). It stops at the first
 // ancestor that is not a Select selecting from the running chain — so an index or
 // call past facts.<provider>.<name> (facts.author.groups[0]) simply ends the
-// chain, leaving value-tree navigation permitted.
+// chain (yielding a <3-segment reference the D-051 shape check then flags, since
+// under Option B value-tree navigation must go through `.value`).
 func selectChainFields(factsIdent celast.NavigableExpr) []string {
 	var segs []string
 	cur := factsIdent

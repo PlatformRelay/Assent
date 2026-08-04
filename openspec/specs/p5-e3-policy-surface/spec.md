@@ -65,11 +65,17 @@ respected); the only I/O (the directory walk) lives in `cmd/assent`, the sanctio
 **Judgment calls (decide-and-log)**: (a) `assent lint` is a **subcommand**, not a second binary
 (recommend; log an OQ only if an operator wants a `assent-lint` alias) — S01. (b) Lint ingests
 **tolerantly** (fail-many), not via the strict E2 loader (the load-bearing architectural decision —
-every check plugs into the accumulator) — S01. (c) **Fact-model `.value`** — DECIDE + log a D-nnn:
-does an authored `facts.<p>.<n>` address the typed value directly (engine auto-unwraps; `.state`/
-`.expiresAt` reserved escapes) or must it be `.value`? The corpus is inconsistent (D-016
-`facts.owner.team.state` vs the topic-registry pack `facts.author.groups`) — that inconsistency is
-the evidence — S03, sequenced before S04. (d) Fail-open must **WIDEN** (S05) beyond the single
+every check plugs into the accumulator) — S01. (c) **Fact-model `.value`** — DECIDED + logged.
+**Resolution: Option B (D-051, which SUPERSEDES the initial D-049 Option A)** — the fact value is at
+`facts.<p>.<n>.value` (bound only for a `resolved` fact; navigation goes THROUGH `.value`),
+`.state`/`.expiresAt`/`.observedAt`/`.reason`/`.sensitive` are reserved envelope escapes, and every
+other third segment (or a bare `facts.<p>.<n>`) is a `facts-reference-shape` error. Option A
+(auto-unwrap: bare `facts.<p>.<n>` = the value, `.value` rejected) was reversed on engineering
+grounds — it needs a custom cel-go fact type in the fail-safe decision path (a fresh fail-open
+surface), whereas Option B needs ZERO engine change (`factsToCEL` + S10 already bind/prove the
+envelope shape) and lane C rewrites the corpus regardless, voiding Option A's "don't touch the
+corpus" cost. The security-critical `facts-reference-syntax` non-dot rejection is UNCHANGED — S03,
+sequenced before S04. (d) Fail-open must **WIDEN** (S05) beyond the single
 archetype `ValidateProviderPosture` catches today, per its own header TODO. (e) **Lane C** (E3's
 analog to E2's lane F) adds the required `phase` + applies the S03 fact-model decision to
 `examples/packs/**` (all 11 authored rule files omit `phase` today) — startable once S03 is decided,
@@ -135,10 +141,14 @@ Requirements:
 
 ## E3-S03 — Fact-model `.value` decision + facts-reference lint (closes S05 non-dot deferral) `[autonomous]`
 
-**Goal**: (1) **DECISION (decide-and-log D-nnn)** — resolve whether an authored `facts.<p>.<n>`
+**Goal**: (1) **DECISION (decide-and-log)** — resolve whether an authored `facts.<p>.<n>`
 addresses the typed value directly (auto-unwrap; `.state`/`.expiresAt` reserved escapes) or must be
-`.value`; the corpus inconsistency (D-016 `.state` vs pack `facts.author.groups`) is the evidence;
-note any E2 activation-model + `predicate-scope.md` alignment (executed by lane C for authored packs).
+`.value`; the corpus inconsistency (D-016 `.state` vs pack `facts.author.groups`) is the evidence.
+**DECIDED: Option B — value at `.value`** (D-051, which SUPERSEDES the initial D-049 Option A;
+reversed on engineering grounds — Option A needs a custom cel-go fact type in the fail-safe decision
+path, Option B needs zero engine change). No E2 engine change is required (the current `factsToCEL`
+already binds the envelope shape and S10 reproduces the D-016 golden with it); lane C applies the
+convention to the authored packs.
 (2) **facts-reference lint** — a `facts` reference not in dot-syntax (bracket index `facts['owner']`,
 interior whitespace, any form the E2-S05 `factRefRe` scan would miss) → `facts-reference-syntax` (so
 the S05 posture scan is sound by construction); a reference violating the chosen convention →

@@ -39,7 +39,7 @@ spec:
           paths: ["topics/**/*.yaml"]
       prove:
         obligation: ` + obligation + `
-        when: "entry.owner in facts.author.groups"
+        when: "entry.owner in facts.author.groups.value"
       onFailure:
         effect: require-review
         code: ` + obligation + `.unproven
@@ -107,7 +107,7 @@ spec:
           paths: ["topics/**/*.yaml"]
       prove:
         obligation: ownership
-        when: "entry.owner in facts.author.groups"
+        when: "entry.owner in facts.author.groups.value"
       onFailure:
         effect: bogus-effect
         code: ownership.unproven
@@ -173,7 +173,7 @@ spec:
           paths: ["topics/**/*.yaml"]
       prove:
         obligation: ownership
-        when: "entry.owner in facts.author.groups"
+        when: "entry.owner in facts.author.groups.value"
       onFailure:
         effect: bogus-effect
         code: ownership.unproven

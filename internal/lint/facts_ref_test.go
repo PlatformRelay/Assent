@@ -89,57 +89,89 @@ spec:
 		t.Error("a non-dot facts reference must signal a non-zero exit")
 	}
 
-	// The full non-dot family, unit-isolated: bracket (single/double quote),
-	// interior whitespace, and a bare whole-map reference — each one error.
+	// The non-dot family that maps to a NON-Select facts Ident — bracket index
+	// (single/double quote) and a bare whole-map reference — is a lone syntax error
+	// (the facts Ident's parent is an Index/size Call, so the Option-B shape rule,
+	// which only fires on dot Selects, never co-fires).
 	for _, cel := range []string{
 		`facts['owner'].team == 'x'`,
 		`facts["owner"].team == 'x'`,
-		`facts . owner.team == 'x'`, // interior whitespace before the dot
-		`facts.  owner == 'x'`,      // whitespace after the dot
-		`size(facts) > 0`,           // bare whole-map, names no provider
+		`size(facts) > 0`, // bare whole-map, names no provider
 	} {
 		diags := factsDiags(cel)
 		if len(diags) != 1 || diags[0].Code != CodeFactsReferenceSyntax {
 			t.Errorf("cel %q: want exactly one facts-reference-syntax, got %v", cel, codesOf(diags))
 		}
 	}
+
+	// Interior/after-dot whitespace normalizes to a dot Select with <3 segments, so
+	// under Option B it is BOTH a whitespace-scan evasion (syntax) AND a bare-shape
+	// violation — it co-emits both codes. The syntax rejection (the security-
+	// critical piece) MUST still be present; the co-emitted shape is fail-safe.
+	for _, cel := range []string{
+		`facts . owner.team == 'x'`, // interior whitespace before the dot
+		`facts.  owner == 'x'`,      // whitespace after the dot
+	} {
+		diags := factsDiags(cel)
+		if !hasCode(diags, CodeFactsReferenceSyntax, "") {
+			t.Errorf("cel %q: whitespace evasion must still yield a facts-reference-syntax, got %v", cel, codesOf(diags))
+		}
+	}
 }
 
-// TestFactsReferenceShapeConvention — REQ-E3-S03-02: under the D-048 auto-unwrap
-// convention (Option A) a dot reference that spells the .value accessor violates
-// the shape and is a facts-reference-shape error; a conformant bare-value
-// reference lints clean. Also pins the segment discriminator: facts.quota.value
-// (a fact NAMED "value", two segments → the value itself) must NOT be confused
-// with facts.owner.team.value (an accessor at the third segment → flagged).
+// TestFactsReferenceShapeConvention — REQ-E3-S03-02: under the D-051 Option B
+// convention (SUPERSEDES D-049 Option A) the fact VALUE is at facts.<p>.<n>.value
+// and value-tree navigation goes THROUGH `.value`. A third segment that is `value`
+// (with optional deeper .field/[i] navigation) or a reserved envelope escape lints
+// clean; ANY other third segment, or a bare facts.<p>.<n> with no accessor (the
+// envelope map — an author almost always means `.value`), is a facts-reference-
+// shape error. Pins the segment discriminator: facts.owner.team.value (three
+// segments → the value) is PERMITTED, while facts.quota.value (two segments, a fact
+// NAMED "value" addressed bare) is now a bare-shape error (needs .value.value).
 func TestFactsReferenceShapeConvention(t *testing.T) {
-	// Conformant: bare value access, no .value — the whole authored corpus shape.
+	// Conformant under Option B: the value at `.value`, plus value-tree navigation
+	// THROUGH `.value` (deeper .field selection and [i] indexing).
 	for _, clean := range []string{
-		`entry.owner in facts.author.groups`,
-		`new <= facts.quota.max_partitions`,
-		`facts.quota.value > 0`, // fact literally NAMED value: two segments, clean
-		// Value-tree indexing PAST facts.<provider>.<name> is permitted — the
-		// dot-form requirement is enforced only at the provider segment (that is
-		// all policy.factRefRe needs to capture the provider); indexing into the
-		// unwrapped value is legitimate CEL, not a posture evasion.
-		`facts.author.groups[0] == 'x'`,
-		`facts.owner.team.members[0].id == 'x'`,
+		`entry.owner in facts.author.groups.value`,
+		`new <= facts.quota.max_partitions.value`,
+		`facts.owner.team.value == 'x'`,               // bare `.value`
+		`facts.author.groups.value[0] == 'x'`,         // index THROUGH `.value`
+		`facts.owner.team.value.members[0].id == 'x'`, // deep nav THROUGH `.value`
 	} {
 		if diags := factsDiags(clean); len(diags) != 0 {
-			t.Errorf("conformant reference %q must lint clean, got %v", clean, codesOf(diags))
+			t.Errorf("conformant Option-B reference %q must lint clean, got %v", clean, codesOf(diags))
 		}
 	}
 
-	// Violation: the Option-B .value accessor at the third segment.
+	// Violation — an unknown third segment: value navigation must go through
+	// `.value` (facts.band.max_replicas.max → facts.band.max_replicas.value.max).
 	for _, bad := range []string{
-		`facts.owner.team.value == 'x'`,
-		`new <= facts.quota.max_partitions.value`,
+		`facts.band.max_replicas.max == 'x'`,    // unknown 3rd segment
+		`facts.owner.team.members[0].id == 'x'`, // value-tree nav NOT through `.value`
 	} {
 		diags := factsDiags(bad)
 		if len(diags) != 1 || diags[0].Code != CodeFactsReferenceShape {
-			t.Fatalf("reference %q must yield exactly one facts-reference-shape, got %v", bad, codesOf(diags))
+			t.Fatalf("unknown-3rd-segment reference %q must yield exactly one facts-reference-shape, got %v", bad, codesOf(diags))
 		}
 		if !strings.Contains(diags[0].Message, ".value") {
-			t.Errorf("shape diagnostic must name the .value accessor, got %q", diags[0].Message)
+			t.Errorf("shape diagnostic must point at the `.value` accessor, got %q", diags[0].Message)
+		}
+	}
+
+	// Violation — a bare facts.<p>.<n> (the envelope map, no accessor), including a
+	// fact literally NAMED `value` addressed bare and a bare envelope indexed.
+	for _, bare := range []string{
+		`facts.owner.team == 'x'`,            // bare envelope, 2 segments
+		`entry.owner in facts.author.groups`, // bare envelope (was clean under Option A)
+		`facts.author.groups[0] == 'x'`,      // bare envelope indexed (must be `.value[0]`)
+		`facts.quota.value > 0`,              // fact NAMED value, addressed bare (needs `.value.value`)
+	} {
+		diags := factsDiags(bare)
+		if len(diags) != 1 || diags[0].Code != CodeFactsReferenceShape {
+			t.Fatalf("bare facts.<p>.<n> reference %q must yield exactly one facts-reference-shape, got %v", bare, codesOf(diags))
+		}
+		if !strings.Contains(diags[0].Message, ".value") {
+			t.Errorf("shape diagnostic must point at the `.value` accessor, got %q", diags[0].Message)
 		}
 	}
 }
@@ -171,11 +203,11 @@ func TestFactsRefDoubleRunStable(t *testing.T) {
 	m := &model{packs: map[string]*loadedPack{
 		"p": {rules: []policy.Rule{
 			{Name: "a", Prove: &policy.Prove{Obligation: "ownership", When: policy.AssertTree{All: []policy.AssertTree{
-				{Leaf: &policy.Leaf{CEL: `facts['owner'].team == 'x'`}},
-				{Not: &policy.AssertTree{Leaf: &policy.Leaf{CEL: `facts.owner.team.value == 'y'`}}},
+				{Leaf: &policy.Leaf{CEL: `facts['owner'].team == 'x'`}},                                   // syntax (bracket)
+				{Not: &policy.AssertTree{Leaf: &policy.Leaf{CEL: `facts.owner.team.maxReplicas == 'y'`}}}, // shape (unknown 3rd, Option B)
 			}}}},
 			{Name: "b", Prove: &policy.Prove{Obligation: "ownership", When: policy.AssertTree{Any: []policy.AssertTree{
-				{Leaf: &policy.Leaf{CEL: `entry.owner in facts.author.groups`}},         // clean
+				{Leaf: &policy.Leaf{CEL: `entry.owner in facts.author.groups.value`}},   // clean (Option B .value)
 				{Leaf: &policy.Leaf{CEL: `path.contains('facts') && facts . x == 'z'`}}, // literal facts is NOT a ref; facts . x is
 			}}}},
 		}},
@@ -229,15 +261,20 @@ func TestRawStringBracketAccessRejected(t *testing.T) {
 		t.Fatalf("an unparseable (bytes-raw) leaf hiding facts['owner'] must surface a parse-error, not be silently skipped; got %v", codesOf(bd))
 	}
 
-	// Standard non-dot forms still caught (the reviewer's explicit re-proof).
+	// Standard non-dot forms still caught (the reviewer's explicit re-proof). The
+	// bracket and bare-whole-map forms are a lone syntax error; the whitespace
+	// evasion co-emits an Option-B bare-shape error too, but the security-critical
+	// syntax rejection MUST still be present.
 	for _, cel := range []string{
 		`facts['owner'].team == 'x'`, // bracket
-		`facts . owner == 'x'`,       // interior whitespace (runtime-scan evasion)
 		`size(facts) > 0`,            // bare whole-map
 	} {
 		if d := factsDiags(cel); len(d) != 1 || d[0].Code != CodeFactsReferenceSyntax {
 			t.Errorf("standard non-dot form %q must still yield facts-reference-syntax, got %v", cel, codesOf(d))
 		}
+	}
+	if d := factsDiags(`facts . owner == 'x'`); !hasCode(d, CodeFactsReferenceSyntax, "") { // interior whitespace (runtime-scan evasion)
+		t.Errorf("whitespace-evasion `facts . owner` must still yield facts-reference-syntax, got %v", codesOf(d))
 	}
 }
 

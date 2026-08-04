@@ -11,7 +11,7 @@ spec:
           paths: ["topics/**/*.yaml"]
       prove:
         obligation: ownership
-        when: "entry.owner in facts.author.groups"
+        when: "entry.owner in facts.author.groups.value"
       onFailure:
         effect: require-review
         code: ownership.unproven
