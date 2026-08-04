@@ -10,24 +10,27 @@
 <p align="center">
   <a href="https://github.com/PlatformRelay/assent/actions/workflows/verify.yaml"><img src="https://github.com/PlatformRelay/assent/actions/workflows/verify.yaml/badge.svg" alt="Verify"></a>
   <a href="https://github.com/PlatformRelay/assent/actions/workflows/schemas.yml"><img src="https://github.com/PlatformRelay/assent/actions/workflows/schemas.yml/badge.svg" alt="Schemas"></a>
-  <a href="https://platformrelay.github.io/assent/"><img src="https://img.shields.io/badge/documentation-GitHub%20Pages-2ea44f?logo=materialformkdocs&logoColor=white" alt="Documentation"></a>
   <a href="https://github.com/PlatformRelay/assent/actions/workflows/docs.yaml"><img src="https://github.com/PlatformRelay/assent/actions/workflows/docs.yaml/badge.svg" alt="Docs"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/PlatformRelay/assent"><img src="https://api.securityscorecards.dev/projects/github.com/PlatformRelay/assent/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://platformrelay.github.io/assent/"><img src="https://img.shields.io/badge/documentation-GitHub%20Pages-2ea44f?logo=materialformkdocs&logoColor=white" alt="Documentation"></a>
   <a href="https://github.com/PlatformRelay/assent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/PlatformRelay/assent" alt="License: Apache-2.0"></a>
-  <a href="https://pkg.go.dev/github.com/PlatformRelay/assent"><img src="https://img.shields.io/github/go-mod/go-version/PlatformRelay/assent" alt="Go version"></a>
 </p>
 
+<p align="center"><em>Deterministic, policy-driven auto-merge for self-service repos</em></p>
+
 > **Canonical repo:** GitHub ([PlatformRelay/assent](https://github.com/PlatformRelay/assent)).
-> **Status: pre-alpha / design phase.** All APIs, schemas, and commands are drafts.
+> **Status: alpha** — the GitLab CI path is **Core** (E2–E8 engine, forge, provider, renderer).
+> Pre-1.0: policy schema and CLI flags may change between releases; see
+> [API stability](API_STABILITY.md).
 
 **assent** is a deterministic, policy-driven **auto-merge gate** for self-service
-configuration repositories. Drop it into a repo's CI pipeline and it turns merge requests /
-pull requests into decisions: **approve, comment, request changes, or block** — based on
-rules *you* write in a **Kyverno-style declarative YAML** with CEL predicates (a Rego
-escape hatch is designed and unlocks with the first consumer who needs it — D-012).
+configuration repositories. Drop it into a repo's CI pipeline and it turns merge requests
+into decisions: **approve, comment, request changes, or block** — based on rules *you*
+write in **Kyverno-style declarative YAML** with CEL predicates.
 
-The goal: make any config repo automerge-capable with deterministic, testable, reviewable
-rules — without writing a custom bot per repo.
+**Read the docs:** **[platformrelay.github.io/assent](https://platformrelay.github.io/assent/)**
+— vision, architecture, ADRs, install guide, and usage walkthrough. This README is the
+front door; the site is the map.
 
 ## Why
 
@@ -37,50 +40,94 @@ to review every MR, reconstructing the same context each time — what changed, 
 it destructive, which policy applies. assent encodes that reasoning as policy so the routine
 90% merges itself and reviewers spend their attention on the risky 10%.
 
-## What it does (intended scope)
+- **Fail-safe decisions** — every run emits an auditable `DecisionRecord`; ambiguous policy
+  fails closed ([ADR-0015](docs/adr/0015-trust-boundaries-merge-integrity.md)).
+- **Semantic diffs** — JSON, YAML, and HCL/tfvars parse into field-level adds/modifies/deletes,
+  not line noise ([ADR-0003](docs/adr/0003-canonical-change-model.md)).
+- **Testable policies** — fixture changes in, expected decision out; policies without tests
+  are a lint error ([ADR-0014](docs/adr/0014-policy-test-harness.md)).
 
-- **Runs in the pipeline** — GitLab CI in v1; GitHub Actions is a designed seam that unlocks
-  per D-012. One process per MR/PR, no long-lived service required.
-- **Understands structured changes** — parses JSON, YAML, and HCL/tfvars into a canonical
-  change model (field-level adds / modifies / deletes), so policies reason about *semantics*,
-  not diff lines.
-- **Policies in Rego or declarative YAML** — both frontends compile to the same decision
-  engine; pick whichever your team reads best.
-- **Pluggable permission & fact providers** — "is the author allowed to touch this entry?"
-  can be answered by Keycloak, LDAP, GitLab/GitHub group membership, a CODEOWNERS-style file,
-  or your own plugin.
-- **Acts like a reviewer** — posts findings as resolvable review threads, comments,
-  approves/denies, and (when everything is green) merges. Same behaviour on GitLab and GitHub.
-- **Testable by design** — repo owners get a test harness: fixture changes in, expected
-  decision out. Policies without tests are a lint error, not a style choice.
+## How it works
 
-See [`docs/vision.md`](docs/vision.md) for the full intended use case and
-[`docs/planning/meta-plan.md`](docs/planning/meta-plan.md) for how we get from here to a
-precise implementation plan.
+```mermaid
+flowchart LR
+  MR["Merge request"] --> CI["GitLab CI job"]
+  CI --> Assent["assent run"]
+  Assent --> Forge["GitLab forge API"]
+  Assent --> Providers["Permission & fact providers"]
+  Assent --> Policy[".assent/ policies"]
+  Assent --> Out["Threads · comments · approve · merge"]
+```
+
+Key property: assent is **stateless per invocation** — every run recomputes the decision
+from (diff, repo snapshot, facts, policy version). No database, no long-lived service in v1.
+See [system context](docs/architecture/c4-context.md) for the full C4 diagram.
+
+## Quick start
+
+Install a stamped binary ([install guide](docs/usage/install.md)):
+
+```bash
+go install github.com/PlatformRelay/assent/cmd/assent@latest
+assent version
+```
+
+Or verify a release archive with the checksum script — details in
+[docs/usage/install.md](https://platformrelay.github.io/assent/usage/install/).
+
+Lint and test policies locally:
+
+```bash
+assent lint .assent/
+assent test .assent/
+```
+
+Developers: gates live in the [`Taskfile`](Taskfile.yml):
+
+```bash
+task check   # fmt + vet + lint + test
+```
+
+## Feature maturity
+
+Honest tiers post-E8 (D-104). **Core** = shipped and covered by conformance tests; **Planned**
+= designed seam, not yet implemented; **Locked** = deferred epic; **Designed** = ADR/spec only.
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Policy lint / test | **Core** | `assent lint`, `assent test`, schema drift gates |
+| GitLab forge | **Core** | Snapshot, resolve, reconcile, merge CAS |
+| Provider builtins | **Core** | GitLab groups, ownership file, static facts |
+| Renderer | **Core** | Finding threads, summaries, presentation lint |
+| GitHub adapter | **Planned** | E10 — designed seam ([D-012](docs/decisions/decisions.md)) |
+| Rego backend | **Locked** | E11 — CEL/assert path is Core today |
+| `serve` (HTTP API) | **Designed** | E12 — CLI-only in v1 |
+| Remote packs | **Locked** | E13 — local `.assent/` only |
+
+## Learn more
+
+| Topic | Link |
+| --- | --- |
+| Documentation site | [platformrelay.github.io/assent](https://platformrelay.github.io/assent/) |
+| Install (go, curl, Homebrew) | [usage/install.md](docs/usage/install.md) |
+| API & schema stability | [API_STABILITY.md](API_STABILITY.md) |
+| Security policy & CI gates | [SECURITY.md](SECURITY.md) |
+| Vision & personas | [docs/vision.md](docs/vision.md) |
+| Architecture (C4) | [docs/architecture/](docs/architecture/) |
+| Decision log | [docs/decisions/decisions.md](docs/decisions/decisions.md) |
 
 ## Repository layout
 
 | Path | Purpose |
 | --- | --- |
-| `docs/vision.md` | Intended use case, personas, north-star |
-| `docs/adr/` | Architecture decision records (template + numbered ADRs) |
-| `docs/architecture/` | C4 diagrams (mermaid) |
-| `docs/decisions/` | Lightweight operator decision log (D-nnn) |
-| `docs/planning/` | Meta-plan and open questions |
-| `openspec/` | Spec-driven development: specs (Given/When/Then, REQ IDs) and change proposals |
-| `cmd/assent/` | CLI entry point (stub) |
-| `internal/` | Go packages (hexagonal: core + ports + adapters) — see `internal/README.md` |
-| `examples/` | Sample policies (Rego + declarative) and sample self-service repo layouts |
+| `docs/` | Product docs (published via MkDocs) |
+| `docs/planning/` | Contributor planning notes (not in published nav) |
+| `openspec/` | Spec-driven development specs and change proposals |
+| `cmd/assent/` | CLI entry point |
+| `internal/` | Go packages (hexagonal: core + ports + adapters) |
+| `examples/` | Sample policies and self-service repo layouts |
 | `test/e2e/` | End-to-end strategy: kind-hosted GitLab / testcontainers |
-| `hack/kind/` | Local kind cluster setup for e2e |
-
-## Development
-
-Spec/test-driven, gates in the [`Taskfile`](Taskfile.yml):
-
-```bash
-task check   # fmt + vet + lint + test
-```
+| `hack/release/` | Snapshot builds, install script, release verify harness |
 
 ## License
 
