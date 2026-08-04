@@ -403,7 +403,9 @@ autonomous** (fixture goldens + fake summary upsert; no live GitLab required).
 **Dependency order**: S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 →
 S14 (serialized). **Closes D-073: S12+S13. Closes D-068 presentation handoff: S06. Schema touch: S02 only (D-088).**
 
-> **E8 status: SPEC READY** — next epic to claim; start **E8-S01**.
+> **E8 status: AUTONOMOUS COMPLETE (S01–S14)** — renderer tier 0 shipped; render goldens +
+> summary slot hermetic; safety split proven (D-098). S06/S07 remain infra-gated optional per
+> D-081/D-083; E9 release may proceed.
 
 ## Phases 3–5
 
@@ -414,7 +416,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E9 active — **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 SPEC READY** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), D-088–D-097); S06/S07 infra-gated optional; E11/E12 **unlocked** (D-017, post-Phase-4); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E8 autonomous slice gates E9 release |
+| 5 — Implementation | E1–E9 active — **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); S06/S07 infra-gated optional; E11/E12 **unlocked** (D-017, post-Phase-4); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E9 release may ship renderer product |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).
