@@ -22,7 +22,6 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - build(deps): bump github/codeql-action/init from 4.37.3 to 4.37.4
 - build(deps): bump github/codeql-action/analyze to 4.37.4 to match init
 - build(deps): bump golang.org/x/text from 0.39.0 to 0.40.0
-- :wrench: chore(release): wire changelog-verify into task check
 
 ### Documentation
 - :memo: docs: design round 2 — effects/routing/modes/config/ports ADRs, Apache-2.0, walkthrough, naming
@@ -120,9 +119,6 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :memo: docs(e9): add distribution & release INVEST spec
 - :memo: docs(e9): address review — deps, S07 split, counts
 - :memo: docs(e9): restore E8 marker + changelog drift REQ
-- :memo: chore(release): seed CHANGELOG.md from git-cliff
-- :memo: chore(release): refresh CHANGELOG.md with lane commits
-- :memo: chore(release): refresh CHANGELOG.md for lane tip
 - :memo: docs(e9-s11): log OQ-2 GitLab mirror defer (D-105)
 - :memo: docs(release): align install.md Go version with go.mod
 - :memo: docs(e9-s11): mark OQ-2 resolved like peer rows
@@ -130,7 +126,6 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :memo: docs(readme): maturity table + alpha status (E9-S09)
 - :memo: docs(pcs): PolicyComparisonSuite full runner epic spec (D-057)
 - :memo: docs(pcs): fix spec review — purity, catalogue extraction, D-112/115
-- :memo: chore(release): sync CHANGELOG.md for PCS unreleased commits (RELSE-01)
 
 ### Features
 - :sparkles: examples: onFail branches — one predicate, both outcomes, quota case explained (P1-7)

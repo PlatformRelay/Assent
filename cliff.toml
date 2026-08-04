@@ -32,6 +32,7 @@ trim = true
 conventional_commits = false
 filter_unconventional = false
 commit_parsers = [
+  { message = "^:memo: chore\\(release\\):|^:wrench: chore\\(release\\):", skip = true },
   { message = "^:sparkles:|^feat", group = "Features" },
   { message = "^:bug:|^fix", group = "Fixes" },
   { message = "^:memo:|^docs", group = "Documentation" },
