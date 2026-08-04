@@ -438,6 +438,32 @@ credentials). **Infra-gated:** S05, S06, S07b, S13 publish half.
 → S06 → S07b; S10 ∥; S11 ∥; S13 last. **Closes oss-playbook #4–#5 nav/install: S02–S07a/b, S08–S09.
 Next after E9: PolicyComparisonSuite runner (D-057) — separate epic, not absorbed.**
 
+## Phase 5 — PCS PolicyComparisonSuite full runner stories
+
+Full INVEST stories in [p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md).
+PCS completes the D-057 deferred scope: six delta classifiers, five promotion gates,
+`acceptedDeltas` per-delta allowlist, `ComparisonRecord` emission, multi-case
+`PolicyComparisonSuite` corpus, and profile→pack activation — **extending** the E6-S09 seed
+(`internal/compare`, `cmd/assent/compare.go`) without schema changes (`git diff schemas/`==0).
+REQ prefix `REQ-PCS-S0n-nn`. **Every story `[autonomous]`.**
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| PCS-S01 | Profile→pack activation resolver | **[autonomous]** | E6-S09 seed | profile-driven policy activation; **do first** |
+| PCS-S02 | Classifiers: missed intervention + stricter intervention | **[autonomous · engine-grade]** | S01 | zero-missed gate taxonomy |
+| PCS-S03 | Classifiers: obligation uncovered + score threshold | **[autonomous · engine-grade]** | S01, S02 | obligation + explicitly-accepted gates |
+| PCS-S04 | ComparisonRecord emission | **[autonomous]** | S02, S03 | auditable per-case deltas |
+| PCS-S05 | Five-gate evaluator + acceptedDeltas allowlist | **[autonomous · engine-grade]** | S04 | promotion gate table |
+| PCS-S06 | PolicyComparisonSuite loader + multi-case runner | **[autonomous]** | S01, S05 | immutable corpus replay |
+| PCS-S07 | CLI suite mode + ADR-0018 exit codes | **[autonomous · engine-grade]** | S06 | `assent compare --suite` |
+| PCS-S08 | Adversarial corpus + CI dogfood | **[autonomous]** | S07 | regression corpus |
+| PCS-S09 | Exit gate: full runner + D-057 closed | **[autonomous · engine-grade]** | S01..S08 | **the PCS exit gate** |
+
+**Dependency order**: S01 → {S02, S03} → S04 → S05 → S06 → S07 → S08 → S09. **Closes D-057:
+S02–S09. Do first: S01.**
+
+> **PCS status: SPEC READY** — spec on `lane-pcs-spec`; implementation unclaimed.
+
 > **E9 status: AUTONOMOUS COMPLETE (S01–S04 + S07a + S08→S09 + S10 + S11 + S12 + S13 autonomous
 > half)** — `task release-snapshot && task release-verify && task docs-build` green via
 > `hack/release/exitgate_test.sh`; product docs nav fenced (D-103); snapshot checksum verify (D-110).
@@ -453,7 +479,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S04 + S07a + S08→S09 + S10 + S11 + S12 + S13 auto half, D-099–D-110; **D-111 infra pending**); E11/E12 **unlocked** (D-017); **D-057 PolicyComparisonSuite** → next epic after E9; E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E9 full exit = tagged signed release + docs live (D-111 infra) |
+| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S04 + S07a + S08→S09 + S10 + S11 + S12 + S13 auto half, D-099–D-110; **D-111 infra pending**); **PCS SPEC READY** ([p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md), D-057); E11/E12 **unlocked** (D-017); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; PCS next implementation epic; E9 full exit = tagged signed release + docs live (D-111 infra) |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).
