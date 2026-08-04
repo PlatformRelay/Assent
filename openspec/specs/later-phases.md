@@ -218,14 +218,17 @@ e2e-vet; catalog complete; L1 suite green. **S06/S07 optional** (kind lab + live
 E4-S11). Seeds: profile task wiring; repo generator; catalog; determinism job; security jobs;
 kind lab; L3 harness.
 
-### E8 — Renderer & presentation — Planned
-ADR-0016 tier 0 only (D-012): renderer-owned envelope (markers, escaping, redaction,
-clamping outside customizable regions), config knobs (verbosity per env, emoji, collapse
-threshold, locale), CEL message rendering from the PresentationModel, `assent render`
-against fixtures, default-theme golden markdown snapshots, template lint, `en` locale
-catalog. Tiers 1–2 (slots/full templates) stay designed seams. **Exit gate**: render goldens
-green; wording changes provably do not break safety tests (ADR-0014 amendment split).
-Seeds: PresentationModel consumer; default theme; render command; goldens; locale catalog.
+### E8 — Renderer & presentation — **SPEC READY**
+Full INVEST stories in [p5-e8-renderer/spec.md](p5-e8-renderer/spec.md). ADR-0016 tier 0 only
+(D-012/D-015): renderer-owned envelope (markers, escaping, redaction, clamping outside
+customizable regions), config knobs (verbosity per env, emoji, collapse threshold, locale), CEL
+message rendering from PresentationModel + activation, `assent render` against fixtures,
+default-theme golden markdown snapshots, presentation lint, `en` locale catalog, summary-comment
+slot (P3-E5 step 3 — closes D-073). Tiers 1–2 (slots/full templates) stay designed seams.
+**Exit gate**: render goldens green; summary slot hermetic; wording changes provably do not break
+safety tests (ADR-0014 amendment split). **13 stories (13 autonomous)** — claim **E8-S01** first.
+Seeds: `internal/render/**`; `examples/render/**`; `assent render`; config `presentation:` (D-088);
+judgment calls D-088–D-095.
 
 ### E9 — Distribution & release — Planned
 oss-playbook execution: goreleaser (binaries, brew, curl+checksum), cosign keyless signing +
