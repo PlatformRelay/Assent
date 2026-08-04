@@ -28,19 +28,24 @@ cases:
           effect: challenge
       score: { total: 1, threshold: 4 }
 
-  # New-file case: base is null (the file did not exist on the target branch). A
-  # whole-file ADD has no parseable base side, so the production differ returns an
-  # OPAQUE diff and Evaluate fails safe to REVIEW — never a silent APPROVE on an
-  # unparsed add. REVIEW here is the intentional fail-safe, not a skipped case.
+  # New-file case: base is null (the file did not exist on the target branch). One-
+  # sided presence mints a clean whole-file ADD event (EFE-S02). The capped pack
+  # governs no fileEvents, and an ADD is non-destructive — the unmatched-delete
+  # escalation is DELETE-only (D-063) — so the ungoverned add earns APPROVE. (A
+  # newly-added file's CONTENTS are a single lifecycle event, not value-level changes,
+  # so the value-cap rule does not scrutinize them; the EFE whole-file semantics.)
   - name: new-file
     file: config.json
     base: null
     head: { partitions: 16 }
     facts: { limits: { maxPartitions: 32 } }
-    expect: { decision: REVIEW }
+    expect: { decision: APPROVE }
 
-  # Deleted-file case: head is null (the MR removes the file). The whole-file DELETE
-  # likewise has no parseable head side -> opaque diff -> fail-safe REVIEW.
+  # Deleted-file case: head is null (the MR removes the file). One-sided presence mints
+  # a clean whole-file DELETE event (EFE-S02). No fileEvents rule in the capped pack
+  # governs it, so the S02 fail-safe escalation (Judgment call (a) / D-063, D-064)
+  # raises the decision to REVIEW — a destructive delete no rule covers is never
+  # silently approved.
   - name: deleted-file
     file: config.json
     base: { partitions: 16 }

@@ -211,6 +211,10 @@ const (
 	ruleUndecidable = "aggregate.changeset"
 	// ruleUncovered labels a REVIEW from a required obligation with no proving rule.
 	ruleUncovered = "aggregate.uncovered"
+	// ruleUnmatchedDelete labels the fail-safe REVIEW an ungoverned whole-file DELETE
+	// event earns (EFE-S02, Judgment call (a) / D-063): a delete no evaluated
+	// fileEvents rule covers must never silently APPROVE.
+	ruleUnmatchedDelete = "aggregate.unmatchedDelete"
 )
 
 // ReservedPolicyClass is the built-in meta-class (ADR-0008/ADR-0015 §1) that an

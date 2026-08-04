@@ -67,8 +67,13 @@ func TestInlineCasesFileEvaluates(t *testing.T) {
 	want := map[string]string{
 		"partition-increase-ok":       "APPROVE",
 		"partition-increase-over-cap": "REVIEW",
-		"new-file":                    "REVIEW",
-		"deleted-file":                "REVIEW",
+		// EFE-S02: a `null` base now mints a clean whole-file ADD event (not an opaque
+		// diff). The capped pack governs no fileEvents, and an ADD is non-destructive
+		// (the unmatched-delete escalation is DELETE-only, D-063), so the ungoverned add
+		// earns APPROVE. A `null` head mints a whole-file DELETE which — unmatched by any
+		// fileEvents rule — fails safe to REVIEW via the S02 escalation.
+		"new-file":     "APPROVE",
+		"deleted-file": "REVIEW",
 	}
 	if len(cases) != len(want) {
 		t.Fatalf("loaded %d inline cases, want %d", len(cases), len(want))
@@ -107,22 +112,29 @@ func TestInlineCasesFileEvaluates(t *testing.T) {
 	}
 }
 
-// TestInlineNewAndDeletedFileCases (REQ-E6-S06-02) proves a `null` base (new-file
-// case) and a `null` head (deleted-file case) route through the PRODUCTION differ and
-// fail safe. A whole-file add/delete has an unparseable absent side, so change.Diff
-// returns an OPAQUE ChangeSet and Evaluate maps it to REVIEW — never a silent APPROVE.
-// The mechanism (opaqueness), not just the REVIEW verdict, is asserted, and contrasted
-// against the same head with a NON-null base (which evaluates the content to APPROVE),
-// so the REVIEW cannot pass for a spurious reason.
+// TestInlineNewAndDeletedFileCases (REQ-E6-S06-02, updated for EFE-S02) proves a
+// `null` base (new-file) and a `null` head (deleted-file) now mint a CLEAN whole-file
+// event from one-sided presence instead of going opaque. change.Diff ALONE still goes
+// opaque on the absent side (the differ is unchanged) — but the harness intercepts
+// one-sided presence BEFORE the differ and mints a file-event, so:
+//   - new-file (null base) -> file-ADD; the capped pack governs no fileEvents and an
+//     ADD is non-destructive, so it evaluates to APPROVE (EFE-S02, D-063: escalation
+//     is DELETE-only);
+//   - deleted-file (null head) -> file-DELETE; unmatched by any fileEvents rule it
+//     fails safe to REVIEW via the S02 unmatched-delete escalation (never APPROVE).
+//
+// The change.Diff-opaque assertions below pin that the fail-safe verdict is NOT an
+// artifact of the differ path but of the S02 file-event path.
 func TestInlineNewAndDeletedFileCases(t *testing.T) {
 	cases := loadInlineCases(t)
 
-	t.Run("new-file: null base is opaque -> fail-safe REVIEW", func(t *testing.T) {
+	t.Run("new-file: null base mints a file-ADD -> APPROVE (ungoverned add, D-063)", func(t *testing.T) {
 		c := findInlineCase(t, cases, "new-file")
 		if c.Base != nil {
 			t.Fatalf("null base must marshal to absent bytes, got %q", c.Base)
 		}
-		// The production differ itself goes opaque on the absent base side.
+		// change.Diff ALONE still goes opaque on the absent base — the harness no longer
+		// takes that path for a one-sided case; it mints a clean file-ADD instead.
 		cs, err := change.Diff(c.File, c.Base, c.Head)
 		if err == nil || !cs.Opaque {
 			t.Fatalf("change.Diff on a null base must be opaque, got opaque=%v err=%v", cs.Opaque, err)
@@ -131,22 +143,12 @@ func TestInlineNewAndDeletedFileCases(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Evaluate: %v", err)
 		}
-		if string(res.Decision) != "REVIEW" {
-			t.Fatalf("new-file decision = %q, want REVIEW (fail-safe opaque)", res.Decision)
-		}
-		// Contrast: the SAME head with a non-null base evaluates the content -> APPROVE.
-		contrast := c
-		contrast.Base = []byte(`{"partitions":12}`)
-		cres, err := adoptertest.Evaluate(contrast)
-		if err != nil {
-			t.Fatalf("Evaluate contrast: %v", err)
-		}
-		if string(cres.Decision) != "APPROVE" {
-			t.Fatalf("non-null base contrast decision = %q, want APPROVE (proves the null base drove the REVIEW)", cres.Decision)
+		if string(res.Decision) != "APPROVE" {
+			t.Fatalf("new-file decision = %q, want APPROVE (ungoverned file-ADD is non-destructive)", res.Decision)
 		}
 	})
 
-	t.Run("deleted-file: null head is opaque -> fail-safe REVIEW", func(t *testing.T) {
+	t.Run("deleted-file: null head mints a file-DELETE -> fail-safe REVIEW (escalation)", func(t *testing.T) {
 		c := findInlineCase(t, cases, "deleted-file")
 		if c.Head != nil {
 			t.Fatalf("null head must marshal to absent bytes, got %q", c.Head)
@@ -160,7 +162,7 @@ func TestInlineNewAndDeletedFileCases(t *testing.T) {
 			t.Fatalf("Evaluate: %v", err)
 		}
 		if string(res.Decision) != "REVIEW" {
-			t.Fatalf("deleted-file decision = %q, want REVIEW (fail-safe opaque)", res.Decision)
+			t.Fatalf("deleted-file decision = %q, want REVIEW (unmatched whole-file delete escalates)", res.Decision)
 		}
 	})
 }

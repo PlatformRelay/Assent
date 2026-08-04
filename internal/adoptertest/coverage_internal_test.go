@@ -220,9 +220,19 @@ func TestRuleMatchesAnyMirrorsEngineFileEvents(t *testing.T) {
 			if err != nil {
 				t.Fatalf("aggregate.Cover: %v", err)
 			}
-			// A matched when:false change fires block -> non-APPROVE; 0 matched leaves
-			// the covered obligation non-firing -> APPROVE.
-			engine := res.Decision != aggregate.DecisionApprove
+			// Observe the matcher through rule "r"'s OWN finding, not the raw decision:
+			// a matched when:false change fires block under rule "r"; 0 matched leaves
+			// the (covered) obligation non-firing so "r" never fires. Keying on rule "r"
+			// (not the decision) keeps this immune to the S02 unmatched-whole-file-delete
+			// escalation, which lowers the decision for an ungoverned path=="" delete via
+			// a SEPARATE finding (aggregate.unmatchedDelete), not via rule "r" matching.
+			engine := false
+			for _, f := range res.Findings {
+				if f.Rule == "r" {
+					engine = true
+					break
+				}
+			}
 			if engine != mirror {
 				t.Fatalf("engine matched=%v but mirror matched=%v (decision=%q)", engine, mirror, res.Decision)
 			}

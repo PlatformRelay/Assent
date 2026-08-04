@@ -223,6 +223,34 @@ func Evaluate(c Case) (aggregate.Result, error) {
 	return res, nil
 }
 
+// oneSidedFileEvent detects an UNAMBIGUOUS whole-file lifecycle from one-sided
+// presence: exactly one of base/head ABSENT. An absent base + present head is a
+// file-ADD; a present base + absent head is a file-DELETE. It returns (kind, true)
+// ONLY for that unambiguous case; every other shape falls through to change.Diff —
+// both present (a value diff or opaque), both absent (undecidable), or an
+// empty-but-PRESENT side.
+//
+// THE AMBIGUITY INVARIANT (EFE-S02, Judgment call (a)): the presence signal is
+// nil-vs-non-nil, NEVER len()==0. An empty-but-present document ({} / empty bytes)
+// is non-nil and MUST NOT be mistaken for a delete — treating it as one is a
+// fail-OPEN. This is the S06 nil-interface (`null`=absent) vs empty-map
+// (`{}`=empty document) line: marshalInlineContent returns literal nil only for a
+// `null` side and never a non-nil-empty slice for any present value, so nil is a
+// clean absence signal. A rename is never synthesized here — a case governs one
+// file, so at most one file-event is ever minted.
+func oneSidedFileEvent(base, head []byte) (change.Kind, bool) {
+	baseAbsent := base == nil
+	headAbsent := head == nil
+	switch {
+	case baseAbsent && !headAbsent:
+		return change.KindAdd, true
+	case !baseAbsent && headAbsent:
+		return change.KindDelete, true
+	default:
+		return "", false
+	}
+}
+
 // assemble builds the case's EvaluationInput from the base/↔head/ diff, the
 // stubbed resolved facts, and the reconstructed entry tree — the pure input side
 // shared by Evaluate and the S07 coverage witness (RunCaseCoverage), so the
@@ -234,6 +262,21 @@ func Evaluate(c Case) (aggregate.Result, error) {
 // hardens the opaque arm rather than relying solely on the Opaque⟹ErrOpaque
 // invariant.
 func assemble(c Case) (in aggregate.EvaluationInput, decidable bool, err error) {
+	// One-sided presence = an UNAMBIGUOUS whole-file lifecycle (EFE-S02): mint a clean
+	// file-event via change.FileEvent that the S01 fileEvents matcher can select,
+	// instead of letting change.Diff go opaque on the nil side (the pre-S02 behaviour).
+	// This runs BEFORE the entries/document differ split because a wholesale file
+	// add/delete is a file-event in either mode. Every AMBIGUOUS shape (both present,
+	// both absent, or an empty-but-PRESENT side) falls through to the differ unchanged.
+	if kind, ok := oneSidedFileEvent(c.Base, c.Head); ok {
+		cs := change.ChangeSet{Changes: []change.Change{change.FileEvent(c.File, kind)}}
+		in = evaldecode.BuildEvaluationInput(cs, c.MR, requireOf(c.Bind))
+		if len(c.Facts) > 0 {
+			in.Facts = c.Facts
+		}
+		return in, true, nil
+	}
+
 	cfg, entered := singleEntryConfig(c.Policy)
 
 	var cs change.ChangeSet
