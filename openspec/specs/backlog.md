@@ -397,7 +397,7 @@ autonomous** (fixture goldens + fake summary upsert; no live GitLab required).
 | E8-S10 | `assent render --finding` CLI | **[autonomous]** | E8-S09 | preview without live MR (D-097) |
 | E8-S11 | ⚠️ Presentation lint extends E3-S04 + tier-1 rejection | **[autonomous · engine-grade]** | E8-S07, E3-S04 | docs.summary/debug lint |
 | E8-S12 | ⚠️ Forge port: UpsertComment + Summary field + Reconcile refactor | **[autonomous · engine-grade]** | E4 Reconcile | bot-note listing + step-3 hook |
-| E8-S13 | ⚠️ Rendered summary body + P3-E5 step 3 (closes D-073) | **[autonomous · engine-grade]** | E8-S08, S12 | deferred from E4 |
+| E8-S13 | Rendered summary body + P3-E5 step 3 (closes D-073) | **[autonomous · engine-grade]** | E8-S08, S12 | lane-e8-s13 |
 | E8-S14 | Exit gate: render goldens + safety split proven | **[autonomous · engine-grade]** | E8-S01..S13 | **the E8 autonomous exit gate** |
 
 **Dependency order**: S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 →

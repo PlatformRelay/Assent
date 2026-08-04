@@ -11,7 +11,6 @@ import (
 	"github.com/PlatformRelay/assent/internal/provider/builtin"
 )
 
-
 func quotaDecl() provider.Declaration {
 	return provider.Declaration{
 		Type:        "integer",
