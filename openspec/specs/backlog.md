@@ -266,14 +266,18 @@ E2 engine, so the example packs gate **themselves** in CI. **Closes the E3-S08 f
 
 ## Phase 5 — E-FILEEVENTS whole-file add/delete match domain (`match.fileEvents`) stories
 
+> **EFE status: DONE** — all 5 stories S01–S05. `match.fileEvents` domain live; D-052/D-061 closed
+> (D-066/D-067); exit gate pins CREATE+DELETE fixtures, corpus `--coverage`, determinism + `schemas/`==0.
+> 🔴 open operator question **D-063** remains (unmatched-whole-file-delete default = REVIEW, pending
+> confirm-or-relax-to-APPROVE) — shipped default, not a blocker for epic close.
+
 Full INVEST stories in [p5-e-fileevents/spec.md](p5-e-fileevents/spec.md). Implements the FROZEN-but-
 unimplemented `match.fileEvents` domain (`policy.FileEventsMatch`, the `fileEventsMatch` schema `$def`),
 removing the three hard-rejects (`internal/core/policy/loader.go:32`, `internal/core/aggregate/coverage.go:451`,
 `internal/adoptertest/coverage.go:301`). The frozen `evaluation-input.schema.json` ALREADY models a whole-file
 event (`path:""`, `kind:delete`, `entryRef file:<path>`) — **no schema change** (`git diff schemas/`==0). Closes
 **D-052** (topic-registry unpin) + **D-061** (service-catalog file-delete→BLOCK reconcile). **Every story
-`[autonomous]`.** 🔴 open operator question **D-063** (unmatched-whole-file-delete default = REVIEW, pending
-confirm-or-relax-to-APPROVE).
+`[autonomous]`.**
 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |

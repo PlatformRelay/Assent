@@ -21,10 +21,16 @@ package main
 // TOPIC-REGISTRY / D-052 (EFE-S04): topic-registry is IN the green corpus. Its
 // non-destructive rule is re-authored to provable fileEvents{kinds:[add,delete]} with
 // prove.when `kind != "delete"`; file-ADD proves and file-DELETE fails under assent test.
+//
+// E-FILEEVENTS EXIT GATE (EFE-S05): TestFileEventsCreateAndDeleteFixtures pins
+// service-catalog CREATE+DELETE beyond topic-registry; TestFileEventsCorpusBothPolarityCoverage
+// pins topic-registry + corpus-wide --coverage; TestFileEventsGateDoubleRun pins
+// determinism + git diff schemas/ == 0.
 
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -275,6 +281,101 @@ func decisionOfInlineCase(t *testing.T, pack, caseName string) string {
 	}
 	t.Fatalf("%s: no case named %q", p, caseName)
 	return ""
+}
+
+// TestFileEventsCreateAndDeleteFixtures is REQ-EFE-S05-01: a whole-file CREATE and
+// a whole-file DELETE fixture (service-catalog — beyond topic-registry alone) each
+// evaluate to the pinned decision under whole-pack replay. topic-registry's pair is
+// pinned by TestTopicRegistryFileEventsGreen (EFE-S04); this gate pins the second
+// pack so the domain cannot rot to a single-pack proof.
+func TestFileEventsCreateAndDeleteFixtures(t *testing.T) {
+	dir := filepath.Join(examplesPacksDir, "service-catalog")
+	var so, se bytes.Buffer
+	if code := runTest([]string{dir}, &so, &se); code != 0 {
+		t.Fatalf("assent test service-catalog: exit = %d, want 0\nstdout:\n%s\nstderr:\n%s", code, so.String(), se.String())
+	}
+	out := so.String()
+	for _, want := range []string{
+		"PASS catalog/file-non-destructive (",
+		"PASS catalog/file-non-destructive-delete (",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("fileEvents create/delete fixtures missing %q; got:\n%s", want, out)
+		}
+	}
+	if got := decisionOfInlineCase(t, "service-catalog", "file-non-destructive"); got != "APPROVE" {
+		t.Errorf("CREATE (file-ADD) proving decision = %s, want APPROVE", got)
+	}
+	if got := decisionOfInlineCase(t, "service-catalog", "file-non-destructive-delete"); got != "BLOCK" {
+		t.Errorf("DELETE (file-DELETE) failing decision = %s, want BLOCK", got)
+	}
+}
+
+// TestFileEventsCorpusBothPolarityCoverage is REQ-EFE-S05-02: topic-registry passes
+// `assent test --coverage` both-polarity, and the whole green corpus does too
+// (file-add proves + file-delete fails for non-destructive). Hardens the E6-S08
+// corpus coverage gate with an explicit topic-registry pin after D-052 close.
+func TestFileEventsCorpusBothPolarityCoverage(t *testing.T) {
+	t.Run("topic-registry", func(t *testing.T) {
+		dir := filepath.Join(examplesPacksDir, "topic-registry")
+		var so, se bytes.Buffer
+		if code := runTest([]string{"--coverage", dir}, &so, &se); code != 0 {
+			t.Fatalf("assent test --coverage topic-registry: exit = %d, want 0\nstdout:\n%s\nstderr:\n%s", code, so.String(), se.String())
+		}
+		out := so.String()
+		if !strings.Contains(out, "coverage: OK") {
+			t.Errorf("topic-registry --coverage must report OK, got:\n%s", out)
+		}
+		// Both polarities of non-destructive must PASS under the coverage run.
+		for _, want := range []string{
+			"PASS topics/non-destructive (",
+			"PASS topics/non-destructive-delete (",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("topic-registry coverage missing polarity %q; got:\n%s", want, out)
+			}
+		}
+	})
+	for _, pack := range greenExamplePacks {
+		pack := pack
+		t.Run("corpus/"+pack, func(t *testing.T) {
+			dir := filepath.Join(examplesPacksDir, pack)
+			var so, se bytes.Buffer
+			if code := runTest([]string{"--coverage", dir}, &so, &se); code != 0 {
+				t.Fatalf("assent test --coverage %s: exit = %d, want 0\nstdout:\n%s\nstderr:\n%s", pack, code, so.String(), se.String())
+			}
+			if !strings.Contains(so.String(), "coverage: OK") {
+				t.Errorf("%s: --coverage must report OK, got:\n%s", pack, so.String())
+			}
+		})
+	}
+}
+
+// TestFileEventsGateDoubleRun is REQ-EFE-S05-03: the whole fileEvents gate
+// double-runs byte-identical; schemas/ is unchanged (git diff schemas/ == 0).
+func TestFileEventsGateDoubleRun(t *testing.T) {
+	run := func(args []string) string {
+		var so, se bytes.Buffer
+		runTest(args, &so, &se)
+		return so.String() + "\x00" + se.String()
+	}
+	// FileEvents-bearing packs (CREATE+DELETE fixtures): service-catalog + topic-registry.
+	fileEventsPacks := []string{"service-catalog", "topic-registry"}
+	for _, pack := range fileEventsPacks {
+		dir := filepath.Join(examplesPacksDir, pack)
+		if a, b := run([]string{dir}), run([]string{dir}); a != b {
+			t.Errorf("%s: assent test not double-run stable", pack)
+		}
+		if a, b := run([]string{"--coverage", dir}), run([]string{"--coverage", dir}); a != b {
+			t.Errorf("%s: assent test --coverage not double-run stable", pack)
+		}
+	}
+	// Epic DoD: no frozen-schema drift in this lane (git diff schemas/ == 0).
+	cmd := exec.Command("git", "diff", "--exit-code", "--", "schemas/")
+	cmd.Dir = filepath.Join("..", "..")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git diff schemas/ must be empty (epic DoD); err=%v\n%s", err, out)
+	}
 }
 
 // TestAssentTestGateDoubleRun is half of REQ-E6-S08-05: the whole gate double-runs
