@@ -1,7 +1,9 @@
 # Context freshness — oncall rotation fact must be resolved and unexpired (P1-E2 freshness).
 # Freshness is an ENVELOPE property: the `.state` escape (mirroring the D-016 canon
 # facts.owner.team.state == 'resolved') reads the resolution state — an expired context
-# fact resolves to a non-`resolved` state and fails the prove. A static fact name is
+# fact resolves to a non-`resolved` state and fails the prove. An expired CONTROLLING
+# context fact fails to ARM the change → require-review (ADR-0017 §3/§4: acknowledgement
+# of a stale-context change is human authorization, NOT a hard block). A static fact name is
 # required: the D-051 facts-reference-shape lint forbids dynamic/bracket-indexed names
 # (facts.oncall[entry.oncall]… collapses to a bare facts.oncall), so the per-entry lookup
 # is re-authored to the single controlling rotation fact facts.oncall.orders_rotation.
@@ -26,5 +28,5 @@ spec:
         obligation: context-fresh
         when: 'facts.oncall.orders_rotation.state == "resolved"'
       onFailure:
-        effect: block
+        effect: require-review
         code: context.expired

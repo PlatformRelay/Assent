@@ -35,15 +35,8 @@ package main
 // requiring that obligation) with a faithful proving + failing EvaluationInput,
 // asserting the produced Decision reproduces the archetype golden. Every obligation
 // (ownership, schema-valid, context-fresh, allowed-fields, non-destructive,
-// bounded-change) is exercised on the REAL loaded rule through the REAL engine.
-//
-// KNOWN GOLDEN DIVERGENCE (reported, not worked around): the context-fresh NEGATIVE
-// golden (examples/.../context-fresh/negative/expect.yaml) declares `decision:
-// REVIEW` while carrying a `block`-effect finding. aggregate.Cover maps a `block`
-// onFailure to BLOCK (effectDecision), so the engine decision is BLOCK — the
-// E6-adopter golden's REVIEW disagrees with the E2 engine. This gate asserts the
-// ENGINE truth (BLOCK) and flags the divergence; reconciling the E6 golden decision
-// derivation is E6's, not this exit gate's, to resolve.
+// bounded-change) is exercised on the REAL loaded rule through the REAL engine, and
+// every produced decision matches archetype-goldens.md.
 
 import (
 	"bytes"
@@ -115,12 +108,12 @@ func TestArchetypePacksEvaluateToExpectedDecision(t *testing.T) {
 			want:   aggregate.DecisionApprove,
 		},
 		{
-			// KNOWN DIVERGENCE: the E6 golden expects REVIEW, but a block onFailure is
-			// BLOCK under aggregate.Cover — the engine truth this gate asserts.
-			name: "context-fresh/block(engine-truth,golden-says-review)", starter: "service-catalog", rule: "oncall-exists", obligation: "context-fresh",
+			// An expired CONTROLLING context fact fails to ARM the change →
+			// require-review (ADR-0017 §3/§4), matching archetype-goldens.md:27.
+			name: "context-fresh/review", starter: "service-catalog", rule: "oncall-exists", obligation: "context-fresh",
 			facts:  map[string]map[string]aggregate.Fact{"oncall": {"orders_rotation": {State: "expired"}}},
 			change: aggregate.EvalChange{Subject: "catalog-service:orders-api", File: scFile, Path: "/services/orders-api/oncall", Kind: "modify", New: "orders-rotation", Old: "orders-rotation"},
-			want:   aggregate.DecisionBlock,
+			want:   aggregate.DecisionReview,
 		},
 		{
 			// allowed-fields positive: only a safe field (endpoints) changed — the

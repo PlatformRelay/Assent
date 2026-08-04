@@ -32,12 +32,25 @@ var conformantPacks = []string{"service-catalog", "infra-vars"}
 func TestCatalogueGeneratesFromArchetypeCorpus(t *testing.T) {
 	in := loadArchetypeCatalogueInput(t)
 
-	cat := catalogue.Build(in)
-	if len(cat.Rules) == 0 {
-		t.Fatal("catalogue over the archetype packs produced no rules")
+	// Completeness is pinned to the AUTHORED-rule count derived from the loaded
+	// packs (never a hardcoded guess): every authored rule must surface exactly
+	// once, so a silently dropped rule fails the gate (REQ-E3-S08-03). Also count
+	// per underlying pack for a tighter, per-pack completeness assertion.
+	authored := 0
+	authoredByPack := map[string]int{}
+	for _, pk := range in.Packs {
+		for _, mp := range pk.Policies {
+			authored += len(mp.Spec.Rules)
+			authoredByPack[pk.Name] += len(mp.Spec.Rules)
+		}
 	}
 
-	// Completeness: every conformant pack contributes at least one catalogued rule,
+	cat := catalogue.Build(in)
+	if len(cat.Rules) != authored {
+		t.Fatalf("catalogue is incomplete: %d rules catalogued, %d authored across the loaded packs", len(cat.Rules), authored)
+	}
+
+	// Completeness: every conformant pack contributes EXACTLY its authored rules,
 	// and every entry carries the load-bearing D-017 B10 identity fields.
 	byPack := map[string]int{}
 	var lastID string
@@ -59,10 +72,11 @@ func TestCatalogueGeneratesFromArchetypeCorpus(t *testing.T) {
 		byPack[e.Pack]++
 	}
 	// The pack key is the packs/<name>/ directory token (catalog / vars), not the
-	// top-level starter-pack dir name — assert both underlying packs contributed.
+	// top-level starter-pack dir name — assert each underlying pack contributed
+	// EXACTLY its authored rule count (a dropped rule in either pack fails here).
 	for _, want := range []string{"catalog", "vars"} {
-		if byPack[want] == 0 {
-			t.Errorf("catalogue has no rules for pack %q (packs=%v)", want, byPack)
+		if byPack[want] != authoredByPack[want] {
+			t.Errorf("pack %q: %d rules catalogued, %d authored", want, byPack[want], authoredByPack[want])
 		}
 	}
 
