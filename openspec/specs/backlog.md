@@ -235,6 +235,33 @@ fact-model `.value` decision; S05 → widen the fail-open scan). Reuses `policy.
 
 **Dependency order**: S01 → {S02, S05, S06}; S03 → S04; S07 ∥ (loader-only); C after S03, before S08; S08 last. **Do first: S01.**
 
+> **E2 + E3 status: DONE** (main tip `5893df1`, CI green) — the two core Phase-5 epics (decision engine + policy-authoring lint) are complete.
+
+## Phase 5 — E6 adopter test harness (`assent test` + `assent compare` seed) stories
+
+Full INVEST stories in [p5-e6-adopter-test/spec.md](p5-e6-adopter-test/spec.md). E6 turns the FROZEN
+ADR-0014 fixture format (schema-frozen at `schemas/testfixture/v1alpha1/test-expectation.schema.json` —
+**reused as the strict-decode authority, no new schema**) into a runnable, dogfooded harness: `assent
+test` builds an `EvaluationInput` from a case's `base/`↔`head/`+`facts.yaml` and evaluates the pack via the
+E2 engine, so the example packs gate **themselves** in CI. **Closes the E3-S08 full-replay deferral** (S01
+= the facts→resolved-envelope half; S02 = the entry-binding half). Reuses `change.Diff`/`DiffEntries`,
+`aggregate.Cover*`, `buildEvaluationInput`, `loadCatalogueInput`; adds `cmd/assent/{test,compare}.go`,
+`internal/adoptertest/**`, `internal/compare/**`. **Every story `[autonomous]`.**
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| E6-S01 | `assent test` scaffold + directory-case loader + facts→resolved-envelope + single-rule `Cover` decision (anchor, INPUT-SIDE ONLY, no `internal/core` touch) | **[autonomous]** | E1, E2 | the `assent test` pipeline every later story plugs into; **do first** |
+| E6-S02 | ⚠️ **DECISION-PATH lane** (D-053): `bindLeafActivation` per-EntryRef entry-object binding (Part A engine, fail-safe fallback) + entry-tree/mr/approval assembler (Part B harness) — **closes the E3-S08 full-replay deferral** | **[autonomous · engine-grade review]** `🔴 DECIDED D-053` | E6-S01 | Part A reviewed as an ENGINE change pointed at fail-safety, AHEAD of Part B |
+| E6-S03 | Expectation matcher: findings must-contain / `exact` / `absent` / `score` / `message~`, fail-closed (`path`=error-as-unsupported, D-054) | **[autonomous]** | E6-S01, E6-S02 | which-rule-fired-with-which-effect assertions |
+| E6-S04 | Failure UX: expected/actual diff + ready-to-copy actual block (ADR-0012) | **[autonomous]** | E6-S03 | the review-by-diff surface |
+| E6-S05 | `--update` golden-refresh with comment-preserving write + overwrite safety | **[autonomous]** | E6-S03 | cheap golden maintenance |
+| E6-S06 | Inline `cases.yaml` shorthand (alternate front-end onto the S01/S02 pipeline) | **[autonomous]** | E6-S01 | compact one-field cases |
+| E6-S07 | `--coverage` per-rule both-polarity (every-rule supersedes retired-vouch, D-054) | **[autonomous]** `🟡 DECIDED D-054` | E6-S02, E6-S03 | run-time counterpart to E3-S06 static presence |
+| E6-S08 | Exit gate: every `examples/packs/**` green under `assent test` + broken-pack diff + dogfood CI | **[autonomous]** | E6-S01..S07 | **the E6 exit gate** |
+| E6-S09 | `assent compare` seed: one ReplayBundle, baseline↔candidate, one delta classified, one gate (full suite → own epic, D-054) | **[autonomous]** | E2 (`CoverWithProfile`) | de-risks the promotion-gate reuse; ∥ the `assent test` chain |
+
+**Dependency order**: S01 → S02 (Part A engine → Part B harness) → S03 → {S04, S05, S06}; S07 after S02+S03; S08 last; S09 ∥ (independent of S01–S08). **Do first: S01.**
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
