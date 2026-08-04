@@ -396,7 +396,7 @@ func TestResolveGoldens(t *testing.T) {
 			gotCanon := canonicalize(t, toGoldenView(got))
 			path := filepath.Join(dir, tc.file)
 			if os.Getenv("UPDATE_GOLDENS") == "1" {
-				if err := os.MkdirAll(dir, 0o755); err != nil {
+				if err := os.MkdirAll(dir, 0o750); err != nil {
 					t.Fatalf("mkdir: %v", err)
 				}
 				var pretty bytes.Buffer
@@ -404,7 +404,7 @@ func TestResolveGoldens(t *testing.T) {
 					t.Fatalf("indent: %v", err)
 				}
 				pretty.WriteByte('\n')
-				if err := os.WriteFile(path, pretty.Bytes(), 0o644); err != nil {
+				if err := os.WriteFile(path, pretty.Bytes(), 0o600); err != nil {
 					t.Fatalf("write golden: %v", err)
 				}
 			}
