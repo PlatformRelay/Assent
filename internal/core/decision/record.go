@@ -114,12 +114,12 @@ type Pins struct {
 	FactsResolvedAt map[string]string
 }
 
-// finding is the JSON projection of one #/$defs/finding object. It mirrors the
+// Finding is the JSON projection of one #/$defs/finding object. It mirrors the
 // aggregate.Finding shape exactly (rule, effect, subject, points; optional
 // obligation/code), carrying NO raw-fact-value field — redaction by
 // construction (ADR-0016 §3). points is stamped from the aggregate finding
 // (0 in the walking skeleton; S04 owns points provenance).
-type finding struct {
+type Finding struct {
 	Rule       string `json:"rule"`
 	Obligation string `json:"obligation,omitempty"`
 	Effect     string `json:"effect"`
@@ -132,8 +132,8 @@ type finding struct {
 // {observed, enforcing}. The walking skeleton has no observe phase, so observed
 // is always the empty (but non-nil) slice; enforcing carries the S03 findings.
 type findingsObject struct {
-	Observed  []finding `json:"observed"`
-	Enforcing []finding `json:"enforcing"`
+	Observed  []Finding `json:"observed"`
+	Enforcing []Finding `json:"enforcing"`
 }
 
 // pinsObject is the closed (additionalProperties:false) pins block. It is built
@@ -172,7 +172,7 @@ type PresentationModel struct {
 	APIVersion string    `json:"apiVersion"`
 	Kind       string    `json:"kind"`
 	Decision   string    `json:"decision"`
-	Findings   []finding `json:"findings"`
+	Findings   []Finding `json:"findings"`
 }
 
 // Report is the pair of artifacts a run emits: the DecisionRecord (Record) and
@@ -228,10 +228,10 @@ func Build(res aggregate.Result, pins Pins) (Report, error) {
 // — unexported there, reproduced here). Sorting here makes the serializer's
 // output byte-stable independent of input order and across a double-run. The
 // returned slice is always non-nil so it marshals to [] not null.
-func toFindings(in []aggregate.Finding) []finding {
-	out := make([]finding, len(in))
+func toFindings(in []aggregate.Finding) []Finding {
+	out := make([]Finding, len(in))
 	for i, f := range in {
-		out[i] = finding{
+		out[i] = Finding{
 			Rule:       f.Rule,
 			Obligation: f.Obligation,
 			Effect:     string(f.Effect),
@@ -247,7 +247,7 @@ func toFindings(in []aggregate.Finding) []finding {
 // sortFindings orders findings by a TOTAL key (subject, rule, obligation, code,
 // effect), mirroring aggregate.sortFindings so the report is order-independent
 // and byte-stable on a double-run (ADR-0017 §9, ADR-0013).
-func sortFindings(fs []finding) {
+func sortFindings(fs []Finding) {
 	sort.Slice(fs, func(i, j int) bool {
 		a, b := fs[i], fs[j]
 		if a.Subject != b.Subject {

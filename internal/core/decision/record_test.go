@@ -341,15 +341,15 @@ func TestFactsResolvedAtNonEmptyValidates(t *testing.T) {
 func TestSortFindingsTotalKey(t *testing.T) {
 	// Each pair below differs ONLY at one key level, the second sorting before
 	// the first; after the sort the "b" element must precede the "a" element.
-	cases := []struct{ a, b finding }{
-		{finding{Subject: "file:z", Rule: "r"}, finding{Subject: "file:a", Rule: "r"}},                                                                         // subject
-		{finding{Subject: "s", Rule: "z"}, finding{Subject: "s", Rule: "a"}},                                                                                   // rule
-		{finding{Subject: "s", Rule: "r", Obligation: "z"}, finding{Subject: "s", Rule: "r", Obligation: "a"}},                                                 // obligation
-		{finding{Subject: "s", Rule: "r", Obligation: "o", Code: "z"}, finding{Subject: "s", Rule: "r", Obligation: "o", Code: "a"}},                           // code
-		{finding{Subject: "s", Rule: "r", Obligation: "o", Code: "c", Effect: "z"}, finding{Subject: "s", Rule: "r", Obligation: "o", Code: "c", Effect: "a"}}, // effect
+	cases := []struct{ a, b Finding }{
+		{Finding{Subject: "file:z", Rule: "r"}, Finding{Subject: "file:a", Rule: "r"}},                                                                         // subject
+		{Finding{Subject: "s", Rule: "z"}, Finding{Subject: "s", Rule: "a"}},                                                                                   // rule
+		{Finding{Subject: "s", Rule: "r", Obligation: "z"}, Finding{Subject: "s", Rule: "r", Obligation: "a"}},                                                 // obligation
+		{Finding{Subject: "s", Rule: "r", Obligation: "o", Code: "z"}, Finding{Subject: "s", Rule: "r", Obligation: "o", Code: "a"}},                           // code
+		{Finding{Subject: "s", Rule: "r", Obligation: "o", Code: "c", Effect: "z"}, Finding{Subject: "s", Rule: "r", Obligation: "o", Code: "c", Effect: "a"}}, // effect
 	}
 	for i, tc := range cases {
-		fs := []finding{tc.a, tc.b}
+		fs := []Finding{tc.a, tc.b}
 		sortFindings(fs)
 		if fs[0] != tc.b {
 			t.Errorf("case %d: expected %+v to sort first, got %+v", i, tc.b, fs[0])

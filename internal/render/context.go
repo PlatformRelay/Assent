@@ -18,6 +18,7 @@ type RuleMeta struct {
 // RuleDocs holds docs.* metadata from a pack rule.
 type RuleDocs struct {
 	Summary string
+	URL     string
 }
 
 // Context is the ephemeral render-time bundle (D-096): resolved Options, CEL

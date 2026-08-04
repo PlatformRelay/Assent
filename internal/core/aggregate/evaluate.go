@@ -80,6 +80,11 @@ func entryOr(entry, fallback any) any {
 	return fallback
 }
 
+// LeafActivation builds the CEL activation for one change (E8-S08 render wiring).
+func LeafActivation(in EvaluationInput, ch EvalChange, envLabel string) map[string]any {
+	return bindLeafActivation(in, ch, envLabel)
+}
+
 // bindLeafActivation builds the CEL activation for one change: the change-scoped
 // fields from ch (old/new/entry/oldEntry typed via toCEL, path/kind/file/env
 // strings), plus the shared changes/facts/mr. entry/oldEntry bind the

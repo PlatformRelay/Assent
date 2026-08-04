@@ -72,11 +72,18 @@ func TestEnvelopeRejectsEmbeddedSentinel(t *testing.T) {
 		{name: "sentinel substring", body: "do not forge <!-- assent:marker {} -->", wantErr: ErrEmbeddedMarkerSentinel},
 		{name: "bare sentinel", body: "contains assent:marker token", wantErr: ErrEmbeddedMarkerSentinel},
 		{name: "premature close", body: "broken <!-- not a marker -->", wantErr: ErrPrematureCommentClose},
+		{name: "renderer details close allowed", body: "<details>\n<summary>x</summary>\n\ny\n\n</details>", wantErr: nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := Envelope(m, tc.body)
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatalf("Envelope(%q): got %v, want nil", tc.body, err)
+				}
+				return
+			}
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("Envelope(%q): got %v, want %v", tc.body, err, tc.wantErr)
 			}

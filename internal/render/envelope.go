@@ -81,8 +81,16 @@ func validateEnvelopeBody(body string) error {
 	if strings.Contains(body, MarkerSentinel) {
 		return ErrEmbeddedMarkerSentinel
 	}
-	if strings.Contains(body, "-->") {
+	if containsUnsafeCommentClose(body) {
 		return ErrPrematureCommentClose
 	}
 	return nil
+}
+
+// containsUnsafeCommentClose reports `-->` outside renderer-owned closing tags.
+// ADR-0012 default layout uses <details>/<summary>; those closers contain `-->`
+// but are not user-controlled injection (E8-S08).
+func containsUnsafeCommentClose(body string) bool {
+	stripped := strings.NewReplacer("</summary>", "", "</details>", "").Replace(body)
+	return strings.Contains(stripped, "-->")
 }

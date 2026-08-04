@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PlatformRelay/assent/internal/core/decision"
 	"github.com/PlatformRelay/assent/internal/render"
 )
 
@@ -103,8 +104,16 @@ func TestLoadD016Fixture(t *testing.T) {
 }
 
 func TestRenderFindingThreadStub(t *testing.T) {
-	_, err := render.RenderFindingThread(render.Fixture{}, render.Context{})
-	if err == nil {
-		t.Fatal("expected stub error before E8-S08")
+	pm := decision.PresentationModel{
+		APIVersion: "assent.dev/v1alpha1",
+		Kind:       "PresentationModel",
+		Decision:   "REVIEW",
+		Findings: []decision.Finding{{
+			Rule: "r", Effect: "challenge", Subject: "s", Code: "c",
+		}},
+	}
+	_, err := render.RenderFindingThread(pm, pm.Findings[0], render.Context{})
+	if err != nil {
+		t.Fatalf("RenderFindingThread: %v", err)
 	}
 }
