@@ -68,15 +68,6 @@ func evalLeaf(env *cel.Env, in EvaluationInput, ch EvalChange, envLabel, expr st
 	return b, nil
 }
 
-// bindLeafActivation builds the CEL activation for one change: the change-scoped
-// fields from ch (old/new/entry/oldEntry typed via toCEL, path/kind/file/env
-// strings), plus the shared changes/facts/mr. entry/oldEntry bind the
-// reconstructed whole-entry object for the change's EntryRef WHEN ONE IS PRESENT
-// (ch.Entry/ch.OldEntry, populated by the Part-B adopter-test harness), and fall
-// back to the change's scalar new/old value trees when absent — so every existing
-// evaluation (all current callers leave Entry nil) is byte-identical and only a
-// populated entry object changes the binding (fail-safe: an absent entry can
-// never fabricate a permissive bind).
 // entryOr returns the reconstructed entry object when one is present, else the
 // scalar fallback (ch.New/ch.Old). A nil entry is the current, all-callers state
 // and yields the exact pre-S02 scalar binding — an absent/unreconstructable
@@ -89,6 +80,15 @@ func entryOr(entry, fallback any) any {
 	return fallback
 }
 
+// bindLeafActivation builds the CEL activation for one change: the change-scoped
+// fields from ch (old/new/entry/oldEntry typed via toCEL, path/kind/file/env
+// strings), plus the shared changes/facts/mr. entry/oldEntry bind the
+// reconstructed whole-entry object for the change's EntryRef WHEN ONE IS PRESENT
+// (ch.Entry/ch.OldEntry, populated by the Part-B adopter-test harness), and fall
+// back to the change's scalar new/old value trees when absent — so every existing
+// evaluation (all current callers leave Entry nil) is byte-identical and only a
+// populated entry object changes the binding (fail-safe: an absent entry can
+// never fabricate a permissive bind).
 func bindLeafActivation(in EvaluationInput, ch EvalChange, envLabel string) map[string]any {
 	changesList := make([]any, len(in.ChangeSet.Changes))
 	for i, c := range in.ChangeSet.Changes {
