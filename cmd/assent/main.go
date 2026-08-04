@@ -84,6 +84,15 @@ func run(args []string) int {
 		// policy regression fails CI before it reaches an MR (ADR-0006 dogfooding).
 		return runTest(args[1:], os.Stdout, os.Stderr)
 	}
+	if len(args) > 0 && args[0] == "compare" {
+		// `assent compare <dir>` (E6-S09 seed): load one immutable ReplayBundle plus
+		// the baseline/candidate policy activations + their shared binding, evaluate
+		// both through the reused engine, classify the decision delta into one frozen
+		// taxonomy kind, and apply the bounded-auto-merge-widening promotion gate. The
+		// dir reads (the only I/O) live in runCompare; internal/compare is pure. Exit
+		// 0 = gate pass, 1 = gate fail (a widening), 2 = load/fail-closed error.
+		return runCompare(args[1:], os.Stdout, os.Stderr)
+	}
 	if len(args) > 0 && args[0] == "doctor" {
 		// Precondition/arming report (ADR-0015 §4/§8, ADR-0017 §9). The env
 		// boundary lives here (readPipelineDescription); Doctor is pure and
