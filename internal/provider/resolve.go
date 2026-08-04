@@ -40,8 +40,17 @@ func (r Result) AutoMergeEligible() bool {
 //   - expiresAt <= asOf (now) → expired (value dropped)
 //
 // `now` is injected by the host (the pinned evaluation instant), never read
-// from a wall clock here.
+// from a wall clock here. Declaration cross-check is opt-in via
+// ResolveFactsChecked (REQ-E5-S02-04).
 func ResolveFacts(ctx context.Context, call CallFunc, q FactQuery, now time.Time) Result {
+	return ResolveFactsChecked(ctx, call, q, now, nil)
+}
+
+// ResolveFactsChecked is ResolveFacts plus an optional host declaration
+// cross-check: when expected is non-nil, each returned fact's echoed
+// declaration must match config on type/cardinality/subject/sensitive/maxAge;
+// mismatch → invalid with value dropped (never silently accept).
+func ResolveFactsChecked(ctx context.Context, call CallFunc, q FactQuery, now time.Time, expected map[string]Declaration) Result {
 	raw, err := call(ctx)
 	if err != nil {
 		return failClosed(q, StateUnavailable, "provider call failed: "+err.Error(), now, refusedNegotiation(q.Outputs))
@@ -92,6 +101,14 @@ func ResolveFacts(ctx context.Context, call CallFunc, q FactQuery, now time.Time
 		// Never let a non-resolved provider fact carry a value into CEL.
 		if fact.State != StateResolved {
 			fact.Value = nil
+		}
+		if expected != nil {
+			want, have := expected[name]
+			if !have {
+				fact = synthesize(q, name, StateInvalid, "host config has no declaration for requested output", now)
+			} else if !DeclarationsEqual(want, fact.Declaration) {
+				fact = synthesize(q, name, StateInvalid, "provider echoed declaration does not match host config", now)
+			}
 		}
 		out[name] = fact
 	}

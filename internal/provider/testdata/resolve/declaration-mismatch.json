@@ -1,0 +1,16 @@
+{
+  "autoMergeEligible": true,
+  "facts": {
+    "groups": {
+      "name": "groups",
+      "observedAt": "2026-07-21T12:00:00Z",
+      "reason": "provider echoed declaration does not match host config",
+      "state": "invalid",
+      "subject": {
+        "id": "alice",
+        "kind": "user"
+      }
+    }
+  },
+  "negotiation": "accept"
+}
