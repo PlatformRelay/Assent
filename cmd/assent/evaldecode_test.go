@@ -61,6 +61,12 @@ func TestDecodeCanonical(t *testing.T) {
 		{"negative literal", "-4", json.Number("-4")},
 		{"bool true", "true", true},
 		{"bool false", "false", false},
+		// go-yaml resolves the capitalized spellings as !!bool and the differ emits
+		// the raw literal — these MUST decode to a Go bool, not json.Number/string.
+		{"bool True", "True", true},
+		{"bool TRUE", "TRUE", true},
+		{"bool False", "False", false},
+		{"bool FALSE", "FALSE", false},
 		{"null", "null", nil},
 		{"absent add/delete side", "", nil},
 		{"quoted string stays a string", `"12"`, "12"},
@@ -150,6 +156,64 @@ func TestStringOldNewFailsOpen(t *testing.T) {
 	}
 	if res.Decision != aggregate.DecisionApprove {
 		t.Fatalf("decision = %q, want APPROVE — this test DOCUMENTS the lexical fail-open (\"6\" >= \"12\" is true) that decodeCanonical closes; a non-APPROVE here means the mutation proof is stale", res.Decision)
+	}
+}
+
+// TestCapitalizedBoolDecodesAsBool is the F1 proof: a !!bool field rendered
+// `False`/`True` by the differ decodes to a Go bool, so a rule sees a real bool —
+// NOT the pre-fix json.Number("True")->toCEL.String()->Go string that would make a
+// predicate lexically string-compare a boolean field.
+//
+// Note an ordering rule (`new >= old`) CANNOT discriminate here: for booleans the
+// lexical spelling order ("False" < "True") happens to coincide with the logical
+// order (false < true), so a string binding and a bool binding both answer the same
+// — the fail-open hides. A TYPE-SENSITIVE predicate (`new == true`) exposes it: it
+// proves only when `new` is a real bool; a string "True" makes `new == true` a
+// cross-type comparison that never proves (fail-safe, not APPROVE).
+func TestCapitalizedBoolDecodesAsBool(t *testing.T) {
+	cs, err := change.Diff("t.yaml", []byte("enabled: False\n"), []byte("enabled: True\n"))
+	if err != nil {
+		t.Fatalf("change.Diff: %v", err)
+	}
+	if len(cs.Changes) != 1 {
+		t.Fatalf("changes = %d (%+v), want 1 (/enabled modify)", len(cs.Changes), cs.Changes)
+	}
+	if c := cs.Changes[0]; c.Old != "False" || c.New != "True" {
+		t.Fatalf("change = %+v, want old=\"False\" new=\"True\" (raw !!bool literals)", c)
+	}
+
+	in := buildEvaluationInput(cs, aggregate.MR{}, []string{"non-destructive"})
+	got := in.ChangeSet.Changes[0]
+	if got.Old != false || got.New != true {
+		t.Fatalf("decoded old/new = %#v/%#v, want Go bools false/true (not json.Number/string)", got.Old, got.New)
+	}
+
+	// A type-sensitive predicate over the /enabled bool: `new == true` proves ONLY
+	// when new is bound as a real bool.
+	mp, bind := shrinkPolicy()
+	mp.Spec.Rules[0].Match.ValueChanges.Pointers = []string{"/enabled"}
+	mp.Spec.Rules[0].Prove.When = policy.AssertTree{Leaf: &policy.Leaf{CEL: "new == true"}}
+	res, err := aggregate.CoverWithApproval(mp, bind, &in, nil)
+	if err != nil {
+		t.Fatalf("CoverWithApproval: %v", err)
+	}
+	if res.Decision != aggregate.DecisionApprove {
+		t.Fatalf("decision = %q, want APPROVE — new must bind as a BOOL so `new == true` proves; a pre-fix string binding would never prove", res.Decision)
+	}
+
+	// Mutation control: the pre-fix RAW-STRING binding does NOT prove the same
+	// bool predicate — proving the decoder's bool binding is what makes it correct.
+	inStr := in
+	inStr.ChangeSet = aggregate.ChangeSet{Changes: []aggregate.EvalChange{{
+		Subject: got.Subject, File: got.File, Path: got.Path, Kind: got.Kind,
+		Old: "False", New: "True", // raw canonical strings (the un-decoded shape)
+	}}}
+	resStr, err := aggregate.CoverWithApproval(mp, bind, &inStr, nil)
+	if err != nil {
+		t.Fatalf("CoverWithApproval (string mutation): %v", err)
+	}
+	if resStr.Decision == aggregate.DecisionApprove {
+		t.Fatalf("a string-bound bool must NOT prove `new == true` (cross-type) — got APPROVE; the decoder's bool binding is what closes this")
 	}
 }
 

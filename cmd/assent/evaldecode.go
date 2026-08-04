@@ -40,13 +40,18 @@ import (
 // value the engine compares. It is PURE (no clock/env/network/random).
 //
 //   - "" / "null"     -> nil (an absent add/delete side, or an explicit null).
-//   - "true"/"false"  -> the bool (the raw !!bool literal).
+//   - a !!bool literal -> the bool. go-yaml resolves true/True/TRUE and
+//     false/False/FALSE as !!bool (YAML-1.2 core, resolve.go), and the differ's
+//     render emits the RAW literal — so all six spellings are matched. Without the
+//     capitalized spellings a bool-field ordering rule (`new >= old`) would decode
+//     "True"/"False" to json.Number, fall to a lexical STRING compare, and mis-order.
 //   - `"..."`         -> the unquoted string (a !!str value; stays a STRING so a
 //     numeric rule over it does NOT numeric-compare it — the differ deliberately
 //     kept a string "12" distinct from the number 12).
 //   - anything else   -> json.Number(literal) (a numeric literal, bound typed by
-//     toCEL). This is the ONLY non-string, non-bool, non-null shape the differ
-//     emits, so the fallthrough is exactly "numeric literal", never a raw string.
+//     toCEL). Every bool (all six emitted spellings), JSON-quoted string, and null
+//     is handled ABOVE, so the fallthrough is exactly a numeric literal — never a
+//     capitalized bool and never a raw string.
 //
 // LIMITATION (documented, NOT this lane's bug — an S02 limitation): a numeric
 // literal larger than int64 flows through as json.Number and toCEL falls back to
@@ -57,9 +62,9 @@ func decodeCanonical(s string) any {
 	switch s {
 	case "", "null":
 		return nil
-	case "true":
+	case "true", "True", "TRUE":
 		return true
-	case "false":
+	case "false", "False", "FALSE":
 		return false
 	}
 	if s[0] == '"' {
