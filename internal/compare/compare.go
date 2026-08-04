@@ -1,17 +1,16 @@
-// Package compare is the PURE seed behind `assent compare` (P5-E6-S09): the
-// smallest honest end-to-end promotion-comparison slice. Given ONE immutable
-// ReplayBundle (its pre-built EvaluationInput) and a baseline vs a candidate
-// profile, it evaluates both through the reused decision engine
-// (aggregate.CoverWithProfile), classifies the resulting decision delta as one
-// member of the frozen closed taxonomy, applies ONE promotion gate, and reports a
-// pass/fail verdict a CLI shell maps to an exit code.
+// Package compare is the PURE promotion-comparison engine behind `assent compare`
+// (P5-E6-S09 seed, PCS epic extensions). Given ONE immutable ReplayBundle (its
+// pre-built EvaluationInput) and a baseline vs a candidate profile, it evaluates
+// both through the reused decision engine (aggregate.CoverWithProfile), classifies
+// the resulting decision delta as one member of the frozen closed taxonomy, applies
+// ONE promotion gate (the seed applies bounded-auto-merge-widening only; the full
+// suite runner adds the remaining gates), and reports a pass/fail verdict a CLI shell
+// maps to an exit code.
 //
-// Deliberately SEEDED, not the full runner (ADR-0018 / Judgment call (f)): PCS-S02
-// extended classify with destructive-or-authorization-intervention-missed and
-// stricter-intervention-added; the seed still applies only the bounded-auto-merge-
-// widening gate. explanation-only never trips a gate; unclassified real deltas
-// FAIL CLOSED. Score-threshold and acceptedDeltas allowlist / ComparisonRecord
-// emission are owed to later PCS slices (decisions.md D-057).
+// PCS-S02/S03 grow the seed classifiers incrementally (ADR-0018 / D-117 priority
+// table); the seed still applies only bounded-auto-merge-widening. explanation-only
+// never trips a gate; unclassified real deltas FAIL CLOSED. acceptedDeltas allowlist
+// and ComparisonRecord emission are owed to later PCS slices (decisions.md D-057).
 //
 // It sits UNDER internal/ (not internal/core): like internal/adoptertest it may
 // import internal/core/aggregate + internal/core/policy while internal/core stays
