@@ -297,6 +297,124 @@ func TestMessageTemplateFactsPath(t *testing.T) {
 	}
 }
 
+// TestEmptyCombinatorFailsSafe — a hand-built empty (non-nil) `all:[]` or `any:[]`
+// is a malformed tree (the schema's minItems:1 rejects it on the loader path, but
+// Cover accepts hand-built policies). It must fail safe to a tri-state ERROR, never
+// a vacuous TRUE (empty conjunction) that would silently prove the obligation and
+// fail OPEN toward APPROVE.
+func TestEmptyCombinatorFailsSafe(t *testing.T) {
+	env, err := newEvalEnv()
+	if err != nil {
+		t.Fatalf("env: %v", err)
+	}
+	in := EvaluationInput{}
+	ch := EvalChange{File: "f", Path: "/p", Kind: "modify", Old: intNum(3), New: intNum(6)}
+
+	for _, tc := range []struct {
+		name string
+		tree policy.AssertTree
+	}{
+		{"empty-all", policy.AssertTree{All: []policy.AssertTree{}}},
+		{"empty-any", policy.AssertTree{Any: []policy.AssertTree{}}},
+	} {
+		sat, _, werr := walkAssertTree(env, in, ch, "prod", tc.tree)
+		if sat {
+			t.Errorf("%s must NOT be satisfied (never vacuous-true)", tc.name)
+		}
+		if werr == nil {
+			t.Errorf("%s must fail safe to a tri-state error", tc.name)
+		}
+	}
+
+	// End-to-end: a required obligation whose `when` is an empty `all` must NOT
+	// APPROVE — the fail-safe error surfaces as a predicate.error require-review.
+	pol := &policy.MergePolicy{Spec: policy.MergePolicySpec{Rules: []policy.Rule{{
+		Name:      "empty-all-rule",
+		Phase:     policy.PhaseEnforce,
+		Match:     policy.Match{Files: &policy.FilesMatch{Paths: []string{"**.yaml"}}},
+		Prove:     &policy.Prove{Obligation: "ownership", When: policy.AssertTree{All: []policy.AssertTree{}}},
+		OnFailure: &policy.OnFailure{Effect: policy.EffectRequireReview, Code: "owner"},
+	}}}}
+	bind := &policy.Binding{Require: []string{"ownership"}, Environment: "prod"}
+	cin := &EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{
+		{Subject: "s:1", File: "a.yaml", Path: "/p", Kind: "modify", Old: intNum(3), New: intNum(6)},
+	}}}
+	got, err := Cover(pol, bind, cin)
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if got.Decision == DecisionApprove {
+		t.Fatal("an empty-all `when` must never APPROVE (vacuous-true fail-open)")
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Code != "predicate.error" {
+		t.Fatalf("want one predicate.error finding for the empty combinator, got %+v", got.Findings)
+	}
+}
+
+// TestMalformedTreeBranchesFailSafe — the two structural fail-safe branches of the
+// walker: (a) a tree with NO leaf/all/any/not set (empty AssertTree), and (b) a
+// tree nested past the depth ceiling. Both must return an error (never satisfied).
+func TestMalformedTreeBranchesFailSafe(t *testing.T) {
+	env, err := newEvalEnv()
+	if err != nil {
+		t.Fatalf("env: %v", err)
+	}
+	in := EvaluationInput{}
+	ch := EvalChange{File: "f", Path: "/p", Kind: "modify", Old: intNum(3), New: intNum(6)}
+
+	// (a) no branch set -> the default fail-safe.
+	sat, _, werr := walkAssertTree(env, in, ch, "prod", policy.AssertTree{})
+	if sat || werr == nil {
+		t.Errorf("an empty AssertTree must fail safe to error, got sat=%v err=%v", sat, werr)
+	}
+
+	// (b) nested past maxAssertDepth (32) -> the depth-ceiling fail-safe.
+	node := policy.AssertTree{Leaf: &policy.Leaf{CEL: "new >= old"}}
+	for i := 0; i < maxAssertDepth+8; i++ {
+		inner := node
+		node = policy.AssertTree{Not: &inner}
+	}
+	sat, _, werr = walkAssertTree(env, in, ch, "prod", node)
+	if sat {
+		t.Error("a tree past the depth ceiling must NOT be satisfied")
+	}
+	if werr == nil {
+		t.Error("a tree past the depth ceiling must fail safe to error")
+	}
+}
+
+// TestCoverCombinatorErrorFailsSafe — a combinator whose leaf ERRORS, driven
+// END-TO-END through Cover, surfaces as predicate.error -> require-review (the
+// erroring-tree-through-Cover path the repurposed TestCoverTreeWhenEvaluates
+// dropped). An `all` with a clean-true first leaf and an erroring second leaf has
+// no clean-false -> tri-state error -> the obligation is unproven, never APPROVE.
+func TestCoverCombinatorErrorFailsSafe(t *testing.T) {
+	pol := &policy.MergePolicy{Spec: policy.MergePolicySpec{Rules: []policy.Rule{{
+		Name:  "tree-error",
+		Phase: policy.PhaseEnforce,
+		Match: policy.Match{Files: &policy.FilesMatch{Paths: []string{"**.yaml"}}},
+		Prove: &policy.Prove{Obligation: "quota", When: policy.AssertTree{All: []policy.AssertTree{
+			{Leaf: &policy.Leaf{CEL: "new >= old"}},                        // 6 >= 3 -> clean true
+			{Leaf: &policy.Leaf{CEL: "int(new) <= facts.quota.max.value"}}, // absent fact -> error
+		}}},
+		OnFailure: &policy.OnFailure{Effect: policy.EffectBlock, Code: "over-quota"},
+	}}}}
+	bind := &policy.Binding{Require: []string{"quota"}, Environment: "prod"}
+	in := &EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{
+		{Subject: "s:1", File: "a.yaml", Path: "/p", Kind: "modify", Old: intNum(3), New: intNum(6)},
+	}}}
+	got, err := Cover(pol, bind, in)
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	if got.Decision == DecisionApprove {
+		t.Fatal("a combinator with an erroring leaf must never APPROVE")
+	}
+	if len(got.Findings) != 1 || got.Findings[0].Effect != EffectRequireReview || got.Findings[0].Code != "predicate.error" {
+		t.Fatalf("want one predicate.error require-review finding, got %+v", got.Findings)
+	}
+}
+
 // TestPerSubjectMessageOrderIndependent — when one subject has MULTIPLE matched
 // changes that fail with DIFFERENT expanded messages, the attributed Message must
 // be a canonical function of the failing set, NOT the input order. Reversing the

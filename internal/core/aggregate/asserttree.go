@@ -78,6 +78,15 @@ func walkAssertTreeDepth(env *cel.Env, in EvaluationInput, ch EvalChange, envLab
 		return true, "", nil
 
 	case tree.All != nil:
+		// An empty (but non-nil) combinator is a malformed tree the schema's
+		// minItems:1 rejects on the LoadMergePolicy path — but Cover also accepts
+		// hand-built policies, so guard it: a zero-child `all` would otherwise fall
+		// through to a vacuous TRUE (an empty conjunction), silently PROVING the
+		// obligation -> a fail-OPEN toward APPROVE. Fail safe to a tri-state error
+		// (-> predicate.error -> require-review), consistent with the all-nil default.
+		if len(tree.All) == 0 {
+			return false, "", fmt.Errorf("empty all combinator (no child conditions)")
+		}
 		// AND: false dominates error (order-independent tri-state).
 		var firstFalseMsg, firstErrMsg string
 		var haveFalse bool
@@ -104,6 +113,14 @@ func walkAssertTreeDepth(env *cel.Env, in EvaluationInput, ch EvalChange, envLab
 		return true, "", nil
 
 	case tree.Any != nil:
+		// An empty (but non-nil) `any` is malformed like the empty `all` above: a
+		// zero-child disjunction would fall through to (false, "", nil) — a clean
+		// FALSE, not the vacuous true `all` risks, but still a silent read of a
+		// malformed shape. Fail safe to a tri-state error so an empty combinator is
+		// NEVER silently evaluated (symmetry with the empty-all guard).
+		if len(tree.Any) == 0 {
+			return false, "", fmt.Errorf("empty any combinator (no child conditions)")
+		}
 		// OR: true dominates error; an error dominates all-false (fail-safe).
 		var firstFalseMsg, firstErrMsg string
 		var haveFalse bool
