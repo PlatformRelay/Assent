@@ -147,10 +147,12 @@ func scanTree(t *testing.T, dir string) []violation {
 // os.Getenv/os.Environ, time.Now, rand, or network package (REQ-P4-E1-S01-03).
 func TestCorePurity(t *testing.T) {
 	// The test runs with cwd = the package dir (internal/core), so "." is core,
-	// "../change" is the sibling differ tree, and "../glob" is the shared glob
-	// matcher the decision path (aggregate coverage) now depends on for
-	// determinism — all guarded pure (no clock/rand/env/net).
-	for _, dir := range []string{".", "../change", "../glob"} {
+	// "../change" is the sibling differ tree, "../glob" is the shared glob
+	// matcher the decision path (aggregate coverage) depends on for determinism,
+	// and "../lint" is the E3 policy-lint check library (pure: it takes
+	// already-read bytes/types, all I/O lives in cmd/assent) — all guarded pure
+	// (no clock/rand/env/net).
+	for _, dir := range []string{".", "../change", "../glob", "../lint"} {
 		vs := scanTree(t, dir)
 		if len(vs) > 0 {
 			sort.Slice(vs, func(i, j int) bool { return vs[i].pos < vs[j].pos })
