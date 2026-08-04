@@ -43,6 +43,17 @@ branch receives fixes. The API and policy contracts may change between alpha rel
 - **OpenSSF Scorecard**: runs weekly and publishes results; findings surface in the
   repository's code-scanning view.
 
+**Release artifact verification** (E9-S12, D-110):
+
+- Maintainers and CI verify goreleaser output with `task release-verify` (or
+  `hack/release/verify-artifacts.sh`) after `task release-snapshot` or a tagged release
+  download.
+- **SHA256 checksums** are always required — mismatch fails closed before any binary is
+  trusted.
+- **Cosign** runs when `.sigstore.json` bundles are present beside archives; the autonomous
+  snapshot path skips cosign when bundles are absent. Post-S06 releases use
+  `--require-signature` to fail closed without bundles.
+
 **Design principles** (see ADRs under [`docs/adr/`](docs/adr/) and [GUIDELINES.md](GUIDELINES.md)):
 
 - **Deterministic, fail-safe decisions**: the decision path in `internal/core` takes no

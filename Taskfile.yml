@@ -141,6 +141,16 @@ tasks:
     cmds:
       - bash hack/release/snapshot_test.sh
 
+  release-verify:
+    desc: "Verify dist/ checksums, optional cosign, stamped version (REQ-E9-S12)"
+    cmds:
+      - bash hack/release/verify-artifacts.sh
+
+  release-verify-test:
+    desc: "Verify artifact harness gates (REQ-E9-S12-01..03)"
+    cmds:
+      - bash hack/release/verify_test.sh
+
   tools:git-cliff:
     desc: Download pinned git-cliff binary ({{.GIT_CLIFF_VERSION}})
     status:

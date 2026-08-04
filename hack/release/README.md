@@ -57,3 +57,25 @@ merging user-facing commits; `verify-changelog.sh` keeps the committed file in s
 
 Cosign skip-when-absent matches D-110 (autonomous/snapshot path). Use
 `--require-signature` for post-S06 signed releases.
+
+## Artifact verify (E9-S12)
+
+| Script / task | Purpose |
+| --- | --- |
+| `hack/release/verify-artifacts.sh` | Verify `dist/` checksums, stamped `assent version`, optional cosign |
+| `task release-verify` | Same check against default `dist/` (run after `task release-snapshot`) |
+| `hack/release/verify_test.sh` | REQ-E9-S12 gate: snapshot pass, tamper reject, cosign skip-when-absent |
+
+Given a goreleaser `dist/` directory, `verify-artifacts.sh`:
+
+1. **Checksums (required)** — every line in `checksums.txt` must match its archive; every
+   archive must be listed (fail-closed on tamper).
+2. **Cosign (optional, D-110)** — when a sibling `.sigstore.json` bundle exists beside an
+   archive, `cosign verify-blob` runs; when absent (snapshot/autonomous path), verification
+   **skips cosign** and succeeds. Use `--require-signature` to fail closed if bundles are
+   missing (post-S06 signed releases).
+3. **Stamped version** — each archive's `assent version` must match the expected semver
+   (from `metadata.json`, archive names, or `--expected-version`).
+
+Local gate: `task release-snapshot && task release-verify`. CI (E9-S05/S13) runs
+`hack/release/verify_test.sh` after snapshot builds.
