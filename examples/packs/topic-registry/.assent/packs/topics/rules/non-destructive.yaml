@@ -1,5 +1,7 @@
 # No-destruction — obligation non-destructive (P1-E2 / S01 no-destruction archetype).
-# File delete never auto-merges; require-review (not challenge-as-authorization).
+# Whole-topic file delete never auto-merges; require-review (not challenge-as-authorization).
+# Provable both-polarity form (EFE-S04 / D-052): kinds include add so a file-ADD earns
+# proving polarity (kind != "delete"); a file-DELETE fails → onFailure.
 apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
 metadata:
@@ -7,20 +9,18 @@ metadata:
 spec:
   entries:
     kafka-topic:
-      mode: document
+      mode: map
       root: ""
-      identity:
-        pointer: /name
   rules:
     - name: no-topic-deletion
       phase: enforce
       match:
         fileEvents:
           paths: ["topics/**/*.yaml"]
-          kinds: [delete]
+          kinds: [add, delete]
       prove:
         obligation: non-destructive
-        when: "false"
+        when: 'kind != "delete"'
       onFailure:
         effect: require-review
         code: destruction.forbidden

@@ -1,5 +1,7 @@
 # Ownership — reused from examples/policies/declarative/ownership.yaml (S01).
 # Authorization via ApprovalEvidence only; author self-resolve must not satisfy.
+# Map-at-root (identity = map key): document mode leaves Entry nil under whole-pack
+# replay (D-056), so entry.owner cannot bind; map mode reconstructs the topic object.
 apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
 metadata:
@@ -7,10 +9,8 @@ metadata:
 spec:
   entries:
     kafka-topic:
-      mode: document
+      mode: map
       root: ""
-      identity:
-        pointer: /name
   rules:
     - name: author-owns-entry
       phase: enforce

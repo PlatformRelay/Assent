@@ -1,5 +1,6 @@
 # Bounded-change — reused from examples/policies/declarative/bounded-change.yaml (S01).
 # Over-quota is acknowledgement (challenge), not authorization.
+# Pointer is /*/partitions because map-at-root nests the topic under its identity key.
 apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
 metadata:
@@ -7,16 +8,14 @@ metadata:
 spec:
   entries:
     kafka-topic:
-      mode: document
+      mode: map
       root: ""
-      identity:
-        pointer: /name
   rules:
     - name: partition-change-bounds
       phase: enforce
       match:
         valueChanges:
-          pointers: ["/partitions"]
+          pointers: ["/*/partitions"]
           kinds: [modify]
       prove:
         obligation: bounded-change

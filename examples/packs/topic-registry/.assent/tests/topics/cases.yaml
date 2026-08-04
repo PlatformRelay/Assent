@@ -1,0 +1,51 @@
+# EFE-S04 / D-052 — whole-topic file lifecycle for non-destructive (null side = absent).
+# Map-at-root: the topic-name key is the entry identity.
+cases:
+  # File-ADD proving polarity: kind != "delete" → non-destructive satisfied/silent → APPROVE.
+  - name: non-destructive
+    file: topics/prod/checkout.sessions.v0.yaml
+    base: null
+    head:
+      checkout.sessions.v0:
+        owner: orders-team
+        partitions: 1
+        replication_factor: 1
+        retention_hours: 12
+        cleanup_policy: delete
+        schema:
+          format: json
+          subject: checkout.sessions.v0-value
+        description: Prototype session-abandonment stream.
+    facts:
+      author: { login: alice, groups: [orders-team] }
+      quota: { max_partitions: 24 }
+      schema: { valid: true }
+    expect:
+      decision: APPROVE
+      findings: []
+
+  # File-DELETE failing polarity: kind == "delete" → require-review → REVIEW.
+  - name: non-destructive-delete
+    file: topics/prod/payments.transactions.v1.yaml
+    base:
+      payments.transactions.v1:
+        owner: payments-team
+        partitions: 24
+        replication_factor: 3
+        retention_hours: 720
+        cleanup_policy: delete
+        schema:
+          format: avro
+          subject: payments.transactions.v1-value
+        description: Settled payment transactions.
+    head: null
+    facts:
+      author: { login: alice, groups: [payments-team] }
+      quota: { max_partitions: 24 }
+      schema: { valid: true }
+    expect:
+      decision: REVIEW
+      findings:
+        - rule: no-topic-deletion
+          obligation: non-destructive
+          effect: require-review

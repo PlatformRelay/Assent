@@ -1,5 +1,0 @@
-author:
-  login: alice
-  groups: [payments-team]
-class:
-  renames: detect   # opt-in; near-similarity case still must not be laxer than delete

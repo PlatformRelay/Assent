@@ -3,3 +3,5 @@ author:
   groups: [payments-team]
 quota:
   max_partitions: 24
+schema:
+  valid: true

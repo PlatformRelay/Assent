@@ -6,10 +6,8 @@ metadata:
 spec:
   entries:
     kafka-topic:
-      mode: document
+      mode: map
       root: ""
-      identity:
-        pointer: /name
   rules:
     - name: topic-schema-v1
       phase: enforce

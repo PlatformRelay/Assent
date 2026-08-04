@@ -1,5 +1,7 @@
 # Starter pack for examples/repos/topic-registry (assent init --sample topic-registry).
-# Class kafka-topic: one YAML document per topic; entry identity is /name (document mode).
+# Class kafka-topic: one YAML file per topic; map-at-root identity = the topic-name key
+# (EFE-S04: document mode leaves Entry nil under whole-pack replay — D-056 — so
+# entry.owner cannot bind; map mode reconstructs the topic object for ownership).
 apiVersion: assent.dev/v1alpha1
 kind: Config
 environments:
