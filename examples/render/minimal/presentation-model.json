@@ -1,0 +1,6 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "PresentationModel",
+  "decision": "APPROVE",
+  "findings": []
+}
