@@ -43,16 +43,69 @@ branch receives fixes. The API and policy contracts may change between alpha rel
 - **OpenSSF Scorecard**: runs weekly and publishes results; findings surface in the
   repository's code-scanning view.
 
-**Release artifact verification** (E9-S12, D-110):
+**Release artifact verification** (E9-S06/S12, D-109/D-110):
 
-- Maintainers and CI verify goreleaser output with `task release-verify` (or
-  `hack/release/verify-artifacts.sh`) after `task release-snapshot` or a tagged release
-  download.
-- **SHA256 checksums** are always required — mismatch fails closed before any binary is
-  trusted.
-- **Cosign** runs when `.sigstore.json` bundles are present beside archives; the autonomous
-  snapshot path skips cosign when bundles are absent. Post-S06 releases use
-  `--require-signature` to fail closed without bundles.
+Tagged releases (`v*.*.*`) publish **SHA256 checksums**, **cosign keyless Sigstore
+bundles** (`.sigstore.json`), **SPDX SBOMs** (syft via goreleaser), and **SLSA provenance**
+(`actions/attest` + `release-provenance.intoto.jsonl`). Local snapshot builds
+(`task release-snapshot`) skip signing/SBOM — no OIDC outside GitHub Actions.
+
+| Gate | When enforced | Verify |
+| --- | --- | --- |
+| SHA256 checksums | always | `sha256sum -c checksums.txt` (or `shasum -a 256`) |
+| Cosign (keyless) | tagged release | `cosign verify-blob` with bundle (see below) |
+| SBOM (SPDX JSON) | tagged release | inspect `*.spdx.json`; optional syft/grype scan |
+| SLSA provenance | tagged release | `gh attestation verify` (see below) |
+
+Maintainers and CI verify goreleaser output with `task release-verify` (or
+`hack/release/verify-artifacts.sh`) after `task release-snapshot` or a tagged release download.
+**Cosign** runs when `.sigstore.json` bundles are present beside archives; the autonomous snapshot
+path skips cosign when bundles are absent. Post-S06 releases use `--require-signature` to fail
+closed without bundles.
+
+### Verify a tagged release (copy-paste)
+
+Download assets for tag `vX.Y.Z` from
+[GitHub Releases](https://github.com/PlatformRelay/assent/releases), then:
+
+```bash
+TAG=vX.Y.Z
+REPO=PlatformRelay/assent
+gh release download "$TAG" --repo "$REPO" --dir dist-verify
+
+# 1) Checksums (required — fail closed on mismatch)
+cd dist-verify
+sha256sum -c checksums.txt
+
+# 2) Cosign — per-archive bundles (keyless, GitHub Actions OIDC issuer)
+ARCHIVE=assent_X.Y.Z_linux_amd64.tar.gz   # adjust OS/arch
+cosign verify-blob \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/PlatformRelay/assent/' \
+  --bundle "${ARCHIVE}.sigstore.json" \
+  "${ARCHIVE}"
+
+# Cosign — checksum manifest (covers archives + SBOMs listed inside)
+cosign verify-blob \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github.com/PlatformRelay/assent/' \
+  --bundle checksums.txt.sigstore.json \
+  checksums.txt
+
+# 3) SBOM — SPDX JSON per archive (syft / goreleaser sboms pipe)
+ls -1 *.spdx.json
+# Optional: syft sbom validate assent_X.Y.Z_linux_amd64.tar.gz.spdx.json
+
+# 4) SLSA provenance — GitHub artifact attestation (mkurator pattern, D-109)
+gh attestation verify checksums.txt --owner PlatformRelay
+gh attestation verify release-provenance.intoto.jsonl --owner PlatformRelay
+
+# Or verify all release files listed in checksums.txt at once:
+gh attestation verify checksums.txt --owner PlatformRelay
+```
+
+Install helper: `hack/install.sh --archive … --checksums …` verifies SHA256 first; add
+`--require-signature` after downloading a signed release.
 
 **Design principles** (see ADRs under [`docs/adr/`](docs/adr/) and [GUIDELINES.md](GUIDELINES.md)):
 

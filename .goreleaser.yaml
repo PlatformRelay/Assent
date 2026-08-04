@@ -1,6 +1,6 @@
 # GoReleaser v2 config for assent (E9-S02, D-100).
-# Local dry-run: task release-snapshot
-# Tag-triggered publish: E9-S05 (.github/workflows/release.yaml)
+# Local dry-run: task release-snapshot (--skip=sign,sbom — no OIDC locally)
+# Tag-triggered publish + signing: E9-S05/E9-S06 (.github/workflows/release.yaml, D-109)
 version: 2
 
 project_name: assent
@@ -46,6 +46,36 @@ archives:
 checksum:
   name_template: checksums.txt
   algorithm: sha256
+
+# SPDX SBOM per archive (syft); SBOMs are included in checksums.txt (D-109).
+sboms:
+  - id: archive-sbom
+    artifacts: archive
+    cmd: syft
+    documents:
+      - "${artifact}.spdx.json"
+    args: ["${artifact}", "--output", "spdx-json=${document}"]
+
+# Cosign keyless via GitHub Actions OIDC — active on tagged release only (not local snapshot).
+signs:
+  - id: archive-sign
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - "sign-blob"
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: archive
+  - id: checksum-sign
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - "sign-blob"
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
 
 snapshot:
   version_template: "{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}"

@@ -147,7 +147,12 @@ tasks:
         if ! command -v goreleaser >/dev/null 2>&1 || ! goreleaser --version 2>&1 | grep -q 'version 2'; then
           go install github.com/goreleaser/goreleaser/v2@{{.GORELEASER_VERSION}}
         fi
-        goreleaser release --snapshot --clean --skip=publish
+        goreleaser release --snapshot --clean --skip=publish,sign,sbom
+
+  release-supply-chain-test:
+    desc: "Verify E9-S06 supply-chain wiring (REQ-E9-S06 autonomous gates)"
+    cmds:
+      - bash hack/release/supply_chain_test.sh
 
   release-snapshot-test:
     desc: "Verify snapshot output (REQ-E9-S02-01/02/03)"

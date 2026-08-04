@@ -42,10 +42,31 @@ notes — same pattern as mkurator:
 `snapshot` dry-run on release-related paths.
 
 **REQ-E9-S05-03 autonomous path:** PR `snapshot` job **or** local `task release-snapshot` /
-`hack/release/snapshot_test.sh` — both run goreleaser without publish credentials.
+`hack/release/snapshot_test.sh` — both run goreleaser without publish credentials (sign/sbom
+skipped — no fake signatures locally).
 
-**E9-S06 hooks (next lane):** comments in `release.yaml` mark where cosign, SBOM, and
-`actions/attest` SLSA attach (D-109).
+### Supply chain on tagged release (E9-S06, D-109)
+
+The publish job in `.github/workflows/release.yaml` (tag push / `workflow_dispatch` only):
+
+1. **`sigstore/cosign-installer`** (SHA-pinned) + **`anchore/sbom-action/download-syft`** for
+   goreleaser `signs` / `sboms` in `.goreleaser.yaml`.
+2. **`goreleaser release --clean --skip=publish`** — builds archives, SPDX SBOMs (`*.spdx.json`),
+   cosign keyless `.sigstore.json` bundles (archives + `checksums.txt`), OIDC via
+   `id-token: write`.
+3. **`actions/attest`** with `subject-checksums: dist/checksums.txt` — SLSA provenance; exported
+   as `dist/release-provenance.intoto.jsonl` (mkurator pattern).
+4. **`softprops/action-gh-release`** uploads archives, checksums, SBOMs, sigstore bundles, and
+   provenance bundle.
+
+**Autonomous gates:** `bash hack/release/supply_chain_test.sh` (config + SECURITY.md wiring).
+**Live cosign/SBOM/SLSA proof:** infra-gated — first tagged release after merge (E9-S13).
+
+**Local snapshot skip path:** `task release-snapshot` and PR CI use
+`--skip=publish,sign,sbom` — checksum verify still works; cosign branch skips when bundles absent
+(D-110). Do not invent fake signatures outside GitHub Actions OIDC.
+
+Verification commands: [`SECURITY.md`](../SECURITY.md) (REQ-E9-S06-03).
 
 Maintainers regenerate `CHANGELOG.md` on main via `task changelog-write` after merging user-facing
 commits; `verify-changelog.sh` keeps the committed file in sync.
