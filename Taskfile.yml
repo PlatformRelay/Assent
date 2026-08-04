@@ -116,3 +116,21 @@ tasks:
     desc: Regenerate the hashed documentation dependency lock
     cmds:
       - uv pip compile --generate-hashes --output-file docs/requirements-docs.txt docs/requirements-docs.in
+
+  release-snapshot:
+    desc: "Local goreleaser snapshot (E9-S02): cross-platform archives + checksums under dist/"
+    vars:
+      GORELEASER_VERSION: v2.9.0
+    cmds:
+      - |
+        set -euo pipefail
+        export PATH="$(go env GOPATH)/bin:${PATH}"
+        if ! command -v goreleaser >/dev/null 2>&1 || ! goreleaser --version 2>&1 | grep -q 'version 2'; then
+          go install github.com/goreleaser/goreleaser/v2@{{.GORELEASER_VERSION}}
+        fi
+        goreleaser release --snapshot --clean --skip=publish
+
+  release-snapshot-test:
+    desc: "Verify snapshot output (REQ-E9-S02-01/02/03)"
+    cmds:
+      - bash hack/release/snapshot_test.sh
