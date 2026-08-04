@@ -222,6 +222,78 @@ func TestMaxAgeExceedRejected(t *testing.T) {
 	})
 }
 
+// TestMaxAgeUnknownTypeRejected — unknown/empty declaration types must NOT
+// inherit the 24h global cap (E5-S02 P1). A typo like "principals" would otherwise
+// accept maxAge "2h" while the real "principal" ceiling is 1h — fail-open vs
+// provider-contract.md / response.schema.json enum.
+func TestMaxAgeUnknownTypeRejected(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "typo_principals",
+			raw: `{
+				"name": "typo",
+				"requests": {"values": {"pointers": []}},
+				"outputs": {
+					"groups": {
+						"type": "principals",
+						"cardinality": "set",
+						"subject": "user",
+						"sensitive": false,
+						"maxAge": "2h"
+					}
+				}
+			}`,
+		},
+		{
+			name: "empty_type",
+			raw: `{
+				"name": "empty-type",
+				"requests": {"values": {"pointers": []}},
+				"outputs": {
+					"groups": {
+						"type": "",
+						"cardinality": "set",
+						"subject": "user",
+						"sensitive": false,
+						"maxAge": "2h"
+					}
+				}
+			}`,
+		},
+		{
+			name: "unknown_with_sensitive",
+			raw: `{
+				"name": "unknown-sens",
+				"requests": {"values": {"pointers": []}},
+				"outputs": {
+					"groups": {
+						"type": "not-a-type",
+						"cardinality": "set",
+						"subject": "user",
+						"sensitive": true,
+						"maxAge": "10m"
+					}
+				}
+			}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := provider.LoadProviderConfig([]byte(tc.raw))
+			if err == nil {
+				t.Fatal("unknown/empty declaration type must be rejected at load (never inherit 24h cap)")
+			}
+			msg := strings.ToLower(err.Error())
+			if !strings.Contains(msg, "type") && !strings.Contains(msg, "enum") {
+				t.Fatalf("error should mention type/enum; got: %v", err)
+			}
+		})
+	}
+}
+
 func sensitiveSuffix(s bool) string {
 	if s {
 		return "_sensitive"
