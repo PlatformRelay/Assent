@@ -25,12 +25,11 @@ package main
 // E-FILEEVENTS EXIT GATE (EFE-S05): TestFileEventsCreateAndDeleteFixtures pins
 // service-catalog CREATE+DELETE beyond topic-registry; TestFileEventsCorpusBothPolarityCoverage
 // pins topic-registry + corpus-wide --coverage; TestFileEventsGateDoubleRun pins
-// determinism + git diff schemas/ == 0.
+// determinism + schemas/ frozen or D-088 presentation-only (E8-S02).
 
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,6 +37,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/PlatformRelay/assent/internal/adoptertest"
+	"github.com/PlatformRelay/assent/internal/schemadrift"
 )
 
 // greenExamplePacks are the non-locked example packs that gate themselves green under
@@ -370,11 +370,10 @@ func TestFileEventsGateDoubleRun(t *testing.T) {
 			t.Errorf("%s: assent test --coverage not double-run stable", pack)
 		}
 	}
-	// Epic DoD: no frozen-schema drift in this lane (git diff schemas/ == 0).
-	cmd := exec.Command("git", "diff", "--exit-code", "--", "schemas/")
-	cmd.Dir = filepath.Join("..", "..")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git diff schemas/ must be empty (epic DoD); err=%v\n%s", err, out)
+	// Epic DoD: schemas/ unchanged except D-088 presentation block (E8-S02).
+	repoRoot := filepath.Join("..", "..")
+	if err := schemadrift.CheckGitFrozenOrD088PresentationOnly(repoRoot); err != nil {
+		t.Fatalf("schema drift: %v", err)
 	}
 }
 

@@ -7,13 +7,14 @@ package conformance
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/PlatformRelay/assent/internal/schemadrift"
 )
 
 const (
@@ -110,12 +111,11 @@ func TestE7ExitGateCatalogL1Complete(t *testing.T) {
 	}
 }
 
-// TestE7ExitGateSchemasFrozen is E7 epic DoD: no schema drift in this lane.
+// TestE7ExitGateSchemasFrozen is E7 epic DoD: no schema drift beyond E8 D-088
+// presentation block in config.schema.json.
 func TestE7ExitGateSchemasFrozen(t *testing.T) {
 	repoRoot := filepath.Join("..", "..", "..")
-	cmd := exec.Command("git", "diff", "--exit-code", "--", "schemas/")
-	cmd.Dir = repoRoot
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git diff schemas/ must be empty; err=%v\n%s", err, out)
+	if err := schemadrift.CheckGitFrozenOrD088PresentationOnly(repoRoot); err != nil {
+		t.Fatalf("schema drift: %v", err)
 	}
 }
