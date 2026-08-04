@@ -12,6 +12,7 @@
   <a href="https://github.com/PlatformRelay/assent/actions/workflows/schemas.yml"><img src="https://github.com/PlatformRelay/assent/actions/workflows/schemas.yml/badge.svg" alt="Schemas"></a>
   <a href="https://platformrelay.github.io/assent/"><img src="https://img.shields.io/badge/documentation-GitHub%20Pages-2ea44f?logo=materialformkdocs&logoColor=white" alt="Documentation"></a>
   <a href="https://github.com/PlatformRelay/assent/actions/workflows/docs.yaml"><img src="https://github.com/PlatformRelay/assent/actions/workflows/docs.yaml/badge.svg" alt="Docs"></a>
+  <a href="https://securityscorecards.dev/viewer/?uri=github.com/PlatformRelay/assent"><img src="https://api.securityscorecards.dev/projects/github.com/PlatformRelay/assent/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://github.com/PlatformRelay/assent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/PlatformRelay/assent" alt="License: Apache-2.0"></a>
   <a href="https://pkg.go.dev/github.com/PlatformRelay/assent"><img src="https://img.shields.io/github/go-mod/go-version/PlatformRelay/assent" alt="Go version"></a>
 </p>
