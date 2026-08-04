@@ -48,15 +48,19 @@ type Expectation struct {
 	Decision string `yaml:"decision"`
 	// Findings is must-contain by DEFAULT (each listed finding must fire; extras
 	// allowed). Exact:true closes the list (nothing else may fire). An OMITTED
-	// exact never silently closes it (the frozen must-contain default).
-	Findings []ExpectFinding `yaml:"findings"`
-	Exact    bool            `yaml:"exact"`
+	// exact never silently closes it (the frozen must-contain default). The
+	// omitempty tags are for the S04 OUTPUT path only (MarshalExpectation emits a
+	// ready-to-copy block that must strict-decode against the frozen schema — an
+	// empty findings[]/absent[] or a nil score must be OMITTED, not rendered as
+	// `null`/`[]`); omitempty never affects the decode/Match path.
+	Findings []ExpectFinding `yaml:"findings,omitempty"`
+	Exact    bool            `yaml:"exact,omitempty"`
 	// Absent names rules that must NOT fire.
-	Absent []string `yaml:"absent"`
+	Absent []string `yaml:"absent,omitempty"`
 	// Score pins the risk arithmetic. A pointer so an ABSENT score never silently
 	// asserts the zero {total:0, threshold:0} (which would fail-open on a real
 	// non-zero total): nil ⇒ no score assertion.
-	Score *ExpectScore `yaml:"score"`
+	Score *ExpectScore `yaml:"score,omitempty"`
 }
 
 // ExpectFinding is one expected finding (#/$defs/finding). Rule+Effect identify it;
@@ -68,10 +72,10 @@ type Expectation struct {
 // --coverage, ADR-0014 amendment).
 type ExpectFinding struct {
 	Rule       string `yaml:"rule"`
-	Obligation string `yaml:"obligation"`
+	Obligation string `yaml:"obligation,omitempty"`
 	Effect     string `yaml:"effect"`
-	Path       string `yaml:"path"`
-	Message    string `yaml:"message~"`
+	Path       string `yaml:"path,omitempty"`
+	Message    string `yaml:"message~,omitempty"`
 }
 
 // ExpectScore pins the aggregated risk arithmetic: Total is the summed points and
@@ -180,6 +184,13 @@ type Outcome struct {
 	// Reasons enumerates the mismatches that failed the case (decision first, then
 	// the matcher's finding/absent/score reasons). Empty exactly when Pass is true.
 	Reasons []string
+	// ActualExpect is the expect.yaml block the produced Result would satisfy — the
+	// decision, the findings that actually fired, and the score arithmetic,
+	// reconstructed by ActualExpectation. S04's RenderFailure serializes it into a
+	// ready-to-copy actual block; S05's --update reuses the SAME model to WRITE it.
+	// Populated for every evaluated case (pass or fail); the diff UX renders it only
+	// on failure.
+	ActualExpect Expectation
 }
 
 // Evaluate assembles the EvaluationInput from the case's base/↔head/ diff, attaches
@@ -268,11 +279,12 @@ func RunCase(c Case) (Outcome, error) {
 	reasons = append(reasons, matchReasons...)
 
 	return Outcome{
-		Name:     c.Name,
-		Pass:     len(reasons) == 0,
-		Expected: c.Expect.Decision,
-		Actual:   actual,
-		Reasons:  reasons,
+		Name:         c.Name,
+		Pass:         len(reasons) == 0,
+		Expected:     c.Expect.Decision,
+		Actual:       actual,
+		Reasons:      reasons,
+		ActualExpect: ActualExpectation(res, thresholdOf(c.Bind)),
 	}, nil
 }
 

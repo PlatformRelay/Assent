@@ -97,8 +97,17 @@ func runTest(args []string, stdout, stderr io.Writer) int {
 		if out.Pass {
 			_, _ = fmt.Fprintf(stdout, "PASS %s (%s)\n", out.Name, out.Actual)
 		} else {
-			_, _ = fmt.Fprintf(stdout, "FAIL %s: expected %s, got %s\n", out.Name, out.Expected, out.Actual)
 			anyFail = true
+			// S04 failure UX: the located expected/actual diff + a ready-to-copy
+			// actual block. The pure formatting lives in internal/adoptertest; this
+			// shell only prints it. A serialization failure (the actual block cannot
+			// be made schema-valid) is itself a fail-closed error, never a silent pass.
+			report, rerr := adoptertest.RenderFailure(cf.expect, out)
+			if rerr != nil {
+				_, _ = fmt.Fprintf(stderr, "assent test: %s: render failure: %v\n", out.Name, rerr)
+				continue
+			}
+			_, _ = fmt.Fprint(stdout, report)
 		}
 	}
 	if anyFail {

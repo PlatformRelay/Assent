@@ -55,6 +55,48 @@ func TestTestCommand(t *testing.T) {
 	})
 }
 
+// TestTestCommandFailureUX (REQ-E6-S04-03) proves the S04 diff UX end-to-end through
+// `assent test`: a PASSING run prints NO diff (no ready-to-copy block), and a FAILING
+// case exits non-zero AND prints the located diff + a ready-to-copy actual block.
+func TestTestCommandFailureUX(t *testing.T) {
+	t.Run("a passing run prints no diff", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runTest([]string{adopterRepo}, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0 (all cases pass)\nstderr:%s", code, stderr.String())
+		}
+		out := stdout.String()
+		if strings.Contains(out, "ready to copy") || strings.Contains(out, "FAIL ") {
+			t.Fatalf("passing run must print no diff, got:\n%s", out)
+		}
+	})
+
+	t.Run("a failing case exits non-zero and prints the diff + copyable block", func(t *testing.T) {
+		repo := copyTree(t, adopterRepo)
+		expect := filepath.Join(repo, ".assent", "tests", "capped", "within-cap", "expect.yaml")
+		writeFile(t, expect, "decision: BLOCK\n")
+
+		var stdout, stderr bytes.Buffer
+		code := runTest([]string{repo}, &stdout, &stderr)
+		if code == 0 {
+			t.Fatalf("exit = 0, want non-zero on a decision mismatch\nstdout:%s", stdout.String())
+		}
+		out := stdout.String()
+		if !strings.Contains(out, "FAIL capped/within-cap") {
+			t.Fatalf("stdout missing FAIL header:\n%s", out)
+		}
+		if !strings.Contains(out, "expected BLOCK, got APPROVE") {
+			t.Fatalf("stdout missing decision diff:\n%s", out)
+		}
+		if !strings.Contains(out, "ready to copy into expect.yaml") {
+			t.Fatalf("stdout missing ready-to-copy actual block:\n%s", out)
+		}
+		if !strings.Contains(out, "decision: APPROVE") {
+			t.Fatalf("copyable block missing the actual decision:\n%s", out)
+		}
+	})
+}
+
 func copyTree(t *testing.T, src string) string {
 	t.Helper()
 	dst := t.TempDir()
