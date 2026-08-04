@@ -6,14 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/PlatformRelay/assent/internal/provider"
 	"github.com/PlatformRelay/assent/internal/provider/builtin"
 )
 
-// fixedAsOf is the host-pinned evaluation instant — no wall clock in assertions.
-var fixedAsOf = time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 
 func quotaDecl() provider.Declaration {
 	return provider.Declaration{
