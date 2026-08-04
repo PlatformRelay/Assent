@@ -103,6 +103,7 @@ func TestTestCommandFailureUX(t *testing.T) {
 // expect.yaml is left byte-identical (no spurious churn). The FS write lives here in
 // cmd/assent; the pure comment-preserving surgery is internal/adoptertest.
 func TestUpdateLeavesPassingCasesUntouched(t *testing.T) {
+	t.Setenv("CI", "") // hermetic: GitHub Actions sets CI=true, which the D-058 --update guard refuses (exit 2)
 	repo := copyTree(t, adopterRepo)
 	within := filepath.Join(repo, ".assent", "tests", "capped", "within-cap", "expect.yaml")
 	overCap := filepath.Join(repo, ".assent", "tests", "capped", "over-cap", "expect.yaml")
