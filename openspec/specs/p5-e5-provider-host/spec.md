@@ -111,21 +111,23 @@ Requirements:
 provider and stale facts cannot silently arm.
 
 **Goal**: `BuildQuery` ∩ declared projections; refuse `fullContent` without `trusted-full-content`;
-apply host `maxAge` defaults (principal/authz **1h**, registry **24h**, `sensitive:true` **15m**,
-global cap **24h**) when the declaration **omits** a maxAge. A declaration that **exceeds** the
-type default / sensitive 15m / 24h global cap is **rejected at load** (not clamped) —
-`docs/planning/provider-contract.md` already settles exceed→rejected. Cross-check the provider's
-echoed declaration against the host config (Spike C load-bearing check).
+host `maxAge` defaults (principal/authz **1h**, registry **24h**, `sensitive:true` **15m**,
+global cap **24h**) are the **validation ceiling** from `provider-contract.md`: a declaration that
+**omits** `maxAge` is a **load-time error** (not a silent "no limit" and not a silent fill-in);
+a declaration that **exceeds** the type default / sensitive 15m / 24h cap is **rejected at load**
+(never clamped). Cross-check the provider's echoed declaration against the host config (Spike C
+load-bearing check).
 
 **Dependencies**: E5-S01.
 
 **Definition of done**: undeclared pointers stripped; fullContent without capability refused at
-build/load; maxAge defaults + cap pinned by table-driven tests matching `provider-contract.md`.
+build/load; omit→reject + exceed→reject pinned against `provider-contract.md`; declaration
+cross-check golden green.
 
 Requirements:
 - **REQ-E5-S02-01** — projection minimization: only declared pointers appear in `FactQuery`. Test: `internal/provider/query_test.go`; Verify: `go test ./internal/provider/... -run TestBuildQueryMinimized`; Level: L0
 - **REQ-E5-S02-02** *(fail-safe)* — `fullContent` without `trusted-full-content` refused. Test: `internal/provider/query_test.go`; Verify: `go test ./internal/provider/... -run TestFullContentCapabilityGate`; Level: L0
-- **REQ-E5-S02-03** — host maxAge defaults + 24h cap match `provider-contract.md`; a declaration that **exceeds** the applicable default/cap is **rejected at load** (never clamped). Sensitive 15m row may land fully in S04; S02 pins non-sensitive rows + the exceed→reject rule. Test: `internal/provider/maxage_test.go`; Verify: `go test ./internal/provider/... -run 'TestMaxAgeDefaults|TestMaxAgeExceedRejected'`; Level: L0
+- **REQ-E5-S02-03** — host maxAge table matches `provider-contract.md`; **omit** `maxAge` → load-time error; **exceed** type default / sensitive 15m / 24h cap → rejected at load (never clamped). Sensitive 15m shared with S04. Test: `internal/provider/maxage_test.go`; Verify: `go test ./internal/provider/... -run 'TestMaxAgeOmitRejected|TestMaxAgeExceedRejected'`; Level: L0
 - **REQ-E5-S02-04** — host cross-checks the provider's echoed declaration against config (type/cardinality/subject/sensitive/maxAge); mismatch → `invalid` (never silently accept). Test: `internal/provider/declaration_test.go`; Verify: `go test ./internal/provider/... -run TestDeclarationCrossCheck`; Level: L0
 
 ---
