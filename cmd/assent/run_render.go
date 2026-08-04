@@ -34,10 +34,15 @@ func buildRenderContext(
 	if len(in.ChangeSet.Changes) > 0 {
 		activation = aggregate.LeafActivation(in, in.ChangeSet.Changes[0], env)
 	}
+	threshold := 0
+	if bind != nil {
+		threshold = bind.Risk.Threshold
+	}
 	return render.Context{
-		Options:    opts,
-		Activation: activation,
-		Rules:      rulesMetaFromPolicy(mp),
+		Options:       opts,
+		Activation:    activation,
+		Rules:         rulesMetaFromPolicy(mp),
+		RiskThreshold: threshold,
 	}
 }
 

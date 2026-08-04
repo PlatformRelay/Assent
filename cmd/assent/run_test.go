@@ -35,21 +35,25 @@ type fakeGitLab struct {
 
 	// recorded writes
 	discussionsPosted int
+	notesPosted       int
+	notesUpdated      int
 	approvals         int
 	merges            int
 	lastMergeSHA      string
 	lastThreadBody    string
+	lastSummaryBody   string
 
 	// stateful discussions — POST appends; GET lists; PUT ?resolved=true marks resolved.
 	botAuthor   string
 	discussions []fakeDiscussion
+	notes       []fakeNote
 
 	// E4-S06 forge Snapshot/Resolve probe configuration.
-	projectJSON        string
-	changedFiles       []string
-	freeTier           bool
-	mrAuthor           string
-	approvalEligible   bool
+	projectJSON         string
+	changedFiles        []string
+	freeTier            bool
+	mrAuthor            string
+	approvalEligible    bool
 	approvalRulesStatus int
 
 	// E4-S08 adversarial source-ref policy bytes (target ref stays trusted).
@@ -74,6 +78,11 @@ type fakeDiscussion struct {
 	resolved bool
 }
 
+type fakeNote struct {
+	id   int
+	body string
+}
+
 const fakeForgePremiumProjectJSON = `{
 	"only_allow_merge_if_all_discussions_are_resolved":true,
 	"merge_trains_enabled":true,
@@ -95,18 +104,18 @@ const fakeForgeInsecureProjectJSON = `{
 func newFakeGitLab(t *testing.T) *fakeGitLab {
 	t.Helper()
 	f := &fakeGitLab{
-		sourceSHA:            "srcSHA",
-		targetTip:            "tgtTIP",
-		sourceBranch:         "feature",
-		target:               "main",
-		governedPath:         "topics/orders.yaml",
-		mergePolicy:          mergePolicyChallenge,
-		rulesetBinding:       rulesetBindingNonDestructive,
-		botAuthor:            "assent-bot",
-		projectJSON:          fakeForgePremiumProjectJSON,
-		mrAuthor:             "alice",
-		approvalEligible:     true,
-		approvalRulesStatus:  http.StatusOK,
+		sourceSHA:           "srcSHA",
+		targetTip:           "tgtTIP",
+		sourceBranch:        "feature",
+		target:              "main",
+		governedPath:        "topics/orders.yaml",
+		mergePolicy:         mergePolicyChallenge,
+		rulesetBinding:      rulesetBindingNonDestructive,
+		botAuthor:           "assent-bot",
+		projectJSON:         fakeForgePremiumProjectJSON,
+		mrAuthor:            "alice",
+		approvalEligible:    true,
+		approvalRulesStatus: http.StatusOK,
 	}
 	f.changedFiles = []string{f.governedPath}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
@@ -124,7 +133,7 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"iid": 7, "project_id": 42, "source_project_id": sourceProjectID,
-			"sha": f.sourceSHA,
+			"sha":           f.sourceSHA,
 			"source_branch": f.sourceBranch, "target_branch": f.target,
 			"author": map[string]any{"id": 101, "username": f.mrAuthor},
 		})
@@ -155,6 +164,12 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 	case strings.HasPrefix(p, "/api/v4/projects/42/merge_requests/7/discussions/") && r.Method == http.MethodPut:
 		f.resolveDiscussion(w, r, p)
+	case p == "/api/v4/projects/42/merge_requests/7/notes" && r.Method == http.MethodGet:
+		f.serveNotes(w, r)
+	case p == "/api/v4/projects/42/merge_requests/7/notes" && r.Method == http.MethodPost:
+		f.createNote(w, r)
+	case strings.HasPrefix(p, "/api/v4/projects/42/merge_requests/7/notes/") && r.Method == http.MethodPut:
+		f.updateNote(w, r, p)
 	case p == "/api/v4/projects/42/merge_requests/7/approve" && r.Method == http.MethodPost:
 		f.approvals++
 		w.WriteHeader(http.StatusCreated)
@@ -265,6 +280,65 @@ func (f *fakeGitLab) resolveDiscussion(w http.ResponseWriter, r *http.Request, p
 		}
 	}
 	http.Error(w, "discussion not found", http.StatusNotFound)
+}
+
+func (f *fakeGitLab) serveNotes(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page <= 0 {
+		page = 1
+	}
+	perPage := 100
+	start := (page - 1) * perPage
+	if start >= len(f.notes) {
+		_, _ = w.Write([]byte(`[]`))
+		return
+	}
+	end := start + perPage
+	if end > len(f.notes) {
+		end = len(f.notes)
+	}
+	out := make([]map[string]any, 0, end-start)
+	for _, n := range f.notes[start:end] {
+		out = append(out, map[string]any{
+			"id":     n.id,
+			"body":   n.body,
+			"author": map[string]any{"username": f.botAuthor},
+		})
+	}
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (f *fakeGitLab) createNote(w http.ResponseWriter, r *http.Request) {
+	f.notesPosted++
+	body, _ := io.ReadAll(r.Body)
+	form, _ := url.ParseQuery(string(body))
+	f.lastSummaryBody = form.Get("body")
+	id := 8000 + len(f.notes) + 1
+	f.notes = append(f.notes, fakeNote{id: id, body: f.lastSummaryBody})
+	w.WriteHeader(http.StatusCreated)
+	_, _ = io.WriteString(w, fmt.Sprintf(`{"id":%d}`, id))
+}
+
+func (f *fakeGitLab) updateNote(w http.ResponseWriter, r *http.Request, p string) {
+	f.notesUpdated++
+	body, _ := io.ReadAll(r.Body)
+	form, _ := url.ParseQuery(string(body))
+	f.lastSummaryBody = form.Get("body")
+	rawID := strings.TrimPrefix(p, "/api/v4/projects/42/merge_requests/7/notes/")
+	id, err := strconv.Atoi(rawID)
+	if err != nil {
+		http.Error(w, "bad note id", http.StatusBadRequest)
+		return
+	}
+	for i := range f.notes {
+		if f.notes[i].id == id {
+			f.notes[i].body = f.lastSummaryBody
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"id":%d}`, id))
+			return
+		}
+	}
+	http.Error(w, "note not found", http.StatusNotFound)
 }
 
 // serveFile routes the three loaded documents (MergePolicy, RulesetBinding, the

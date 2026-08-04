@@ -625,6 +625,15 @@ func buildDesired(cfg runConfig, info gitlab.MRInfo, subject string, head []byte
 	digest := gitlab.SyntheticDigest(info.SourceSHA, info.TargetSHA)
 	desired := forge.DesiredReviewState{Project: cfg.project, MR: cfg.mr}
 
+	summaryBody, err := render.RenderSummary(pm, rctx)
+	if err != nil {
+		summaryBody = fmt.Sprintf("Decision: %s", pm.Decision)
+	}
+	desired.Summary = &forge.DesiredSummary{
+		Marker: buildSummaryMarker(cfg, recordJSON),
+		Body:   summaryBody,
+	}
+
 	if result.Decision == aggregate.DecisionApprove {
 		desired.Approve = true
 		desired.Merge = &forge.DesiredMerge{
@@ -670,6 +679,21 @@ func buildDesired(cfg runConfig, info gitlab.MRInfo, subject string, head []byte
 	}
 	desired.Thread = &forge.DesiredThread{Marker: marker, Body: threadBody}
 	return desired, forge.Preconditions{}
+}
+
+func buildSummaryMarker(cfg runConfig, recordJSON []byte) forge.Marker {
+	decisionDigest := sha256Prefix + sha256Hex(recordJSON)
+	return forge.Marker{
+		Slot: forge.Slot{
+			Project: cfg.project,
+			MR:      cfg.mr,
+			Rule:    "assent/summary",
+			Effect:  "comment",
+		},
+		Occurrence: decisionDigest,
+		Decision:   decisionDigest,
+		Artifact:   forge.Artifact{Kind: "summary-comment", SchemaVersion: "v1alpha1"},
+	}
 }
 
 func renderOpts(conf *policy.Config, bind *policy.Binding) render.Options {

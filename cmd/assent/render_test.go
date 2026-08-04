@@ -63,15 +63,22 @@ func TestRenderCLI(t *testing.T) {
 		}
 	})
 
-	t.Run("summary artifact fails closed until S13", func(t *testing.T) {
+	t.Run("summary artifact matches golden", func(t *testing.T) {
 		dir := filepath.Join(renderExamplesDir, "challenge")
+		expectRaw, err := os.ReadFile(filepath.Join(dir, "expect.summary.md")) //nolint:gosec // fixture tree
+		if err != nil {
+			t.Fatalf("read expect.summary.md: %v", err)
+		}
+		want := normalizeRenderCLIOutput(string(expectRaw))
+
 		var stdout, stderr bytes.Buffer
 		code := runRender([]string{"--finding", dir, "--artifact", "summary"}, &stdout, &stderr)
-		if code == 0 {
-			t.Fatal("summary artifact must exit non-zero before E8-S13")
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0; stderr:\n%s", code, stderr.String())
 		}
-		if !strings.Contains(stderr.String(), "summary") {
-			t.Errorf("stderr must mention summary artifact, got:\n%s", stderr.String())
+		got := normalizeRenderCLIOutput(stdout.String())
+		if got != want {
+			t.Fatalf("summary stdout mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
 		}
 	})
 

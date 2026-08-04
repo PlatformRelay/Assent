@@ -88,8 +88,11 @@ func runRender(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 	case renderArtifactSummary:
-		_, _ = fmt.Fprintln(stderr, "assent render: artifact summary: not implemented yet (E8-S13 RenderSummary)")
-		return 1
+		out, err = render.RenderSummary(fx.Presentation, ctx)
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "assent render: %s: %v\n", cfg.findingDir, err)
+			return 1
+		}
 	default:
 		_, _ = fmt.Fprintf(stderr, "assent render: unknown artifact %q (want finding-thread or summary)\n", cfg.artifact)
 		return 2
