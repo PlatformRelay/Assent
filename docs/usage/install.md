@@ -5,7 +5,7 @@ release artifacts; use `go install` when developing from source.
 
 ## go install
 
-Requires Go 1.22+ (see `go.mod`).
+Requires Go 1.25+ (see `go.mod`).
 
 ```bash
 go install github.com/PlatformRelay/assent/cmd/assent@latest
