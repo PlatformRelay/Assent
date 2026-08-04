@@ -38,6 +38,52 @@ func TestEvalScalarOldNew(t *testing.T) {
 	}
 }
 
+func TestFactRefFromExpr(t *testing.T) {
+	p, n, ok := aggregate.FactRefFromExpr("facts.quota.apiKey.value")
+	if !ok || p != "quota" || n != "apiKey" {
+		t.Fatalf("FactRefFromExpr = (%q, %q, %v)", p, n, ok)
+	}
+	if _, _, ok := aggregate.FactRefFromExpr("new"); ok {
+		t.Fatal("non-facts expr must not match")
+	}
+}
+
+func TestSensitiveFactAt(t *testing.T) {
+	act := map[string]any{
+		"facts": map[string]any{
+			"x": map[string]any{
+				"secret": map[string]any{"sensitive": true},
+			},
+		},
+	}
+	if !aggregate.SensitiveFactAt(act, "x", "secret") {
+		t.Fatal("expected sensitive fact")
+	}
+	if aggregate.SensitiveFactAt(act, "x", "missing") {
+		t.Fatal("missing fact must not be sensitive")
+	}
+}
+
+func TestReplaceMessageSlots(t *testing.T) {
+	got, err := aggregate.ReplaceMessageSlots("plain", func(expr string) (string, error) {
+		t.Fatalf("replacer must not run: %q", expr)
+		return "", nil
+	})
+	if err != nil || got != "plain" {
+		t.Fatalf("plain template = %q, %v", got, err)
+	}
+
+	got, err = aggregate.ReplaceMessageSlots("x {{ old }} y", func(expr string) (string, error) {
+		if expr != "old" {
+			t.Fatalf("expr = %q", expr)
+		}
+		return "5", nil
+	})
+	if err != nil || got != "x 5 y" {
+		t.Fatalf("replaced = %q, %v", got, err)
+	}
+}
+
 func TestEvalScalarFactsValue(t *testing.T) {
 	act := map[string]any{
 		"facts": map[string]any{

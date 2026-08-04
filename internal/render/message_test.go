@@ -89,6 +89,31 @@ func TestCELMessageSensitiveFactRedacted(t *testing.T) {
 	}
 }
 
+func TestCELMessageSensitiveValueAccessorRedacted(t *testing.T) {
+	secret := "super-secret-token-abc123"
+	act := celMessageActivation()
+	facts := act["facts"].(map[string]any)
+	facts["x"] = map[string]any{
+		"secret": map[string]any{
+			"state":     "resolved",
+			"sensitive": true,
+			"value":     secret,
+		},
+	}
+	ctx := render.Context{Activation: act}
+
+	got, err := render.EvalMessage("token={{ facts.x.secret.value }}", ctx)
+	if err != nil {
+		t.Fatalf("EvalMessage: %v", err)
+	}
+	if strings.Contains(got, secret) {
+		t.Fatalf("EvalMessage leaked sensitive .value accessor: %q", got)
+	}
+	if !strings.Contains(got, "redacted") {
+		t.Fatalf("EvalMessage = %q, want redacted placeholder", got)
+	}
+}
+
 func TestCELMessageEscapeAndClamp(t *testing.T) {
 	act := celMessageActivation()
 	act["new"] = `<script>alert(1)</script>`

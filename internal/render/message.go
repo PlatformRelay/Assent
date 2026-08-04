@@ -2,13 +2,9 @@ package render
 
 import (
 	"fmt"
-	"regexp"
-	"strings"
 
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 )
-
-var messageTokenRE = regexp.MustCompile(`\{\{[^{}]*\}\}`)
 
 // EvalMessage renders a message template whose {{ }} slots are CEL expressions
 // over ctx.Activation using the same predicate-scope env as aggregate evaluation
@@ -52,32 +48,17 @@ func EvalDebugLine(ruleName string, index int, ctx Context) (string, error) {
 }
 
 func evalMessageTemplate(tmpl string, activation any) (string, error) {
-	if !strings.Contains(tmpl, "{{") {
-		return tmpl, nil
-	}
-	var evalErr error
-	out := messageTokenRE.ReplaceAllStringFunc(tmpl, func(token string) string {
-		if evalErr != nil {
-			return token
-		}
-		expr := strings.TrimSpace(token[2 : len(token)-2])
-		if expr == "" {
-			return token
-		}
-		formatted, err := evalMessageSlot(expr, activation)
-		if err != nil {
-			evalErr = err
-			return token
-		}
-		return formatted
+	return aggregate.ReplaceMessageSlots(tmpl, func(expr string) (string, error) {
+		return evalMessageSlot(expr, activation)
 	})
-	if evalErr != nil {
-		return "", evalErr
-	}
-	return out, nil
 }
 
 func evalMessageSlot(expr string, activation any) (string, error) {
+	if provider, name, ok := aggregate.FactRefFromExpr(expr); ok {
+		if aggregate.SensitiveFactAt(activation, provider, name) {
+			return EscapeAndClamp(RedactedDisplay), nil
+		}
+	}
 	v, err := aggregate.EvalScalar(expr, activation)
 	if err != nil {
 		return "", err

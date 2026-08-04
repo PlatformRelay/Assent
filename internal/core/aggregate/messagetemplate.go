@@ -14,6 +14,77 @@ import (
 
 var messageSlotRE = regexp.MustCompile(`\{\{\s*([^}]+?)\s*\}\}`)
 
+// MessageSlotRE is the shared {{ expr }} pattern for compile-check and runtime
+// substitution (E8-S07). One regex so parse/compile/render never drift.
+var MessageSlotRE = messageSlotRE
+
+// ReplaceMessageSlots substitutes each {{ expr }} slot. replacer receives the
+// trimmed CEL expression; the first error aborts.
+func ReplaceMessageSlots(tmpl string, replacer func(expr string) (string, error)) (string, error) {
+	if !strings.Contains(tmpl, "{{") {
+		return tmpl, nil
+	}
+	var evalErr error
+	out := messageSlotRE.ReplaceAllStringFunc(tmpl, func(token string) string {
+		if evalErr != nil {
+			return token
+		}
+		sub := messageSlotRE.FindStringSubmatch(token)
+		expr := ""
+		if len(sub) >= 2 {
+			expr = strings.TrimSpace(sub[1])
+		}
+		if expr == "" {
+			return token
+		}
+		replacement, err := replacer(expr)
+		if err != nil {
+			evalErr = err
+			return token
+		}
+		return replacement
+	})
+	if evalErr != nil {
+		return "", evalErr
+	}
+	return out, nil
+}
+
+// FactRefFromExpr returns provider and fact name when expr selects under facts.*.
+func FactRefFromExpr(expr string) (provider, name string, ok bool) {
+	if !strings.HasPrefix(expr, "facts.") {
+		return "", "", false
+	}
+	rest := strings.TrimPrefix(expr, "facts.")
+	parts := strings.Split(rest, ".")
+	if len(parts) < 2 {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+// SensitiveFactAt reports whether activation binds a sensitive fact at provider/name.
+func SensitiveFactAt(activation any, provider, name string) bool {
+	act, ok := activation.(map[string]any)
+	if !ok {
+		return false
+	}
+	facts, ok := act["facts"].(map[string]any)
+	if !ok {
+		return false
+	}
+	byName, ok := facts[provider].(map[string]any)
+	if !ok {
+		return false
+	}
+	envelope, ok := byName[name].(map[string]any)
+	if !ok {
+		return false
+	}
+	sensitive, _ := envelope["sensitive"].(bool)
+	return sensitive
+}
+
 // MessageSlot is one {{ expr }} region in a message template.
 type MessageSlot struct {
 	Expr   string
