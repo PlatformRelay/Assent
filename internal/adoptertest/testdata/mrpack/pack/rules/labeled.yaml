@@ -1,0 +1,21 @@
+# MR-metadata pack (P5-E6-S02): the obligation is proven only when the MR carries
+# the `urgent` label -> proves mr.yaml -> aggregate.MR threading (and the absent-
+# mr.yaml default: no labels -> the obligation fires).
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: labeled
+spec:
+  rules:
+    - name: requires-urgent-label
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/replicas"]
+          kinds: [modify]
+      prove:
+        obligation: labeled
+        when: '"urgent" in mr.labels'
+      onFailure:
+        effect: challenge
+        code: label.missing

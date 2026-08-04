@@ -1,0 +1,8 @@
+apiVersion: assent.dev/v1alpha1
+kind: RulesetBinding
+bindings:
+  - class: catalog
+    environment: prod
+    packs: [catalog-multi]
+    risk: { threshold: 8 }
+    require: [ownership, bounded]

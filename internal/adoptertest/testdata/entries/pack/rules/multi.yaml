@@ -1,0 +1,39 @@
+# Multi-rule pack (P5-E6-S02): an ENTRY-SCOPED ownership rule (binds the whole
+# reconstructed `entry` object) AND a SCALAR bounded-change leaf rule (binds the
+# change `new`/`old`) both replay over ONE base/↔head/ input — the case
+# lint_corpus_test.go proved impossible under the pre-S02 scalar-entry approximation.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: catalog-multi
+spec:
+  entries:
+    svc:
+      mode: list
+      root: /services
+      identity:
+        pointer: /name
+  rules:
+    - name: author-owns-entry
+      phase: enforce
+      match:
+        files:
+          paths: ["**.json"]
+      prove:
+        obligation: ownership
+        when: "entry.owner in facts.author.groups.value"
+      onFailure:
+        effect: require-review
+        code: ownership.unauthorized
+    - name: replicas-non-decreasing
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/services/*/replicas"]
+          kinds: [modify]
+      prove:
+        obligation: bounded
+        when: "new >= old"
+      onFailure:
+        effect: challenge
+        code: replicas.shrink

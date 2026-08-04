@@ -1,0 +1,2 @@
+# replicas 5 -> 2 shrinks -> the scalar bounded rule fires (challenge) -> REVIEW.
+decision: REVIEW

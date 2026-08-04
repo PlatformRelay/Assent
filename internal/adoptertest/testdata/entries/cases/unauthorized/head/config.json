@@ -1,0 +1,1 @@
+{"services":[{"name":"orders","owner":"team-x","replicas":3},{"name":"users","owner":"team-a","replicas":5}]}

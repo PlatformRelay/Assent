@@ -1,0 +1,3 @@
+# ownership proven (entry.owner team-a in author.groups) AND replicas 2->3
+# non-decreasing -> both obligations proven -> APPROVE.
+decision: APPROVE

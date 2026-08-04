@@ -1,0 +1,3 @@
+# orders owner -> team-x, NOT in author.groups -> entry-scoped ownership rule
+# fires require-review -> REVIEW (proves entry.owner bound the OBJECT, not a scalar).
+decision: REVIEW

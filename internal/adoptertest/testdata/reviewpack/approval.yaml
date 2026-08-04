@@ -1,0 +1,15 @@
+# Stubbed forge-proven approval for subject file:config.json (document-mode subject).
+# sourceSha MUST match pins.sourceSha for satisfaction (a mismatch never satisfies).
+sourceSha: sha-abc
+evidence:
+  - subject: "file:config.json"
+    verifyingCapability: approval-rules-api
+    approvalsRequired: 1
+    approvedBy:
+      - id: reviewer-1
+        username: reviewer-1
+        isAuthor: false
+    eligibility: [reviewer-1]
+    expired: false
+    pins:
+      sourceSha: sha-abc

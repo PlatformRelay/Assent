@@ -1,0 +1,8 @@
+apiVersion: assent.dev/v1alpha1
+kind: RulesetBinding
+bindings:
+  - class: svc
+    environment: prod
+    packs: [labeled]
+    risk: { threshold: 8 }
+    require: [labeled]

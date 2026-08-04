@@ -120,6 +120,17 @@ type Case struct {
 	Head   []byte
 	Facts  map[string]map[string]aggregate.Fact
 	Expect Expectation
+	// MR is the merge-request metadata bound to the `mr` predicate scope (S02).
+	// The zero value is the ADR-0014 "mr.yaml absent" default (empty author, no
+	// labels, no branches) — the fail-safe default, since ADR-0014 pins no specific
+	// values. MapMR lifts an optional case mr.yaml into it.
+	MR aggregate.MR
+	// Approval is the optional stubbed approval context (S02): the evaluated
+	// sourceSha + per-subject ApprovalEvidence that can SATISFY a require-review
+	// obligation without a live forge. nil ⇒ no evidence (exactly Cover) ⇒ a
+	// require-review obligation stays unsatisfied → REVIEW (never satisfied by
+	// absence). MapApproval lifts an optional case approval.yaml into it.
+	Approval *aggregate.ApprovalContext
 }
 
 // Outcome is a single case's evaluated result: whether the produced Decision matched
@@ -131,13 +142,31 @@ type Outcome struct {
 	Actual   string
 }
 
-// Evaluate assembles the EvaluationInput from the case's base/↔head/ diff (the
-// production change.Diff + the reused evaldecode.BuildEvaluationInput), attaches the
-// stubbed resolved facts, and evaluates the pack via aggregate.Cover. An opaque
-// (undecidable) diff maps to the fail-safe REVIEW decision — never a silent APPROVE
-// (GUIDELINES §2), mirroring the CLI run path. Pure and deterministic.
+// Evaluate assembles the EvaluationInput from the case's base/↔head/ diff, attaches
+// the stubbed resolved facts, reconstructs the per-EntryRef entry tree (S02) so an
+// entry-scoped predicate binds the whole entry object, threads the case MR and the
+// stubbed ApprovalContext, and evaluates the WHOLE pack via aggregate.CoverWithApproval.
+// An opaque (undecidable) diff maps to the fail-safe REVIEW decision — never a silent
+// APPROVE (GUIDELINES §2), mirroring the CLI run path. Pure and deterministic.
+//
+// The differ path is chosen by the pack: a pack declaring a governed collection
+// (spec.entries, S02) is diffed by the collection-aware change.DiffEntries so a
+// list/map file is decidable AND each change is tagged with a stable EntryRef; a
+// pack with no entries takes the S01 document-mode change.Diff verbatim (so every
+// S01 case stays byte-identical). With no entries, no MR, and a nil Approval, this
+// is exactly the S01 Cover path.
 func Evaluate(c Case) (aggregate.Result, error) {
-	cs, err := change.Diff(c.File, c.Base, c.Head)
+	cfg, entered := singleEntryConfig(c.Policy)
+
+	var (
+		cs  change.ChangeSet
+		err error
+	)
+	if entered {
+		cs, err = change.DiffEntries(c.File, c.Base, c.Head, cfg)
+	} else {
+		cs, err = change.Diff(c.File, c.Base, c.Head)
+	}
 	if err != nil {
 		// The differ returns a wrapped ErrOpaque alongside the fail-safe ChangeSet;
 		// that is an undecidable INPUT, not a harness failure -> REVIEW.
@@ -155,11 +184,18 @@ func Evaluate(c Case) (aggregate.Result, error) {
 	if cs.Opaque || len(cs.Changes) == 0 {
 		return aggregate.Result{Decision: aggregate.DecisionReview}, nil
 	}
-	in := evaldecode.BuildEvaluationInput(cs, aggregate.MR{}, requireOf(c.Bind))
+	in := evaldecode.BuildEvaluationInput(cs, c.MR, requireOf(c.Bind))
 	if len(c.Facts) > 0 {
 		in.Facts = c.Facts
 	}
-	res, err := aggregate.Cover(c.Policy, c.Bind, &in)
+	if entered {
+		// Reconstruct the whole-entry objects for the changed file's EntryRefs and
+		// populate EvalChange.Entry/OldEntry (Part A binds them when present, else
+		// the scalar fallback). Fail-safe: on any reconstruction error every Entry
+		// stays nil (scalar fallback), never a partial/permissive entry (REQ-07).
+		populateEntries(&in, cs, c, cfg)
+	}
+	res, err := aggregate.CoverWithApproval(c.Policy, c.Bind, &in, c.Approval)
 	if err != nil {
 		return aggregate.Result{}, fmt.Errorf("cover %q: %w", c.Name, err)
 	}

@@ -1,0 +1,22 @@
+# Require-review pack (P5-E6-S02): a DOCUMENT-mode obligation whose `when` is
+# clean-false for a modify change, so onFailure require-review fires. A stubbed
+# sha-matched ApprovalEvidence (case approval.yaml) SATISFIES it without a live
+# forge; an absent/mismatched stub leaves it unsatisfied -> REVIEW.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: needs-review
+spec:
+  rules:
+    - name: needs-human-review
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/replicas"]
+          kinds: [modify]
+      prove:
+        obligation: reviewed
+        when: 'kind == "delete"'
+      onFailure:
+        effect: require-review
+        code: review.required
