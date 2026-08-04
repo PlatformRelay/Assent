@@ -1,0 +1,361 @@
+# Changelog
+
+All notable changes to this project are documented here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Release notes are generated from gitmoji-conventional commits on the default branch using
+[git-cliff](https://git-cliff.org/).
+
+## Unreleased
+
+### Chores
+- :tada: chore: scaffold repository — vision, ADRs, C4, meta-plan, specs skeleton, Go module, examples
+- build(deps): bump actions/setup-go from 5.6.0 to 7.0.0
+- build(deps): bump actions/checkout from 4.4.0 to 7.0.1
+- :wrench: chore: gitignore session .worktrees/ (agent-loop-local lanes)
+- build(deps): bump actions/setup-node from 5.0.0 to 7.0.0
+- build(deps): bump github.com/google/cel-go from 0.29.2 to 0.30.0
+- build(deps): bump github/codeql-action/upload-sarif
+- build(deps): bump mkdocs-material from 9.7.6 to 9.7.7 in /docs
+- build(deps): bump github.com/zclconf/go-cty from 1.16.3 to 1.19.0
+- build(deps): bump github/codeql-action/init from 4.37.3 to 4.37.4
+- build(deps): bump github/codeql-action/analyze to 4.37.4 to match init
+- build(deps): bump golang.org/x/text from 0.39.0 to 0.40.0
+
+### Documentation
+- :memo: docs: design round 2 — effects/routing/modes/config/ports ADRs, Apache-2.0, walkthrough, naming
+- :memo: docs: ADR-0014 adopter test format + D-010 TDD/90% coverage gate (Taskfile-enforced)
+- :memo: docs: architecture review cycle — ADR-0013 (CEL hybrid), ADR-0015 (trust boundaries), security amendments, GUIDELINES, OSS hygiene
+- :memo: docs(adr): onFail branches, per-firing points, content-keyed facts, finding lifecycle + stale-consent, lint hard-errors, scan confusion matrix
+- :memo: docs: D-012 adoption-gated scope, D-013 second-review record, new OQs, meta-plan adoption gate
+- :memo: docs: D-014 public repo created with security settings; OQ-1 residual narrowed to domain
+- :memo: docs(adr): ADR-0016 presentation theming — tiered customization, CEL messages, PresentationModel contract (D-015)
+- :memo: docs(adr): ADR-0017 contract model — obligations, merge-result pinning, require-review, EntryRef, typed facts (D-016)
+- :memo: docs: D-016, OQ-23..25, Phase-3 contract-fixture gate, README scope aligned to D-012
+- :memo: specs: Phase-1 epics P1-E1..E4 — corpus, archetype inventory, forge dossier, prior art (full stories + REQs)
+- :memo: specs: Phase-2 epics P2-E1..E5 — CEL/e2e/provider/secure-setup spikes + ADR acceptance (full stories + REQs)
+- :memo: specs: Phase 3-5 epics — contracts, walking skeleton, E1-E9 + locked E10-E13 (D-012)
+- :memo: planning: named-consumer disposition (D-017) — compat review folded in, OQ-19/20/21/23 re-scoped
+- :memo: specs: P2-E6 Spike D — Kubernetes CRD/CR validation feasibility (D-017 B11)
+- :memo: specs: P3-E4 lifecycle + P3-E5 publication protocol; E11/E12 unlocked, E14 added (D-017)
+- :memo: docs: D-018 operator ratifications — reference-use-case wording, Spike D deferred to Phase-3 window, named obligations confirmed
+- :memo: planning: operator inbox round — D-018/D-019 ratifications, reference-use-case wording, Spike D deferred, P1-E1 sources provided
+- :memo: docs(planning): prior-art review — eight tools + implications table
+- :memo: docs(examples): pin OSS corpus and resolve OQ-16 (P1-E1-S02)
+- :memo: docs(planning): author rule-archetype inventory (P1-E2-S01)
+- :memo: docs(examples): archetype base/head fixtures (P1-E2-S02)
+- :memo: docs(planning): define success metric and close OQ-25 (P1-E2-S03)
+- :memo: docs(planning): add GitLab forge dossier — threads, approvals, merge preconditions, tiers (P1-E3-S01/S02)
+- :memo: docs(planning): add GitHub parity dossier for the Forge-port seam (P1-E3-S03)
+- :memo: docs(planning): choose Premium secure-setup topology and draft doctor checklist (P2-E4 / OQ-24)
+- :memo: docs(spike): Spike C report — contract, isolation evidence, maxAge defaults
+- :memo: docs(e2e): Spike B measurements — CI default is testcontainer (OQ-6)
+- :memo: docs(p2-e5): consolidate ADR acceptance evidence matrix
+- :memo: docs(specs): add P3-E1 schema fixture stories
+- :memo: docs(specs): add P3-E2 versioning compat stories
+- :memo: specs(p3-e5): author publication reconciliation protocol stories
+- :memo: docs(specs): add P3-E3 pack-migration stories
+- :memo: docs(provider): freeze maxAge defaults table for P2-E5
+- :memo: docs(publication): freeze marker grammar for P3-E5-S01
+- :memo: docs(specs): amend P3-E2-S01 verify paths off internal/core (D-016)
+- :memo: docs(decisions): log D-021/D-022 for roast P1-1/P1-2 schema fixes
+- :memo: docs(schemas): soften residual 'exact is the safety default' phrasing (review F1)
+- :memo: docs(decisions): close D-016 Phase-3 exit gate; log D-023/D-024
+- :memo: docs(decisions): reframe D-016 gate as STAGED, not closed (F1/F3/F4)
+- :memo: docs(publication): freeze reconciliation state table for P3-E5-S02
+- :memo: docs(decisions): confirm D-016 Phase-3 exit gate CLOSED on main (D-025)
+- :memo: docs(decisions): record D-026 operator bulk-ratification
+- :memo: docs(publication): freeze duplicate-repair + one-publisher topology for P3-E5-S03
+- :memo: docs(adr): author ADR-0019 publication marker reconciliation (P3-E5-S04)
+- :memo: docs(rego): document escape-hatch quarantine marker (P3-E3-S03)
+- :memo: docs(planning): document phase transitions and lint no-implicit-enforce-phase
+- :memo: docs(api): publish API_STABILITY.md and do-not-generalize catalog
+- :memo: docs(policy): document profile precedence and single-writer lint
+- :memo: docs(usage): migrate walkthrough and sample READMEs to prove vocabulary (P3-E3-S04)
+- :memo: docs(planning): register archetype golden corpus as assent test seed manifest (P3-E3-S04)
+- :memo: docs(adr): author ADR-0018 policy lifecycle phase profile comparison (P3-E4-S04)
+- :memo: docs(decisions): record D-027–D-032 inbox answers and accept ADR-0018/0019
+- :memo: docs(planning): decompose P4-E1 walking skeleton into INVEST stories (autonomous vs infra-gated)
+- :memo: docs(decisions): record D-033–D-036 (S01 pins, S05 placeholder, S10/S11 park, gitleaks fix)
+- :memo: docs(decisions): record D-037 gitlab.com assent-lab + GITLAB_TOKEN location
+- :memo: docs(decisions): record D-039 (P4-E1 autonomous slices complete) + D-040 (provider -race deadline)
+- :memo: docs: record D-012 adoption SATISFIED (P4-E1-S11) + S10 live-green (D-041/D-042) with evidence
+- :memo: docs: decompose Phase 5 E1 into 8 INVEST stories (canonical change model)
+- :memo: docs: reconcile audit doc-drift findings D-02/D-03/D-04
+- :memo: docs(spec): decompose Phase-5 E2 (decision engine + CEL backend) into INVEST stories (P5-E2)
+- :memo: docs(spec): scope E2-S01 to loader-only, move run.go re-seat + policy.go retire to S02 (P5-E2-S01)
+- :memo: docs(spec): scope E2-S02 to per-change eval primitive beside skeleton; move run.go re-seat to S04 (P5-E2-S02)
+- :memo: docs(site): add branded MkDocs publishing
+- :memo: docs(backlog): add SonarCloud maintainability remediation plan (4 lanes)
+- :memo: docs: log D-045 security/OpenSSF hardening; mark P4-CODEQL + P4-SEC-OSSF done
+- :memo: docs(backlog): record reference-repo coverage findings + example candidates (C1-C8, fact-provider gaps)
+- :memo: docs(spec): decompose Phase-5 E3 (assent lint + rule catalogue) into 8 INVEST stories + lane C
+- :memo: chore: log D-047 (lint decide-and-log) + extend TestCorePurity to internal/lint (E3-S01 review)
+- :memo: docs(spec): defer REQ-E3-S07-03 deprecation metadata to OQ (no v1alpha1 lifecycle field)
+- :memo: chore: log D-050 (lint controlling-provider reinterpretation, E3-S05 review)
+- :memo: chore: log D-052 (topic-registry fileEvents gap — document-mode whole-file-delete non-destructive)
+- :memo: docs(spec): decompose P5-E6 adopter-test harness spec-first (assent test + compare seed)
+- :memo: docs(spec): add REQ-E6-S02-07 — full-entry reconstruction fail-safety (Part-A review F2)
+- :memo: docs(spec): decompose P5-E-FILEEVENTS spec-first (whole-file add/delete match domain)
+- :memo: docs(spec): mark REQ-E2-S01-03 superseded by EFE-S01 + repoint stale pin-test references (TestExamplesPacksKnownBlockers -> TestTopicRegistryLoadsAndLintsClean)
+- :memo: docs(decisions): D-063 operator-confirmed — REVIEW default for ungoverned whole-file delete
+- :memo: docs(decisions): D-064 — governed means enforce-effective only (not observe)
+- :memo: docs(spec): decompose P5-E5 provider host + builtins spec-first
+- :memo: docs(spec): E5 — maxAge exceed rejects (not clamps); argv hygiene REQ; seed sync
+- :memo: docs(spec): E5-S02 — omit maxAge is load-time error (provider-contract)
+- :memo: test(catalogue): include topic-registry in exitgate after D-052 close
+- :memo: docs(decisions): defer E5-S09 ownership-file (D-070)
+- :memo: docs(decisions): close E5-S10 exit gate (D-071/D-072)
+- :memo: docs(openspec): add P5-E4 GitLab forge INVEST spec
+- :memo: docs(openspec): tighten E4-S06 arming + checkout composition
+- :memo: docs(openspec): add P5-E7 E2E conformance INVEST spec
+- :memo: docs(openspec): E7-S03 catalog-index E4 pipeline arming
+- :memo: docs(openspec): mark E7 autonomous slice closed (D-087)
+- :memo: docs(e8): add renderer tier-0 INVEST spec
+- :memo: docs(e8): address spec review on dependencies and summary port
+- :memo: docs(decisions): close D-073 summary-comment slot
+- :memo: docs(openspec): mark E8 autonomous complete (D-098)
+- :memo: docs(e9): add distribution & release INVEST spec
+- :memo: docs(e9): address review — deps, S07 split, counts
+- :memo: docs(e9): restore E8 marker + changelog drift REQ
+
+### Features
+- :sparkles: examples: onFail branches — one predicate, both outcomes, quota case explained (P1-7)
+- :sparkles: feat(spike): typed provider request/response schemas (P2-E3-S01)
+- :sparkles: feat(schemas): add policy v1alpha1 authored schemas
+- :sparkles: feat(schemas): add decision v1alpha1 runtime record schemas
+- :sparkles: feat(schemas): add ApprovalEvidence v1alpha1 schema
+- :sparkles: feat(schemas): add testfixture v1alpha1 adopter test-expectation schema
+- :sparkles: feat(schemas): enforce unique names in Config/MergePolicy collections
+- :sparkles: feat(schemas): add lint hard-error catalogue + schema-validation CI job
+- :sparkles: feat(schemas): add D-016 strict + named-consumer-compat fixtures
+- :sparkles: feat(provider): add major-version negotiation matrix (P3-E2-S04)
+- :sparkles: feat(schemas): additive-tolerant reports with unique collection keys
+- :sparkles: feat(hash): add canonical JSON digests with schema-version domain separation
+- :sparkles: feat(schemas): add rollout phase field and DecisionRecord findings split
+- :sparkles: feat(examples): add per-shape starter packs (P3-E3-S02)
+- :sparkles: feat(schemas): add PolicyProfile writes field and Config precedence table
+- :sparkles: feat(schemas): add comparison delta taxonomy and PolicyComparisonSuite
+- :sparkles: feat(compat): observe/enforce twin and refused auto-merge fixtures (P3-E4-S05)
+- :sparkles: feat(cmd): CLI + CI-env adapter assembling pinned EvaluationInput (P4-E1-S01)
+- :sparkles: feat(cmd): doctor precondition arming refuses unprotected pipelines (P4-E1-S05)
+- :sparkles: feat(change): modify-only YAML differ producing canonical ChangeSet (P4-E1-S02)
+- :sparkles: feat(kind): add long-lived local GitLab kind lab
+- :sparkles: feat(core): minimal obligations aggregation (P4-E1-S03)
+- :sparkles: feat(core): DecisionRecord + PresentationModel report artifact (P4-E1-S04)
+- :sparkles: feat(forge): Reconcile thread + approve/SHA-pinned merge against in-memory fake (P4-E1-S06/S08/S07-02)
+- :sparkles: feat(forge): rerun-idempotence + deterministic duplicate-repair replay + determinism gate (P4-E1-S12)
+- :sparkles: feat: GitLab forge adapter + assent run orchestration (P4-E1-S10)
+- :sparkles: feat(change): first-class add/delete diffs + source positions (E1-S01)
+- :sparkles: feat(change): opt-in rename fold (delete+add -> rename, default raw) (E1-S02)
+- :sparkles: feat(change): JSON format adapter over the canonical value tree (E1-S03)
+- :sparkles: feat(cmd): enumerate MR changed-file set + block on smuggled .assent edit (E1-S08)
+- :sparkles: feat(change): HCL/tfvars format adapter (literal-only) over the value tree (E1-S04)
+- :sparkles: feat(change): EntryRef derivation for map and list collections (E1-S05)
+- :sparkles: feat(change): pure input resource ceilings, fail-closed (E1-S07)
+- :sparkles: feat(classify): matcher-domain breadth (files/values.pointers/entryEvents/valueChanges) (E1-S06)
+- :sparkles: feat(policy): frozen-contract loader — MergePolicy/RulesetBinding/Config/Pack strict decode via reused schemas, fileEvents rejected, structural assertTree (P5-E2-S01)
+- :sparkles: feat(aggregate): per-change CEL activation + single-leaf eval primitive over EvaluationInput, full frozen predicate scope, typed old/new, fail-safe (P5-E2-S02)
+- :sparkles: feat(aggregate): multi-obligation AND coverage across subjects over EvaluationInput (P5-E2-S04)
+- :sparkles: feat(aggregate): per-firing risk points + per-binding threshold gate (P5-E2-S06)
+- :sparkles: feat(aggregate): satisfy require-review from injected ApprovalEvidence — stale-sha/self-bot/none-capability fail-safe (P5-E2-S07)
+- :sparkles: feat(aggregate): phase off/observe/enforce split + pack ceiling; thread observed into record (P5-E2-S08)
+- :sparkles: feat(aggregate): all/any/not combinator walker + per-leaf message attribution (P5-E2-S03)
+- :sparkles: feat(aggregate): profile resolution + single-writer authority (P5-E2-S09)
+- :sparkles: feat(run): value-typing decoder for live-diff EvaluationInput + real-diff numeric-shrink gate (P5-E2-S04 REQ-06)
+- :sparkles: feat(lint): assent lint scaffold + tolerant ingestion + obligation-coverage hard error (P5-E3-S01)
+- :sparkles: feat(catalogue): generated additive-tolerant rule catalogue + assent catalogue subcommand (P5-E3-S07)
+- :sparkles: feat(lint): tests-per-rule static presence hard error (P5-E3-S06)
+- :sparkles: feat(test): assent test scaffold + directory-case loader + facts→envelope + single-case decision (P5-E6-S01)
+- :sparkles: feat(aggregate): per-EntryRef entry-object binding in bindLeafActivation, fail-safe scalar fallback (P5-E6-S02 Part A)
+- :sparkles: feat(adoptertest): whole-pack entry-tree replay + MR/approval seam (P5-E6-S02-B)
+- :sparkles: feat(adoptertest): expectation matcher — findings must-contain/exact, absent, score, message~, fail-closed (P5-E6-S03)
+- :sparkles: feat(compare): assent compare seed — one ReplayBundle, baseline↔candidate, one delta classified, one gate (P5-E6-S09)
+- :sparkles: feat(adoptertest): failure diff UX — expected/actual + finding-level diff + ready-to-copy actual block (P5-E6-S04)
+- :sparkles: feat(adoptertest): assent test --update golden-refresh — comment-preserving in-place write + CI guard (P5-E6-S05)
+- :sparkles: feat(adoptertest): inline cases.yaml shorthand — alternate front-end over the shared assembler+matcher (P5-E6-S06)
+- :sparkles: feat(adoptertest): assent test --coverage per-rule both-polarity gate (P5-E6-S07)
+- :sparkles: feat(test): whole-pack corpus replay machinery + infra-vars green/covered (P5-E6-S08)
+- :sparkles: feat(examples): rebuild service-catalog to evaluate green + both-polarity (P5-E6-S08)
+- :sparkles: feat(core): load+match match.fileEvents over hand-built whole-file event — loader accept (kinds ⊆ add|delete, modify/rename load-reject), engine matcher + both-way domain disjointness, E6 mirror, pin repoint (EFE-S01)
+- :sparkles: feat(core): mint whole-file events from one-sided presence + unmatched-delete REVIEW escalation (P5-EFE-S02)
+- :sparkles: feat(cmd): mint FileEvent from live-checkout one-sided presence (EFE-S03)
+- :sparkles: feat(examples): topic-registry provable fileEvents non-destructive (D-052)
+- :sparkles: feat(examples): service-catalog file-delete BLOCK (D-061)
+- :sparkles: feat(provider): E5-S01 promote ResolveFacts classifier + negotiation
+- :sparkles: feat(provider): E5-S02 projection-minimized BuildQuery + maxAge load gates
+- :sparkles: feat(provider): E5-S02 declaration cross-check refuse mismatch
+- :sparkles: feat(provider): E5-S03 HTTP+exec transports, ScrubEnv/argv, digest-pin
+- :sparkles: feat(provider): E5-S04 sensitive 15m maxAge + Fact.Sensitive handoff
+- :sparkles: feat(cmd): E5-S05 wire provider host into assent run
+- :sparkles: feat(provider): E5-S06 builtin gitlab-groups / forge-groups hermetic
+- :sparkles: feat(provider): E5-S07 builtin/repo-file most-specific-first (REF-GAP-2)
+- :sparkles: feat(provider): add resource-owner builtin (E5-S08)
+- :sparkles: feat(provider): add repoFile/resourceOwner host declaration fields
+- :sparkles: feat(cmd): wire builtin providers into assent run resolve path
+- :sparkles: feat(forge): E4-S01 Snapshot/Resolve ports + hermetic fakes
+- :sparkles: feat(forge): E4-S02 GitLab Snapshot L2 cassettes
+- :sparkles: feat(forge): E4-S04 reconcile supersession, clear-slot, rescan
+- :sparkles: feat(forge): E4-S03 GitLab Resolve ApprovalEvidence L2 cassettes
+- :sparkles: feat(doctor): E4-S05 forge-probed arming preconditions
+- :sparkles: feat(run): wire forge Snapshot/Resolve on assent run (E4-S06)
+- :sparkles: feat(run): assent-policy self-edit BLOCK skips Reconcile (E4-S08)
+- :sparkles: feat(e7): Spike-B e2e-vet task and operator docs (E7-S01)
+- :sparkles: feat(e7): sample-repo seed generator dry-run (E7-S02)
+- :sparkles: feat(e7): conformance catalog + adversarial arming gates (E7-S03)
+- :sparkles: feat(ci): add E7-S04 determinism gate with local task mirror
+- :sparkles: feat(e7): wire sanitization check into verify CI (E7-S05)
+- :sparkles: feat(render): scaffold PresentationModel fixture loader (E8-S01)
+- :sparkles: feat(schemas): add presentation block to config schema (E8-S02)
+- :sparkles: feat(render): resolve presentation options from config (E8-S02)
+- :sparkles: feat(render): add en locale chrome catalog
+- :sparkles: feat(forge): add summary UpsertComment port and Reconcile preamble (E8-S12)
+- :sparkles: feat(render): add envelope and delegate marker formatting (E8-S04)
+- :sparkles: feat(aggregate): shared CEL message template compile (E8-S07)
+- :sparkles: feat(render): EvalMessage CEL interpolation with redaction (E8-S07)
+- :sparkles: feat(render): default finding-thread theme (E8-S08)
+- :sparkles: feat(run): wire buildDesired to finding-thread renderer (E8-S08)
+- :sparkles: feat(render): commit E8-S09 finding-thread goldens
+- :sparkles: feat(cmd/assent): add assent render CLI (E8-S10)
+- :sparkles: feat(lint): presentation lint extends E3-S04 (E8-S11)
+- :sparkles: feat(render): add RenderSummary default theme + goldens
+- :sparkles: feat(run): wire buildDesired Summary and render CLI
+- :sparkles: feat(cmd): semver ldflags and version contract tests
+- :sparkles: feat(ci): E9-S04 hardening audit, actionlint, Scorecard badge
+
+### Fixes
+- :bug: specs(p3-e4): fix reviewer P1 (vacuous verify) + align schema/fixture paths
+- :bug: specs(p3-e3): fix reviewer P1 (vacuous verify)
+- :bug: fix(schemas): amend ApprovalEvidence for roast P1-A/B and P2-C
+- :bug: fix(schemas): give RulesetBinding.require an authored home (roast P1-1)
+- :bug: fix(schemas): pin exact default to must-contain (roast P1-2)
+- :bug: fix(schemas): strip only final extension in fileStem stem guard
+- :bug: fix(contracts): pad rerun-idempotence entry-owner digest to 64 hex
+- :bug: fix(change): reword differ doc comment to clear gitleaks false positive
+- :bug: fix(ci): use golangci v2 linters.exclusions.paths for .worktrees
+- :bug: fix(spikes): give provider contract-test exec deadline -race headroom (1s->5s)
+- :bug: fix(change): key rename fold on (file,value) + cover co-occurring change (E1-S02 review F1/F2)
+- :bug: fix(change): HCL unary-negated numeric literals diff instead of opaque (audit D-01)
+- :bug: fix(fixture): correct d016 partitions rule — in-scope CEL `new >= old` + authored `points: 10` (P5-E2-F)
+- :bug: fix(aggregate): match value pointers as globs + fail-safe guards (P5-E2-S04 review)
+- :bug: fix(run): decode capitalized go-yaml bool spellings (True/TRUE/False/FALSE) as bool, not lexical string (P5-E2-S04 REQ-06 review F1)
+- :bug: fix(policy): context-fresh expired fact arms to require-review, not block (E3-S08 review F2/F3)
+- :bug: fix(test): fail-safe REVIEW on empty (non-opaque) changeset in adoptertest.Evaluate (P5-E6-S01)
+- :bug: fix(core): unmatched-delete escalation suppress only on enforce-effective fileEvents (D-063)
+- :bug: fix(cmd): keep sibling whole-file delete fold-opaque (EFE-S03 P1)
+- :bug: fix(examples): dogfood topic-registry + sync sample repo map-at-root (EFE-S04 review)
+- :bug: fix(provider): tighten golden-updater file modes for gosec (E5-S01)
+- :bug: fix(provider): reject unknown declaration types at maxAge load (E5-S02)
+- :bug: fix(provider): nosec G304 on digest-pin and maliciousexec reads (E5-S03)
+- :bug: fix(provider): drop duplicate fixedAsOf after S06 rebase
+- :bug: fix(cmd): stateful fakeGitLab discussions for post-write rescan
+- :bug: fix(schemadrift): repair D-088 test vectors post-presentation
+- :bug: fix(forge): fail-closed summary preamble ordering (E8-S12 review)
+- :bug: fix(forge): wire publication writes through render.Envelope (E8-S04)
+- :bug: fix(render): backslash-escape markdown link specials (E8-S05)
+- :bug: fix(render): satisfy gosec on golden refresh helper
+
+### Other
+- :truck: chore: rename project to assent (D-009) — folder, module path, CLI, .assent/, apiVersion
+- :broom: docs: fix spec drift — openspec context, examples README, C4 to envelope+CEL architecture (P2-8)
+- :construction_worker: ci: golangci-lint, govulncheck, gitleaks, coverage gate, dependabot (A-10)
+- :green_heart: ci: run on latest stable Go toolchain — govulncheck requires go>=1.25
+- :green_heart: ci: run gitleaks CLI directly — gitleaks-action needs a paid license for org repos
+- :card_index_dividers: specs: backlog index — phase/epic map, gates, reading order
+- :card_index_dividers: specs: backlog index — P2-E6 row, Phase 3-5 summary per D-017
+- :green_heart: ci: migrate .golangci.yml to golangci-lint v2 config schema
+- :green_heart: ci: bump golangci-lint-action to v9.3.0 — v6 installs golangci-lint v1, incompatible with the v2 config
+- :seedling: feat(examples): add three generic governed sample repos (P1-E1-S01)
+- :green_heart: ci: scope gitleaks to current-branch history — lane branches must not red main
+- :alembic: feat(cel): spike A CEL residual-risk harness
+- :test_tube: test(spike): contract parity HTTP vs exec toy provider (REQ-P2-E3-S01-01)
+- :test_tube: test(spike): fail-closed fact state classification (REQ-P2-E3-S01-02)
+- :test_tube: test(spike): token isolation vs malicious exec provider (REQ-P2-E3-S02-01)
+- :test_tube: test(spike): projection minimization + capability refusal (REQ-P2-E3-S02-02)
+- :rotating_light: style(spike): satisfy revive/errcheck/gosec in spike package
+- :test_tube: test(e2e): Spike B boot scripts + product-surface smoke (P2-E2)
+- :bookmark: docs(p2-e5): accept ADR-0002..0017 (Phase-2 gate)
+- :card_index_dividers: specs: mark Phase 1–2 epics Done — both gates CLOSED
+- :card_index_dividers: specs(p3-e4): author policy-lifecycle stories (phase/profiles/comparison)
+- :test: test(schemas): fail Config/RulesetBinding/MergePolicy schema cases
+- :truck: refactor(schemas): promote provider envelope to schemas/provider/v1alpha1
+- :test: test(schemas): fail ApprovalEvidence schema cases
+- :test: test(schemas): fail testfixture expect.yaml/cases.yaml schema cases
+- :test: test(schemas): add P3-E2-S01 strict-decode compat fixture suite
+- :test: test(schemas): add P3-E1-S07 exit-gate + named-consumer-compat fixture tests
+- :test: test(schemas): demonstrate content-derived identity across rename (F2, F5)
+- :test_tube: test(schemas): P3-E2-S02 report tolerance and collection identity
+- :construction_worker: ci(hack): add migration-invariant guard before schema validation (P3-E3-S04)
+- :construction_worker: ci(schemas): add stock Draft 2020-12 validator over schemas + contract fixtures (P3-P1-3)
+- :rewind: revert(kind): defer durable lab; authorize via D-038
+- :construction: test(e2e): wire skeleton e2e harness under e2e build tag, skip without infra (P4-E1-S09)
+- :art: style(brand): add decision gate identity
+- :see_no_evil: chore: gitignore references/ (third-party self-service repos, never committed)
+- :art: style(hack): shell-script hygiene per SonarCloud shelldre rules
+- :art: style(go): clear SonarCloud maintainability smells (SONAR-GO-MISC)
+- :art: refactor(aggregate): group coverSubject params into coverCtx (SonarCloud go:S107)
+- :art: style(aggregate): relocate bindLeafActivation godoc off entryOr (S02-A review F1)
+- :lipstick: fix(provider): add Package builtin comment for revive
+- :lipstick: fix(provider): add Package builtin comment for revive
+- :test_tube: test(cmd): add E5 exit gate resolved-facts hermetic test
+- :test: test(forge): E4-S03 bot exclusion + gap cassettes (review fix)
+- :test: test(doctor): E4-S05 review fixes — forge wins over env
+- :test: feat(conformance): add SHA-guard rejection goldens (E4-S07)
+- :test: test(forge/conformance): P3-E5 reconciliation replay (E4-S09)
+- :test: test(cmd/assent): E4 autonomous exit gate (E4-S10)
+- :docs: docs(decisions): D-079 records task check green at ≥90% coverage
+- :test: test(conformance): E7-S08 exit gate checklist
+- :test: test(schemadrift): allow D-088 presentation-only schema drift
+- :test: test(forge): raise internal coverage after E8-S12
+- :test: render(E8-S09): add golden test and render fixture corpus
+- :test: test(cmd/assent): add render CLI tests (E8-S10)
+- :test: test(forge): P3-E5 replay asserts rendered summary bodies
+- :test: test(render): E8-S14 exit gate + safety split
+- :test(release): add CI audit gate for single CodeQL workflow
+- :package: feat(release): goreleaser v2 snapshot config and verify harness
+
+### Refactoring
+- :recycle: refactor(examples): migrate policies and archetypes to prove/onFailure
+- :recycle: refactor(change): project YAML into a format-neutral value tree (E1-S03 step 1)
+- :recycle: refactor(run): re-seat orchestrate onto frozen MergePolicy/RulesetBinding loader + live-diff EvaluationInput + CoverWithApproval; delete toy policy.go (P5-E2-S04 REQ-06)
+- :recycle: fix(catalogue): drop fabricated phase-off deprecation; report authored + ceiling-capped effective phase (P5-E3-S07 review)
+- :recycle: refactor(lint): reverse fact-model convention to Option B (value at .value) — D-051 supersedes D-049
+- :recycle: refactor(examples): conform pack corpus to strict loader + D-051 facts (P5-E3-C)
+- :recycle: refactor(forge/conformance): move S09 harness into *_test.go
+
+### Security
+- :lock: docs(adr): provider trust model, authority matrix, resource limits, positions (security review A-03/A-04/A-05, P2-11)
+- :lock: ci: SHA-pin actions and tool versions (roast P2-7)
+- :lock: feat(hack): add sanitization check gate (P1-E1-S01-02)
+- :lock: fix(deps): bump golang.org/x/text to v0.39.0 — GO-2026-5970 via hclsimple in CEL spike
+- :lock: ci(schemas): add --ignore-scripts to ajv-cli install — SonarCloud S6505 (block lifecycle-script exec on npm install)
+- :lock: docs(security): add SECURITY.md policy + CODEOWNERS review routing
+- :lock: ci(security): add CodeQL SAST, OpenSSF Scorecard, scheduled govulncheck
+- :lock: feat(core): fact tri-state fail-safe + controlling-fact fail-open rejection (P5-E2-S05)
+- :lock: fix(aggregate): count DISTINCT eligible non-author approver IDs — close duplicate-approver approval bypass (P5-E2-S07 F1/F4)
+- :lock: fix(aggregate): fail-safe empty all/any combinators + depth/malformed/error tree tests (P5-E2-S03)
+- :lock: feat(lint): fact-model Option A (auto-unwrap, D-049) + AST-based facts-reference lint — closes the E2-S05 posture-scan evasion (raw-string/bracket/whitespace) sound-by-construction (P5-E3-S03)
+- :lock: feat(lint): structural hard errors — reserved-class, no-implicit-enforce-phase (surgical phase-only schema-invalid dedupe), unkeyed-list (P5-E3-S02)
+- :lock: feat(lint): predicate-scope + {{ }} message-template lint — undeclared-predicate-scope over when/cel leaves + message-template-scope, via new exported aggregate.CompileCheck reusing the frozen 11-field env (P5-E3-S04)
+- :lock: feat(lint): config-posture hard errors — fail-open (widened) + single-writer-profile (P5-E3-S05)
+- :lock: fix(schemadrift): structural D-088 allowlist vs origin/main
+- :lock: feat(render): EscapeMarkdown and Clamp helpers (E8-S05)
+- :lock: feat(render): sensitive fact redaction for markdown (E8-S06)
+- :lock: fix(render): redact sensitive facts on .value accessors (E8-S07)
+
+### Testing
+- :white_check_mark: test(core): trust-boundary goldens — assent-policy BLOCK + tokenless (P4-E1-S07-01/03)
+- :white_check_mark: test(aggregate): reproduce frozen D-016 DecisionRecord end-to-end (P5-E2-S10)
+- :white_check_mark: test(lint): E3-S08 exit gate — hard-error corpus + archetype Cover gate + catalogue generation (P5-E3-S08)
+- :white_check_mark: test(adoptertest): drive finding-diff deltas through RenderFailure (F1, P5-E6-S04)
+- :white_check_mark: test(cmd): hermetic CI env in TestUpdateLeavesPassingCasesUntouched (S05 review F1)
+- :white_check_mark: test(adoptertest): white-box table test for ruleMatchesAny (S07 review F1)
+- :white_check_mark: test(test): P5-E6-S08 exit gate — corpus green + broken-pack diff + dogfood CI
+- :white_check_mark: test(test): fail-closed guard tests for the D-060 combine + binding-collapse (P5-E6-S08 review F1)
+- :white_check_mark: test(cmd): unpin topic-registry green corpus + reconcile D-061
+- :white_check_mark: test(cmd): EFE-S05 exit gate — create/delete fixtures + coverage + determinism
+## [0.0.0] - 2026-08-04
+
+Pre-release development history before the first tagged alpha (`v0.1.0`, D-108). Milestone ADRs
+and phase specs live under `docs/decisions/` and `openspec/specs/`.
