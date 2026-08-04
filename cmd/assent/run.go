@@ -268,7 +268,7 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	//     --checkout is unset this whole step is skipped — exactly the pre-E1-S08
 	//     single-file path.
 	if cfg.checkout != "" {
-		fold, ferr := foldCheckout(dirCheckout{root: cfg.checkout})
+		fold, ferr := foldCheckout(dirCheckout{root: cfg.checkout}, governed)
 		if ferr != nil {
 			return fmt.Errorf("enumerate changed-file set: %w", ferr)
 		}

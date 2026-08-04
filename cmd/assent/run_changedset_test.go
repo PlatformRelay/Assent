@@ -117,6 +117,38 @@ func TestRunChangedFileSetNonPolicyApprovesLikeSingleFile(t *testing.T) {
 	}
 }
 
+// TestSiblingWholeFileDeleteFailsSafe (EFE-S03 P1 / E1-S08-03 regression) — a
+// sibling whole-file DELETE must keep the fold opaque so a clean governed
+// value-diff cannot APPROVE while another file vanishes wholesale. Only the
+// governed subject's one-sided lifecycle may skip fold-opacity (so fileEvents
+// can select it); every other path stays fail-safe opaque.
+func TestSiblingWholeFileDeleteFailsSafe(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 24\n" // governed alone => APPROVE
+
+	checkout := writeCheckout(t, map[string][2]string{
+		"topics/orders.yaml": {"partitions: 12\n", "partitions: 24\n"},
+		// Sibling whole-file delete: present on base, absent on head.
+		"topics/payments.yaml": {"enabled: true\n", ""},
+	})
+
+	var out bytes.Buffer
+	code := runRun(runArgs("--arm", "--checkout", checkout), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+	}
+	if f.approvals != 0 || f.merges != 0 {
+		t.Errorf("sibling whole-file delete must NOT approve on the clean governed grow: approvals=%d merges=%d", f.approvals, f.merges)
+	}
+	if strings.Contains(out.String(), `"decision":"APPROVE"`) {
+		t.Fatalf("sibling whole-file delete must not let governed value-diff APPROVE:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), `"decision":"REVIEW"`) {
+		t.Fatalf("sibling whole-file delete must fail safe to REVIEW:\n%s", out.String())
+	}
+}
+
 // REQ-E1-S08-03: an opaque changed file among several must fail the WHOLE run
 // safe — it is never silently dropped so the clean files approve on their own.
 func TestRunOpaqueFileAmongManyFailsSafe(t *testing.T) {
@@ -300,7 +332,7 @@ func TestLiveCheckoutAmbiguousStaysOpaque(t *testing.T) {
 		// A checkout that cannot report nil-absent presence (both sides non-nil
 		// empty bytes, no distinct presence signal) must NOT clear opacity via a
 		// fabricated file-event — fold stays opaque → fail-safe.
-		fold, err := foldCheckout(unknowablePresenceCheckout{})
+		fold, err := foldCheckout(unknowablePresenceCheckout{}, "topics/orders.yaml")
 		if err != nil {
 			t.Fatalf("foldCheckout: %v", err)
 		}

@@ -158,6 +158,12 @@ type checkoutFold struct {
 //     file among many is never silently dropped — it forces the whole run
 //     fail-safe (REQ-E1-S08-03).
 //
+// governed is the repo-relative governed-subject path (the --subject file:…).
+// Only THAT path's unambiguous one-sided lifecycle skips fold-opacity (EFE-S03:
+// the Diff→ChangeSet path mints its FileEvent and Cover must not short-circuit).
+// A sibling whole-file add/delete stays opaque — otherwise a clean governed
+// value-diff could APPROVE while another file vanishes wholesale (E1-S08-03).
+//
 // The per-file change LISTS are intentionally NOT concatenated into the
 // aggregator's predicate input: bindActivation binds scalar old/new only for a
 // single change, so a multi-file union would leave predicates unbound and, worse,
@@ -166,7 +172,7 @@ type checkoutFold struct {
 // input; this fold only strengthens the class and the opaque flag, both of which
 // the aggregator honours BEFORE any predicate runs (reserved-class + opaque
 // short-circuits) — so every security case is decided without rule evaluation.
-func foldCheckout(co localCheckout) (checkoutFold, error) {
+func foldCheckout(co localCheckout, governed string) (checkoutFold, error) {
 	files, err := co.ChangedFiles()
 	if err != nil {
 		return checkoutFold{}, fmt.Errorf("list changed files: %w", err)
@@ -181,12 +187,13 @@ func foldCheckout(co localCheckout) (checkoutFold, error) {
 		if err != nil {
 			return checkoutFold{}, fmt.Errorf("read %q from checkout: %w", path, err)
 		}
-		// One-sided presence is a CLEAN whole-file lifecycle (EFE-S03), not an
-		// opaque diff. Marking it opaque would short-circuit Cover before a
-		// fileEvents rule can select the governed FileEvent the Diff→ChangeSet
-		// path mints. Presence is nil-vs-non-nil (never empty bytes).
-		if _, ok := change.OneSidedLifecycle(base, head); ok {
-			continue
+		// Governed-subject one-sided presence is a CLEAN whole-file lifecycle
+		// (EFE-S03), not fold-opaque — Cover must see the minted FileEvent.
+		// Sibling one-sided presence stays opaque (fail-safe; E1-S08-03).
+		if path == governed {
+			if _, ok := change.OneSidedLifecycle(base, head); ok {
+				continue
+			}
 		}
 		// Diff each changed file to detect an opaque (undecidable) diff. Diff only
 		// ever errors via its opaque path, so an ErrOpaque is fail-safe, not a hard
