@@ -205,7 +205,7 @@ unaccepted widening → fail; explanation-only → pass); comparison runs are si
 Seeds: runner; expect matcher; update flow; coverage lint; examples CI job; comparison
 runner + promotion-gate evaluation.
 
-### E7 — E2E & conformance infra — **SPEC READY** (claim after E4 autonomous close)
+### E7 — E2E & conformance infra — **AUTONOMOUS SLICE CLOSED** (S01–S05 + S08, D-087)
 Full INVEST stories in [p5-e7-e2e-conformance/spec.md](p5-e7-e2e-conformance/spec.md).
 E4 already delivered L2 hermetic conformance (`internal/forge/conformance`, D-079); E7
 **productionizes** Spike-B profiles, adds the sample-repo generator for all three
@@ -213,9 +213,10 @@ E4 already delivered L2 hermetic conformance (`internal/forge/conformance`, D-07
 E4 cases plus remaining ADR-0015/0017 adversarial cases provable hermetically, wires the
 **determinism gate** + **sanitization check** into verify (gitleaks + `go vet -tags e2e`
 already present), and scaffolds L3 live re-run + optional kind lab (**infra-gated**). **Exit
-gate**: autonomous slice (S01–S05 + S08) green in CI; catalog complete; live L3 optional
-(S07, absorbs E4-S11). Seeds: profile task wiring; repo generator; catalog; determinism job;
-security jobs; kind lab; L3 harness.
+gate CLOSED (D-087):** S01–S05 + S08 green — verify wires determinism + sanitization +
+e2e-vet; catalog complete; L1 suite green. **S06/S07 optional** (kind lab + live L3, absorbs
+E4-S11). Seeds: profile task wiring; repo generator; catalog; determinism job; security jobs;
+kind lab; L3 harness.
 
 ### E8 — Renderer & presentation — Planned
 ADR-0016 tier 0 only (D-012): renderer-owned envelope (markers, escaping, redaction,

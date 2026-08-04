@@ -371,7 +371,8 @@ kind lab; S07 after S02+S03 when infra available. **Judgment calls D-080–D086*
 `docs/decisions/decisions.md`. **Do first: S01** (smallest wiring slice, unblocks generator +
 docs).
 
-> **E7 status: SPEC READY** — claim implementation lane after operator reviews spec @ `lane-e7-spec`.
+> **E7 status: AUTONOMOUS COMPLETE (S01–S05 + S08)** — S06 (kind lab) and S07 (live L3) remain
+> infra-gated optional per D-081/D-083; E8/E9 may proceed on L3 catalog homes without live proof.
 
 ## Phases 3–5
 
@@ -382,7 +383,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E9 active — **E7 has full INVEST stories**: [p5-e7-e2e-conformance/spec.md](p5-e7-e2e-conformance/spec.md) (**next to claim**); E11/E12 **unlocked** (D-017, post-Phase-4); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E7 autonomous slice gates E8/E9 L3 homes |
+| 5 — Implementation | E1–E9 active — **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); S06/S07 infra-gated optional; **E8 next to claim**; E11/E12 **unlocked** (D-017, post-Phase-4); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E7 autonomous slice gates E8/E9 L3 homes |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).
