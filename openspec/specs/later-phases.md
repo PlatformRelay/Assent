@@ -247,12 +247,14 @@ install script, product nav trim.
 
 ### PCS — PolicyComparisonSuite full runner — **SPEC READY** (claim after E9 autonomous close)
 Full INVEST stories in [p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md).
-Completes D-057 deferred scope beyond the E6-S09 seed: profile→pack activation, remaining
+Completes D-057 deferred scope beyond the E6-S09 seed: catalogue extraction +
+profile→pack activation (pure `internal/catalogue`, I/O in CLI), remaining
 four delta classifiers, all five promotion gates, per-delta `acceptedDeltas` allowlist,
 `ComparisonRecord` emission, multi-case immutable corpus, and `assent compare --suite` with
 ADR-0018 exit codes. **Extends** `internal/compare/**` + `cmd/assent/compare.go`; **`git diff
 schemas/` == 0** (frozen comparison + replay-bundle contracts). Side-effect-free — never
-Reconcile. **9 stories (9 autonomous)**. **Do first: PCS-S01** (profile→pack activation).
+Reconcile. **9 stories (9 autonomous)**. **Do first: PCS-S01** (catalogue extraction +
+pure profile→pack activation).
 Seeds: `examples/comparison/**`, `hack/compare/exitgate_test.sh`.
 
 ### E10 — GitHub adapter + Actions entrypoint — **Locked (D-012)**

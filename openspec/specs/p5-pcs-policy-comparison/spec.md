@@ -25,17 +25,23 @@ forge/provider paths.
   `TestGateIsFrozenSuiteConformant`) already prove seed constants ⊆ frozen enums.
 - **Reuse boundary (D-057):** `CoverWithProfile` resolves **write authority** from the
   precedence table; it does **not** switch evaluated policy by profile. PCS-S01 wires
-  `Profile.spec.packs` → combined `MergePolicy` (same `combinePolicies`/`loadCatalogueInput`
-  pattern as `cmd/assent/test.go`) so the decision delta flows from the profile's pack
-  activation, not hand-authored side-by-side YAML files.
+  `Profile.spec.packs` → combined `MergePolicy` via a **pure** catalogue helper over an
+  already-loaded `catalogue.Input` — filesystem walk stays in `cmd/assent/compare.go` (same
+  I/O boundary as E6-S09 seed), so the decision delta flows from the profile's pack activation,
+  not hand-authored side-by-side YAML files.
+- **Purity boundary (E6-S09 precedent):** `internal/compare` performs **no filesystem I/O** —
+  it accepts pre-built `EvaluationInput`, pre-resolved `compare.Profile` (with `Policy` set),
+  and strict-decoded suite/bundle **bytes**. Repo walks and profile YAML loading live in the
+  CLI shell (and shared catalogue loader extracted per judgment **(a)**).
 - **Side-effect-free invariant (ADR-0018 §3):** comparison never calls `Reconcile` or any
   forge write; both profiles are evaluated as recorders for delta classification.
 - **Exit-code contract (ADR-0018):** full suite mode maps 1:1 to gate IDs (0 all-pass,
   1–5 first failing gate). Seed single-dir mode (E6-S09) currently uses 0/1/2 — PCS-S07
   migrates to the ADR table and reserves a distinct code for fail-closed errors (judgment
-  **D-112**).
+  **D-115**).
 
-**Scope**: (S01) profile→pack activation resolver; (S02) classifiers
+**Scope**: (S01) catalogue extraction + pure profile→pack activation (`internal/catalogue`, CLI
+wiring); (S02) classifiers
 `destructive-or-authorization-intervention-missed` + `stricter-intervention-added`; (S03)
 classifiers `subject-or-obligation-uncovered` + `score-threshold-change`; (S04)
 `ComparisonRecord` per-delta emission; (S05) five-gate evaluator +
@@ -54,24 +60,30 @@ boundary as E6-S09 seed).
 CLI contract), ADR-0014 amendment (explanation-only never trips gates),
 `docs/planning/policy-lifecycle-promotion-gates.md`. **Reuse**: E6-S09 seed,
 `aggregate.CoverWithProfile`, `policy.LoadProfile`/`LoadMergePolicy`/`LoadConfig`,
-`cmd/assent/{test,catalogue}.go` (`loadCatalogueInput`, `combinePolicies`, `selectBinding`),
+`internal/catalogue` (generator today; **extend** with pack-load + combine + profile
+activation — see judgment **(a)**), `cmd/assent/compare.go` (I/O shell, same pattern as seed),
 frozen comparison + replay-bundle schemas, `schemas.ComparisonRecordSchema` /
 `ComparisonSuiteSchema`. **New**: `internal/compare/{classify,gates,record,suite}.go` (or
-equivalent split), `examples/comparison/**` corpus, suite-mode CLI flags, gate-scoped exit
-mapping.
+equivalent split), `internal/catalogue/{load,activation}.go` (extracted from `cmd/assent`),
+`examples/comparison/**` corpus, suite-mode CLI flags, gate-scoped exit mapping.
 
-**Executability**: **every story `[autonomous]`** — pure `internal/compare` over frozen
-fixtures, no live forge/provider/token. TDD; determinism double-run on comparisons;
-`TestCorePurity` untouched for `internal/core`. **Engine-grade / fail-safety review:** S02,
-S03 (classifier correctness), S05 (gate + allowlist footguns), S07 (exit-code honesty), S09
-(exit gate).
+**Executability**: **every story `[autonomous]`** — pure `internal/compare` + pure catalogue
+activation over in-memory fixtures; **filesystem I/O only in `cmd/assent/compare.go`** (and
+refactored catalogue loader consumed by `test`/`catalogue` subcommands). No live
+forge/provider/token. TDD; determinism double-run on comparisons; `TestCorePurity` untouched
+for `internal/core`. **Engine-grade / fail-safety review:** S01 (extraction + purity fence),
+S02, S03 (classifier correctness), S05 (gate + allowlist footguns), S07 (exit-code honesty),
+S09 (exit gate).
 
 **Judgment calls (decide-and-log / operator):**
-(a) **RECOMMENDED — profile→pack activation reuses the `assent test` pack combiner.** Resolve
-each `Policy.spec.packs[]` entry against the repo's loaded pack docs via
-`loadCatalogueInput` + `combinePolicies`; baseline/candidate profiles name pack sets, not raw
-MergePolicy files. Single-dir seed layout (`baseline.yaml`/`candidate.yaml`) remains for
-one-case dev fixtures only. Log at implementation as **D-112** (or next free D-nnn).
+(a) **RECOMMENDED — Option A: extract shared catalogue helpers to `internal/catalogue`.**
+Move `loadCatalogueInput` (from `cmd/assent/catalogue.go`) and `combinePolicies` (from
+`cmd/assent/test.go`) into importable `internal/catalogue` APIs (`LoadFromDir`,
+`CombinePolicies`). Add pure `MergePolicyForProfile(profile *policy.Profile, in Input)
+(*policy.MergePolicy, error)` that unions `Profile.spec.packs[]` over an already-loaded
+catalogue — **no filesystem inside the helper**. `cmd/assent/{test,catalogue,compare}.go`
+import the package; `internal/compare` does **not**. Single-dir seed layout
+(`baseline.yaml`/`candidate.yaml`) remains for one-case dev fixtures only. Log **D-112**.
 (b) **RECOMMENDED — corpus root `examples/comparison/<suite>/`.** Each suite directory holds
 `suite.yaml` (PolicyComparisonSuite), `cases/<caseId>/bundle.json` (+ optional
 `replayBundleRef` paths), and committed `records/` golden ComparisonRecords for regression.
@@ -94,49 +106,63 @@ assigned by priority: missed intervention > uncovered > newly-auto-mergeable >
 score-threshold > stricter-added > explanation-only (documented in classifier — no free-text
 "other"). Unclassified real differences remain `ErrUnclassifiable` (fail-closed). Log **D-117**.
 
-**Dependency order**: **S01 → {S02, S03} → S04 → S05 → S06 → S07 → S08 → S09**. S02/S03 may
-parallelize after S01 but both must land before S04. **Closes D-057 deferred scope: S02–S08.
-Do first: PCS-S01** — without profile→pack activation, later classifiers cannot prove
-profile promotion semantics the ADR describes.
+**Dependency order**: **S01 → {S02 ∥ S03} → S04 → S05 → S06 → S07 → S08 → S09**. S02 and S03
+are independent after S01 (may land in parallel); **both** must land before S04. **Closes D-057
+deferred scope: S01–S09.** Do first: **PCS-S01** — without profile→pack activation (and the
+catalogue extraction it requires), later slices cannot prove profile promotion semantics the
+ADR describes.
 
-**Coordination note:** PCS touches `internal/compare/**` and `cmd/assent/compare.go` only —
-file-disjoint from E11/E12 if those epics start in parallel. Do not modify E6-S09 seed
-behaviour until PCS-S07 explicitly migrates exit codes.
+**Coordination note:** PCS touches `internal/compare/**`, `internal/catalogue/**` (S01
+extraction), and `cmd/assent/compare.go` — file-disjoint from E11/E12 if those epics start in
+parallel. Do not modify E6-S09 seed behaviour until PCS-S07 explicitly migrates exit codes.
 
 ---
 
-## PCS-S01 — Profile→pack activation resolver [autonomous]
+## PCS-S01 — Catalogue extraction + pure profile→pack activation [autonomous]
 
 **As a** policy maintainer **I want** baseline/candidate profiles to activate their declared
 pack sets **so that** comparison deltas reflect profile promotion, not hand-picked MergePolicy
 files.
 
-**Goal**: Add `compare.ResolveActivation(repoDir, profileName, bind, precedence, profiles)`
-(or equivalent) that loads each named pack via the existing catalogue path, combines multi-doc
-pack policies with `combinePolicies`, applies profile phase ceiling, and returns a
-`compare.Profile` ready for `CoverWithProfile`. Fail closed on unknown pack names, dangling
-precedence refs, or single-writer violations (reuse `policy.CoveringProfiles` /
-`aggregate.ResolveProfile` errors). Unit-test with a minimal two-pack fixture mirroring
-`examples/packs/**` layout.
+**Goal**: (1) **Extract** `loadCatalogueInput` and `combinePolicies` from `package main` into
+importable `internal/catalogue` (`LoadFromDir`, `CombinePolicies`) and rewire
+`cmd/assent/{test,catalogue}.go` to call them — closing the unimportable-helper gap. (2) Add
+pure `catalogue.MergePolicyForProfile(profile *policy.Profile, in catalogue.Input)
+(*policy.MergePolicy, error)` that unions `Profile.spec.packs[]` over an already-loaded
+catalogue (fail closed on unknown pack names). (3) Wire `cmd/assent/compare.go` to: walk/load
+via `catalogue.LoadFromDir` (the **only** FS), resolve baseline/candidate `Profile` docs,
+call `MergePolicyForProfile`, assemble `compare.Profile`, then hand off to
+`compare.Compare` — **`internal/compare` never imports `os`/`filepath` for repo access.**
+Single-writer / precedence errors surface from existing loaders/resolvers unchanged.
 
 **Dependencies**: E6-S09 seed (existing `Profile` struct + `Compare` entry).
 
-**Definition of done**: resolver tests pass; seed `Compare` path unchanged; no `internal/core`
-diff.
+**Definition of done**: catalogue extraction tests pass; `assent test`/`assent catalogue`
+behaviour unchanged; seed single-dir `Compare` path unchanged; no `internal/core` diff;
+`internal/compare` purity guard green.
 
 Requirements:
-- **REQ-PCS-S01-01** — Given a Profile document whose `spec.packs` lists two existing example
-  packs, when `ResolveActivation` runs against that repo, then the returned `Profile.Policy`
-  unions rules from both packs (same semantics as `combinePolicies`). Test:
-  `internal/compare/activation_test.go`; Verify:
-  `go test ./internal/compare/... -run TestResolveActivationCombinesPacks`; Level: L0
-- **REQ-PCS-S01-02** — Given a Profile referencing a non-existent pack name, when resolved,
-  then error is fail-closed (no partial policy). Test: same; Verify:
-  `go test ./internal/compare/... -run TestResolveActivationUnknownPack`; Level: L0
-- **REQ-PCS-S01-03** — Given the same ReplayBundle and two profiles differing only in pack
-  set, when `Compare` runs with resolved activations, then baseline/candidate decisions differ
-  observably (proves activation drives delta). Test: same; Verify:
-  `go test ./internal/compare/... -run TestCompareUsesResolvedProfilePacks`; Level: L0
+- **REQ-PCS-S01-01** — `loadCatalogueInput` and `combinePolicies` are exported from
+  `internal/catalogue`; `cmd/assent/test.go` and `cmd/assent/catalogue.go` import them (no
+  duplicate logic in `package main`). Test: `internal/catalogue/load_test.go`; Verify:
+  `go test ./internal/catalogue/... -run TestLoadFromDir`; Level: L0
+- **REQ-PCS-S01-02** — Given a Profile whose `spec.packs` lists two packs present in an
+  in-memory `catalogue.Input`, when `MergePolicyForProfile` runs, then the returned
+  `MergePolicy` unions rules from both packs (same semantics as `CombinePolicies`). Test:
+  `internal/catalogue/activation_test.go`; Verify:
+  `go test ./internal/catalogue/... -run TestMergePolicyForProfileCombinesPacks`; Level: L0
+- **REQ-PCS-S01-03** — Given a Profile referencing a non-existent pack name in the catalogue,
+  when `MergePolicyForProfile` runs, then error is fail-closed (no partial policy). Test:
+  same; Verify: `go test ./internal/catalogue/... -run TestMergePolicyForProfileUnknownPack`;
+  Level: L0
+- **REQ-PCS-S01-04** — `internal/compare` contains no filesystem catalogue loading (guard:
+  package does not import `os` for repo walks; activation I/O lives only in
+  `cmd/assent/compare.go`). Test: `internal/compare/purity_test.go`; Verify:
+  `go test ./internal/compare/... -run TestComparePackageNoFilesystem`; Level: L0
+- **REQ-PCS-S01-05** — Given the same ReplayBundle and two profiles differing only in
+  `spec.packs`, when the compare CLI resolves activations and calls `compare.Compare`, then
+  baseline/candidate decisions differ observably. Test: `cmd/assent/compare_activation_test.go`;
+  Verify: `go test ./cmd/assent/... -run TestCompareUsesResolvedProfilePacks`; Level: L1
 
 ---
 
@@ -188,7 +214,7 @@ absent). Classify `score-threshold-change` when decision changes solely due to p
 arithmetic with identical intervention identities (or documented score-only delta). Tests use
 multi-rule packs with explicit `points`/`risk.threshold`.
 
-**Dependencies**: PCS-S01, PCS-S02 (shared classifier module).
+**Dependencies**: PCS-S01 (classifier module is independent of S02 — parallel lane).
 
 **Definition of done**: both kinds covered by goldens; no schema changes.
 
@@ -277,11 +303,7 @@ Requirements:
 **As a** maintainer **I want** to run an entire suite corpus in one invocation **so that**
 promotion is gated by all pinned cases.
 
-**Goal**: Load strict-decoded `PolicyComparisonSuite` YAML/JSON; for each case resolve
-`replayBundleRef` (or embedded path), verify `replayBundleDigest`, load bundle, resolve
-baseline/candidate profiles from suite defaults + CLI overrides (PCS-S01), run `Compare` per
-case, collect ComparisonRecords + gate results. Fail closed on digest mismatch, unknown caseId
-in allowlist, or missing bundle file.
+**Goal**: Add pure `compare.LoadSuite(raw []byte)` + `compare.RunSuite(suite, cases map[caseId]bundleBytes, baseline, candidate compare.Profile)` — strict-decode suite JSON, verify each case's `replayBundleDigest` against supplied bundle bytes (no FS inside `internal/compare`), run `Compare` per case, collect ComparisonRecords + gate results. The CLI shell reads suite file + case bundle files from disk and passes bytes + PCS-S01-resolved profiles in. Fail closed on digest mismatch, unknown caseId in allowlist, or missing case entry in the supplied map.
 
 **Dependencies**: PCS-S01, PCS-S05.
 
@@ -393,12 +415,13 @@ Requirements:
 | **Records** | Schema-valid `ComparisonRecord` per case |
 | **Corpus** | Multi-case suite committed + CI dogfood |
 | **CLI** | `assent compare --suite` side-effect-free; ADR-0018 exit codes |
+| **Purity** | `internal/compare` has no repo FS; catalogue I/O in CLI + `internal/catalogue` |
 | **Schema freeze** | `git diff schemas/` == 0 |
 | **Seed** | E6-S09 regression preserved (behaviour extended, not deleted) |
 | **Deferred elsewhere** | E10/E11/E12/E13 unchanged |
 
 **Story count:** 9 — **9 autonomous** (no infra-gated stories).
 
-**Do first:** **PCS-S01** — profile→pack activation is the prerequisite for meaningful
-profile promotion comparison; classifiers and gates without it only replay the seed's
-explicit MergePolicy files.
+**Do first:** **PCS-S01** — catalogue extraction + pure profile→pack activation is the
+prerequisite for meaningful profile promotion comparison; classifiers and gates without it
+only replay the seed's explicit MergePolicy files.

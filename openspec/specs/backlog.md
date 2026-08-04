@@ -449,9 +449,9 @@ REQ prefix `REQ-PCS-S0n-nn`. **Every story `[autonomous]`.**
 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
-| PCS-S01 | Profile→pack activation resolver | **[autonomous]** | E6-S09 seed | profile-driven policy activation; **do first** |
+| PCS-S01 | Catalogue extraction + pure profile→pack activation | **[autonomous]** | E6-S09 seed | `internal/catalogue` + CLI wiring; **do first** |
 | PCS-S02 | Classifiers: missed intervention + stricter intervention | **[autonomous · engine-grade]** | S01 | zero-missed gate taxonomy |
-| PCS-S03 | Classifiers: obligation uncovered + score threshold | **[autonomous · engine-grade]** | S01, S02 | obligation + explicitly-accepted gates |
+| PCS-S03 | Classifiers: obligation uncovered + score threshold | **[autonomous · engine-grade]** | S01 (∥ S02) | obligation + explicitly-accepted gates |
 | PCS-S04 | ComparisonRecord emission | **[autonomous]** | S02, S03 | auditable per-case deltas |
 | PCS-S05 | Five-gate evaluator + acceptedDeltas allowlist | **[autonomous · engine-grade]** | S04 | promotion gate table |
 | PCS-S06 | PolicyComparisonSuite loader + multi-case runner | **[autonomous]** | S01, S05 | immutable corpus replay |
@@ -459,8 +459,8 @@ REQ prefix `REQ-PCS-S0n-nn`. **Every story `[autonomous]`.**
 | PCS-S08 | Adversarial corpus + CI dogfood | **[autonomous]** | S07 | regression corpus |
 | PCS-S09 | Exit gate: full runner + D-057 closed | **[autonomous · engine-grade]** | S01..S08 | **the PCS exit gate** |
 
-**Dependency order**: S01 → {S02, S03} → S04 → S05 → S06 → S07 → S08 → S09. **Closes D-057:
-S02–S09. Do first: S01.**
+**Dependency order**: S01 → {S02 ∥ S03} → S04 → S05 → S06 → S07 → S08 → S09. **Closes D-057:
+S01–S09. Do first: S01.**
 
 > **PCS status: SPEC READY** — spec on `lane-pcs-spec`; implementation unclaimed.
 
