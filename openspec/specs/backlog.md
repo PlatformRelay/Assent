@@ -262,6 +262,30 @@ E2 engine, so the example packs gate **themselves** in CI. **Closes the E3-S08 f
 
 **Dependency order**: S01 → S02 (Part A engine → Part B harness) → S03 → {S04, S05, S06}; S07 after S02+S03; S08 last; S09 ∥ (independent of S01–S08). **Do first: S01.**
 
+> **E6 status: DONE** (main tip `ec91226`, CI green) — all 9 stories S01–S09. Full `assent test` harness + `assent compare` seed.
+
+## Phase 5 — E-FILEEVENTS whole-file add/delete match domain (`match.fileEvents`) stories
+
+Full INVEST stories in [p5-e-fileevents/spec.md](p5-e-fileevents/spec.md). Implements the FROZEN-but-
+unimplemented `match.fileEvents` domain (`policy.FileEventsMatch`, the `fileEventsMatch` schema `$def`),
+removing the three hard-rejects (`internal/core/policy/loader.go:32`, `internal/core/aggregate/coverage.go:451`,
+`internal/adoptertest/coverage.go:301`). The frozen `evaluation-input.schema.json` ALREADY models a whole-file
+event (`path:""`, `kind:delete`, `entryRef file:<path>`) — **no schema change** (`git diff schemas/`==0). Closes
+**D-052** (topic-registry unpin) + **D-061** (service-catalog file-delete→BLOCK reconcile). **Every story
+`[autonomous]`.** 🔴 open operator question **D-063** (unmatched-whole-file-delete default = REVIEW, pending
+confirm-or-relax-to-APPROVE).
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| EFE-S01 | ⚠️ **DECISION-PATH**: loader accept (kinds ⊆ {add,delete}, reject modify/rename fail-closed) + engine `fileEvents` matcher + `path==""` disjointness + mirror + repoint known-blockers pin | **[autonomous · engine-grade review]** `🔴 DECIDED D-062 (b)` | E1, E2, E3, E6 | loader+matcher core; **do first** |
+| EFE-S02 | ⚠️ **fail-safety**: `change.FileEvent` constructor + harness minting from one-sided presence (ambiguity → opaque→REVIEW) + **unmatched-delete REVIEW-default** | **[autonomous · engine-grade review]** `🔴 OPERATOR D-063` | EFE-S01 | completes base/head→decision; resolves (a) |
+| EFE-S03 | `cmd/assent` live-checkout file-lifecycle population (presence signal, not empty bytes) | **[autonomous]** | EFE-S01, EFE-S02 | live-adapter completeness (closes neither gap) |
+| EFE-S04 | Unpin topic-registry (**closes D-052**) + service-catalog file-delete→BLOCK + reconcile divergence (**closes D-061**) | **[autonomous]** | EFE-S01, EFE-S02 | the two tracked-gap closures |
+| EFE-S05 | Exit gate: fileEvents create/delete fixtures + topic-registry green under `assent test --coverage` + determinism | **[autonomous]** | EFE-S01..S04 | **the E-FILEEVENTS exit gate** |
+
+**Dependency order**: S01 → S02 → {S03 ∥, S04} → S05. **Do first: S01** (engine lane, hand-built inputs, no
+semantic change — ahead of the S02 minting lane, D-053 precedent). **Closes D-052 + D-061: S04.**
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
