@@ -1,0 +1,3 @@
+# Subject change file — content unused by repo-file (anchor path only).
+name: orders
+partitions: 3

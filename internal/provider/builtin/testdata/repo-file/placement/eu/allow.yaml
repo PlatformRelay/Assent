@@ -1,0 +1,4 @@
+# Most-specific placement allow-list under placement/eu/.
+regions:
+  - eu-west-1
+  - eu-central-1

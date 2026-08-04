@@ -1,0 +1,2 @@
+# Repo-wide default quota (least specific).
+max_partitions: 12

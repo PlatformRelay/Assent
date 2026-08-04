@@ -1,0 +1,2 @@
+# Prod topics quota (most specific under topics/prod/).
+max_partitions: 6

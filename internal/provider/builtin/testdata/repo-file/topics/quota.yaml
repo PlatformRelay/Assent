@@ -1,0 +1,2 @@
+# Topics subtree quota (more specific than repo root).
+max_partitions: 24

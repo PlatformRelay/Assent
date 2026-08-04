@@ -1,0 +1,3 @@
+# Subject under topics/dev/ — no local quota.yaml; walk-up hits topics/quota.yaml.
+name: orders-dev
+partitions: 8
