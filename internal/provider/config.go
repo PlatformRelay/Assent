@@ -13,13 +13,24 @@ import (
 const CapabilityFullContent = "trusted-full-content"
 
 // Config is the host-owned provider declaration (D-065): projections,
-// capabilities, and typed outputs. Loaded beside frozen policy.Provider —
-// not via a silent config.schema.json widen.
+// capabilities, typed outputs, and exec digest-pin. Loaded beside frozen
+// policy.Provider — not via a silent config.schema.json widen.
 type Config struct {
 	Name         string                 `json:"name"`
 	Requests     ConfigRequests         `json:"requests"`
 	Capabilities []string               `json:"capabilities,omitempty"`
 	Outputs      map[string]Declaration `json:"outputs"`
+	// Exec carries the digest-pinned binary declaration for exec transports
+	// (ADR-0015 §7). Host-internal — not part of frozen config.schema.json.
+	Exec *ExecDeclaration `json:"exec,omitempty"`
+}
+
+// ExecDeclaration is the host-owned exec transport pin (D-065 Judgment call a).
+type ExecDeclaration struct {
+	Binary string   `json:"binary"`
+	Digest string   `json:"digest"` // sha256:<hex>; required before spawn
+	Env    []string `json:"env,omitempty"`
+	Args   []string `json:"args,omitempty"`
 }
 
 // ConfigRequests is the "requests" block: which value slices the provider may

@@ -273,19 +273,19 @@ func TestResolveMajorMismatch(t *testing.T) {
 
 // goldenView is the byte-stable projection of a ResolveFacts result for goldens.
 type goldenView struct {
-	AutoMergeEligible bool                     `json:"autoMergeEligible"`
-	Negotiation       string                   `json:"negotiation"`
-	Facts             map[string]goldenFact    `json:"facts"`
+	AutoMergeEligible bool                  `json:"autoMergeEligible"`
+	Negotiation       string                `json:"negotiation"`
+	Facts             map[string]goldenFact `json:"facts"`
 }
 
 type goldenFact struct {
-	Name       string          `json:"name"`
-	State      string          `json:"state"`
+	Name       string           `json:"name"`
+	State      string           `json:"state"`
 	Subject    provider.Subject `json:"subject"`
-	ObservedAt time.Time       `json:"observedAt"`
-	ExpiresAt  *time.Time      `json:"expiresAt,omitempty"`
-	Value      any             `json:"value,omitempty"`
-	Reason     string          `json:"reason,omitempty"`
+	ObservedAt time.Time        `json:"observedAt"`
+	ExpiresAt  *time.Time       `json:"expiresAt,omitempty"`
+	Value      any              `json:"value,omitempty"`
+	Reason     string           `json:"reason,omitempty"`
 }
 
 func toGoldenView(r provider.Result) goldenView {
