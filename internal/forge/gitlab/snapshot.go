@@ -46,6 +46,7 @@ func (c *Client) Snapshot(project, mr string) (forge.Snapshot, error) {
 			TargetBranch:      info.TargetBranch,
 			MergeResultDigest: SyntheticDigest(info.SourceSHA, info.TargetSHA),
 			Author:            author,
+			ForkMR:            info.ForkMR,
 		},
 		ChangedFiles: files,
 		Capabilities: caps,
@@ -63,12 +64,13 @@ func (c *Client) mrWithAuthor(project, mr string) (MRInfo, string, error) {
 		return MRInfo{}, "", fmt.Errorf("gitlab: get MR %s!%s: unexpected status %d", project, mr, status)
 	}
 	var mrResp struct {
-		IID          int    `json:"iid"`
-		ProjectID    int    `json:"project_id"`
-		SHA          string `json:"sha"`
-		SourceBranch string `json:"source_branch"`
-		TargetBranch string `json:"target_branch"`
-		Author       struct {
+		IID             int    `json:"iid"`
+		ProjectID       int    `json:"project_id"`
+		SourceProjectID int    `json:"source_project_id"`
+		SHA             string `json:"sha"`
+		SourceBranch    string `json:"source_branch"`
+		TargetBranch    string `json:"target_branch"`
+		Author          struct {
 			Username string `json:"username"`
 		} `json:"author"`
 	}
@@ -88,6 +90,7 @@ func (c *Client) mrWithAuthor(project, mr string) (MRInfo, string, error) {
 		TargetBranch: mrResp.TargetBranch,
 		SourceSHA:    mrResp.SHA,
 		TargetSHA:    targetSHA,
+		ForkMR:       mrResp.SourceProjectID != 0 && mrResp.SourceProjectID != mrResp.ProjectID,
 	}, mrResp.Author.Username, nil
 }
 

@@ -23,6 +23,9 @@ type MRHeads struct {
 	TargetBranch      string
 	MergeResultDigest string
 	Author            string
+	// ForkMR is true when the MR source project differs from the target project
+	// (GitLab fork workflow). ADR-0015 §8: fork/untrusted context is advisory-only.
+	ForkMR bool
 }
 
 // GitLabTier is the licensed tier detected from forge probe data (dossier §1).

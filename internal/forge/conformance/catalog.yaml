@@ -1,0 +1,110 @@
+# Forge-neutral conformance catalog (ADR-0005, D-085).
+# Indexes E4 hermetic cases + E7 adversarial additions. GitHub-only rows are
+# stubbed github-deferred until E10 unlocks live proof.
+#
+# Fields: id, adr, level, req, test, package, forge
+
+cases:
+  # --- E4-S07 SHA-guard (ADR-0015 §2) ---
+  - id: sha-guard-target-advanced
+    adr: ADR-0015 §2
+    level: L1
+    req: REQ-E4-S07-01
+    test: TestConformanceTargetAdvancedRejected
+    package: internal/forge/conformance
+    forge: gitlab
+
+  - id: sha-guard-source-moved
+    adr: ADR-0015 §2
+    level: L1
+    req: REQ-E4-S07-02
+    test: TestConformanceSourceMovedRejected
+    package: internal/forge/conformance
+    forge: gitlab
+
+  # --- E4-S09 P3-E5 reconciliation replay (ADR-0019) ---
+  - id: p3e5-rerun-idempotence
+    adr: ADR-0019
+    level: L1
+    req: REQ-E4-S09-01
+    test: TestConformanceRerunIdempotence
+    package: internal/forge/conformance
+    forge: gitlab
+
+  - id: p3e5-duplicate-repair
+    adr: ADR-0019
+    level: L1
+    req: REQ-E4-S09-02
+    test: TestConformanceDuplicateRepair
+    package: internal/forge/conformance
+    forge: gitlab
+
+  - id: p3e5-spoofed-marker-ignored
+    adr: ADR-0019
+    level: L1
+    req: REQ-E4-S09-03
+    test: TestConformanceSpoofedMarkerIgnored
+    package: internal/forge/conformance
+    forge: gitlab
+
+  # --- E4-S08 assent-policy self-vouch (ADR-0015 §1) ---
+  - id: assent-policy-self-edit-block
+    adr: ADR-0015 §1
+    level: L1
+    req: REQ-E4-S08-01
+    test: TestRunAssentPolicySelfModificationBlocks
+    package: cmd/assent
+    forge: gitlab
+
+  - id: policy-from-target-ref-only
+    adr: ADR-0015 §1
+    level: L1
+    req: REQ-E4-S08-02
+    test: TestRunPolicyFromTargetRefOnly
+    package: cmd/assent
+    forge: gitlab
+
+  # --- E4-S05 doctor forge probe (ADR-0015 §4) — catalog-index only ---
+  - id: doctor-insecure-ci-topology
+    adr: ADR-0015 §4
+    level: L1
+    req: REQ-E4-S05-05
+    test: TestDoctorForgeInsecureCITopology
+    package: cmd/assent
+    forge: gitlab
+
+  # --- E7-S03 new hermetic adversarial cases ---
+  - id: fork-context-advisory-only
+    adr: ADR-0015 §8
+    level: L1
+    req: REQ-E7-S03-03
+    test: TestRunForkContextAdvisoryOnly
+    package: cmd/assent
+    forge: gitlab
+
+  - id: expired-fact-blocks-arming
+    adr: ADR-0017 §4
+    level: L1
+    req: REQ-E7-S03-04
+    test: TestRunExpiredFactBlocksArming
+    package: cmd/assent
+    forge: gitlab
+
+  # --- GitHub-deferred (E10) — catalog stubs only ---
+  - id: github-pull-request-fork-advisory
+    adr: ADR-0015 §8
+    level: L3
+    req: REQ-E7-S03-05
+    test: TestLiveGitHubForkAdvisoryOnly
+    package: test/e2e
+    forge: github-deferred
+    note: pull_request from fork → read-only token, advisory-only (forge-dossier-github C17)
+
+  - id: github-merge-queue-sha-guard
+    adr: ADR-0017 §1
+    level: L3
+    req: REQ-E7-S07-01
+    test: TestLiveGitHubMergeQueueSHAGuard
+    package: test/e2e
+    forge: github-deferred
+    note: merge-queue merge-result digest pinning — live proof deferred to E10

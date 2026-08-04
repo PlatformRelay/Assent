@@ -56,6 +56,9 @@ type fakeGitLab struct {
 	sourceMergePolicy    string
 	sourceRulesetBinding string
 
+	// forkMR models a fork workflow (source_project_id != target project_id).
+	forkMR bool
+
 	// policyLoads records FileAtRef calls for `.assent/**` policy documents.
 	policyLoads []policyLoad
 }
@@ -115,8 +118,13 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.EscapedPath()
 	switch {
 	case p == "/api/v4/projects/42/merge_requests/7" && r.Method == http.MethodGet:
+		sourceProjectID := 42
+		if f.forkMR {
+			sourceProjectID = 99
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"iid": 7, "project_id": 42, "sha": f.sourceSHA,
+			"iid": 7, "project_id": 42, "source_project_id": sourceProjectID,
+			"sha": f.sourceSHA,
 			"source_branch": f.sourceBranch, "target_branch": f.target,
 			"author": map[string]any{"id": 101, "username": f.mrAuthor},
 		})

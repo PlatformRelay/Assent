@@ -83,6 +83,8 @@ type MRInfo struct {
 	TargetBranch string
 	SourceSHA    string // the MR's current source head (`sha`).
 	TargetSHA    string // the target branch tip (commit.id).
+	// ForkMR is true when source_project_id != project_id (fork workflow).
+	ForkMR bool
 }
 
 // do issues an authenticated request and returns the status code + body bytes.

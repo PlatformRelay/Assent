@@ -365,10 +365,20 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	// 8. Map the decision → forge intent, and reconcile — except GUARD 1
 	//    (E4-S08 / D-042 F1): a self-modifying `.assent/**` MR earns BLOCK but
 	//    ZERO forge writes (no thread, approve, or merge).
+	//    GUARD 2 (E7-S03 / ADR-0015 §8): fork/untrusted MR context is advisory-only.
 	var receipt forge.PublicationReceipt
 	var recErr error
-	if !reservedSelfEditBlock(result) {
-		desired, pre := buildDesired(cfg, info, cfg.subject, head, result, recordJSON, probe.ArmEligible)
+	switch {
+	case reservedSelfEditBlock(result):
+		// zero writes — summary only
+	case untrustedExecutionContext(snapshot):
+		// zero writes — fork MR must not hold write authority (ADR-0015 §8)
+	default:
+		armEligible := probe.ArmEligible
+		if result.Decision == aggregate.DecisionApprove && !controllingFactsFreshAt(mp, facts, clock().UTC()) {
+			armEligible = false
+		}
+		desired, pre := buildDesired(cfg, info, cfg.subject, head, result, recordJSON, armEligible)
 		receipt, recErr = forge.Reconcile(client, clockAdapter{now: clock}, desired, pre)
 	}
 
@@ -380,9 +390,12 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		return fmt.Errorf("emit decision record: %w", err)
 	}
 	var summary string
-	if reservedSelfEditBlock(result) {
+	switch {
+	case reservedSelfEditBlock(result):
 		summary = "decision=BLOCK → assent-policy self-edit, no forge writes (fail-closed)"
-	} else {
+	case untrustedExecutionContext(snapshot):
+		summary = fmt.Sprintf("decision=%s → fork/untrusted MR context, advisory-only (no forge writes, ADR-0015 §8)", result.Decision)
+	default:
 		summary = summarize(result.Decision, cfg.arm, receipt, recErr)
 	}
 	_, _ = fmt.Fprintln(stdout, summary)
