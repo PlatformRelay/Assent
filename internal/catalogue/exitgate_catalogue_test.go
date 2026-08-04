@@ -3,8 +3,8 @@ package catalogue_test
 // exitgate_catalogue_test.go is the catalogue half of the E3-S08 exit gate
 // (REQ-E3-S08-03): the generated rule catalogue is produced COMPLETELY and
 // DETERMINISTICALLY over the loaded, lane-C-conformant archetype packs
-// (examples/packs/{service-catalog,infra-vars} — topic-registry is pinned/excluded
-// per D-052, it does not load). It loads every `.assent/**` policy document through
+// (examples/packs/{service-catalog,infra-vars,topic-registry}; D-052 closed by EFE-S04 / D-066).
+// It loads every `.assent/**` policy document through
 // the E2 strict loader (the same authority `assent catalogue` uses), Builds the
 // catalogue, and asserts every authored rule surfaces with the D-017 B10 field set,
 // canonically sorted and byte-identical across runs.
@@ -24,9 +24,8 @@ import (
 const archetypePacksDir = "../../examples/packs"
 
 // conformantPacks are the lane-C-conformant packs the catalogue generates over —
-// the exact set that loads (service-catalog + infra-vars); topic-registry is
-// pinned as a known blocker (D-052) and is deliberately absent.
-var conformantPacks = []string{"service-catalog", "infra-vars"}
+// the green archetype set after EFE-S04 closed D-052 (topic-registry now loads).
+var conformantPacks = []string{"service-catalog", "infra-vars", "topic-registry"}
 
 // TestCatalogueGeneratesFromArchetypeCorpus is the REQ-E3-S08-03 gate.
 func TestCatalogueGeneratesFromArchetypeCorpus(t *testing.T) {
@@ -74,7 +73,7 @@ func TestCatalogueGeneratesFromArchetypeCorpus(t *testing.T) {
 	// The pack key is the packs/<name>/ directory token (catalog / vars), not the
 	// top-level starter-pack dir name — assert each underlying pack contributed
 	// EXACTLY its authored rule count (a dropped rule in either pack fails here).
-	for _, want := range []string{"catalog", "vars"} {
+	for _, want := range []string{"catalog", "vars", "topics"} {
 		if byPack[want] != authoredByPack[want] {
 			t.Errorf("pack %q: %d rules catalogued, %d authored", want, byPack[want], authoredByPack[want])
 		}
