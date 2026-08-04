@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +39,16 @@ type fakeGitLab struct {
 	merges            int
 	lastMergeSHA      string
 	lastThreadBody    string
+
+	// stateful discussions — POST appends; GET lists; PUT ?resolved=true marks resolved.
+	botAuthor   string
+	discussions []fakeDiscussion
+}
+
+type fakeDiscussion struct {
+	id       string
+	body     string
+	resolved bool
 }
 
 func newFakeGitLab(t *testing.T) *fakeGitLab {
@@ -49,6 +61,7 @@ func newFakeGitLab(t *testing.T) *fakeGitLab {
 		governedPath:   "topics/orders.yaml",
 		mergePolicy:    mergePolicyChallenge,
 		rulesetBinding: rulesetBindingNonDestructive,
+		botAuthor:      "assent-bot",
 	}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(f.srv.Close)
@@ -68,14 +81,18 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(p, "/api/v4/projects/42/repository/files/") && strings.HasSuffix(p, "/raw"):
 		f.serveFile(w, r, p)
 	case p == "/api/v4/projects/42/merge_requests/7/discussions" && r.Method == http.MethodGet:
-		_, _ = w.Write([]byte(`[]`)) // no pre-existing bot threads.
+		f.serveDiscussions(w, r)
 	case p == "/api/v4/projects/42/merge_requests/7/discussions" && r.Method == http.MethodPost:
 		f.discussionsPosted++
 		body, _ := io.ReadAll(r.Body)
 		form, _ := url.ParseQuery(string(body))
 		f.lastThreadBody = form.Get("body")
+		id := fmt.Sprintf("disc-%d", len(f.discussions)+1)
+		f.discussions = append(f.discussions, fakeDiscussion{id: id, body: f.lastThreadBody})
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"id":"disc-new"}`))
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
+	case strings.HasPrefix(p, "/api/v4/projects/42/merge_requests/7/discussions/") && r.Method == http.MethodPut:
+		f.resolveDiscussion(w, r, p)
 	case p == "/api/v4/projects/42/merge_requests/7/approve" && r.Method == http.MethodPost:
 		f.approvals++
 		w.WriteHeader(http.StatusCreated)
@@ -88,6 +105,56 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "unexpected "+r.Method+" "+p, http.StatusInternalServerError)
 	}
+}
+
+// serveDiscussions returns stored MR discussions in GitLab REST shape so
+// gitlab.Client.ListBotThreads can filter by bot author and parse markers.
+func (f *fakeGitLab) serveDiscussions(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page <= 0 {
+		page = 1
+	}
+	perPage := 100
+	start := (page - 1) * perPage
+	if start >= len(f.discussions) {
+		_, _ = w.Write([]byte(`[]`))
+		return
+	}
+	end := start + perPage
+	if end > len(f.discussions) {
+		end = len(f.discussions)
+	}
+	slice := f.discussions[start:end]
+	out := make([]map[string]any, len(slice))
+	for i, d := range slice {
+		out[i] = map[string]any{
+			"id": d.id,
+			"notes": []map[string]any{{
+				"body":     d.body,
+				"resolved": d.resolved,
+				"author":   map[string]any{"username": f.botAuthor},
+			}},
+		}
+	}
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+// resolveDiscussion handles PUT …/discussions/{id}?resolved=true (ResolveThread).
+func (f *fakeGitLab) resolveDiscussion(w http.ResponseWriter, r *http.Request, p string) {
+	if r.URL.Query().Get("resolved") != "true" {
+		http.Error(w, "missing resolved=true", http.StatusBadRequest)
+		return
+	}
+	id := strings.TrimPrefix(p, "/api/v4/projects/42/merge_requests/7/discussions/")
+	for i := range f.discussions {
+		if f.discussions[i].id == id {
+			f.discussions[i].resolved = true
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
+			return
+		}
+	}
+	http.Error(w, "discussion not found", http.StatusNotFound)
 }
 
 // serveFile routes the three loaded documents (MergePolicy, RulesetBinding, the
@@ -142,6 +209,9 @@ func (f *fakeGitLab) serveFromTarget(w http.ResponseWriter, ref, content string)
 // production adapter, driven end-to-end over HTTP without a live network.
 func (f *fakeGitLab) factory() func(string, string, string) forgePort {
 	return func(_, token, botAuthor string) forgePort {
+		if botAuthor != "" {
+			f.botAuthor = botAuthor
+		}
 		return gitlab.New(f.srv.URL, token, botAuthor)
 	}
 }
