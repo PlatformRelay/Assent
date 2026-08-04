@@ -1,0 +1,3 @@
+# max_replicas 12 -> 16 within prod band [1, 24] and >= min_replicas
+decision: APPROVE
+findings: []

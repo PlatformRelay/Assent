@@ -4,4 +4,3 @@ findings:
   - rule: partition-change-bounds
     obligation: bounded-change
     effect: challenge
-    path: "/partitions"

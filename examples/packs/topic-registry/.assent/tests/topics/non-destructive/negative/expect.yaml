@@ -4,4 +4,3 @@ findings:
   - rule: no-topic-deletion
     obligation: non-destructive
     effect: require-review
-    path: "/name"

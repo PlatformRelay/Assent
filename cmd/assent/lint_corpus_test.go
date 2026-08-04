@@ -153,13 +153,13 @@ func TestArchetypePacksEvaluateToExpectedDecision(t *testing.T) {
 		{
 			name: "bounded-change/in-band", starter: "infra-vars", rule: "memory-mb-bounds", obligation: "bounded-change",
 			facts:  map[string]map[string]aggregate.Fact{"band": {"memory_mb": rf(map[string]any{"min": int64(512), "max": int64(4096)})}},
-			change: aggregate.EvalChange{Subject: "workload:orders-api", File: ivFile, Path: "/memory_mb", Kind: "modify", New: int64(3072), Old: int64(2048)},
+			change: aggregate.EvalChange{Subject: "workload:orders-api", File: ivFile, Path: "/workloads/orders-api/memory_mb", Kind: "modify", New: int64(3072), Old: int64(2048)},
 			want:   aggregate.DecisionApprove,
 		},
 		{
 			name: "bounded-change/over-band", starter: "infra-vars", rule: "memory-mb-bounds", obligation: "bounded-change",
 			facts:  map[string]map[string]aggregate.Fact{"band": {"memory_mb": rf(map[string]any{"min": int64(512), "max": int64(4096)})}},
-			change: aggregate.EvalChange{Subject: "workload:orders-api", File: ivFile, Path: "/memory_mb", Kind: "modify", New: int64(65536), Old: int64(2048)},
+			change: aggregate.EvalChange{Subject: "workload:orders-api", File: ivFile, Path: "/workloads/orders-api/memory_mb", Kind: "modify", New: int64(65536), Old: int64(2048)},
 			want:   aggregate.DecisionReview,
 		},
 	}

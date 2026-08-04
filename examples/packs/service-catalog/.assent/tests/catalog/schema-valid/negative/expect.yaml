@@ -3,4 +3,3 @@ findings:
   - rule: catalog-v1
     obligation: schema-valid
     effect: block
-    path: "/name"

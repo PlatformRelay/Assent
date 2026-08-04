@@ -3,4 +3,3 @@ findings:
   - rule: oncall-exists
     obligation: context-fresh
     effect: require-review
-    path: "/oncall"

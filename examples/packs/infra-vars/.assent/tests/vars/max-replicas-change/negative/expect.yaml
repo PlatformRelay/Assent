@@ -1,6 +1,6 @@
-# memory_mb 2048 -> 65536 exceeds band max 4096
+# max_replicas 12 -> 30 exceeds band max 24
 decision: REVIEW
 findings:
-  - rule: memory-mb-bounds
+  - rule: max-replicas-bounds
     obligation: bounded-change
     effect: challenge

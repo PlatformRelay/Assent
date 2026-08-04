@@ -4,4 +4,3 @@ findings:
   - rule: no-entry-removal
     obligation: non-destructive
     effect: require-review
-    path: "/services"

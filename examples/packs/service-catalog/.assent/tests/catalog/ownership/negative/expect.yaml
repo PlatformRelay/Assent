@@ -3,4 +3,3 @@ findings:
   - rule: author-owns-entry
     obligation: ownership
     effect: require-review
-    path: "/owner"

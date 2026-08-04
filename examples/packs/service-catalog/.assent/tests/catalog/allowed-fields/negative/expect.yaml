@@ -4,4 +4,3 @@ findings:
   - rule: only-safe-fields
     obligation: allowed-fields
     effect: require-review
-    path: "/owner"

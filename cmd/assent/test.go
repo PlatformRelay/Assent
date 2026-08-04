@@ -71,15 +71,20 @@ func runTest(args []string, stdout, stderr io.Writer) int {
 	}
 	policies := map[string]*policy.MergePolicy{}
 	for _, p := range in.Packs {
-		if len(p.Policies) > 0 {
-			policies[p.Name] = p.Policies[0]
+		combined, cerr := combinePolicies(p.Policies)
+		if cerr != nil {
+			_, _ = fmt.Fprintf(stderr, "assent test: pack %q: %v\n", p.Name, cerr)
+			return 2
+		}
+		if combined != nil {
+			policies[p.Name] = combined
 		}
 	}
 	if len(in.Bindings) == 0 {
 		_, _ = fmt.Fprintln(stderr, "assent test: no RulesetBinding found under", dir)
 		return 2
 	}
-	bind, err := selectBinding(in.Bindings[0])
+	bind, err := selectBindingForTest(in.Bindings[0])
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, "assent test:", err)
 		return 2
@@ -345,6 +350,90 @@ func runCoverage(dir string, policies map[string]*policy.MergePolicy, bind *poli
 		return 1
 	}
 	return 0
+}
+
+// combinePolicies unions a pack's MergePolicy documents (the example packs author one
+// rule file per obligation under .assent/packs/<pack>/rules/**, so a pack is SEVERAL
+// MergePolicy docs) into the SINGLE MergePolicy the whole-pack replay evaluates via
+// aggregate.Cover: the union of every doc's spec.rules plus the merged spec.entries.
+// The E2 loader keeps each doc separate; the whole-pack decision needs them together,
+// or every obligation but the first doc's is uncovered (a spurious REVIEW).
+//
+// Fail-closed on a real defect: every rule doc of a governed pack authors the SAME
+// spec.entries config, so combining REQUIRES them to AGREE — two docs giving the same
+// entry label DIFFERENT configs is a pack defect that errors here, never a silent pick
+// of one (which could diff a file under the wrong collection root). A nil/empty input
+// yields a nil policy (the caller skips it), matching the pre-combine behaviour.
+func combinePolicies(ps []*policy.MergePolicy) (*policy.MergePolicy, error) {
+	var nonNil int
+	out := &policy.MergePolicy{}
+	entries := map[string]policy.Entry{}
+	for _, p := range ps {
+		if p == nil {
+			continue
+		}
+		nonNil++
+		for label, e := range p.Spec.Entries {
+			if prev, ok := entries[label]; ok && prev != e {
+				return nil, fmt.Errorf("conflicting entries config for %q across rule documents (whole-pack replay needs one collection config per label)", label)
+			}
+			entries[label] = e
+		}
+		out.Spec.Rules = append(out.Spec.Rules, p.Spec.Rules...)
+	}
+	if nonNil == 0 {
+		return nil, nil
+	}
+	if len(entries) > 0 {
+		out.Spec.Entries = entries
+	}
+	return out, nil
+}
+
+// selectBindingForTest picks the single binding a whole-pack `assent test` replay
+// evaluates under. A single-binding RulesetBinding is used directly (exactly the
+// pre-S08 behaviour). A MULTI-binding document (e.g. a dev/prod environment split that
+// differs ONLY in environment + risk.threshold) is decision-safe to collapse to its
+// STRICTEST (lowest-threshold) binding: a lower threshold can only make a points sum
+// MORE likely to escalate to REVIEW, never less — the fail-safe direction (D-060).
+//
+// If two bindings differ in anything BEYOND environment + threshold (class, packs, or
+// require[]), collapsing could silently FLIP a decision, so it fails CLOSED here — the
+// full (class, environment) routing that a real `assent run` needs is not wired for
+// `assent test` in this lane (cf. run.go selectBinding). Fail-closed, never a guess.
+func selectBindingForTest(rb *policy.RulesetBinding) (*policy.Binding, error) {
+	if rb == nil || len(rb.Bindings) == 0 {
+		return nil, fmt.Errorf("ruleset-binding declares no bindings")
+	}
+	if len(rb.Bindings) == 1 {
+		return &rb.Bindings[0], nil
+	}
+	first := rb.Bindings[0]
+	strictest := 0
+	for i := 1; i < len(rb.Bindings); i++ {
+		b := rb.Bindings[i]
+		if b.Class != first.Class || !sameStrings(b.Packs, first.Packs) || !sameStrings(b.Require, first.Require) {
+			return nil, fmt.Errorf("ruleset-binding declares %d bindings differing beyond environment+threshold — (class, environment) routing is not wired for `assent test` (D-060); supply a single-binding RulesetBinding or align the bindings", len(rb.Bindings))
+		}
+		if b.Risk.Threshold < rb.Bindings[strictest].Risk.Threshold {
+			strictest = i
+		}
+	}
+	return &rb.Bindings[strictest], nil
+}
+
+// sameStrings reports order-sensitive slice equality (the binding fields it compares
+// are authored lists whose order is stable).
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // inlineCasesFile is one discovered `.assent/tests/<pack>/cases.yaml`: its pack (the
