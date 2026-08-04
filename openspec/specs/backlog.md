@@ -314,6 +314,37 @@ no silent `config.schema.json` widen. **Engine-grade:** S01–S05, S07, S08, S10
 **Dependency order**: S01 → S02 → S03 → S04 → S05 → {S06 ∥ S07} → S08 → S09? → S10.
 **Closes REF-GAP-2: S07. Closes REF-GAP-1: S08. Sensitive tier: S04.**
 
+> **E5 status: DONE** (main tip `3e4fb5b`, CI green) — provider host + builtins complete.
+
+## Phase 5 — E4 GitLab forge adapter stories
+
+Full INVEST stories in [p5-e4-gitlab-forge/spec.md](p5-e4-gitlab-forge/spec.md). E4 extends the
+P4 walking-skeleton forge (`internal/forge`, `internal/forge/gitlab`, `internal/forge/fake`) to the
+full ADR-0017 §7 **`Snapshot → Resolve → Reconcile`** port: L2 httptest cassettes for read-side MR
+state + ApprovalEvidence, P3-E5 reconciliation gaps (supersession, resolve stale, rescan), forge-probed
+`assent doctor` (closes D-034 forge-backed path), run-path wiring (changed files + live approval evidence;
+closes D-042 F1), and an autonomous conformance suite. **Judgment call (a):** summary-comment slot
+deferred to E8. **Engine-grade:** S03, S04, S05, S06, S08, S10.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| E4-S01 | Snapshot + Resolve port types + hermetic fakes | **[autonomous]** | P4 forge | read-side port seam; **do first** |
+| E4-S02 | GitLab Snapshot L2 cassettes (MR, changed files, capabilities) | **[autonomous]** | E4-S01 | honest SHAs + tier flags |
+| E4-S03 | ⚠️ GitLab Resolve ApprovalEvidence eligibility chain | **[autonomous · engine-grade]** | E4-S01, S02 | ADR-0017 §3 require-review proof |
+| E4-S04 | ⚠️ Reconcile P3-E5 gaps (supersession, resolve stale, rescan) | **[autonomous · engine-grade]** | E4-S01 | ADR-0019 steps 6/7/9 |
+| E4-S05 | ⚠️ Doctor forge-probed capability report (closes D-034 forge path) | **[autonomous · engine-grade]** | E4-S02 | ADR-0017 §9 arming honesty |
+| E4-S06 | ⚠️ Wire Snapshot/Resolve into `assent run`; E6 fence | **[autonomous · engine-grade]** | E4-S02, S03, S05 | live forge evaluation path |
+| E4-S07 | Conformance: target/source advanced → SHA-guard rejection | **[autonomous]** | E4-S04, S06 | ADR-0015 §2 executable |
+| E4-S08 | Conformance: `.assent/**` MR → assent-policy BLOCK | **[autonomous · engine-grade]** | E4-S06 | **closes D-042 F1** |
+| E4-S09 | Conformance: P3-E5 replay + spoofed marker ignored | **[autonomous]** | E4-S04 | ADR-0019 + ADR-0005 suite |
+| E4-S10 | Exit gate: L2 CI + hermetic forge path green | **[autonomous · engine-grade]** | E4-S01..S09 | **the E4 autonomous exit gate** |
+| E4-S11 | Live GitLab L3 conformance re-run | **[infra-gated: live GitLab / token]** | E4-S10 | L3 adapter proof (optional) |
+
+**Dependency order**: S01 → S02 → S03 → S04 → S05 → S06 → {S07 ∥ S08 ∥ S09} → S10; S11 after S10 when
+infra available. **Closes D-034 (forge-backed): S05+S06. Closes D-042 F1: S08.**
+
+> **E4 status: SPEC READY** — autonomous implementers may claim after spec lands on `main`.
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in

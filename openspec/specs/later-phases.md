@@ -167,7 +167,7 @@ possible finding codes/effects, deprecation metadata) — an additive-tolerant r
 single source for generated docs and lint; no second handwritten registry. Seeds: loader;
 CEL backend; tree walker + trace; interpolation; lint; catalogue generation.
 
-### E4 — GitLab forge adapter: Snapshot/Resolve/Reconcile — Planned
+### E4 — GitLab forge adapter: Snapshot/Resolve/Reconcile — Planned → **decomposed** ([p5-e4-gitlab-forge/spec.md](p5-e4-gitlab-forge/spec.md))
 The `Snapshot → Resolve → Reconcile(DesiredReviewState, Preconditions) → PublicationReceipt`
 port (ADR-0017 §7) on GitLab: resolvable threads with stable finding keys (idempotent
 upsert), approve/merge with source+target SHA and merge-result preconditions failing closed
@@ -178,7 +178,8 @@ report (ADR-0017 §9). **Exit gate**: L2 cassette contract tests + the L3 confor
 BLOCK", plus the P3-E5 reconciliation conformance cases (rerun idempotence,
 occurrence-supersession, deterministic duplicate repair, spoofed contributor marker
 ignored). Seeds: snapshot; marker-keyed thread reconcile (ADR-0019); approval evidence
-(P3-E1 ApprovalEvidence contract); pinned merge; doctor.
+(P3-E1 ApprovalEvidence contract); pinned merge; doctor. **Autonomous slice:** S01–S10
+(httptest/fakes); **infra-gated:** S11 live L3 re-run.
 
 ### E5 — Provider host + builtins — Planned → **decomposed** ([p5-e5-provider-host/spec.md](p5-e5-provider-host/spec.md))
 Typed provider protocol from Spike C frozen in P3-E1: first-wave builtins = **forge-groups +
