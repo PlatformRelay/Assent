@@ -1,0 +1,15 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "PresentationModel",
+  "decision": "REVIEW",
+  "findings": [
+    {
+      "rule": "topic-owner-must-approve",
+      "obligation": "ownership",
+      "effect": "require-review",
+      "subject": "topic-registry:payments.events.v1",
+      "points": 0,
+      "code": "ownership-approval-missing"
+    }
+  ]
+}

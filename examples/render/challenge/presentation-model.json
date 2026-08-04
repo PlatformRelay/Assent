@@ -1,0 +1,15 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "PresentationModel",
+  "decision": "REVIEW",
+  "findings": [
+    {
+      "rule": "partitions-must-not-shrink",
+      "obligation": "non-destructive",
+      "effect": "challenge",
+      "subject": "topic-registry:orders.events.v1",
+      "points": 10,
+      "code": "partition-count-shrunk"
+    }
+  ]
+}

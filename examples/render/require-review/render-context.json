@@ -1,0 +1,35 @@
+{
+  "options": {
+    "verbosity": "standard",
+    "emoji": true,
+    "collapseThreshold": 5,
+    "locale": "en"
+  },
+  "activation": {
+    "path": "/metadata/owner",
+    "kind": "modify",
+    "old": "team-payments",
+    "new": "team-platform",
+    "file": "topics/prod/payments.events.v1.yaml",
+    "env": "prod",
+    "facts": {
+      "owner": {
+        "team": {
+          "state": "resolved",
+          "sensitive": false,
+          "value": "team-platform"
+        }
+      }
+    }
+  },
+  "rules": {
+    "topic-owner-must-approve": {
+      "message": "Topic owner change {{ old }} -> {{ new }} needs explicit approval from the current owner team.",
+      "docs": {
+        "summary": "Ownership changes affect on-call routing and data-access boundaries.",
+        "url": "https://example.com/policies/topic-ownership"
+      },
+      "debug": ["resolved owner={{ facts.owner.team }}"]
+    }
+  }
+}

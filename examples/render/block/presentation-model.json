@@ -1,0 +1,15 @@
+{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "PresentationModel",
+  "decision": "BLOCK",
+  "findings": [
+    {
+      "rule": "no-catalog-file-deletion",
+      "obligation": "non-destructive",
+      "effect": "block",
+      "subject": "file:examples/repos/service-catalog/catalog/prod/core-services.json",
+      "points": 0,
+      "code": "catalog-file-deleted"
+    }
+  ]
+}

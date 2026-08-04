@@ -1,0 +1,35 @@
+{
+  "options": {
+    "verbosity": "standard",
+    "emoji": true,
+    "collapseThreshold": 5,
+    "locale": "en"
+  },
+  "activation": {
+    "old": 12,
+    "new": 8,
+    "path": "/partitions",
+    "kind": "modify",
+    "file": "topics/prod/orders.events.v1.yaml",
+    "env": "prod",
+    "facts": {
+      "quota": {
+        "max_partitions": {
+          "state": "resolved",
+          "sensitive": false,
+          "value": 24
+        }
+      }
+    }
+  },
+  "rules": {
+    "partitions-must-not-shrink": {
+      "message": "Retention shrinks from {{ old }} to {{ new }} — data loss possible. Sure?",
+      "docs": {
+        "summary": "Shrinking retention deletes data irreversibly once segments roll.",
+        "url": "https://example.com/policies/retention"
+      },
+      "debug": ["quota max {{ facts.quota.max_partitions }}"]
+    }
+  }
+}

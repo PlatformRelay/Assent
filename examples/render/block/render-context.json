@@ -1,0 +1,24 @@
+{
+  "options": {
+    "verbosity": "standard",
+    "emoji": true,
+    "collapseThreshold": 5,
+    "locale": "en"
+  },
+  "activation": {
+    "path": "examples/repos/service-catalog/catalog/prod/core-services.json",
+    "kind": "delete",
+    "file": "examples/repos/service-catalog/catalog/prod/core-services.json",
+    "env": "prod"
+  },
+  "rules": {
+    "no-catalog-file-deletion": {
+      "message": "Deleting catalog file {{ file }} is blocked — restore the file or split the removal into a dedicated change.",
+      "docs": {
+        "summary": "Whole-file catalog deletes remove service entries without a reviewable diff.",
+        "url": "https://example.com/policies/catalog-deletion"
+      },
+      "debug": ["file event kind={{ kind }}"]
+    }
+  }
+}
