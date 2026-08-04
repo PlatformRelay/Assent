@@ -177,7 +177,10 @@ spec:
         code: ownership.unproven
 `),
 	}
-	diags := Lint([]Source{missingPhaseRule}).Diagnostics()
+	// A test case for the rule so tests-per-rule (E3-S06, wired into the shared
+	// Lint) does not add a diagnostic — this test isolates the phase dedupe (exactly
+	// one diagnostic for a sole missing-phase defect).
+	diags := Lint([]Source{missingPhaseRule, caseDirSrc("p", "ownership")}).Diagnostics()
 	if !hasCode(diags, CodeNoImplicitEnforcePhase, "owns") {
 		t.Errorf("a rule missing phase must yield no-implicit-enforce-phase naming the rule, got %v", codesOf(diags))
 	}

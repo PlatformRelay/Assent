@@ -54,6 +54,10 @@ func TestObligationCoverageUncovered(t *testing.T) {
 	rep := Lint([]Source{
 		bindingSrc("ownership, freshness"),
 		ruleSrc("owns", "ownership"),
+		// A test case for the proven rule so tests-per-rule (E3-S06, now wired into
+		// the shared Lint) does not add a second diagnostic — this test isolates the
+		// obligation-coverage defect.
+		caseDirSrc("p", "ownership"),
 	})
 	diags := rep.Diagnostics()
 	if len(diags) != 1 {
@@ -200,6 +204,10 @@ func TestFullyCoveredPackLintsClean(t *testing.T) {
 		bindingSrc("ownership, freshness"),
 		ruleSrc("owns", "ownership"),
 		ruleSrc("fresh", "freshness"),
+		// A test case per rule so tests-per-rule (E3-S06, wired into the shared Lint)
+		// does not fire — a truly clean pack has both coverage AND tests.
+		caseDirSrc("p", "ownership"),
+		caseDirSrc("p", "freshness"),
 	})
 	if diags := rep.Diagnostics(); len(diags) != 0 {
 		t.Fatalf("fully-covered pack must lint clean, got %d diagnostics: %#v", len(diags), diags)
