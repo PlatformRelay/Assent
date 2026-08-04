@@ -1,0 +1,12 @@
+apiVersion: assent.dev/v1alpha1
+kind: Config
+environments:
+  - name: prod
+    match: { paths: ["**"] }
+classes:
+  - name: demo
+    match: { paths: ["**"] }
+providers:
+  author:
+    type: builtin/gitlab-groups
+    failure: closed

@@ -1,0 +1,7 @@
+apiVersion: assent.dev/v1alpha1
+kind: RulesetBinding
+bindings:
+  - class: demo
+    environment: prod
+    packs: [p]
+    risk: { threshold: 10 }

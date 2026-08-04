@@ -1,0 +1,11 @@
+apiVersion: assent.dev/v1alpha1
+kind: Config
+environments:
+  - name: prod
+    match: { paths: ["**"] }
+classes:
+  - name: demo
+    match: { paths: ["**"] }
+profiles:
+  - name: writer-a
+  - name: writer-b

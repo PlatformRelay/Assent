@@ -1,0 +1,16 @@
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: base
+spec:
+  rules:
+    - name: base-ok
+      match:
+        files:
+          paths: ["**/*.yaml"]
+      prove:
+        obligation: safe
+        when: 'kind == "modify"'
+      onFailure:
+        effect: require-review
+        code: needs.review

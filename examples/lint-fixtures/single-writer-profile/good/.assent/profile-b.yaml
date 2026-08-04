@@ -1,0 +1,8 @@
+apiVersion: assent.dev/v1alpha1
+kind: PolicyProfile
+metadata:
+  name: writer-b
+spec:
+  writes: false
+  environments: [prod]
+  classes: [demo]

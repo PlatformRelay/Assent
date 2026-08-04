@@ -1,0 +1,17 @@
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: base
+spec:
+  rules:
+    - name: review-gate
+      phase: enforce
+      match:
+        files:
+          paths: ["**/*.yaml"]
+      prove:
+        obligation: reviewed
+        when: "size(facts.author.groups.value) > 0"
+      onFailure:
+        effect: require-review
+        code: needs.review
