@@ -1,4 +1,10 @@
-# Context freshness — oncall rotation must resolve and be unexpired (P1-E2 freshness).
+# Context freshness — oncall rotation fact must be resolved and unexpired (P1-E2 freshness).
+# Freshness is an ENVELOPE property: the `.state` escape (mirroring the D-016 canon
+# facts.owner.team.state == 'resolved') reads the resolution state — an expired context
+# fact resolves to a non-`resolved` state and fails the prove. A static fact name is
+# required: the D-051 facts-reference-shape lint forbids dynamic/bracket-indexed names
+# (facts.oncall[entry.oncall]… collapses to a bare facts.oncall), so the per-entry lookup
+# is re-authored to the single controlling rotation fact facts.oncall.orders_rotation.
 apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
 metadata:
@@ -12,12 +18,13 @@ spec:
         pointer: /name
   rules:
     - name: oncall-exists
+      phase: enforce
       match:
         files:
           paths: ["catalog/**/*.json"]
       prove:
         obligation: context-fresh
-        when: 'facts.oncall[entry.oncall].status == "resolved"'
+        when: 'facts.oncall.orders_rotation.state == "resolved"'
       onFailure:
         effect: block
         code: context.expired

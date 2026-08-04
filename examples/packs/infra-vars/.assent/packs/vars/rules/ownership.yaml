@@ -10,12 +10,13 @@ spec:
       root: /workloads
   rules:
     - name: author-owns-entry
+      phase: enforce
       match:
         files:
           paths: ["envs/**/*.tfvars"]
       prove:
         obligation: ownership
-        when: "entry.owner in facts.author.groups"
+        when: "entry.owner in facts.author.groups.value"
       onFailure:
         effect: require-review
         code: ownership.unauthorized

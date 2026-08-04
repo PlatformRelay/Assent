@@ -12,12 +12,13 @@ spec:
         pointer: /name
   rules:
     - name: topic-schema-v1
+      phase: enforce
       match:
         files:
           paths: ["topics/**/*.yaml"]
       prove:
         obligation: schema-valid
-        when: "facts.schema.valid"
+        when: "facts.schema.valid.value"
       onFailure:
         effect: block
         code: schema.invalid

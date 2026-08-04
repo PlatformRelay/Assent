@@ -13,6 +13,7 @@ spec:
         pointer: /name
   rules:
     - name: only-safe-fields
+      phase: enforce
       match:
         valueChanges:
           pointers: ["/owner", "/tier"]

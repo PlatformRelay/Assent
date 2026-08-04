@@ -13,6 +13,7 @@ spec:
         pointer: /name
   rules:
     - name: partition-change-bounds
+      phase: enforce
       match:
         valueChanges:
           pointers: ["/partitions"]
@@ -23,8 +24,8 @@ spec:
           all:
             - cel: new >= old
               message: "partitions may not decrease ({{ old }} -> {{ new }})"
-            - cel: new <= facts.quota.max_partitions
-              message: "partitions {{ new }} exceeds quota {{ facts.quota.max_partitions }}"
+            - cel: new <= facts.quota.max_partitions.value
+              message: "partitions {{ new }} exceeds quota {{ facts.quota.max_partitions.value }}"
       points: 1
       onFailure:
         effect: challenge

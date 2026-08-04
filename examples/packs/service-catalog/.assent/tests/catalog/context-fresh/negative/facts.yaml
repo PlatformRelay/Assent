@@ -2,7 +2,7 @@ author:
   login: alice
   groups: [orders-team]
 oncall:
-  orders-rotation:
-    status: expired
+  orders_rotation:
+    state: expired
     observedAt: "2026-07-01T10:00:00Z"
     expiresAt: "2026-07-02T10:00:00Z"

@@ -11,6 +11,7 @@ spec:
       root: /workloads
   rules:
     - name: memory-mb-bounds
+      phase: enforce
       match:
         valueChanges:
           pointers: ["/memory_mb"]
@@ -19,15 +20,16 @@ spec:
         obligation: bounded-change
         when:
           all:
-            - cel: new >= facts.band.memory_mb.min
-              message: "memory_mb {{ new }} below band min {{ facts.band.memory_mb.min }}"
-            - cel: new <= facts.band.memory_mb.max
-              message: "memory_mb {{ new }} exceeds band max {{ facts.band.memory_mb.max }}"
+            - cel: new >= facts.band.memory_mb.value.min
+              message: "memory_mb {{ new }} below band min {{ facts.band.memory_mb.value.min }}"
+            - cel: new <= facts.band.memory_mb.value.max
+              message: "memory_mb {{ new }} exceeds band max {{ facts.band.memory_mb.value.max }}"
       points: 1
       onFailure:
         effect: challenge
         code: bounded-change.out-of-band
     - name: min-replicas-bounds
+      phase: enforce
       match:
         valueChanges:
           pointers: ["/min_replicas"]
@@ -36,13 +38,14 @@ spec:
         obligation: bounded-change
         when:
           all:
-            - cel: new >= facts.band.min_replicas.min
-            - cel: new <= facts.band.min_replicas.max
+            - cel: new >= facts.band.min_replicas.value.min
+            - cel: new <= facts.band.min_replicas.value.max
       points: 1
       onFailure:
         effect: challenge
         code: bounded-change.out-of-band
     - name: max-replicas-bounds
+      phase: enforce
       match:
         valueChanges:
           pointers: ["/max_replicas"]
@@ -51,8 +54,8 @@ spec:
         obligation: bounded-change
         when:
           all:
-            - cel: new >= facts.band.max_replicas.min
-            - cel: new <= facts.band.max_replicas.max
+            - cel: new >= facts.band.max_replicas.value.min
+            - cel: new <= facts.band.max_replicas.value.max
             - cel: new >= entry.min_replicas
               message: "max_replicas must be >= min_replicas"
       points: 1

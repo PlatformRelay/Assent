@@ -13,6 +13,7 @@ spec:
         pointer: /name
   rules:
     - name: no-topic-deletion
+      phase: enforce
       match:
         fileEvents:
           paths: ["topics/**/*.yaml"]
