@@ -231,14 +231,18 @@ summary slot hermetic; wording changes provably do not break safety tests (ADR-0
 Seeds: `internal/render/**`; `examples/render/**`; `assent render --finding`; config
 `presentation:` (D-088); forge `UpsertComment` (S12); judgment calls D-088–D-097.
 
-### E9 — Distribution & release — Planned
-oss-playbook execution: goreleaser (binaries, brew, curl+checksum), cosign keyless signing +
-SLSA provenance + SBOM, git-cliff notes without SHAs, CI hardening (CodeQL, Scorecard,
-govulncheck, SHA-pinned actions), mkdocs-material site publishing `docs/` product pages only
-(planning/openspec excluded), README per the formula with honest maturity table, VHS demos +
-live demo repo (post-Phase-4), GitLab dogfood mirror decision (OQ-2). **Exit gate**: a tagged
-release installs via all three channels and verifies signatures; docs site live. Seeds:
-release workflow; supply-chain attestations; CI hardening; docs site; demo assets.
+### E9 — Distribution & release — **SPEC READY**
+Full INVEST stories in [p5-e9-distribution/spec.md](p5-e9-distribution/spec.md). oss-playbook
+execution: goreleaser (binaries, brew, curl+checksum, `go install`), cosign keyless + SLSA +
+SBOM, git-cliff notes without SHAs, CI hardening **audit** (extend D-045 CodeQL/Scorecard/
+govulncheck — do not duplicate), mkdocs-material product-only nav (planning/openspec excluded
+from published nav), README maturity table, VHS demo tapes, OQ-2 GitLab mirror disposition
+(**D-105 defer**). Partial coverage already on main: MkDocs + GH Pages (D-044), security batch
+(D-045), `cliff.toml`, `API_STABILITY.md`. **Exit gate**: tagged release (`v0.1.0`, D-108)
+installs via curl + go install (+ Homebrew when tap lands), signatures verify, docs site live.
+**13 stories (8 autonomous, 5 infra-gated)** — judgment calls D-099–D-110. **Next after E9:**
+PolicyComparisonSuite full runner (D-057, separate epic). Seeds: `.goreleaser.yaml`,
+`release.yaml`, `hack/release/**`, install script, product nav trim.
 
 ### E10 — GitHub adapter + Actions entrypoint — **Locked (D-012)**
 Unlocks with a named consumer. Seam kept honest by the P1-E3-S03 dossier (REQUEST_CHANGES +

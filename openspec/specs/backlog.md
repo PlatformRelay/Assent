@@ -407,6 +407,40 @@ S14 (serialized). **Closes D-073: S12+S13. Closes D-068 presentation handoff: S0
 > summary slot hermetic; safety split proven (D-098). S06/S07 remain infra-gated optional per
 > D-081/D-083; E9 release may proceed.
 
+## Phase 5 — E9 Distribution & release stories
+
+Full INVEST stories in [p5-e9-distribution/spec.md](p5-e9-distribution/spec.md). E9 executes the
+oss-playbook release surface: goreleaser binaries (brew, curl+checksum, `go install`), cosign
+keyless + SLSA + SBOM, git-cliff notes without SHAs, CI hardening **audit** (extend D-045 jobs —
+no duplicate CodeQL/Scorecard), MkDocs product-only nav, README maturity table, VHS demo tapes,
+OQ-2 GitLab mirror disposition. **Judgment calls D-099–D-110** in `docs/decisions/decisions.md`.
+REQ prefix `REQ-E9-S0n-nn`. **Autonomous stories S01–S04 + S08–S12 + S11** close without publish
+credentials; **infra-gated S05–S07 + S13 publish half**.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| E9-S01 | Semver ldflags + `assent version` contract | **[autonomous]** | none | stamped binaries; **do first** |
+| E9-S02 | Goreleaser config + local snapshot dry-run | **[autonomous]** | S01 | cross-platform archives + checksums |
+| E9-S03 | git-cliff changelog without SHAs + CHANGELOG.md sync | **[autonomous]** | S02 | oss-playbook #4 release notes |
+| E9-S04 | CI hardening audit + residual gaps (extend, don't duplicate) | **[autonomous]** | none ∥ | actionlint + audit doc; D-102 |
+| E9-S05 | Tag-triggered release workflow + goreleaser publish | **[infra-gated: GH release write]** | S02, S03 | GitHub Release assets |
+| E9-S06 | ⚠️ cosign keyless + SLSA + SBOM on release artifacts | **[infra-gated · engine-grade]** | S05 | supply-chain verify surface |
+| E9-S07 | curl+checksum install script + Homebrew tap wiring | **[autonomous script · infra-gated tap push]** | S02, S06 | three install channels |
+| E9-S08 | MkDocs product-only nav + install page | **[autonomous]** | S07 | D-103 docs fence |
+| E9-S09 | README maturity formula + honest alpha status | **[autonomous]** | S08 | oss-playbook #3 |
+| E9-S10 | VHS demo tape sources (GIF optional) | **[autonomous tapes · infra-gated GIF]** | none ∥ | oss-playbook #10 |
+| E9-S11 | OQ-2 GitLab dogfood mirror decide-and-log (D-105 defer) | **[autonomous · decide-and-log]** | none ∥ | hosting disposition |
+| E9-S12 | ⚠️ Release artifact verify harness | **[autonomous · engine-grade]** | S02, S06 | checksum + cosign CI gate |
+| E9-S13 | Exit gate: tagged release + channels + docs live | **[infra-gated · engine-grade]** | S01..S12 | **the E9 exit gate** |
+
+**Dependency order**: S01 → S02 → S03 → S04; S02 → S05 → S06 → S12 → S13; S02 → S07; S08 ∥ S09
+(after S07 content); S10 ∥; S11 early. **Closes oss-playbook #4–#5 nav/install: S02–S09. Next after
+E9: PolicyComparisonSuite runner (D-057) — separate epic, not absorbed.**
+
+> **E9 status: SPEC READY** — 13 stories (8 autonomous, 5 infra-gated); ground truth: CodeQL/
+> Scorecard/govulncheck/docs pipeline already on main (D-044/D-045); goreleaser/release/cosign
+> greenfield.
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
@@ -416,7 +450,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E9 active — **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); S06/S07 infra-gated optional; E11/E12 **unlocked** (D-017, post-Phase-4); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E9 release may ship renderer product |
+| 5 — Implementation | E1–E8 **DONE** (E7 D-087, E8 D-098); **E9 SPEC READY** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S13, D-099–D-110); E11/E12 **unlocked** (D-017); **D-057 PolicyComparisonSuite** → next epic after E9; E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E9 exit = tagged signed release + docs live |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).

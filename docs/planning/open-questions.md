@@ -3,7 +3,7 @@
 | ID | Question | Blocks | Notes / leading answer |
 | --- | --- | --- | --- |
 | OQ-1 | ~~Project name~~ **Resolved: assent** (D-009); repo live (D-014). **Domain:** `assent.dev` taken (D-028). **Path:** Option A — register an owned domain (D-031). **Exact domain string still TBD** before rename. | Phase 4 / before public freeze marketing | [naming.md](naming.md); D-028/D-031 |
-| OQ-2 | Hosting: GitHub only, or GitLab mirror (dogfooding the GitLab adapter on our own repo)? | Phase 5 / E9 | dogfooding on GitLab is attractive once E4 exists |
+| OQ-2 | Hosting: GitHub only, or GitLab mirror (dogfooding the GitLab adapter on our own repo)? | Phase 5 / E9 | **Leading answer (D-105): defer mirror** — GitHub canonical; optional read-only GitLab mirror is operator infra, not E9 blocker |
 | OQ-3 | ~~Two parallel frontends?~~ Resolved by ADR-0002 v2: one YAML envelope, pluggable predicate backends | — | superseded; successor questions: OQ-11/OQ-12 |
 | OQ-4 | ~~Ship gRPC (`go-plugin`) tier in v1?~~ **Resolved (P2-E5):** defer gRPC to post-v1; HTTP/exec + builtins only ([Spike C](spikes/spike-c-provider.md), D-012, ADR-0004 Accepted) | — | [adr-acceptance-review.md](adr-acceptance-review.md) |
 | OQ-5 | ~~Policy discovery: remote packs in v1?~~ **Resolved (P2-E5):** local `.assent/` only in v1; remote packs designed-for (ADR-0010 Accepted, D-012) | — | [adr-acceptance-review.md](adr-acceptance-review.md) |
