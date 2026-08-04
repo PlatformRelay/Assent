@@ -1,0 +1,5 @@
+# DELIBERATELY WRONG: partitions 12 -> 16 is WITHIN the cap 32, so the real decision is
+# APPROVE. This golden pins BLOCK, so `assent test` must FAIL with the expected/actual
+# diff UX and a non-zero exit.
+decision: BLOCK
+findings: []

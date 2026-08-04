@@ -1,0 +1,2 @@
+limits:
+  maxPartitions: 32

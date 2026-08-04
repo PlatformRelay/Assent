@@ -1,0 +1,25 @@
+# DELIBERATELY-BROKEN pack fixture (P5-E6-S08 REQ-03): the pack + rule are VALID and
+# load cleanly; the defect is the expect.yaml golden below, which pins the WRONG
+# decision. Running `assent test` over it must FAIL with the S04 expected/actual diff
+# UX and a non-zero exit — the negative-path proof that the gate actually catches a
+# regression (mirrors E3's negative-fixture proof). It lives under cmd/assent/testdata,
+# NOT examples/packs, so the shipped corpus stays green.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: capped-partitions
+spec:
+  rules:
+    - name: partitions-within-cap
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/partitions"]
+          kinds: [modify]
+      prove:
+        obligation: capped
+        when: new <= facts.limits.maxPartitions.value
+      onFailure:
+        effect: challenge
+        code: capped.over-limit
+      points: 1

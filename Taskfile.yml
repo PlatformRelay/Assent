@@ -42,6 +42,18 @@ tasks:
     cmds:
       - CGO_ENABLED=0 go build -o bin/assent ./cmd/assent
 
+  dogfood-examples:
+    desc: "Dogfood gate (P5-E6-S08): every non-locked example pack gates itself green under the real `assent test` (+ --coverage) CLI"
+    deps: [build]
+    cmds:
+      - |
+        set -e
+        for pack in service-catalog infra-vars; do
+          echo "== assent test examples/packs/$pack =="
+          ./bin/assent test "examples/packs/$pack"
+          ./bin/assent test --coverage "examples/packs/$pack"
+        done
+
   check:
     desc: "Gate: fmt + vet + lint + test + build (must pass before every commit)"
     cmds:

@@ -1,0 +1,8 @@
+apiVersion: assent.dev/v1alpha1
+kind: RulesetBinding
+bindings:
+  - class: capped
+    environment: prod
+    packs: [capped]
+    risk: { threshold: 4 }
+    require: [capped]
