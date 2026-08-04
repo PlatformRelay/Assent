@@ -167,7 +167,8 @@ Seed `CHANGELOG.md` with Unreleased section.
 
 **Dependencies**: E9-S02 (tag pattern aligned).
 
-**Definition of done**: `CHANGELOG.md` exists; cliff output contains no `[a-f0-9]{7,}` SHA tokens.
+**Definition of done**: `CHANGELOG.md` exists; cliff output contains no SHA tokens; verify script
+fails closed on stale CHANGELOG.
 
 Requirements:
 - **REQ-E9-S03-01** — `git-cliff --unreleased` output contains no full/commit-short SHA patterns.
@@ -175,7 +176,10 @@ Requirements:
   `! task changelog | grep -qE '[0-9a-f]{7,40}'`; Level: L0
 - **REQ-E9-S03-02** — `CHANGELOG.md` parses and includes Unreleased + at least one historical stub.
   Test: same; Verify: `test -f CHANGELOG.md && grep -q Unreleased CHANGELOG.md`; Level: doc
-- **REQ-E9-S03-03** — release workflow will consume git-cliff output (document hook point in
+- **REQ-E9-S03-03** — `hack/release/verify-changelog.sh` exits non-zero when `CHANGELOG.md` is
+  stale vs `cliff.toml` output (fail-closed drift gate). Test: `hack/release/changelog_test.sh`;
+  Verify: `hack/release/verify-changelog.sh`; Level: L0
+- **REQ-E9-S03-04** — release workflow will consume git-cliff output (document hook point in
   `hack/release/README.md`). Test: `hack/release/README.md`; Verify:
   `grep -q git-cliff hack/release/README.md`; Level: doc
 
@@ -440,6 +444,7 @@ Requirements:
   `hack/release/verify_test.sh negative`; Level: L0
 - **REQ-E9-S12-03** — when sig bundles present, invalid signature fails closed; when absent, verify
   skips cosign branch. Test: same; Verify:
+  `bash hack/release/verify_test.sh cosign-skip-when-absent`; Level: L0
 - **REQ-E9-S12-04** — script documented in `hack/release/README.md` with cosign skip-when-absent
   behaviour. Test: README; Verify: `grep -q verify-artifacts hack/release/README.md`; Level: doc
 
