@@ -79,6 +79,14 @@ var (
 	// "oneOf matched none of 2" error. Its internal $ref to finding/score resolves
 	// within the same compiled document.
 	ExpectationSchema = mustCompileFragment("test-expectation.schema.json", testExpectationSchemaJSON, "#/$defs/expectation")
+	// CasesFileSchema validates an inline cases.yaml against the #/$defs/casesFile
+	// FRAGMENT of the same frozen contract (E6-S06). Like ExpectationSchema, the
+	// fragment (not the top-level oneOf) yields a LOCATED field-level rejection — an
+	// unknown top-level key or a bad `cases[].expect` reports at its own instance
+	// pointer (/cases/N/expect/...) instead of a muddy "oneOf matched none of 2". Its
+	// internal $refs to case/expectation/finding/score resolve within the same
+	// compiled document. No new schema is authored — this reuses the frozen JSON.
+	CasesFileSchema = mustCompileFragment("test-expectation.schema.json", testExpectationSchemaJSON, "#/$defs/casesFile")
 )
 
 // decisionSchemaID is the $id of one of the five decision/v1alpha1 runtime

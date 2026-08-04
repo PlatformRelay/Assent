@@ -152,10 +152,113 @@ func runTest(args []string, stdout, stderr io.Writer) int {
 		}
 		_, _ = fmt.Fprint(stdout, report)
 	}
+
+	// Inline `cases.yaml` shorthand (E6-S06): a `.assent/tests/<pack>/cases.yaml`
+	// holds many one-file cases whose base/head live INLINE. It is an ALTERNATE
+	// front-end — each inline case is assembled into the SAME adoptertest.Case a
+	// directory case is and run through the identical pipeline. The FS read (the only
+	// I/O) lives here; the strict-decode + assembly is the pure library. --update is a
+	// directory-case flow only (S05); an inline case simply reports pass/fail here.
+	inlineFiles, err := discoverInlineCasesFiles(dir)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "assent test:", err)
+		return 2
+	}
+	for _, icf := range inlineFiles {
+		pol, ok := policies[icf.pack]
+		if !ok {
+			_, _ = fmt.Fprintf(stderr, "assent test: %s/cases.yaml: no pack %q loaded under .assent/packs/**\n", icf.pack, icf.pack)
+			anyFail = true
+			continue
+		}
+		inlineCases, lerr := adoptertest.LoadInlineCases(icf.raw, pol, bind)
+		if lerr != nil {
+			_, _ = fmt.Fprintf(stderr, "assent test: %s/cases.yaml: %v\n", icf.pack, lerr)
+			anyFail = true
+			continue
+		}
+		for _, c := range inlineCases {
+			c.Name = icf.pack + "/" + c.Name
+			out, rerr := adoptertest.RunCase(c)
+			if rerr != nil {
+				_, _ = fmt.Fprintf(stderr, "assent test: %s: %v\n", c.Name, rerr)
+				anyFail = true
+				continue
+			}
+			if out.Pass {
+				_, _ = fmt.Fprintf(stdout, "PASS %s (%s)\n", out.Name, out.Actual)
+				continue
+			}
+			anyFail = true
+			report, rerr := adoptertest.RenderFailure(c.Expect, out)
+			if rerr != nil {
+				_, _ = fmt.Fprintf(stderr, "assent test: %s: render failure: %v\n", out.Name, rerr)
+				continue
+			}
+			_, _ = fmt.Fprint(stdout, report)
+		}
+	}
+
 	if anyFail {
 		return 1
 	}
 	return 0
+}
+
+// inlineCasesFile is one discovered `.assent/tests/<pack>/cases.yaml`: its pack (the
+// first path segment under tests/) and its raw bytes. The pure library strict-decodes
+// the bytes and assembles the cases.
+type inlineCasesFile struct {
+	pack string
+	raw  []byte
+}
+
+// discoverInlineCasesFiles walks <dir>/.assent/tests and returns, in deterministic
+// pack order, every `cases.yaml` file (the inline shorthand, E6-S06). A cases.yaml
+// carries no expect.yaml, so discoverCases (which keys on expect.yaml) never picks it
+// up — the two discovery paths are disjoint.
+func discoverInlineCasesFiles(dir string) ([]inlineCasesFile, error) {
+	root := filepath.Join(dir, ".assent", "tests")
+	// #nosec G703 -- dir is an operator-supplied CLI path to their own repo, read-only.
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return nil, nil // no tests tree ⇒ no inline cases (the directory path already reported it)
+	}
+
+	// Collect the (pack, path) pairs in the walk; read the bytes AFTER it, so the file
+	// read is not a race-prone operation inside the WalkDir callback (gosec G122).
+	type located struct{ pack, path string }
+	var found []located
+	// #nosec G703 -- operator-supplied local path, read-only walk.
+	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, werr error) error {
+		if werr != nil {
+			return werr
+		}
+		if d.IsDir() || d.Name() != "cases.yaml" {
+			return nil
+		}
+		rel, rerr := filepath.Rel(root, filepath.Dir(path))
+		if rerr != nil {
+			return rerr
+		}
+		pack := strings.SplitN(filepath.ToSlash(rel), "/", 2)[0]
+		found = append(found, located{pack: pack, path: path})
+		return nil
+	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("walk .assent/tests tree for cases.yaml: %w", walkErr)
+	}
+
+	files := make([]inlineCasesFile, 0, len(found))
+	for _, f := range found {
+		raw, rerr := os.ReadFile(f.path) // #nosec G304 -- fixed .assent/tests cases.yaml path from the walk.
+		if rerr != nil {
+			return nil, fmt.Errorf("read %s/cases.yaml: %w", f.pack, rerr)
+		}
+		files = append(files, inlineCasesFile{pack: f.pack, raw: raw})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].pack < files[j].pack })
+	return files, nil
 }
 
 // discoveredCase is one directory case's raw contents: the pure library maps the

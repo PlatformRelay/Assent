@@ -1,0 +1,49 @@
+# Inline shorthand (E6-S06, frozen #/$defs/casesFile). Each case is one field-level
+# edit of a single file whose contents live INLINE — no base/↔head/ directory tree.
+# Every case feeds the SAME assembler + matcher a directory case does: the inline
+# base/head are marshaled to config.json's format and diffed by the PRODUCTION
+# change.Diff, then evaluated through aggregate.Cover. `expect` reuses the exact
+# #/$defs/expectation shape the directory-case expect.yaml uses.
+cases:
+  # partitions 12 -> 16, within the resolved cap 32 -> obligation proven -> APPROVE.
+  # The directory sibling capped/within-cap encodes the identical edit as files.
+  - name: partition-increase-ok
+    file: config.json
+    base: { partitions: 12 }
+    head: { partitions: 16 }
+    facts: { limits: { maxPartitions: 32 } }
+    expect: { decision: APPROVE }
+
+  # partitions 12 -> 64 exceeds the resolved cap 32 -> the challenge fires -> REVIEW.
+  - name: partition-increase-over-cap
+    file: config.json
+    base: { partitions: 12 }
+    head: { partitions: 64 }
+    facts: { limits: { maxPartitions: 32 } }
+    expect:
+      decision: REVIEW
+      findings:
+        - rule: partitions-within-cap
+          obligation: capped
+          effect: challenge
+      score: { total: 1, threshold: 4 }
+
+  # New-file case: base is null (the file did not exist on the target branch). A
+  # whole-file ADD has no parseable base side, so the production differ returns an
+  # OPAQUE diff and Evaluate fails safe to REVIEW — never a silent APPROVE on an
+  # unparsed add. REVIEW here is the intentional fail-safe, not a skipped case.
+  - name: new-file
+    file: config.json
+    base: null
+    head: { partitions: 16 }
+    facts: { limits: { maxPartitions: 32 } }
+    expect: { decision: REVIEW }
+
+  # Deleted-file case: head is null (the MR removes the file). The whole-file DELETE
+  # likewise has no parseable head side -> opaque diff -> fail-safe REVIEW.
+  - name: deleted-file
+    file: config.json
+    base: { partitions: 16 }
+    head: null
+    facts: { limits: { maxPartitions: 32 } }
+    expect: { decision: REVIEW }

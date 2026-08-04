@@ -53,6 +53,27 @@ func TestTestCommand(t *testing.T) {
 			t.Fatalf("exit = %d, want 2 on a usage error", code)
 		}
 	})
+
+	t.Run("inline cases.yaml cases are discovered and run alongside directory cases (E6-S06)", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := runTest([]string{adopterRepo}, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0 (all cases match)\nstderr:%s", code, stderr.String())
+		}
+		out := stdout.String()
+		// The authored capped/cases.yaml inline cases run through the SAME pipeline,
+		// prefixed by their pack, distinct from the directory case names.
+		for _, name := range []string{
+			"capped/partition-increase-ok",
+			"capped/partition-increase-over-cap",
+			"capped/new-file",
+			"capped/deleted-file",
+		} {
+			if !strings.Contains(out, "PASS "+name) {
+				t.Fatalf("stdout missing PASS for inline case %q:\n%s", name, out)
+			}
+		}
+	})
 }
 
 // TestTestCommandFailureUX (REQ-E6-S04-03) proves the S04 diff UX end-to-end through
