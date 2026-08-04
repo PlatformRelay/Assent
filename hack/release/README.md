@@ -22,22 +22,33 @@ Running verify inside every local `task check` would chicken-egg — any commit 
 
 - **Local / PR:** run `task changelog-verify` (or `bash hack/release/changelog_test.sh`) when
   touching release docs or before opening a release-prep PR.
-- **CI (E9-S05):** the release workflow and/or `verify.yaml` changelog job will run
-  `task changelog-verify` on PRs and main — not bundled into the standard `task check` path.
+- **CI (E9-S05):** PRs that touch release paths run the `snapshot` job in
+  `.github/workflows/release.yaml` (goreleaser `--snapshot --skip=publish`). Changelog drift is
+  still a separate gate (`task changelog-verify`) — not bundled into `task check`.
 
-### Release workflow hook (E9-S05)
+### Release workflow (E9-S05)
 
-The tag-triggered `.github/workflows/release.yaml` lane (E9-S05) will consume git-cliff output
-for GitHub Release notes — same pattern as mkurator:
+The tag-triggered `.github/workflows/release.yaml` consumes git-cliff output for GitHub Release
+notes — same pattern as mkurator:
 
 1. Checkout with `fetch-depth: 0` (full history + tags).
-2. Run **`orhun/git-cliff-action`** (SHA-pinned) with `config: cliff.toml` and
+2. **Build:** `goreleaser release --clean --skip=publish` (`.goreleaser.yaml` keeps
+   `release.disable: true`; publish is via `softprops/action-gh-release`).
+3. Run **`orhun/git-cliff-action`** (SHA-pinned) with `config: cliff.toml` and
    `args: --latest --strip header` so the action emits the latest tagged section body.
-3. Pass `${{ steps.cliff.outputs.content }}` into the release-notes assembly step (install footer,
-   artifact links) before `softprops/action-gh-release`.
+4. **`softprops/action-gh-release`** uploads `dist/` archives + `checksums.txt` with cliff body.
 
-Until S05 lands, maintainers regenerate `CHANGELOG.md` on main via `task changelog-write` after
-merging user-facing commits; `verify-changelog.sh` keeps the committed file in sync.
+**Triggers:** `push.tags: v*.*.*`, `workflow_dispatch` (rebuild an existing tag), and PR
+`snapshot` dry-run on release-related paths.
+
+**REQ-E9-S05-03 autonomous path:** PR `snapshot` job **or** local `task release-snapshot` /
+`hack/release/snapshot_test.sh` — both run goreleaser without publish credentials.
+
+**E9-S06 hooks (next lane):** comments in `release.yaml` mark where cosign, SBOM, and
+`actions/attest` SLSA attach (D-109).
+
+Maintainers regenerate `CHANGELOG.md` on main via `task changelog-write` after merging user-facing
+commits; `verify-changelog.sh` keeps the committed file in sync.
 
 ## Snapshot verify (E9-S02)
 
