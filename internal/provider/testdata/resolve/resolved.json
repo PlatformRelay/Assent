@@ -1,0 +1,20 @@
+{
+  "autoMergeEligible": true,
+  "facts": {
+    "groups": {
+      "expiresAt": "2026-07-21T13:00:00Z",
+      "name": "groups",
+      "observedAt": "2026-07-21T12:00:00Z",
+      "state": "resolved",
+      "subject": {
+        "id": "alice",
+        "kind": "user"
+      },
+      "value": [
+        "platform-team",
+        "reviewers"
+      ]
+    }
+  },
+  "negotiation": "accept"
+}

@@ -1,0 +1,16 @@
+{
+  "autoMergeEligible": false,
+  "facts": {
+    "groups": {
+      "name": "groups",
+      "observedAt": "2026-07-21T12:00:00Z",
+      "reason": "provider call failed: context deadline exceeded",
+      "state": "unavailable",
+      "subject": {
+        "id": "alice",
+        "kind": "user"
+      }
+    }
+  },
+  "negotiation": "capability_gap"
+}

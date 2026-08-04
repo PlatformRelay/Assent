@@ -17,7 +17,8 @@ import (
 const HostMajor = 1
 
 // FactStateUnavailable is forced onto every requested output when negotiation refuses a provider.
-const FactStateUnavailable = "unavailable"
+// Alias of StateUnavailable — kept for the P3-E2 negotiation surface.
+const FactStateUnavailable = StateUnavailable
 
 // Outcome is the resolved (H, P) negotiation cell — exactly one of accept or capability gap.
 type Outcome string

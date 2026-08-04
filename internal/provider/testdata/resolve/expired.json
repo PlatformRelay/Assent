@@ -1,0 +1,17 @@
+{
+  "autoMergeEligible": true,
+  "facts": {
+    "groups": {
+      "expiresAt": "2026-07-21T11:59:00Z",
+      "name": "groups",
+      "observedAt": "2026-07-21T12:00:00Z",
+      "reason": "expiresAt is not after the evaluation instant",
+      "state": "expired",
+      "subject": {
+        "id": "alice",
+        "kind": "user"
+      }
+    }
+  },
+  "negotiation": "accept"
+}
