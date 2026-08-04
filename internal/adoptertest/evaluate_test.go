@@ -23,6 +23,25 @@ func TestEvaluateOpaqueDiffFailsSafeReview(t *testing.T) {
 	}
 }
 
+// TestEvaluateNoOpChangesetFailsSafeReview proves a no-op case (head == base -> a
+// 0-change, NON-opaque changeset) maps to the fail-safe REVIEW, never a vacuous
+// APPROVE. Cover treats "no matched change" as an obligation that does not apply and
+// reduces to APPROVE; a harness that reported that as a green test would give false
+// confidence a policy was exercised when nothing changed. Mirrors run.go's undecidable
+// guard (cs.Opaque || len(cs.Changes) == 0).
+func TestEvaluateNoOpChangesetFailsSafeReview(t *testing.T) {
+	c := loadCase(t, "within-cap") // its head normally APPROVEs
+	c.Head = c.Base                // no-op: nothing changed -> empty changeset
+
+	res, err := adoptertest.Evaluate(c)
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	if string(res.Decision) != "REVIEW" {
+		t.Fatalf("no-op changeset decision = %q, want REVIEW (a vacuous APPROVE would be a fail-open)", res.Decision)
+	}
+}
+
 // TestRunCaseSurfacesEvaluationError proves a case that cannot be evaluated (here a
 // nil binding, which aggregate.Cover rejects) surfaces an error rather than a
 // silent pass — an unevaluable case is never a green case.

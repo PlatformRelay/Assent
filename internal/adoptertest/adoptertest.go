@@ -146,6 +146,15 @@ func Evaluate(c Case) (aggregate.Result, error) {
 		}
 		return aggregate.Result{}, fmt.Errorf("diff %s: %w", c.File, err)
 	}
+	// Mirror the CLI run path's undecidable guard (run.go's decide): an opaque OR
+	// EMPTY changeset is fail-safe REVIEW, never a silent APPROVE. Cover treats a
+	// 0-change set as "the obligation does not apply" and reduces to APPROVE — a
+	// VACUOUS pass (a no-op base==head case) in a harness whose whole job is to prove
+	// a policy was actually exercised. The field check also hardens the opaque arm
+	// above rather than relying solely on the Opaque⟹ErrOpaque invariant.
+	if cs.Opaque || len(cs.Changes) == 0 {
+		return aggregate.Result{Decision: aggregate.DecisionReview}, nil
+	}
 	in := evaldecode.BuildEvaluationInput(cs, aggregate.MR{}, requireOf(c.Bind))
 	if len(c.Facts) > 0 {
 		in.Facts = c.Facts
