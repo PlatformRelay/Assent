@@ -151,6 +151,11 @@ tasks:
     cmds:
       - bash hack/release/verify_test.sh
 
+  release-exitgate-test:
+    desc: "E9-S13 autonomous exit gate: snapshot + verify + docs-build + backlog pins (REQ-E9-S13-01..03)"
+    cmds:
+      - bash hack/release/exitgate_test.sh
+
   tools:git-cliff:
     desc: Download pinned git-cliff binary ({{.GIT_CLIFF_VERSION}})
     status:

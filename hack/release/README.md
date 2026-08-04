@@ -79,3 +79,13 @@ Given a goreleaser `dist/` directory, `verify-artifacts.sh`:
 
 Local gate: `task release-snapshot && task release-verify`. CI (E9-S05/S13) runs
 `hack/release/verify_test.sh` after snapshot builds.
+
+## Exit gate (E9-S13 autonomous half)
+
+| Script / task | Purpose |
+| --- | --- |
+| `hack/release/exitgate_test.sh` | REQ-E9-S13-01/03: snapshot + verify + strict docs-build + backlog/decisions pins |
+| `task release-exitgate-test` | Same check via Taskfile |
+
+Autonomous close path: no publish credentials required. **D-111 infra half** (tagged signed
+release, live install proof) remains operator-gated — see `docs/decisions/decisions.md`.
