@@ -345,6 +345,34 @@ infra available. **Closes D-034 (forge-backed): S05+S06 (run-path arming = S06).
 
 > **E4 status: DONE (autonomous slice)** — S01–S10 closed; `task check` green (D-010 ≥90%); S11 live L3 optional (infra-gated).
 
+## Phase 5 — E7 E2E & conformance infra stories
+
+Full INVEST stories in [p5-e7-e2e-conformance/spec.md](p5-e7-e2e-conformance/spec.md). E7
+**extends** E4's L2 conformance (`internal/forge/conformance`, D-079) — it does not re-prove
+Snapshot/Resolve/Reconcile. Scope: Spike-B profile task wiring, sample-repo generator for all
+three `examples/repos/` shapes, forge-neutral conformance catalog + remaining hermetic
+ADR-0015/0017 adversarial cases, explicit determinism CI gate (P4-E1-S12 intent), sanitization
+in verify, optional kind lab (D-038), L3 live harness (absorbs E4-S11). REQ IDs
+`REQ-E7-S0n-nn`. **Autonomous stories S01–S05 + S08** close the epic without live GitLab.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| E7-S01 | Spike-B e2e profile: `task e2e-vet` + operator docs | **[autonomous]** | P4-E1-S09, P2-E2 | e2e wiring cannot rot; **do first** |
+| E7-S02 | Sample-repo generator: seed all three `examples/repos/` shapes | **[autonomous]** | E7-S01, P1-E1 | L3 seeding without hand-copy |
+| E7-S03 | ⚠️ Conformance catalog + remaining hermetic adversarial cases (§4 pipeline, §8 fork advisory, §4 max_age arming) | **[autonomous · engine-grade]** | E4-S07..S10, E7-S01 | ADR-0005 executable catalog |
+| E7-S04 | Determinism gate: explicit CI `-count=2` step | **[autonomous]** | E4 conformance, E2-S10 | closes P4-E1-S12 CI gap |
+| E7-S05 | Security jobs: sanitization in verify + confirm gitleaks/e2e-vet | **[autonomous]** | P1-E1-S01-02, E7-S01 | D-002 hygiene in CI |
+| E7-S06 | kind local lab scaffold (`task kind-up/down`) | **[infra-gated: docker+kind]** | E7-S01, S02 | D-038 local demo (optional) |
+| E7-S07 | L3 live forge conformance harness (catalog replay) | **[infra-gated: live GitLab / token]** | E7-S02, S03, E4-S10 | L3 proof; absorbs E4-S11 |
+| E7-S08 | Exit gate: autonomous infra wired + catalog green | **[autonomous · engine-grade]** | E7-S01..S05, S03 | **the E7 autonomous exit gate** |
+
+**Dependency order**: S01 → S02 → S03 → {S04 ∥ S05} → S08; S06 after S01 when operator claims
+kind lab; S07 after S02+S03 when infra available. **Judgment calls D-080–D084** in
+`docs/decisions/decisions.md`. **Do first: S01** (smallest wiring slice, unblocks generator +
+docs).
+
+> **E7 status: SPEC READY** — claim implementation lane after operator reviews spec @ `lane-e7-spec`.
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
@@ -354,7 +382,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E9 active — **E1 has full INVEST stories**: [p5-e1-canonical-change-model/spec.md](p5-e1-canonical-change-model/spec.md); E11/E12 **unlocked** (D-017, post-Phase-4); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E7 starts alongside E1 |
+| 5 — Implementation | E1–E9 active — **E7 has full INVEST stories**: [p5-e7-e2e-conformance/spec.md](p5-e7-e2e-conformance/spec.md) (**next to claim**); E11/E12 **unlocked** (D-017, post-Phase-4); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E7 autonomous slice gates E8/E9 L3 homes |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).

@@ -205,14 +205,17 @@ unaccepted widening → fail; explanation-only → pass); comparison runs are si
 Seeds: runner; expect matcher; update flow; coverage lint; examples CI job; comparison
 runner + promotion-gate evaluation.
 
-### E7 — E2E & conformance infra — Planned (starts alongside E1)
-The Spike-B-chosen CI profile productionized + kind for local/demo; sample-repo generator
-seeding the `examples/repos/` shapes; the forge conformance suite as the executable port
-definition (ADR-0005) incl. all ADR-0015/0017 adversarial cases; determinism gate;
-e2e build tags compiled/vetted on every PR (ADR-0017 consequences); CI security gates
-(gitleaks, sanitization check). **Exit gate**: conformance suite runs green against the
-GitLab adapter in CI on merge to main; every later epic's L3 cases have a home. Seeds:
-profile wiring; repo generator; conformance skeleton; determinism job; security jobs.
+### E7 — E2E & conformance infra — **SPEC READY** (claim after E4 autonomous close)
+Full INVEST stories in [p5-e7-e2e-conformance/spec.md](p5-e7-e2e-conformance/spec.md).
+E4 already delivered L2 hermetic conformance (`internal/forge/conformance`, D-079); E7
+**productionizes** Spike-B profiles, adds the sample-repo generator for all three
+`examples/repos/` shapes, publishes a forge-neutral conformance **catalog** (ADR-0005) indexing
+E4 cases plus remaining ADR-0015/0017 adversarial cases provable hermetically, wires the
+**determinism gate** + **sanitization check** into verify (gitleaks + `go vet -tags e2e`
+already present), and scaffolds L3 live re-run + optional kind lab (**infra-gated**). **Exit
+gate**: autonomous slice (S01–S05 + S08) green in CI; catalog complete; live L3 optional
+(S07, absorbs E4-S11). Seeds: profile task wiring; repo generator; catalog; determinism job;
+security jobs; kind lab; L3 harness.
 
 ### E8 — Renderer & presentation — Planned
 ADR-0016 tier 0 only (D-012): renderer-owned envelope (markers, escaping, redaction,
