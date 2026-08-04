@@ -380,7 +380,7 @@ Full INVEST stories in [p5-e8-renderer/spec.md](p5-e8-renderer/spec.md). E8 deli
 tier 0 only (D-012/D-015): renderer-owned envelope, presentation config knobs, CEL messages,
 `assent render`, default-theme goldens, presentation lint, `en` locale catalog, and summary-comment
 slot (closes D-073). Consumes frozen `PresentationModel` — no parallel render contract. **Judgment
-calls D-088–D-095** in `docs/decisions/decisions.md`. REQ prefix `REQ-E8-S0n-nn`. **All stories
+calls D-088–D-097** in `docs/decisions/decisions.md`. REQ prefix `REQ-E8-S0n-nn`. **All stories
 autonomous** (fixture goldens + fake summary upsert; no live GitLab required).
 
 | ID | Story | Execution | Depends on | Gate contribution |
@@ -394,13 +394,14 @@ autonomous** (fixture goldens + fake summary upsert; no live GitLab required).
 | E8-S07 | ⚠️ CEL message rendering (`{{ }}` scope) | **[autonomous · engine-grade]** | E8-S05, aggregate CEL | ADR-0016 §2 |
 | E8-S08 | Default theme finding-thread + `buildDesired` wiring | **[autonomous]** | E8-S03..S07 | replaces run stub body |
 | E8-S09 | Default-theme golden markdown snapshots | **[autonomous]** | E8-S08 | ADR-0016 §4 goldens |
-| E8-S10 | `assent render` CLI against fixtures | **[autonomous]** | E8-S09 | preview without live MR |
-| E8-S11 | ⚠️ Presentation/template lint at load time | **[autonomous · engine-grade]** | E8-S07, E3 lint | no `<no value>` at render |
-| E8-S12 | ⚠️ Summary-comment slot: P3-E5 step 3 (closes D-073) | **[autonomous · engine-grade]** | E8-S08, E4 Reconcile | deferred from E4 |
-| E8-S13 | Exit gate: render goldens + safety split proven | **[autonomous · engine-grade]** | E8-S01..S12 | **the E8 autonomous exit gate** |
+| E8-S10 | `assent render --finding` CLI | **[autonomous]** | E8-S09 | preview without live MR (D-097) |
+| E8-S11 | ⚠️ Presentation lint extends E3-S04 + tier-1 rejection | **[autonomous · engine-grade]** | E8-S07, E3-S04 | docs.summary/debug lint |
+| E8-S12 | ⚠️ Forge port: UpsertComment + Summary field + Reconcile refactor | **[autonomous · engine-grade]** | E4 Reconcile | bot-note listing + step-3 hook |
+| E8-S13 | ⚠️ Rendered summary body + P3-E5 step 3 (closes D-073) | **[autonomous · engine-grade]** | E8-S08, S12 | deferred from E4 |
+| E8-S14 | Exit gate: render goldens + safety split proven | **[autonomous · engine-grade]** | E8-S01..S13 | **the E8 autonomous exit gate** |
 
-**Dependency order**: S01 → S02 → S03 → S04 → {S05 ∥ S06} → S07 → S08 → {S09 ∥ S10} → S11 → S12 →
-S13. **Closes D-073: S12. Closes D-068 presentation handoff: S06. Schema touch: S02 only (D-088).**
+**Dependency order**: S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 → S13 →
+S14 (serialized). **Closes D-073: S12+S13. Closes D-068 presentation handoff: S06. Schema touch: S02 only (D-088).**
 
 > **E8 status: SPEC READY** — next epic to claim; start **E8-S01**.
 
@@ -413,7 +414,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E9 active — **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 SPEC READY** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), D-088–D-095); S06/S07 infra-gated optional; E11/E12 **unlocked** (D-017, post-Phase-4); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E8 autonomous slice gates E9 release |
+| 5 — Implementation | E1–E9 active — **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 SPEC READY** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), D-088–D-097); S06/S07 infra-gated optional; E11/E12 **unlocked** (D-017, post-Phase-4); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E8 autonomous slice gates E9 release |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).

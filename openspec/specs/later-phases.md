@@ -225,10 +225,11 @@ customizable regions), config knobs (verbosity per env, emoji, collapse threshol
 message rendering from PresentationModel + activation, `assent render` against fixtures,
 default-theme golden markdown snapshots, presentation lint, `en` locale catalog, summary-comment
 slot (P3-E5 step 3 — closes D-073). Tiers 1–2 (slots/full templates) stay designed seams.
-**Exit gate**: render goldens green; summary slot hermetic; wording changes provably do not break
-safety tests (ADR-0014 amendment split). **13 stories (13 autonomous)** — claim **E8-S01** first.
-Seeds: `internal/render/**`; `examples/render/**`; `assent render`; config `presentation:` (D-088);
-judgment calls D-088–D-095.
+**Exit gate**: render goldens green; summary slot hermetic (S12 forge port + S13 render body);
+wording changes provably do not break safety tests (ADR-0014 amendment split). **14 stories (14
+autonomous)** — claim **E8-S01** first.
+Seeds: `internal/render/**`; `examples/render/**`; `assent render --finding`; config
+`presentation:` (D-088); forge `UpsertComment` (S12); judgment calls D-088–D-097.
 
 ### E9 — Distribution & release — Planned
 oss-playbook execution: goreleaser (binaries, brew, curl+checksum), cosign keyless signing +

@@ -30,15 +30,23 @@ and an `en` locale catalog — **without** tier 1–2 slot/full-template overrid
 - **`internal/core` stays I/O-free** (`TestCorePurity`); renderer lives in `internal/render/**`
   + `cmd/assent/render.go`; forge summary wiring touches `internal/forge/**` and `run.go` only
   at the edge (late slice).
+- **`render.Context` is ephemeral, not a frozen contract (D-096):** a render-time bundle of
+  resolved `Options`, CEL `Activation`, and pack-rule metadata pointers — never serialized, never
+  a parallel schema beside PresentationModel.
+- **Forge today is thread-only:** `Forge` exposes `ListBotThreads`/`CreateThread` only;
+  `reconcile_idempotence_test.go` explicitly excludes `summary-comment` from Reconcile. E8-S12
+  extends the port before S13 wires rendered bodies.
 
 **Scope**: (S01) renderer package + PresentationModel fixture loader; (S02) presentation config
 knobs in `.assent/config.yaml`; (S03) `en` locale catalog; (S04) renderer-owned envelope +
 marker region; (S05) markdown/HTML escaping + length clamping; (S06) sensitive-fact redaction
 (D-068); (S07) CEL message rendering; (S08) default theme finding-thread layout + wire
 `buildDesired` thread bodies; (S09) default-theme golden markdown snapshots; (S10) `assent render`
-CLI; (S11) presentation/template lint at load time; (S12) summary-comment slot (P3-E5 step 3,
-closes D-073); (S13) autonomous exit gate. **Infra-gated:** none — entire epic is fixture/hermetic
-goldens; live forge summary proof mirrors E4-S11 optional pattern but is **not** an E8 story.
+CLI; (S11) presentation/template lint at load time (**extends E3-S04**, tier-1 rejection only);
+(S12) forge port — bot-note listing + `UpsertComment` + `DesiredReviewState.Summary` + Reconcile
+orchestration refactor; (S13) rendered summary body + P3-E5 step 3 closure (D-073); (S14)
+autonomous exit gate. **Infra-gated:** none — entire epic is fixture/hermetic goldens; live forge
+summary proof mirrors E4-S11 optional pattern but is **not** an E8 story.
 
 **Non-goals** (fenced): **GitHub adapter** (E10, D-012 locked); **release / goreleaser / cosign**
 (E9); **PolicyComparisonSuite runner** (D-057 deferred); **tier 1–2 templates** (slot overrides,
@@ -55,11 +63,11 @@ P3-E5 summary fixtures, `examples/contracts/d016-strict-fixture/presentation-mod
 **New**: `internal/render/**`, render fixture corpus, `cmd/assent render`, config `presentation:`
 block, locale catalog, summary Reconcile path, golden markdown tests.
 
-**Executability**: S01–S13 **`[autonomous]`** — hermetic fixtures, in-memory fake forge for
+**Executability**: S01–S14 **`[autonomous]`** — hermetic fixtures, in-memory fake forge for
 summary slot, no live GitLab. TDD; determinism `-count=2` on render goldens; `TestCorePurity`
 untouched for `internal/core`. **Engine-grade / fail-safety review:** S04 (envelope/markers), S05
-(escaping/clamping), S06 (redaction), S07 (CEL messages), S11 (lint), S12 (summary reconcile),
-S13 (exit gate).
+(escaping/clamping), S06 (redaction), S07 (CEL messages), S11 (lint), S12 (forge port +
+orchestration), S13 (summary render + step 3), S14 (exit gate).
 
 **Judgment calls (decide-and-log / operator):**
 (a) **DECIDED — tier-0 `presentation` block extends `config.schema.json`.** ADR-0016 tier 0
@@ -78,24 +86,32 @@ markdown (full values remain in JSON report / ReplayBundle). Logged **D-091**.
 (e) **DECIDED — render fixtures live under `examples/render/<case>/`** with committed
 `presentation-model.json`, optional `render-context.json` (CEL activation + marker pins + config),
 and golden `expect.<artifact>.md`. Logged **D-092**.
-(f) **DECIDED — D-073 closes in E8-S12; summary slot is not deferred again.** Hermetic fake +
-P3-E5 fixture replay first; live GitLab note upsert is optional follow-up (E4-S11 class), not an
-E8 merge blocker. Logged **D-093**.
+(f) **DECIDED — D-073 closes in E8-S12+S13 (split forge port, then render body).** S12 extends
+the Forge port + Reconcile orchestration; S13 wires renderer output into the summary slot. Hermetic
+fake + P3-E5 fixture replay first; live GitLab note upsert optional (E4-S11 class), not an E8
+merge blocker. Logged **D-093**.
 (g) **DECIDED — marker bytes are owned by `internal/render` envelope; forge/gitlab delegates.**
 `render.Envelope(marker, body)` is the single writer of `<!-- assent:marker … -->`; gitlab adapter
 stops duplicating marker JSON assembly (wrap-only). Logged **D-094**.
 (h) **DECIDED — presentation lint runs at pack/config load (same gate as `assent lint`), not at
 render time.** Unknown CEL identifiers in `message`/`debug` lines are hard errors — never `<no value>`
 at render (ADR-0016 §2). Logged **D-095**.
+(i) **DECIDED — `render.Context` is ephemeral (Options + Activation + pack metadata).** Not a
+frozen public contract or schema — only PresentationModel is pinned (ADR-0016 §3). Logged **D-096**.
+(j) **DECIDED — CLI flag is `--finding` per ADR-0016 §4.** Primary flag names the render fixture
+directory; `--fixture` is an undocumented alias for ergonomics in tests/scripts only. Logged
+**D-097**.
 
-**Dependency order**: **S01 → S02 → S03 → S04 → {S05 ∥ S06} → S07 → S08 → {S09 ∥ S10} → S11 →
-S12 → S13**. **Closes D-073 (summary slot): S12. Closes D-068 (presentation redaction): S06.
-Closes ADR-0016 tier 0: S13.**
+**Dependency order**: **S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → S09 → S10 → S11 → S12 →
+S13 → S14** (serialized — S06 shares escape helpers with S05; S10 shares golden corpus with S09).
+**Closes D-073 (summary slot): S12+S13. Closes D-068 (presentation redaction): S06. Closes
+ADR-0016 tier 0: S14.**
 
-**Coordination note:** S08 edits `cmd/assent/run.go` (`buildDesired` body) — same file as E4/E5
-orchestration; extend in place, do not fork a second run loop. S12 adds `DesiredReviewState.Summary`
-+ early Reconcile step 3 — coordinate with `internal/forge/conformance` P3-E5 replay tests (extend,
-do not rewrite E4-S09).
+**Coordination note:** S08 edits `cmd/assent/run.go` (`buildDesired` thread body) — same file as
+E4/E5 orchestration; extend in place, do not fork a second run loop. **S12** owns forge-port +
+Reconcile orchestration refactor in `internal/forge/**` (not renderer). **S13** wires
+`render.RenderSummary` into `buildDesired` + step 3 and extends P3-E5 conformance (do not
+rewrite E4-S09 thread/approve proofs).
 
 ---
 
@@ -106,8 +122,9 @@ PresentationModel fixtures **so that** every later slice shares one typed consum
 
 **Goal**: Add `internal/render` with strict JSON decode of `decision.PresentationModel` (or
 schema-validated bytes via `schemas.PresentationModelSchema`), a `Fixture` type loading
-`examples/render/<case>/presentation-model.json`, and a no-op `RenderFindingThread` stub that
-returns an error until S08. Package stays I/O-free except explicit fixture paths in tests.
+`examples/render/<case>/presentation-model.json`, an ephemeral `Context` struct (Options +
+activation + rule-metadata slots — D-096, not serialized), and a no-op `RenderFindingThread` stub
+that returns an error until S08. Package stays I/O-free except explicit fixture paths in tests.
 
 **Dependencies**: P3-E1 PresentationModel schema, E2 `decision.Build` types.
 
@@ -253,9 +270,9 @@ Requirements:
 **As a** rule author **I want** one expression language for assert and messages **so that** load-time
 lint catches typos before render (ADR-0016 §2, ADR-0013).
 
-**Goal**: Implement `render.EvalMessage(expr string, activation cel.Activation) (string, error)`
-using the same CEL env as aggregate evaluation (reuse/refactor shared env builder — D-095). Support
-rule `message`, `docs.summary`, and `debug:` lines from pack metadata + render context. Unknown
+**Goal**: Implement `render.EvalMessage(expr string, ctx Context) (string, error)` using the
+same CEL env as aggregate evaluation (reuse/refactor shared env builder — D-095). Support rule
+`message`, `docs.summary`, and `debug:` lines from pack metadata + `ctx` activation. Unknown
 fields = compile error.
 
 **Dependencies**: E8-S05, aggregate CEL env, `hack/spikes/cel` patterns.
@@ -278,9 +295,9 @@ Requirements:
 **As a** contributor **I want** ADR-0012 default layout in forge threads **so that** MR comments
 match dry-run/`assent render` output.
 
-**Goal**: Implement `render.RenderFindingThread(pm PresentationModel, finding, Context) string`
+**Goal**: Implement `render.RenderFindingThread(pm PresentationModel, finding, ctx Context) string`
 producing ADR-0012 layout (headline, resolve CTA from locale, collapsible docs + evaluation details)
-honouring verbosity/emoji/collapse from Options. Replace `buildDesired` stub body in
+honouring verbosity/emoji/collapse from `ctx.Options`. Replace `buildDesired` stub body in
 `cmd/assent/run.go` with renderer output + `render.Envelope`.
 
 **Dependencies**: E8-S03..S07, E4 `buildDesired` marker wiring.
@@ -326,16 +343,17 @@ Requirements:
 **As a** pack author **I want** `assent render` **so that** I can preview forge markdown without a
 live MR (ADR-0016 §4).
 
-**Goal**: Add `assent render --fixture examples/render/<case> [--artifact finding-thread|summary]
-[--presentation-minimal|--presentation-full]` writing markdown to stdout; strict fixture validation;
-exit non-zero on render/validation errors.
+**Goal**: Add `assent render --finding examples/render/<case> [--artifact finding-thread|summary]
+[--presentation-minimal|--presentation-full]` writing markdown to stdout (D-097 — ADR-0016 §4
+primary flag; `--fixture` alias undocumented). Strict fixture validation; exit non-zero on
+render/validation errors.
 
 **Dependencies**: E8-S09.
 
 **Definition of done**: CLI mirrors test renderer; documented in `cmd/assent` help.
 
 Requirements:
-- **REQ-E8-S10-01** — `assent render --fixture …` stdout equals golden expect file for default case.
+- **REQ-E8-S10-01** — `assent render --finding …` stdout equals golden expect file for default case.
   Test: `cmd/assent/render_test.go`; Verify:
   `go test ./cmd/assent/... -run TestRenderCLI`; Level: L1
 - **REQ-E8-S10-02** — invalid fixture path exits non-zero with located error on stderr. Test: same;
@@ -343,60 +361,114 @@ Requirements:
 
 ---
 
-## E8-S11 — Presentation/template lint at load time [autonomous · engine-grade]
+## E8-S11 — Presentation lint: extends E3-S04 (tier-1 rejection only) [autonomous · engine-grade]
 
 **As a** pack maintainer **I want** presentation mistakes to fail `assent lint` **so that** broken
 messages never reach render (ADR-0016 §4 template lint).
 
-**Goal**: Extend `internal/lint` (or `assent lint`) to compile-check every rule `message`, `docs.summary`,
-and `debug:` CEL expression against the predicate scope; reject marker-region violations in any
-authored template fragment (tier 0: config-only — flag `.assent/templates/**` as **tier 1 deferred**
-with explicit error if present). Wire lint into existing scope tests.
+**Goal**: **Extend E3-S04** (`internal/lint/scope.go` — predicate-scope + `message` template lint):
+add compile-check for `docs.summary` and `debug:` CEL lines using the same scope table; reject
+`.assent/templates/**` with an explicit **tier-1 deferred** error (no loader). **Out of scope for
+S11 (already E3-S04):** re-proving the 11-field scope table or re-linting `assert` leaves —
+S11 only adds presentation-specific surfaces + tier-1 fence.
 
-**Dependencies**: E8-S07, E8-S02, E3 lint surface.
+**Dependencies**: E8-S07, E3-S04 (shipped), E8-S02.
 
-**Definition of done**: bad message fails lint; good archetype packs pass.
+**Definition of done**: bad `docs.summary` fails lint; good archetype packs pass; E3-S04 tests
+unchanged.
 
 Requirements:
-- **REQ-E8-S11-01** — unknown CEL field in `message` fails lint with rule location. Test:
+- **REQ-E8-S11-01** — unknown CEL field in `docs.summary` or `debug:` fails lint with rule
+  location (same machinery as E3-S04 `message-template-scope`). Test:
   `internal/lint/presentation_test.go`; Verify:
-  `go test ./internal/lint/... -run TestLintUnknownMessageField`; Level: L0
+  `go test ./internal/lint/... -run TestLintUnknownDocsSummaryField`; Level: L0
 - **REQ-E8-S11-02** — presence of `.assent/templates/` returns tier-1 deferred error (not silent
   ignore). Test: same; Verify:
   `go test ./internal/lint/... -run TestLintRejectsTier1Templates`; Level: L0
+- **REQ-E8-S11-03** — E3-S04 scope tests remain green without modification. Test:
+  `internal/lint/scope_test.go`; Verify:
+  `go test ./internal/lint/... -run 'TestUndeclaredPredicateScope|TestMessageTemplateScope'`; Level: L0
 
 ---
 
-## E8-S12 — Summary-comment slot: P3-E5 step 3 + D-073 closure [autonomous · engine-grade]
+## E8-S12 — Forge port: bot notes, UpsertComment, Summary field, Reconcile refactor [autonomous · engine-grade]
 
-**As a** reconciliation implementer **I want** the per-MR summary upsert **so that** P3-E5 step 3
-and E4 judgment call (a) close without waiting for live GitLab (D-093).
+**As a** forge implementer **I want** a write port for the per-MR summary comment **so that**
+P3-E5 step 3 has a hermetic substrate before renderer bodies land (ADR-0011, ADR-0019).
 
-**Goal**: Add `DesiredReviewState.Summary *DesiredSummary` (marker + rendered body). Implement
-`reconcileSummary` as Reconcile step 3 (before thread loop): upsert exactly one bot `summary-comment`
-artifact in fake + gitlab httptest (edit-in-place, never re-post). Render summary via
-`render.RenderSummary(pm, Context)` using default theme. Wire `buildDesired` / run path to populate
-Summary for all decision outcomes. Extend P3-E5 replay conformance to assert `summaryUpdated`.
+**Problem (ground truth):** `Forge` today is **thread-only** (`ListBotThreads`, `CreateThread`).
+`reconcile_idempotence_test.go` notes `summary-comment` has **no Reconcile path**. P3-E5 step 3
+requires a **non-thread bot note** edited in place (`artifact.kind: summary-comment`).
 
-**Dependencies**: E8-S08, E4 Reconcile engine, P3-E5 fixtures (`rerun-idempotence.yaml`, etc.).
+**Goal**:
+1. **Extend `Forge`** (ADR-0011 write port, P3-E5 reconciliation-state-table step 3):
+   - `ListBotNotes(project, mr string) ([]Note, error)` — paginated MR notes/discussions filtered
+     to bot author (mirror `ListBotThreads` identity filter).
+   - `UpsertComment(project, mr string, marker Marker, body string) (Note, error)` — create OR
+     edit-in-place exactly one `summary-comment` per MR; never post a second summary note.
+2. **Extend `DesiredReviewState`:** `Summary *DesiredSummary` carrying `Marker` + `Body` (Body
+   may be a deterministic placeholder in this slice's unit tests — full render wiring is S13).
+3. **Reconcile orchestration refactor** in `internal/forge/forge.go`:
+   - Today `Reconcile` dispatches **mutually exclusive** paths: `Thread` | `ClearSlot` |
+     `Approve+Merge` — not a unified nine-step loop.
+   - Extract an **additive publication preamble** invoked when `desired.Summary != nil`:
+     list bot notes (step 2 analog) → `reconcileSummary` upsert (step 3) → then dispatch the
+     existing path unchanged.
+   - Summary preamble runs for **all decision outcomes** when populated; it must **not** alter
+     thread supersession, clear-slot, approve/merge, or rescan behaviour on existing tests.
+4. Implement fake + gitlab httptest stubs for the new port methods.
 
-**Definition of done**: hermetic tests prove one summary note; rerun idempotence fixture passes step 3;
-D-073 marked closed in decisions.md when implemented.
+**Dependencies**: E4 Reconcile engine, P3-E5 marker grammar (`summary-comment` kind).
+
+**Definition of done**: hermetic fake proves one summary note upserted; all pre-E8 forge tests
+green; `reconcile_idempotence_test` updated to seed/expect summary slot (remove "no Reconcile path"
+exclusion).
 
 Requirements:
-- **REQ-E8-S12-01** — Reconcile creates or updates exactly one `summary-comment` bot note per MR.
-  Test: `internal/forge/reconcile_summary_test.go`; Verify:
-  `go test ./internal/forge/... -run TestReconcileSummaryUpsert`; Level: L1
-- **REQ-E8-S12-02** — identical DesiredReviewState rerun updates summary in place (zero new summary
-  notes). Test: same + `internal/forge/conformance/reconciliation_test.go`; Verify:
-  `go test ./internal/forge/... -run 'Summary|RerunIdempotence'`; Level: L1
-- **REQ-E8-S12-03** — summary body is renderer output (includes decision hash marker region via
-  `render.Envelope`). Test: `cmd/assent/run_render_test.go`; Verify:
-  `go test ./cmd/assent/... -run TestBuildDesiredSummaryUsesRenderer`; Level: L1
+- **REQ-E8-S12-01** — `UpsertComment` creates then updates in place (same forge id, zero second
+  summary notes). Test: `internal/forge/upsert_comment_test.go`; Verify:
+  `go test ./internal/forge/... -run TestUpsertCommentIdempotent`; Level: L0
+- **REQ-E8-S12-02** — `Reconcile` preamble calls step 3 when `desired.Summary != nil` without
+  breaking existing thread-only Reconcile tests (`reconcile_thread_test.go`,
+  `reconcile_merge_test.go`, `reconcile_supersede_test.go`). Test:
+  `internal/forge/reconcile_summary_preamble_test.go`; Verify:
+  `go test ./internal/forge/... -run 'TestReconcileSummaryPreamble|TestReconcileThread|TestReconcileApprove'`; Level: L1
+- **REQ-E8-S12-03** — non-bot notes with markers are invisible to `ListBotNotes` (same identity
+  filter as threads). Test: `internal/forge/fake/fake_notes_test.go`; Verify:
+  `go test ./internal/forge/fake/... -run TestListBotNotesAuthorFilter`; Level: L0
 
 ---
 
-## E8-S13 — Exit gate: render goldens green + safety split proven [autonomous · engine-grade]
+## E8-S13 — Rendered summary body + P3-E5 step 3 closure (D-073) [autonomous · engine-grade]
+
+**As a** reconciliation implementer **I want** the summary slot to carry renderer output **so that**
+P3-E5 step 3 and E4 judgment call (a) close with real presentation (D-093).
+
+**Goal**: Implement `render.RenderSummary(pm, ctx Context) string` (default theme). Wire
+`buildDesired` / run path to populate `DesiredReviewState.Summary` for all decision outcomes with
+renderer output passed through `render.Envelope` (`artifact.kind: summary-comment`). Extend P3-E5
+replay conformance (`rerun-idempotence.yaml`, `crash-then-rerun.yaml`) to assert
+`summaryUpdated` with rendered bodies. Mark **D-073 closed** when green.
+
+**Dependencies**: E8-S08, E8-S12, P3-E5 fixtures.
+
+**Definition of done**: summary body is renderer output; rerun idempotence fixture passes step 3;
+D-073 closed in `decisions.md`.
+
+Requirements:
+- **REQ-E8-S13-01** — `buildDesired` populates `Summary` with renderer output for REVIEW/BLOCK/APPROVE.
+  Test: `cmd/assent/run_render_test.go`; Verify:
+  `go test ./cmd/assent/... -run TestBuildDesiredSummaryUsesRenderer`; Level: L1
+- **REQ-E8-S13-02** — identical DesiredReviewState rerun updates summary in place (zero new summary
+  notes). Test: `internal/forge/conformance/reconciliation_test.go`; Verify:
+  `go test ./internal/forge/... -run 'Summary|RerunIdempotence'`; Level: L1
+- **REQ-E8-S13-03** — summary markdown golden in `examples/render/<case>/expect.summary.md`. Test:
+  `internal/render/summary_test.go`; Verify:
+  `go test ./internal/render/... -run TestRenderSummaryGolden`; Level: L1
+
+---
+
+## E8-S14 — Exit gate: render goldens green + safety split proven [autonomous · engine-grade]
 
 **As a** maintainer **I want** the autonomous E8 slice proven in CI **so that** E9 release can ship
 the renderer product.
@@ -406,18 +478,18 @@ verify determinism job (reuse E7-S04 pattern); (3) test proves an intentional wo
 does **not** fail `assent test` safety coverage on the same fixture pack; (4) backlog marks E8 spec
 authoritative; (5) schema diff limited to D-088 presentation block only.
 
-**Dependencies**: E8-S01..S12.
+**Dependencies**: E8-S01..S13.
 
-**Definition of done**: exit-gate checklist green; D-088–D-095 recorded; D-073 closed.
+**Definition of done**: exit-gate checklist green; D-088–D-097 recorded; D-073 closed.
 
 Requirements:
-- **REQ-E8-S13-01** — exit-gate test runs render goldens + lint + summary reconcile slice. Test:
+- **REQ-E8-S14-01** — exit-gate test runs render goldens + lint + summary reconcile slice. Test:
   `internal/render/exitgate_test.go`; Verify:
-  `go test ./internal/render/... ./internal/forge/... ./cmd/assent/... -run 'ExitGate|RenderGoldens|ReconcileSummary'`; Level: L1
-- **REQ-E8-S13-02** — safety split: `assent test` structured assertions unchanged when render golden
+  `go test ./internal/render/... ./internal/forge/... ./cmd/assent/... -run 'ExitGate|RenderGoldens|ReconcileSummary|UpsertComment'`; Level: L1
+- **REQ-E8-S14-02** — safety split: `assent test` structured assertions unchanged when render golden
   wording differs (ADR-0014). Test: `cmd/assent/render_exitgate_test.go`; Verify:
   `go test ./cmd/assent/... -run TestE8ExitGateSafetySplit`; Level: L1
-- **REQ-E8-S13-03** — backlog + later-phases mark E8 autonomous slice ready/closed per operator merge.
+- **REQ-E8-S14-03** — backlog + later-phases mark E8 autonomous slice ready/closed per operator merge.
   Test: `openspec/specs/backlog.md`; Verify:
   `grep -q p5-e8-renderer/spec.md openspec/specs/backlog.md`; Level: doc
 
@@ -427,12 +499,12 @@ Requirements:
 
 | Gate | Criterion |
 | --- | --- |
-| **Autonomous (S13)** | S01–S12 + S13 green; render goldens + lint + summary slot hermetic; `assent render` works on fixtures |
+| **Autonomous (S14)** | S01–S13 + S14 green; render goldens + lint + summary slot hermetic; `assent render --finding` works on fixtures |
 | **Schemas** | `git diff schemas/` == presentation block only (D-088); PresentationModel schema unchanged |
 | **Safety split** | Wording goldens do not break E6 safety coverage (ADR-0014) |
 | **Deferred seams** | Tier 1–2 templates, GitHub, Rego, release — fenced non-goals |
 | **Next epic** | E9 release may ship binaries/docs with renderer product |
 
-**Story count:** 13 — **13 autonomous**, **0 infra-gated**.
+**Story count:** 14 — **14 autonomous**, **0 infra-gated**.
 
 **Do first:** **E8-S01** — thinnest vertical scaffold (typed PresentationModel consumer) before config/theme work.
