@@ -86,7 +86,15 @@ type Rule struct {
 	OnFailure *OnFailure `yaml:"onFailure"`
 	Effect    Effect     `yaml:"effect"`
 	Message   string     `yaml:"message"`
+	Docs      RuleDocs   `yaml:"docs"`
+	Debug     []string   `yaml:"debug"`
 	Points    int        `yaml:"points"`
+}
+
+// RuleDocs holds presentation metadata on a rule (ADR-0012 / ADR-0016).
+type RuleDocs struct {
+	URL     string `yaml:"url"`
+	Summary string `yaml:"summary"`
 }
 
 // Match is restricted to exactly one of four ADR-0017 §5 domains. FileEvents is

@@ -148,6 +148,7 @@ func Lint(sources []Source) *Report {
 	checkFactsReferences(model, rep)
 	checkStructural(model, rep)
 	checkPredicateScope(model, rep)
+	checkPresentationLint(sources, rep)
 	checkConfigPosture(sources, model, rep)
 	checkTestsPerRule(sources, model, rep)
 	return rep

@@ -90,6 +90,10 @@ func checkPredicateScope(m *model, rep *Report) {
 				}
 			}
 			checkMessageScope(r.Message, loc, rep)
+			checkMessageScope(r.Docs.Summary, loc, rep)
+			for _, line := range r.Debug {
+				checkMessageScope(line, loc, rep)
+			}
 		}
 	}
 }
