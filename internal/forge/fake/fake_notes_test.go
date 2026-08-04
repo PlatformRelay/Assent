@@ -1,6 +1,7 @@
 package fake_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/PlatformRelay/assent/internal/forge"
@@ -70,5 +71,26 @@ func TestUpsertCommentIdempotentInPackage(t *testing.T) {
 	}
 	if got := f.NoteBody(first.ID); got != "v2" {
 		t.Fatalf("body = %q, want v2", got)
+	}
+}
+
+func TestUpsertCommentRejectsNonSummaryKindInPackage(t *testing.T) {
+	f := fake.New(botID, "src", "tgt", "sha256:merge")
+	m := forge.Marker{
+		Slot:       forge.Slot{Project: proj, MR: mrIID, Rule: "assent/review", Effect: "comment"},
+		Occurrence: decHex,
+		Decision:   decHex,
+		Artifact:   forge.Artifact{Kind: "finding-thread", SchemaVersion: "v1alpha1"},
+	}
+	_, err := f.UpsertComment(proj, mrIID, m, "body")
+	if !errors.Is(err, forge.ErrInvalidSummaryMarker) {
+		t.Fatalf("expected ErrInvalidSummaryMarker, got %v", err)
+	}
+}
+
+func TestNoteBodyMissing(t *testing.T) {
+	f := fake.New(botID, "src", "tgt", "sha256:merge")
+	if got := f.NoteBody("note/does-not-exist"); got != "" {
+		t.Fatalf("missing note body must be empty, got %q", got)
 	}
 }

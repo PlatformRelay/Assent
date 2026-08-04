@@ -160,3 +160,59 @@ func TestListBotNotesUnexpectedStatus(t *testing.T) {
 		t.Fatal("expected error on unexpected status")
 	}
 }
+
+func TestListBotNotesDecodeError(t *testing.T) {
+	c, _ := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	})
+	_, err := c.ListBotNotes("42", "7")
+	if err == nil {
+		t.Fatal("expected decode error")
+	}
+}
+
+func TestListBotNotesTransportError(t *testing.T) {
+	c := badClient()
+	_, err := c.ListBotNotes("42", "7")
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+}
+
+func TestUpsertCommentCreateUnexpectedStatus(t *testing.T) {
+	m := summaryMarker()
+	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		wantToken(t, r)
+		if r.Method == http.MethodGet {
+			_, _ = io.WriteString(w, `[]`)
+			return
+		}
+		http.Error(w, "boom", http.StatusInternalServerError)
+	})
+	_, err := c.UpsertComment("42", "7", m, "body")
+	if err == nil {
+		t.Fatal("expected create error on unexpected status")
+	}
+}
+
+func TestUpsertCommentUpdateUnexpectedStatus(t *testing.T) {
+	m := summaryMarker()
+	rendered, err := renderMarker(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		wantToken(t, r)
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"id": 9000, "body": rendered + "\n\nold", "author": map[string]any{"username": botUser}},
+			})
+			return
+		}
+		http.Error(w, "boom", http.StatusInternalServerError)
+	})
+	_, err = c.UpsertComment("42", "7", m, "new")
+	if err == nil {
+		t.Fatal("expected update error on unexpected status")
+	}
+}
