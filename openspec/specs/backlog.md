@@ -124,8 +124,8 @@ providers, not core-model redesign**. All rows below are generalized (invented n
 
 | ID | Gap | Status | Notes |
 | --- | --- | --- | --- |
-| **REF-GAP-1** | Referenced-resource authorization fact source (a list value / ACL names *another* team's resource → who owns it?) | **OPEN** — highest MR-weight | obligation side exists (`ownership`/`require-review`); needs a `resource→owner` provider. Feeds E5 (provider tier). Demonstrator fixture = C7 below |
-| **REF-GAP-2** | In-repo-state-as-a-fact (quota/placement/limits registries + in-repo reviewers files that today no provider reads) | **OPEN** | a `builtin/repo-file`/`exec` provider resolving most-specific-first; unlocks quota-ceiling + placement + in-repo-approval gates. E5 |
+| **REF-GAP-1** | Referenced-resource authorization fact source (a list value / ACL names *another* team's resource → who owns it?) | **CLOSED (E5-S08)** | `builtin/resource-owner` shipped; hermetic L0 + run-path wiring in E5-S10. Demonstrator fixture = C7 (deferred — D-071) |
+| **REF-GAP-2** | In-repo-state-as-a-fact (quota/placement/limits registries + in-repo reviewers files that today no provider reads) | **CLOSED (E5-S07)** | `builtin/repo-file` most-specific-first shipped; hermetic run path in E5-S10 (`TestE5ExitGateResolvedFacts`). C5/C6 fixtures deferred — D-071 |
 | **REF-GAP-3** | Cross-class / companion-file correlation ("two-step delete": remove from file A *and* append to manifest B) | **OPEN — likely out of v1** | `changes` is class-slice-scoped by contract (ADR-0017 §5); ship C8 as a known-limitation fixture (expected REVIEW), decide scope via OQ |
 | **REF-GAP-4** | Plan-level blast radius (weighting the expanded IaC plan, not the request diff) | **OUT of model** | assent gates the request diff; `points`/`threshold` bulk-guard on the diff is the in-scope approximation |
 
