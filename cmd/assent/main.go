@@ -56,6 +56,13 @@ func run(args []string) int {
 				return gitlab.New(endpoint, token, botAuthor)
 			})
 	}
+	if len(args) > 0 && args[0] == "lint" {
+		// `assent lint <dir>` (E3-S01): discover the repo's `.assent/**` tree and
+		// run the pure internal/lint hard-error checks over it. The directory walk
+		// (the only I/O) lives in runLint; the checks are pure. Exit non-zero on any
+		// error diagnostic so a policy defect fails CI before it reaches an MR.
+		return runLint(args[1:], os.Stdout, os.Stderr)
+	}
 	if len(args) > 0 && args[0] == "doctor" {
 		// Precondition/arming report (ADR-0015 §4/§8, ADR-0017 §9). The env
 		// boundary lives here (readPipelineDescription); Doctor is pure and

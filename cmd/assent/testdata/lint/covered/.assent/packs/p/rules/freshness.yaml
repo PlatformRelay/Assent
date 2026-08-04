@@ -1,0 +1,17 @@
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: fresh
+spec:
+  rules:
+    - name: fresh
+      phase: enforce
+      match:
+        files:
+          paths: ["topics/**/*.yaml"]
+      prove:
+        obligation: freshness
+        when: "entry.owner in facts.author.groups"
+      onFailure:
+        effect: require-review
+        code: freshness.unproven

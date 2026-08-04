@@ -1,0 +1,17 @@
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: owns
+spec:
+  rules:
+    - name: owns
+      phase: enforce
+      match:
+        files:
+          paths: ["topics/**/*.yaml"]
+      prove:
+        obligation: ownership
+        when: "entry.owner in facts.author.groups"
+      onFailure:
+        effect: require-review
+        code: ownership.unproven

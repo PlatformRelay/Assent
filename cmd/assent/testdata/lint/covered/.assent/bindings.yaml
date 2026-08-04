@@ -1,0 +1,8 @@
+apiVersion: assent.dev/v1alpha1
+kind: RulesetBinding
+bindings:
+  - class: kafka-topic
+    environment: dev
+    packs: [p]
+    risk: { threshold: 10 }
+    require: [ownership, freshness]
