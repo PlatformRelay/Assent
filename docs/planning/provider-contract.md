@@ -27,6 +27,12 @@ future `assent lint` implementation both read.
    omits `maxAge` is a load-time error, not a silent "no limit."
 3. A provider declaration's `maxAge` is validated against this table at config load: `>` the
    type's default (or the global 24h cap, whichever is stricter) is rejected, not clamped.
+4. **Sensitive tier (E5-S04 / INBOX F1/F2):** `declaration.sensitive: true` forces the **15m**
+   ceiling (rejected at load if longer — never clamped). When the host binds a resolved fact into
+   `EvaluationInput` / CEL, `aggregate.Fact.Sensitive` is set from the declaration
+   (`provider.ToAggregateFact`). **E8 redaction handoff:** the host only propagates the marker;
+   forge presentation (comments, debug, traces, logs, report artifacts) redacts sensitive values
+   per ADR-0012 A-08 / ADR-0016 — no renderer work in the provider host.
 
 ## Note on schema-level `reason` enforcement (promotion-time observation)
 
