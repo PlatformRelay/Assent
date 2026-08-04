@@ -22,3 +22,8 @@ func IsForgeGroupsType(typ string) bool {
 func IsResourceOwnerType(typ string) bool {
 	return typ == TypeResourceOwner
 }
+
+// IsRepoFileType reports whether typ is the repo-file builtin.
+func IsRepoFileType(typ string) bool {
+	return typ == TypeRepoFile
+}

@@ -23,6 +23,21 @@ type Config struct {
 	// Exec carries the digest-pinned binary declaration for exec transports
 	// (ADR-0015 §7). Host-internal — not part of frozen config.schema.json.
 	Exec *ExecDeclaration `json:"exec,omitempty"`
+	// RepoFile carries host-internal repo-file builtin wiring (E5-S07 / D-065).
+	RepoFile *RepoFileSpec `json:"repoFile,omitempty"`
+	// ResourceOwner carries host-internal resource-owner builtin wiring (E5-S08).
+	ResourceOwner *ResourceOwnerSpec `json:"resourceOwner,omitempty"`
+}
+
+// RepoFileSpec is the host-owned repo-file builtin configuration.
+type RepoFileSpec struct {
+	File  string   `json:"file"`
+	Roots []string `json:"roots,omitempty"`
+}
+
+// ResourceOwnerSpec is the host-owned resource→owner registry path.
+type ResourceOwnerSpec struct {
+	Registry string `json:"registry"`
 }
 
 // ExecDeclaration is the host-owned exec transport pin (D-065 Judgment call a).
