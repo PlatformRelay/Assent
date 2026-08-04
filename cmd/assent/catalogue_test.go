@@ -10,22 +10,21 @@ import (
 // fields this L1 command test needs are decoded.
 type catalogueDoc struct {
 	Rules []struct {
-		ID          string   `json:"id"`
-		Pack        string   `json:"pack"`
-		Rule        string   `json:"rule"`
-		DocsURL     string   `json:"docsUrl"`
-		Phase       string   `json:"phase"`
-		Obligation  string   `json:"obligation"`
-		Classes     []string `json:"classes"`
-		Deprecated  bool     `json:"deprecated"`
-		Deprecation string   `json:"deprecation"`
+		ID             string   `json:"id"`
+		Pack           string   `json:"pack"`
+		Rule           string   `json:"rule"`
+		DocsURL        string   `json:"docsUrl"`
+		Phase          string   `json:"phase"`
+		EffectivePhase string   `json:"effectivePhase"`
+		Obligation     string   `json:"obligation"`
+		Classes        []string `json:"classes"`
 	} `json:"rules"`
 }
 
 // TestCatalogueCommand asserts `assent catalogue <dir>` discovers the `.assent/**`
 // tree, generates the report from the loaded packs, prints it to stdout, and
 // exits 0 (REQ-E3-S07-04, L1). It also confirms the load-bearing binding-graph
-// join (classes) and the phase:off deprecation surface end-to-end.
+// join (classes) and the faithful phase surface end-to-end.
 func TestCatalogueCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := runCatalogue([]string{"testdata/catalogue"}, &stdout, &stderr)
@@ -63,13 +62,15 @@ func TestCatalogueCommand(t *testing.T) {
 		t.Errorf("docsUrl/phase not surfaced: %+v", own)
 	}
 
+	// A phase:off rule is catalogued with its phase reported FAITHFULLY (not
+	// reinterpreted as a lifecycle/deprecation state — v1alpha1 has no such field).
 	ri, ok := byID["topics/legacy-naming"]
 	if !ok {
-		t.Fatalf("retired rule not catalogued")
+		t.Fatalf("phase:off rule not catalogued")
 	}
-	retired := doc.Rules[ri]
-	if !retired.Deprecated || retired.Deprecation == "" {
-		t.Errorf("phase:off rule not surfaced as deprecated: %+v", retired)
+	off := doc.Rules[ri]
+	if off.Phase != "off" || off.EffectivePhase != "off" {
+		t.Errorf("phase:off rule not surfaced faithfully: phase=%q effective=%q", off.Phase, off.EffectivePhase)
 	}
 }
 

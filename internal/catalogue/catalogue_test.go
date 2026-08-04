@@ -2,6 +2,7 @@ package catalogue_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/PlatformRelay/assent/internal/catalogue"
@@ -83,19 +84,19 @@ func TestCatalogueFieldsFromLoadedPack(t *testing.T) {
 	// Canonically sorted by ID: bounded-change sorts before author-... no —
 	// "topics/author-owns-entry" < "topics/bounded-change".
 	want := catalogue.RuleEntry{
-		ID:            "topics/author-owns-entry",
-		Pack:          "topics",
-		Rule:          "author-owns-entry",
-		DocsURL:       catalogue.DocsBase + "/topics/author-owns-entry",
-		Phase:         "enforce",
-		Obligation:    "ownership",
-		RequiredFacts: []string{"author.groups"},
-		Capabilities:  []string{catalogue.CapabilityApprovalEvidence},
-		Classes:       []string{"kafka-topic"}, // deduped across the two bindings
-		MatchDomains:  []string{"files"},
-		FindingCodes:  []string{"ownership.unauthorized"},
-		Effects:       []string{"require-review"},
-		Deprecated:    false,
+		ID:             "topics/author-owns-entry",
+		Pack:           "topics",
+		Rule:           "author-owns-entry",
+		DocsURL:        catalogue.DocsBase + "/topics/author-owns-entry",
+		Phase:          "enforce",
+		EffectivePhase: "enforce", // no pack manifest ⇒ ceiling enforce ⇒ uncapped
+		Obligation:     "ownership",
+		RequiredFacts:  []string{"author.groups"},
+		Capabilities:   []string{catalogue.CapabilityApprovalEvidence},
+		Classes:        []string{"kafka-topic"}, // deduped across the two bindings
+		MatchDomains:   []string{"files"},
+		FindingCodes:   []string{"ownership.unauthorized"},
+		Effects:        []string{"require-review"},
 	}
 	if got := cat.Rules[0]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("entry[0] mismatch:\n got  %+v\n want %+v", got, want)
@@ -184,45 +185,97 @@ func TestCatalogueAdditiveTolerant(t *testing.T) {
 	}
 }
 
-// TestDeprecationMetadataSurfaced asserts a phase:off rule surfaces its
-// deprecation metadata, and a phase:enforce rule does not (REQ-E3-S07-03).
-func TestDeprecationMetadataSurfaced(t *testing.T) {
-	const withRetired = `
+// TestNoDeprecationMetadataInV1alpha1 asserts the catalogue does NOT fabricate a
+// deprecation/lifecycle field — v1alpha1's frozen contract carries none, and
+// `phase: off` is the ENTRY state of the off → observe → enforce rollout
+// (ADR-0018 §1), i.e. every newborn rule, so inferring "deprecated" from it would
+// publish pre-rollout rules as retired (the opposite of the truth). The honest
+// surface is the faithful phase; deprecation is deferred to a future schema
+// lifecycle field (spec OQ, replaces REQ-E3-S07-03).
+func TestNoDeprecationMetadataInV1alpha1(t *testing.T) {
+	const withOffRule = `
 apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
 metadata: { name: topics-legacy }
 spec:
   rules:
-    - name: legacy-check
+    - name: newborn-check
       phase: off
       match: { files: { paths: ["topics/**"] } }
       effect: comment
-    - name: live-check
+`
+	cat := catalogue.Build(catalogue.Input{
+		Packs: []catalogue.Pack{{Name: "topics", Policies: []*policy.MergePolicy{loadMP(t, withOffRule)}}},
+	})
+	if len(cat.Rules) != 1 {
+		t.Fatalf("expected 1 rule, got %d", len(cat.Rules))
+	}
+	// The phase is reported faithfully — NOT reinterpreted as a lifecycle state.
+	if cat.Rules[0].Phase != "off" || cat.Rules[0].EffectivePhase != "off" {
+		t.Errorf("phase:off rule not surfaced faithfully: phase=%q effective=%q",
+			cat.Rules[0].Phase, cat.Rules[0].EffectivePhase)
+	}
+	// No fabricated deprecation/lifecycle key leaks into the serialized report.
+	out, err := cat.Marshal()
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, forbidden := range []string{"deprecat", "lifecycle", "retired"} {
+		if strings.Contains(strings.ToLower(string(out)), forbidden) {
+			t.Errorf("catalogue JSON fabricates a %q field it has no schema basis for:\n%s", forbidden, out)
+		}
+	}
+}
+
+// TestEffectivePhaseCappedByPackCeiling asserts EffectivePhase = min(rule.phase,
+// pack ceiling) on the off < observe < enforce order — the pack manifest's phase
+// caps every contained rule (never additive), exactly as the evaluator's
+// CoverWithPhaseCeiling applies it. Phase stays the AUTHORED value.
+func TestEffectivePhaseCappedByPackCeiling(t *testing.T) {
+	const rules = `
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata: { name: topics-mixed }
+spec:
+  rules:
+    - name: enforce-rule
       phase: enforce
       match: { files: { paths: ["topics/**"] } }
       effect: block
+    - name: off-rule
+      phase: off
+      match: { files: { paths: ["topics/**"] } }
+      effect: comment
 `
+	const observeManifest = `
+apiVersion: assent.dev/v1alpha1
+kind: Pack
+metadata: { name: topics }
+spec: { phase: observe }
+`
+	manifest, err := policy.LoadPack([]byte(observeManifest))
+	if err != nil {
+		t.Fatalf("load pack manifest: %v", err)
+	}
 	cat := catalogue.Build(catalogue.Input{
-		Packs: []catalogue.Pack{{Name: "topics", Policies: []*policy.MergePolicy{loadMP(t, withRetired)}}},
+		Packs: []catalogue.Pack{{
+			Name:     "topics",
+			Policies: []*policy.MergePolicy{loadMP(t, rules)},
+			Manifest: manifest,
+		}},
 	})
 
 	byID := map[string]catalogue.RuleEntry{}
 	for _, e := range cat.Rules {
 		byID[e.ID] = e
 	}
-	legacy := byID["topics/legacy-check"]
-	if !legacy.Deprecated {
-		t.Errorf("phase:off rule not marked deprecated")
+	// enforce rule under an observe ceiling → authored enforce, effective observe.
+	if e := byID["topics/enforce-rule"]; e.Phase != "enforce" || e.EffectivePhase != "observe" {
+		t.Errorf("enforce-rule: phase=%q effective=%q, want enforce/observe", e.Phase, e.EffectivePhase)
 	}
-	if legacy.Deprecation == "" {
-		t.Errorf("deprecated rule has empty deprecation reason")
-	}
-	live := byID["topics/live-check"]
-	if live.Deprecated {
-		t.Errorf("phase:enforce rule wrongly marked deprecated")
-	}
-	if live.Deprecation != "" {
-		t.Errorf("non-deprecated rule has a deprecation reason: %q", live.Deprecation)
+	// off rule under an observe ceiling → stays off (already below the ceiling).
+	if e := byID["topics/off-rule"]; e.Phase != "off" || e.EffectivePhase != "off" {
+		t.Errorf("off-rule: phase=%q effective=%q, want off/off", e.Phase, e.EffectivePhase)
 	}
 }
 

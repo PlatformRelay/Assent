@@ -23,12 +23,14 @@
 //	    (additionalProperties:false), so the loader would reject an authored
 //	    `docs:` — the catalogue MINTS the canonical docs anchor per rule.
 //
-//	(c) Deprecation = `phase: off`. The frozen contract exposes no explicit
-//	    lifecycle/deprecated field on any schema (only `phase`), so `off` is the
-//	    only derivable retirement signal. KNOWN LIMITATION: `off` is also the
-//	    START of the off→observe→enforce rollout (ADR-0018 §1), so the catalogue
-//	    cannot distinguish a pre-rollout rule from a retired one — both surface
-//	    Deprecated:true with a reason naming the phase-off cause.
+//	(c) NO deprecation/lifecycle metadata. The frozen v1alpha1 contract carries no
+//	    such field on any schema, and `phase: off` is the ENTRY state of the
+//	    off→observe→enforce rollout (ADR-0018 §1) — every newborn/pre-rollout rule
+//	    — so inferring "deprecated" from it would publish new rules as retired.
+//	    The catalogue surfaces the phase FAITHFULLY (authored Phase +
+//	    ceiling-capped EffectivePhase) and fabricates no lifecycle state;
+//	    deprecation metadata is deferred to a future schema lifecycle field
+//	    (spec OQ, was REQ-E3-S07-03).
 package catalogue
 
 import (
@@ -67,8 +69,15 @@ type RuleEntry struct {
 	Rule string `json:"rule"`
 	// DocsURL is the minted docs anchor (DocsBase + "/" + ID); see D-048(b).
 	DocsURL string `json:"docsUrl"`
-	// Phase is the rollout phase (off | observe | enforce), verbatim from the rule.
+	// Phase is the AUTHORED rollout phase (off | observe | enforce), verbatim from
+	// the rule — what the pack author declared, before any pack-ceiling cap.
 	Phase string `json:"phase"`
+	// EffectivePhase is the evaluation-time phase = min(rule.phase, pack ceiling)
+	// on the off < observe < enforce order (ADR-0018 §1; the same cap
+	// aggregate.CoverWithPhaseCeiling applies). Equal to Phase when the pack has no
+	// manifest (absent ⇒ enforce, no cap). This is the phase that actually governs
+	// whether the rule contributes to a decision — the truthful docs surface.
+	EffectivePhase string `json:"effectivePhase"`
 	// Obligation is the proof this rule contributes (prove.obligation), empty for
 	// a non-obligation effect rule.
 	Obligation string `json:"obligation,omitempty"`
@@ -89,10 +98,6 @@ type RuleEntry struct {
 	FindingCodes []string `json:"findingCodes"`
 	// Effects are the possible outcomes: onFailure.effect and/or rule.effect.
 	Effects []string `json:"effects"`
-	// Deprecated is true iff Phase == off; see D-048(c) for the ambiguity.
-	Deprecated bool `json:"deprecated"`
-	// Deprecation is the human-readable retirement reason, set iff Deprecated.
-	Deprecation string `json:"deprecation,omitempty"`
 }
 
 // Pack is one loaded pack: its name (the `packs/<name>/` directory token, which
@@ -126,12 +131,13 @@ func Build(in Input) Catalogue {
 
 	var rules []RuleEntry
 	for _, pk := range in.Packs {
+		ceiling := packCeiling(pk.Manifest)
 		for _, mp := range pk.Policies {
 			if mp == nil {
 				continue
 			}
 			for i := range mp.Spec.Rules {
-				rules = append(rules, buildEntry(pk.Name, &mp.Spec.Rules[i], classIndex[pk.Name]))
+				rules = append(rules, buildEntry(pk.Name, &mp.Spec.Rules[i], classIndex[pk.Name], ceiling))
 			}
 		}
 	}
@@ -140,22 +146,23 @@ func Build(in Input) Catalogue {
 	return Catalogue{Rules: rules}
 }
 
-// buildEntry derives one RuleEntry from a loaded rule, the pack it belongs to, and
-// the classes that route to that pack.
-func buildEntry(pack string, r *policy.Rule, classes []string) RuleEntry {
+// buildEntry derives one RuleEntry from a loaded rule, the pack it belongs to, the
+// classes that route to that pack, and the pack's phase ceiling.
+func buildEntry(pack string, r *policy.Rule, classes []string, ceiling policy.Phase) RuleEntry {
 	id := pack + "/" + r.Name
 	e := RuleEntry{
-		ID:            id,
-		Pack:          pack,
-		Rule:          r.Name,
-		DocsURL:       DocsBase + "/" + id,
-		Phase:         string(r.Phase),
-		RequiredFacts: []string{},
-		Capabilities:  []string{},
-		Classes:       sortedDedup(classes),
-		MatchDomains:  matchDomains(r.Match),
-		FindingCodes:  []string{},
-		Effects:       []string{},
+		ID:             id,
+		Pack:           pack,
+		Rule:           r.Name,
+		DocsURL:        DocsBase + "/" + id,
+		Phase:          string(r.Phase),
+		EffectivePhase: string(minPhase(r.Phase, ceiling)),
+		RequiredFacts:  []string{},
+		Capabilities:   []string{},
+		Classes:        sortedDedup(classes),
+		MatchDomains:   matchDomains(r.Match),
+		FindingCodes:   []string{},
+		Effects:        []string{},
 	}
 
 	var facts, effects, codes []string
@@ -183,11 +190,46 @@ func buildEntry(pack string, r *policy.Rule, classes []string) RuleEntry {
 	e.Effects = sortedDedup(effects)
 	e.FindingCodes = sortedDedup(codes)
 
-	if r.Phase == policy.PhaseOff {
-		e.Deprecated = true
-		e.Deprecation = "phase: off — the rule is parsed and linted but never evaluated (ADR-0018 §1); the frozen contract exposes no explicit lifecycle field, so phase-off is the catalogue's retirement signal (D-048)"
-	}
+	// NB: v1alpha1 carries NO lifecycle/deprecated field on any frozen schema, so
+	// the catalogue surfaces no deprecation metadata — inventing it from `phase:
+	// off` would be affirmatively wrong (off is the ENTRY state of the off →
+	// observe → enforce rollout, ADR-0018 §1, i.e. every newborn rule), publishing
+	// pre-rollout rules as retired. Deprecation is deferred to a future schema
+	// lifecycle field (spec OQ). Phase/EffectivePhase are the honest surface.
 	return e
+}
+
+// packCeiling returns the pack-manifest phase ceiling; an absent manifest means
+// no cap (enforce), matching aggregate.CoverWithPhaseCeiling's default.
+func packCeiling(m *policy.Pack) policy.Phase {
+	if m == nil {
+		return policy.PhaseEnforce
+	}
+	return m.Spec.Phase
+}
+
+// minPhase caps a rule's authored phase by the pack ceiling on the off < observe
+// < enforce order — the same never-additive cap the evaluator applies.
+func minPhase(rule, ceiling policy.Phase) policy.Phase {
+	if phaseRank(ceiling) < phaseRank(rule) {
+		return ceiling
+	}
+	return rule
+}
+
+// phaseRank orders the rollout phases; an unknown/empty value ranks highest so it
+// never caps a valid phase (a post-load rule phase is always one of the three).
+func phaseRank(p policy.Phase) int {
+	switch p {
+	case policy.PhaseOff:
+		return 0
+	case policy.PhaseObserve:
+		return 1
+	case policy.PhaseEnforce:
+		return 2
+	default:
+		return 3
+	}
 }
 
 // indexClassesByPack inverts the binding graph into pack -> the classes routed to
