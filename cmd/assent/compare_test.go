@@ -91,10 +91,10 @@ func writeCompareDir(t *testing.T, baseline, candidate string) string {
 	return dir
 }
 
-// REQ-E6-S09-03: the chosen promotion gate maps pass/fail to an exit code, and an
-// explanation-only (wording-only) delta never trips the gate.
+// REQ-E6-S09-03 / PCS-S07: promotion gate maps pass/fail to ADR-0018 exit codes, and
+// an explanation-only (wording-only) delta never trips the gate.
 func TestCompareGateExitCodes(t *testing.T) {
-	t.Run("newly-auto-mergeable widening fails the gate (exit 1)", func(t *testing.T) {
+	t.Run("newly-auto-mergeable widening fails the gate (exit 4)", func(t *testing.T) {
 		// Candidate relaxes the guard (`true`) so the shrink now APPROVEs.
 		dir := writeCompareDir(t,
 			mergePolicyYAML("prod-strict-6", "new >= old", "must not shrink"),
@@ -102,8 +102,8 @@ func TestCompareGateExitCodes(t *testing.T) {
 		)
 		var out, errb bytes.Buffer
 		code := runCompare([]string{dir}, &out, &errb)
-		if code != 1 {
-			t.Fatalf("exit code = %d, want 1 (gate FAIL); stdout=%q stderr=%q", code, out.String(), errb.String())
+		if code != 4 {
+			t.Fatalf("exit code = %d, want 4 (bounded-auto-merge-widening FAIL); stdout=%q stderr=%q", code, out.String(), errb.String())
 		}
 		if !bytes.Contains(out.Bytes(), []byte("verdict=FAIL")) {
 			t.Errorf("stdout = %q, want it to report verdict=FAIL", out.String())
@@ -126,28 +126,28 @@ func TestCompareGateExitCodes(t *testing.T) {
 		}
 	})
 
-	t.Run("fail-closed classification exits non-zero, never a silent promote (exit 2)", func(t *testing.T) {
+	t.Run("fail-closed classification exits non-zero, never a silent promote (exit 6)", func(t *testing.T) {
 		// baseline BLOCKs; candidate downgrades the effect to require-review, so the
 		// delta is BLOCK -> REVIEW — a real difference the seed does not classify. It
-		// MUST exit non-zero (2, distinct from a gate FAIL) — never a silent exit-0 pass.
+		// MUST exit 6 (distinct from every gate code) — never a silent exit-0 pass.
 		dir := writeCompareDir(t,
 			mergePolicyYAML("prod-6", "new >= old", "must not shrink"),
 			mergePolicyYAMLEffect("prod-7", "new >= old", "must not shrink", "require-review"),
 		)
 		var out, errb bytes.Buffer
 		code := runCompare([]string{dir}, &out, &errb)
-		if code != 2 {
-			t.Fatalf("exit code = %d, want 2 (fail-closed classification error); stdout=%q stderr=%q", code, out.String(), errb.String())
+		if code != 6 {
+			t.Fatalf("exit code = %d, want 6 (fail-closed classification error); stdout=%q stderr=%q", code, out.String(), errb.String())
 		}
 		if !bytes.Contains(errb.Bytes(), []byte("classified kinds")) {
 			t.Errorf("stderr = %q, want it to name the fail-closed classification error", errb.String())
 		}
 	})
 
-	t.Run("missing argument is a usage error (exit 2)", func(t *testing.T) {
+	t.Run("missing argument is a usage error (exit 6)", func(t *testing.T) {
 		var out, errb bytes.Buffer
-		if code := runCompare(nil, &out, &errb); code != 2 {
-			t.Fatalf("exit code = %d, want 2 (usage)", code)
+		if code := runCompare(nil, &out, &errb); code != 6 {
+			t.Fatalf("exit code = %d, want 6 (usage)", code)
 		}
 	})
 }

@@ -89,12 +89,11 @@ func run(args []string) int {
 		return runTest(args[1:], os.Stdout, os.Stderr)
 	}
 	if len(args) > 0 && args[0] == "compare" {
-		// `assent compare <dir>` (E6-S09 seed): load one immutable ReplayBundle plus
-		// the baseline/candidate policy activations + their shared binding, evaluate
-		// both through the reused engine, classify the decision delta into one frozen
-		// taxonomy kind, and apply the bounded-auto-merge-widening promotion gate. The
-		// dir reads (the only I/O) live in runCompare; internal/compare is pure. Exit
-		// 0 = gate pass, 1 = gate fail (a widening), 2 = load/fail-closed error.
+		// `assent compare <dir>` (E6-S09 seed) or `assent compare --suite <dir>` (PCS-S07):
+		// load immutable ReplayBundle(s), baseline/candidate activations + binding,
+		// evaluate through the reused engine, classify deltas, and apply promotion
+		// gates. FS reads live in runCompare; internal/compare is pure. Exit codes
+		// follow ADR-0018 / D-115: 0 pass, 1–5 first failing gate, 6 fail-closed/load.
 		return runCompare(args[1:], os.Stdout, os.Stderr)
 	}
 	if len(args) > 0 && args[0] == "doctor" {

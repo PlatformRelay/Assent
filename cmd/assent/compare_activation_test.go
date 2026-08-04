@@ -93,8 +93,8 @@ func TestCompareUsesResolvedProfilePacks(t *testing.T) {
 	dir := writeCompareActivationDir(t)
 	var out, errb bytes.Buffer
 	code := runCompare([]string{dir}, &out, &errb)
-	if code != 1 {
-		t.Fatalf("exit code = %d, want 1 (baseline BLOCK, candidate APPROVE via pack activation); stdout=%q stderr=%q", code, out.String(), errb.String())
+	if code != 4 {
+		t.Fatalf("exit code = %d, want 4 (bounded-auto-merge-widening via pack activation); stdout=%q stderr=%q", code, out.String(), errb.String())
 	}
 	if !bytes.Contains(out.Bytes(), []byte("baseline=BLOCK")) || !bytes.Contains(out.Bytes(), []byte("candidate=APPROVE")) {
 		t.Errorf("stdout = %q, want baseline=BLOCK and candidate=APPROVE from resolved packs", out.String())

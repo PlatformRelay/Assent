@@ -41,6 +41,34 @@ The first two gates share a taxonomy member by design (destructive and
 authorization/ownership misses are one closed kind); `gateId` distinguishes the
 reporting axis for `assent compare` exit codes.
 
+## `assent compare` exit codes (ADR-0018 / D-115)
+
+Full suite mode and the single-dir seed both map process exit to promotion-gate
+outcomes. The first failing gate sets the exit code; the report lists all gate
+results on stdout.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | All promotion gates passed |
+| `1` | Gate `zero-missed-destructive` failed |
+| `2` | Gate `zero-missed-authorization-ownership` failed |
+| `3` | Gate `no-unexpected-obligation-removal` failed |
+| `4` | Gate `bounded-auto-merge-widening` failed |
+| `5` | Gate `explicitly-accepted-deltas` failed |
+| `6` | Load, schema, digest, or fail-closed classification error |
+
+Suite invocation:
+
+```text
+assent compare --suite examples/comparison/<suite>/ \
+  [--baseline-profile <name>] [--candidate-profile <name>] \
+  [--record <dir>]
+```
+
+Single-case seed fixtures retain `assent compare <dir>` with the same exit table
+(the seed applies only the `bounded-auto-merge-widening` gate, so a widening delta
+exits `4`).
+
 ## `acceptedDeltas` allowlist
 
 An allowlist entry **must** key by:
