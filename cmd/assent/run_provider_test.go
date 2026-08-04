@@ -162,3 +162,106 @@ func TestRunProviderlessUnchanged(t *testing.T) {
 		t.Fatalf("provider-less factsResolvedAt must stay empty object:\n%s", a)
 	}
 }
+
+// quotaDeclarationJSON is the host-owned repo-file provider declaration for
+// most-specific-first quota lookup (E5-S07 / REQ-E5-S10-02).
+const quotaDeclarationJSON = `{
+  "name": "quota",
+  "repoFile": {"file": "quota.yaml", "roots": ["topics"]},
+  "requests": {"values": {"pointers": ["/partitions"]}},
+  "outputs": {
+    "max_partitions": {
+      "type": "integer",
+      "cardinality": "single",
+      "subject": "repo",
+      "sensitive": false,
+      "maxAge": "24h"
+    }
+  }
+}`
+
+func configQuotaRepoFile() string {
+	return `apiVersion: assent.dev/v1alpha1
+kind: Config
+environments:
+  - name: prod
+    match: { paths: ["topics/**"] }
+classes:
+  - name: topic-registry
+    match: { paths: ["topics/**.yaml"] }
+providers:
+  quota:
+    type: builtin/repo-file
+    failure: closed
+`
+}
+
+// mergePolicyQuotaFromFact proves bounded-change against a repo-file resolved
+// quota fact — not an empty Facts map (REQ-E5-S10-02 exit gate).
+const mergePolicyQuotaFromFact = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "MergePolicy",
+  "metadata": { "name": "topic-safety" },
+  "spec": {
+    "entries": { "topic-registry": { "mode": "document", "root": "", "identity": { "pointer": "/metadata/name" } } },
+    "rules": [
+      {
+        "name": "partitions-within-quota",
+        "phase": "enforce",
+        "match": { "valueChanges": { "pointers": ["/partitions"], "kinds": ["modify"] } },
+        "prove": { "obligation": "bounded-change", "when": "new <= facts.quota.max_partitions.value && new >= old" },
+        "onFailure": { "effect": "challenge", "code": "bounded-change.out-of-band" }
+      }
+    ]
+  }
+}`
+
+const rulesetBindingBoundedChange = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "RulesetBinding",
+  "bindings": [
+    { "class": "topic-registry", "environment": "prod", "packs": ["topic-safety"], "risk": { "threshold": 10 }, "require": ["bounded-change"] }
+  ]
+}`
+
+// TestE5ExitGateResolvedFacts — REQ-E5-S10-02: hermetic assent run path evaluates
+// with resolved provider facts from builtin/repo-file (not an empty Facts map).
+// Uses --checkout for in-repo quota.yaml walk-up; pins factsResolvedAt.quota.
+func TestE5ExitGateResolvedFacts(t *testing.T) {
+	checkout := writeCheckout(t, map[string][2]string{
+		"topics/prod/quota.yaml":  {"max_partitions: 24\n", "max_partitions: 24\n"},
+		"topics/prod/orders.yaml": {"partitions: 12\n", "partitions: 16\n"},
+	})
+
+	f := newFakeGitLab(t)
+	f.governedPath = "topics/prod/orders.yaml"
+	f.mergePolicy = mergePolicyQuotaFromFact
+	f.rulesetBinding = rulesetBindingBoundedChange
+	f.config = configQuotaRepoFile()
+	f.providerDecls = map[string]string{"quota": quotaDeclarationJSON}
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 16\n"
+
+	var out bytes.Buffer
+	code := runRun(
+		runArgs("--arm", "--config", ".assent/config.yaml", "--checkout", checkout, "--subject", "file:topics/prod/orders.yaml"),
+		env("tok"), fixedClock(), &out, &out, f.factory(),
+	)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+	}
+	body := out.String()
+	if !strings.Contains(body, `"decision":"APPROVE"`) {
+		t.Fatalf("repo-file resolved quota must prove bounded-change → APPROVE:\n%s", body)
+	}
+	if strings.Contains(body, `"factsResolvedAt":{}`) {
+		t.Fatalf("exit gate requires non-empty factsResolvedAt (resolved builtin facts):\n%s", body)
+	}
+	if !strings.Contains(body, `"factsResolvedAt":{"quota":`) && !strings.Contains(body, `"quota":"2026-07-27T12:00:00Z"`) {
+		t.Fatalf("expected pins.factsResolvedAt.quota at evaluation instant:\n%s", body)
+	}
+	// Resolved fact must have reached CEL — over-quota would REVIEW; 16 <= 24 proves.
+	if f.approvals != 1 || f.merges != 1 {
+		t.Errorf("APPROVE+--arm must write: approvals=%d merges=%d", f.approvals, f.merges)
+	}
+}
