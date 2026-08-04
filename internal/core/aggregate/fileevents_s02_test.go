@@ -81,6 +81,32 @@ func TestUnmatchedFileDeleteFailsSafeReview(t *testing.T) {
 		}
 	})
 
+	// OBSERVE must NOT suppress the escalation: observe findings are structurally
+	// excluded from the decision (coverage.go), so treating observe as "governed"
+	// would suppress escalation → APPROVE — a D-063 fail-OPEN (P0 catch on EFE-S02).
+	t.Run("an OBSERVE-phase fileEvents rule does NOT govern -> REVIEW", func(t *testing.T) {
+		got, err := Cover(pol(feRule([]string{"topics/*.yaml"}, policy.PhaseObserve, `kind == "delete"`)), bind, delIn)
+		if err != nil {
+			t.Fatalf("Cover: %v", err)
+		}
+		if got.Decision != DecisionReview || !hasUnmatchedFinding(got.Findings) {
+			t.Fatalf("an observe-phase fileEvents rule must not suppress the unmatched-delete escalation (findings are decision-excluded), got %q findings=%+v observed=%+v", got.Decision, got.Findings, got.Observed)
+		}
+	})
+
+	// Pack ceiling observe caps an enforce rule to observe — same fail-open if the
+	// escalation treats effective PhaseObserve as governing. Mirror covered[]:
+	// only effective PhaseEnforce may suppress.
+	t.Run("pack-ceiling OBSERVE does NOT govern an enforce fileEvents rule -> REVIEW", func(t *testing.T) {
+		got, err := CoverWithPhaseCeiling(pol(feRule([]string{"topics/*.yaml"}, policy.PhaseEnforce, `kind == "delete"`)), bind, delIn, nil, policy.PhaseObserve)
+		if err != nil {
+			t.Fatalf("CoverWithPhaseCeiling: %v", err)
+		}
+		if got.Decision != DecisionReview || !hasUnmatchedFinding(got.Findings) {
+			t.Fatalf("pack-ceiling observe must not suppress the unmatched-delete escalation, got %q findings=%+v observed=%+v", got.Decision, got.Findings, got.Observed)
+		}
+	})
+
 	t.Run("GOVERNED: a matched clean-true fileEvents prove rule -> APPROVE, no escalation", func(t *testing.T) {
 		// prove.when kind == "delete" is clean-TRUE for this delete -> obligation proven
 		// -> APPROVE; the delete IS governed, so the escalation must stay silent (pins

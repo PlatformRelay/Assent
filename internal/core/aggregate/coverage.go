@@ -237,15 +237,17 @@ func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, a
 
 	// Unmatched-whole-file-DELETE fail-safe escalation (EFE-S02, Judgment call (a) /
 	// D-063, D-064). A whole-file DELETE event (path=="", kind==delete) that NO
-	// EVALUATED fileEvents rule governs would otherwise leave the decision APPROVE — a
-	// fail-OPEN on a destructive op: a file whose CONTENTS are governed by
+	// ENFORCE-effective fileEvents rule governs would otherwise leave the decision
+	// APPROVE — a fail-OPEN on a destructive op: a file whose CONTENTS are governed by
 	// values/valueChanges (which by S01's path!="" disjointness can never select a
 	// path=="" delete) gets ZERO protection when deleted wholesale. So an ungoverned
-	// whole-file delete escalates to at-least-REVIEW (never APPROVE). ADDITIVE and
-	// fail-safe: it only ever raises the decision toward REVIEW via worse(), never
-	// relaxes it, and it is a no-op on every changeset the differ mints today (all
-	// path!=""), so every existing evaluation is byte-identical. Add is NOT escalated
-	// (adding isn't destructive, D-063); only DELETE.
+	// whole-file delete escalates to at-least-REVIEW (never APPROVE). Observe-phase
+	// (and pack-ceiling-observe) fileEvents do NOT govern — their findings are
+	// decision-excluded, so treating them as governing would suppress escalation into
+	// APPROVE (D-063 fail-open). ADDITIVE and fail-safe: it only ever raises the
+	// decision toward REVIEW via worse(), never relaxes it, and it is a no-op on every
+	// changeset the differ mints today (all path!=""), so every existing evaluation is
+	// byte-identical. Add is NOT escalated (adding isn't destructive, D-063); only DELETE.
 	for _, ch := range in.ChangeSet.Changes {
 		if ch.Path != "" || ch.Kind != kindDelete {
 			continue // only a WHOLE-FILE (path=="") delete event
@@ -564,26 +566,25 @@ const kindModify = "modify"
 // destructive lifecycle the unmatched-delete fail-safe escalation guards (EFE-S02).
 const kindDelete = "delete"
 
-// fileDeleteGoverned reports whether some EVALUATED fileEvents prove rule selects
-// the whole-file delete ch — i.e. the delete is actually run through a rule. It
-// mirrors the main cover loop's participation gate EXACTLY (a prove rule whose
-// effective phase, after the pack ceiling, is enforce or observe), so "governed"
-// means "the loop would evaluate a rule against it". A disabled (off) rule, a
-// non-fileEvents domain (by S01 path=="" disjointness it can never select a
-// whole-file event anyway), and a direct-effect rule the loop skips all count as
-// NOT governing — the fail-safe direction: an ungoverned delete escalates to
-// REVIEW. It only ever consults fileEvents rules, whose matchChanges branch never
-// errors, so it needs no error plumbing.
+// fileDeleteGoverned reports whether some ENFORCE-effective fileEvents prove rule
+// selects the whole-file delete ch — i.e. the delete is decision-governing.
+// Mirror covered[] (coverage.go): ONLY effective PhaseEnforce may suppress the
+// unmatched-delete escalation. Observe (and enforce capped to observe by the pack
+// ceiling) IS evaluated into the observed bucket, but its findings are
+// STRUCTURALLY EXCLUDED from the decision — treating observe as "governed" would
+// suppress escalation → APPROVE while the rule never affects the verdict (a D-063
+// fail-OPEN). Off / unknown / non-fileEvents / prove-nil all count as NOT
+// governing. It only ever consults fileEvents rules, whose matchChanges branch
+// never errors, so it needs no error plumbing.
 func fileDeleteGoverned(pol *policy.MergePolicy, ch EvalChange, ceiling policy.Phase) bool {
 	for i := range pol.Spec.Rules {
 		r := pol.Spec.Rules[i]
 		if r.Prove == nil || r.Match.FileEvents == nil {
 			continue
 		}
-		switch effectivePhase(r.Phase, ceiling) {
-		case policy.PhaseEnforce, policy.PhaseObserve:
-		default:
-			continue // off / unknown: not evaluated -> does not govern
+		// Enforce-only — same gate as covered[] for obligation satisfaction.
+		if effectivePhase(r.Phase, ceiling) != policy.PhaseEnforce {
+			continue
 		}
 		if m, err := matchChanges(r.Match, []EvalChange{ch}); err == nil && len(m) > 0 {
 			return true
