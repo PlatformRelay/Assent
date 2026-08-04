@@ -1,7 +1,13 @@
-// Package forge is the P4-E1 walking-skeleton Reconcile port (ADR-0017 §7):
-// it turns a DecisionRecord-derived DesiredReviewState into forge writes
-// (one resolvable thread for a REVIEW decision; an approval + a SHA-pinned
-// merge for an APPROVE decision) against a forge, and returns a
+// Package forge is the ADR-0017 §7 forge port surface:
+//
+//	Snapshot → Resolve → Reconcile(DesiredReviewState, Preconditions) → PublicationReceipt
+//
+// Snapshot (E4-S01) reads MR heads, changed files, bot threads, and tier capability
+// flags without mutating the forge. Resolve (E4-S01) maps a require-review subject
+// and pinned SHAs to aggregate.ApprovalEvidence or an explicit CapabilityGap —
+// never silent APPROVE on missing proof. Reconcile (P4-E1) turns a
+// DecisionRecord-derived DesiredReviewState into forge writes (one resolvable
+// thread for REVIEW; approval + SHA-pinned merge for APPROVE) and returns a
 // PublicationReceipt recording what was actually written.
 //
 // This package lives OUTSIDE internal/core (the core purity rule does not apply

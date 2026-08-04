@@ -40,6 +40,15 @@ type Forge struct {
 	seq    int
 	merged bool
 
+	// Read-side fixture fields for Snapshot/Resolve (E4-S01). Write-path tests may
+	// leave these zero; Snapshot/Resolve tests populate them explicitly.
+	MRAuthor     string
+	SourceBranch string
+	TargetBranch string
+	ChangedFiles []string
+	Capabilities forge.CapabilityFlags
+	ResolveMode  ResolveMode
+
 	// AfterCurrentHeads, when non-nil, is invoked at the END of CurrentHeads —
 	// AFTER the current heads are read but BEFORE MergeCAS runs. It is the TOCTOU
 	// seam: a test sets it to advance CurrentTargetSha (etc.) so Reconcile's
