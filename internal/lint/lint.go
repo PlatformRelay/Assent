@@ -147,6 +147,7 @@ func Lint(sources []Source) *Report {
 	checkObligationCoverage(model, rep)
 	checkFactsReferences(model, rep)
 	checkStructural(model, rep)
+	checkPredicateScope(model, rep)
 	return rep
 }
 
