@@ -343,7 +343,7 @@ deferred to E8. **Engine-grade:** S03, S04, S05, S06, S08, S10.
 **Dependency order**: S01 → S02 → S03 → S04 → S05 → S06 → {S07 ∥ S08 ∥ S09} → S10; S11 after S10 when
 infra available. **Closes D-034 (forge-backed): S05+S06 (run-path arming = S06). Closes D-042 F1: S08.**
 
-> **E4 status: SPEC READY** — autonomous implementers may claim after spec lands on `main`.
+> **E4 status: DONE (autonomous slice)** — S01–S10 closed on `lane-e4-s10`; S11 live L3 optional (infra-gated).
 
 ## Phases 3–5
 

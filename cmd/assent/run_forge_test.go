@@ -57,7 +57,7 @@ func TestRunSnapshotChangedFiles(t *testing.T) {
 		f.headFile = "partitions: 24\n"
 		f.changedFiles = []string{f.governedPath, ".assent/packs/topic.yml"}
 		checkout := writeCheckout(t, map[string][2]string{
-			f.governedPath:   {"partitions: 12\n", "partitions: 24\n"},
+			f.governedPath:     {"partitions: 12\n", "partitions: 24\n"},
 			"docs/readme.yaml": {"version: 1\n", "version: 2\n"},
 		})
 
@@ -190,7 +190,7 @@ func TestRunCheckoutPrecedenceOverSnapshot(t *testing.T) {
 	f.changedFiles = []string{f.governedPath, ".assent/merge-policy.yaml"}
 
 	checkout := writeCheckout(t, map[string][2]string{
-		f.governedPath:   {"partitions: 12\n", "partitions: 24\n"},
+		f.governedPath:     {"partitions: 12\n", "partitions: 24\n"},
 		"docs/readme.yaml": {"version: 1\n", "version: 2\n"},
 	})
 
@@ -207,5 +207,42 @@ func TestRunCheckoutPrecedenceOverSnapshot(t *testing.T) {
 	}
 	if f.approvals != 1 || f.merges != 1 {
 		t.Errorf("expected merge writes: approvals=%d merges=%d", f.approvals, f.merges)
+	}
+}
+
+// TestE4ExitGateHermeticForgePath — REQ-E4-S10-02: thin exit gate composing S06
+// Resolve→decision and forge-probed arming (no --arm, env self-assertion ignored).
+// Doctor forge probe + conformance suite coverage ride `task check` (S05/S09).
+func TestE4ExitGateHermeticForgePath(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.mergePolicy = mergePolicyRequireReviewOnFalse
+	f.rulesetBinding = rulesetBindingOwnership
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 24\n"
+	f.approvalEligible = true
+	f.changedFiles = []string{f.governedPath}
+
+	// Spoofed env arming — must not arm without forge probe (D-034/D-074).
+	t.Setenv("ASSENT_PIPELINE_CONFIG_PROTECTED", "true")
+	t.Setenv("ASSENT_PIPELINE_CONFIG_AUTHOR_EDITABLE", "false")
+	t.Setenv("ASSENT_PIPELINE_TOKEN_PRIVILEGED", "false")
+
+	var out bytes.Buffer
+	code := runRun(runArgs(), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+	}
+	body := out.String()
+	if !strings.Contains(body, `"decision":"APPROVE"`) {
+		t.Fatalf("forge Resolve must satisfy require-review → APPROVE:\n%s", body)
+	}
+	if !strings.Contains(body, `"sourceSha":"srcSHA"`) {
+		t.Fatalf("DecisionRecord must pin evaluated sourceSha:\n%s", body)
+	}
+	if f.approvals != 1 || f.merges != 1 {
+		t.Fatalf("forge-probed arming must gate writes without --arm: approvals=%d merges=%d", f.approvals, f.merges)
+	}
+	if f.lastMergeSHA != "srcSHA" {
+		t.Errorf("merge?sha = %q, want srcSHA (SHA-pinned merge)", f.lastMergeSHA)
 	}
 }
