@@ -17,6 +17,7 @@
   <a href="https://pkg.go.dev/github.com/PlatformRelay/assent"><img src="https://img.shields.io/github/go-mod/go-version/PlatformRelay/assent" alt="Go version"></a>
 </p>
 
+> **Canonical repo:** GitHub ([PlatformRelay/assent](https://github.com/PlatformRelay/assent)).
 > **Status: pre-alpha / design phase.** All APIs, schemas, and commands are drafts.
 
 **assent** is a deterministic, policy-driven **auto-merge gate** for self-service
