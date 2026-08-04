@@ -10,8 +10,8 @@ import (
 // zero Kind ("") when the two Results fully agree (no delta), or a wrapped
 // ErrUnclassifiable when the delta is real but matches none of the classified kinds
 // (fail-closed). Per-delta kinds are resolved at finding identity and the highest-
-// priority kind wins (D-117): missed intervention > uncovered (S03) >
-// newly-auto-mergeable > score-threshold (S03) > stricter-added > explanation-only.
+// priority kind wins (D-117): missed intervention > uncovered > newly-auto-mergeable
+// > score-threshold > stricter-added > explanation-only.
 func classify(baseline, candidate aggregate.Result) (Kind, error) {
 	if baseline.Decision == candidate.Decision {
 		return classifyEqualDecision(baseline, candidate)
@@ -21,8 +21,24 @@ func classify(baseline, candidate aggregate.Result) (Kind, error) {
 		return KindDestructiveOrAuthorizationInterventionMissed, nil
 	}
 
+	if isObligationUncovered(baseline, candidate) {
+		return KindSubjectOrObligationUncovered, nil
+	}
+
+	interventionsEqual := equalStrings(
+		interventionKeys(baseline.Findings),
+		interventionKeys(candidate.Findings),
+	)
+
 	if candidate.Decision == aggregate.DecisionApprove && baseline.Decision != aggregate.DecisionApprove {
+		if interventionsEqual {
+			return KindScoreThresholdChange, nil
+		}
 		return KindNewlyAutoMergeable, nil
+	}
+
+	if isScoreThresholdChange(baseline, candidate) {
+		return KindScoreThresholdChange, nil
 	}
 
 	if detectStricterInterventionAdded(baseline, candidate) {
@@ -36,7 +52,7 @@ func classify(baseline, candidate aggregate.Result) (Kind, error) {
 // classifyEqualDecision resolves a same-decision pair: identical finding
 // identities with a differing message is explanation-only (wording-only, never
 // gate-tripping); byte-identical is no delta (""); differing finding identities is
-// a real finding-level semantic delta -> fail-closed until S03 classifiers land.
+// a real finding-level semantic delta -> fail-closed.
 func classifyEqualDecision(baseline, candidate aggregate.Result) (Kind, error) {
 	idBase := findingKeys(baseline.Findings, false)
 	idCand := findingKeys(candidate.Findings, false)

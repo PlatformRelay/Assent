@@ -10,8 +10,8 @@
 // extended classify with destructive-or-authorization-intervention-missed and
 // stricter-intervention-added; the seed still applies only the bounded-auto-merge-
 // widening gate. explanation-only never trips a gate; unclassified real deltas
-// FAIL CLOSED. Obligation-uncovered, score-threshold, acceptedDeltas allowlist,
-// and ComparisonRecord emission are owed to later PCS slices (decisions.md D-057).
+// FAIL CLOSED. Score-threshold and acceptedDeltas allowlist / ComparisonRecord
+// emission are owed to later PCS slices (decisions.md D-057).
 //
 // It sits UNDER internal/ (not internal/core): like internal/adoptertest it may
 // import internal/core/aggregate + internal/core/policy while internal/core stays
@@ -48,14 +48,13 @@ const (
 	// a destructive or authorization/ownership intervention the baseline had (PCS-S02).
 	KindDestructiveOrAuthorizationInterventionMissed Kind = "destructive-or-authorization-intervention-missed"
 	// KindSubjectOrObligationUncovered is when a subject/obligation covered by the
-	// baseline is uncovered by the candidate. NOT classified by the seed.
+	// baseline is uncovered by the candidate (PCS-S03).
 	KindSubjectOrObligationUncovered Kind = "subject-or-obligation-uncovered"
 	// KindNewlyAutoMergeable is when the candidate newly permits auto-merge
-	// (APPROVE) where the baseline did not. The ONE semantic kind the seed
-	// classifies; the bounded-auto-merge-widening gate fails on it.
+	// (APPROVE) where the baseline intervened with a different finding set.
 	KindNewlyAutoMergeable Kind = "newly-auto-mergeable"
-	// KindScoreThresholdChange is when score/threshold arithmetic changed the
-	// outcome. NOT classified by the seed.
+	// KindScoreThresholdChange is when score/threshold or rule.points arithmetic
+	// changed the outcome with identical intervention identities (PCS-S03).
 	KindScoreThresholdChange Kind = "score-threshold-change"
 	// KindExplanationOnly is wording-only / non-semantic presentation drift.
 	// Classified by the seed and, by contract, NEVER trips a promotion gate.
@@ -204,9 +203,10 @@ func gateVerdict(k Kind) Verdict {
 }
 
 // findingKeys returns the canonically sorted per-finding keys of a finding set.
-// withMessage=false keys by IDENTITY only (rule|obligation|effect|subject|code|points)
-// — the semantic outcome; withMessage=true appends the rendered message, so a
-// wording-only change shows up as an identity-equal / full-different pair.
+// withMessage=false keys by full identity (rule|obligation|effect|subject|code|points)
+// — including authored points weight; withMessage=true appends the rendered message,
+// so a wording-only change shows up as an identity-equal / full-different pair.
+// Score/threshold classification compares interventionKeys instead (points excluded).
 func findingKeys(findings []aggregate.Finding, withMessage bool) []string {
 	keys := make([]string, 0, len(findings))
 	for _, f := range findings {
@@ -215,6 +215,19 @@ func findingKeys(findings []aggregate.Finding, withMessage bool) []string {
 			k += "|" + f.Message
 		}
 		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// interventionKeys returns canonically sorted intervention identity keys for each
+// finding: rule|obligation|effect|subject|code. Points and message are excluded so
+// a points-only or threshold-only arithmetic delta classifies as score-threshold-
+// change rather than newly-auto-mergeable widening.
+func interventionKeys(findings []aggregate.Finding) []string {
+	keys := make([]string, 0, len(findings))
+	for _, f := range findings {
+		keys = append(keys, fmt.Sprintf("%s|%s|%s|%s|%s", f.Rule, f.Obligation, f.Effect, f.Subject, f.Code))
 	}
 	sort.Strings(keys)
 	return keys
