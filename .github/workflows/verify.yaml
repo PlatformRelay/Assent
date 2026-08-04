@@ -39,6 +39,7 @@ jobs:
           go test -count=2 ./internal/core/decision/... -run TestReportDoubleRunStable
           go test -count=2 ./internal/forge/conformance/... -run 'TestConformanceTargetAdvancedRejected|TestConformanceRerunIdempotence|TestConformanceDuplicateRepair'
           go test -count=2 ./internal/forge/... -run TestMergeFailsClosedDoubleRun
+          go test -count=2 ./internal/render/... -run 'TestRenderGoldens|TestRenderSummaryGolden'
       - name: coverage gate (>=90% on internal/, D-010)
         run: |
           if ls internal/*/*.go >/dev/null 2>&1; then

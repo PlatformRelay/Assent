@@ -73,6 +73,7 @@ tasks:
         go test -count=2 ./internal/core/decision/... -run TestReportDoubleRunStable
         go test -count=2 ./internal/forge/conformance/... -run 'TestConformanceTargetAdvancedRejected|TestConformanceRerunIdempotence|TestConformanceDuplicateRepair'
         go test -count=2 ./internal/forge/... -run TestMergeFailsClosedDoubleRun
+        go test -count=2 ./internal/render/... -run 'TestRenderGoldens|TestRenderSummaryGolden'
 
   e2e-vet:
     desc: "Compile+vet all e2e-tagged packages (mirrors verify's go vet -tags e2e ./...)"
