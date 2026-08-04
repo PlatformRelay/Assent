@@ -302,8 +302,13 @@ Requirements:
   the loader decodes it, then it is rejected at load with a reason naming `fileEvents` as a deferred
   (E1 fast-follow) domain — never silently loaded (which would later match nothing and read as "no
   such change") — while `files`, `values`, and `valueChanges` load normally.
+  - **SUPERSEDED by EFE-S01** (`openspec/specs/p5-e-fileevents/spec.md`): the whole-domain reject is
+    replaced by a NARROWING — `fileEvents` with `kinds ⊆ {add, delete}` now LOADS and MATCHES; only
+    `modify`/`rename` remain load-rejected. The reject test `TestFileEventsDomainRejectedAtLoad` was
+    split into `TestFileEventsAddDeleteAcceptedAtLoad` (REQ-EFE-S01-01) +
+    `TestFileEventsModifyRenameRejectedAtLoad` (REQ-EFE-S01-02).
   - Test: `internal/core/policy/loader_test.go`
-  - Verify: `go test ./internal/core/policy/... -run TestFileEventsDomainRejectedAtLoad`
+  - Verify: `go test ./internal/core/policy/... -run 'TestFileEventsAddDeleteAcceptedAtLoad|TestFileEventsModifyRenameRejectedAtLoad'`
   - Level: L0
 - **REQ-E2-S01-04** — Given the determinism rule, when the loader package lands, then
   `TestCorePurity` stays green over `internal/core/**` (the loader introduces no
