@@ -87,13 +87,14 @@ snapshot:
 brews:
   - name: assent
     ids:
-      - assent
+      - default
     repository:
       owner: PlatformRelay
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
+    url_template: "https://github.com/PlatformRelay/assent/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
     homepage: "https://github.com/PlatformRelay/assent"
     description: "Policy lint and test CLI for Kubernetes admission and CI"
     license: "Apache-2.0"

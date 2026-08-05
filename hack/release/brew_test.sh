@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# REQ-E9-S07b-01 autonomous gate — goreleaser brews + in-repo formula template (D-107).
+# REQ-E9-S07b-01 autonomous gate — goreleaser brews + empirical Formula generation (D-107).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -10,7 +10,14 @@ fail() {
   exit 1
 }
 
-test_goreleaser_brews() {
+ensure_goreleaser() {
+  export PATH="$(go env GOPATH)/bin:${PATH}"
+  if ! command -v goreleaser >/dev/null 2>&1 || ! goreleaser --version 2>&1 | grep -q 'version 2'; then
+    go install github.com/goreleaser/goreleaser/v2@v2.9.0
+  fi
+}
+
+test_goreleaser_brews_config() {
   grep -q '^brews:' .goreleaser.yaml \
     || fail ".goreleaser.yaml missing brews (REQ-E9-S07b-01 / D-107)"
   grep -q 'name: homebrew-tap' .goreleaser.yaml \
@@ -21,6 +28,15 @@ test_goreleaser_brews() {
     || fail "brews must use HOMEBREW_TAP_GITHUB_TOKEN for tap push"
   grep -q 'skip_upload:' .goreleaser.yaml \
     || fail "brews must skip tap upload when token absent (autonomous snapshot path)"
+  grep -q 'url_template:' .goreleaser.yaml \
+    || fail "brews must set url_template when release.disable is true (F2)"
+  grep -q 'PlatformRelay/assent/releases/download' .goreleaser.yaml \
+    || fail "url_template must point at PlatformRelay/assent GitHub release assets"
+  grep -qE 'ids:\s*$|ids:\n\s+- default|- default' .goreleaser.yaml \
+    || fail "brews.ids must reference archive id 'default', not build id 'assent' (F1)"
+  if grep -A2 'ids:' .goreleaser.yaml | grep -q 'assent'; then
+    fail "brews.ids must not reference build id 'assent' — archives Extra.ID is 'default' (F1)"
+  fi
   echo "OK: goreleaser brews configured (REQ-E9-S07b-01)"
 }
 
@@ -51,9 +67,29 @@ test_install_docs() {
   echo "OK: install.md Homebrew section honest (REQ-E9-S07b-03)"
 }
 
-test_goreleaser_brews
+test_goreleaser_generates_formula() {
+  ensure_goreleaser
+  local formula=dist/homebrew/Formula/assent.rb
+  rm -rf dist/homebrew
+  # Generate Formula locally: homebrew pipe runs, skip_upload prevents tap push (no token).
+  goreleaser release --snapshot --clean --skip=publish,sign,sbom \
+    || fail "goreleaser must generate homebrew formula with archive id default (F1)"
+  [[ -f "$formula" ]] || fail "expected generated formula at $formula (F3)"
+  grep -q 'class Assent < Formula' "$formula" \
+    || fail "generated formula must define Assent class (F3)"
+  grep -q 'bin.install "assent"' "$formula" \
+    || fail "generated formula must install assent binary (F3)"
+  grep -q 'PlatformRelay/assent/releases/download' "$formula" \
+    || fail "generated formula must use GitHub release asset URLs from url_template (F2)"
+  grep -q 'sha256 "' "$formula" \
+    || fail "generated formula must include archive checksums (F3)"
+  echo "OK: goreleaser generated Formula at $formula (F3)"
+}
+
+test_goreleaser_brews_config
 test_formula_template
 test_snapshot_skips_brew
 test_install_docs
+test_goreleaser_generates_formula
 
 echo "OK: E9-S07b autonomous gates"
