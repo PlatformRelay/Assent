@@ -56,6 +56,21 @@ test_snapshot_skips_brew() {
   echo "OK: snapshot paths skip homebrew publish"
 }
 
+# Tagged publish must NOT --skip=publish: that flag skips the Homebrew publisher
+# (goreleaser release.disable already blocks GH Release; softprops publishes assets).
+test_publish_allows_brew_upload() {
+  local wf=.github/workflows/release.yaml
+  local release_block
+  release_block="$(awk '/^  release:/{flag=1; next} flag && /^  [a-zA-Z0-9_-]+:/{exit} flag' "$wf")"
+  [[ -n "$release_block" ]] || fail "could not extract release job from $wf"
+  if echo "$release_block" | grep -E 'args:.*--skip=publish([,]|$)|args:.*--skip=[^#[:space:]]*publish'; then
+    fail "tagged release job must not --skip=publish (that skips Homebrew tap push)"
+  fi
+  echo "$release_block" | grep -q 'HOMEBREW_TAP_GITHUB_TOKEN' \
+    || fail "tagged release job must pass HOMEBREW_TAP_GITHUB_TOKEN"
+  echo "OK: tagged release allows Homebrew tap publish"
+}
+
 test_install_docs() {
   local doc=docs/usage/install.md
   [[ -f "$doc" ]] || fail "missing docs/usage/install.md"
@@ -95,6 +110,7 @@ test_goreleaser_generates_formula() {
 test_goreleaser_brews_config
 test_formula_template
 test_snapshot_skips_brew
+test_publish_allows_brew_upload
 test_install_docs
 test_goreleaser_generates_formula
 

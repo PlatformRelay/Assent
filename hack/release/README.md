@@ -32,8 +32,10 @@ The tag-triggered `.github/workflows/release.yaml` consumes git-cliff output for
 notes — same pattern as mkurator:
 
 1. Checkout with `fetch-depth: 0` (full history + tags).
-2. **Build:** `goreleaser release --clean --skip=publish` (`.goreleaser.yaml` keeps
-   `release.disable: true`; publish is via `softprops/action-gh-release`).
+2. **Build:** `goreleaser release --clean` (`.goreleaser.yaml` keeps
+   `release.disable: true` so goreleaser does not create the GitHub Release; Homebrew tap
+   push still runs when `HOMEBREW_TAP_GITHUB_TOKEN` is set — do **not** pass `--skip=publish`,
+   which skips the brew publisher). Softprops uploads archives below.
 3. Run **`orhun/git-cliff-action`** (SHA-pinned) with `config: cliff.toml` and
    `args: --latest --strip header` so the action emits the latest tagged section body.
 4. **`softprops/action-gh-release`** uploads `dist/` archives + `checksums.txt` with cliff body.
@@ -51,9 +53,10 @@ The publish job in `.github/workflows/release.yaml` (tag push / `workflow_dispat
 
 1. **`sigstore/cosign-installer`** (SHA-pinned) + **`anchore/sbom-action/download-syft`** for
    goreleaser `signs` / `sboms` in `.goreleaser.yaml`.
-2. **`goreleaser release --clean --skip=publish`** — builds archives, SPDX SBOMs (`*.spdx.json`),
+2. **`goreleaser release --clean`** — builds archives, SPDX SBOMs (`*.spdx.json`),
    cosign keyless `.sigstore.json` bundles (archives + `checksums.txt`), OIDC via
-   `id-token: write`.
+   `id-token: write`. Also pushes Homebrew Formula when `HOMEBREW_TAP_GITHUB_TOKEN` is set
+   (`release.disable: true` still blocks goreleaser’s own GitHub Release).
 3. **`actions/attest`** with `subject-checksums: dist/checksums.txt` — SLSA provenance; exported
    as `dist/release-provenance.intoto.jsonl` (mkurator pattern).
 4. **`softprops/action-gh-release`** uploads archives, checksums, SBOMs, sigstore bundles, and

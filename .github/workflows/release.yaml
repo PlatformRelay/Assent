@@ -101,10 +101,12 @@ jobs:
         with:
           distribution: goreleaser
           version: v2.9.0
-          args: release --clean --skip=publish
+          # Do NOT --skip=publish: that also skips Homebrew tap push. GH Release stays
+          # disabled via .goreleaser.yaml release.disable; softprops publishes assets below.
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Tap push (E9-S07b): set when PlatformRelay/homebrew-tap exists; goreleaser skips brew when unset.
+          # Tap push (E9-S07b): skip_upload when HOMEBREW_TAP_GITHUB_TOKEN unset.
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
       - name: Attest GitHub Release assets (SLSA provenance)
