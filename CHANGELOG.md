@@ -126,6 +126,7 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :memo: docs(readme): maturity table + alpha status (E9-S09)
 - :memo: docs(pcs): PolicyComparisonSuite full runner epic spec (D-057)
 - :memo: docs(pcs): fix spec review — purity, catalogue extraction, D-112/115
+- :memo: docs: refresh internal package map and PCS decision rows
 
 ### Features
 - :sparkles: examples: onFail branches — one predicate, both outcomes, quota case explained (P1-7)
@@ -241,6 +242,7 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :sparkles: feat(compare): CLI suite mode and ADR-0018 exit codes (PCS-S07)
 - :sparkles: feat(compare): adversarial corpus + CI dogfood (PCS-S08)
 - :sparkles: feat(compare): PCS-S09 exit gate closes D-057 deferred scope
+- :sparkles: feat(release): cosign keyless + SBOM + SLSA on release (E9-S06)
 
 ### Fixes
 - :bug: specs(p3-e4): fix reviewer P1 (vacuous verify) + align schema/fixture paths
@@ -274,6 +276,8 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :bug: fix(render): backslash-escape markdown link specials (E8-S05)
 - :bug: fix(render): satisfy gosec on golden refresh helper
 - :bug: fix(compare): classify points-only arithmetic as score-threshold
+- :bug: fix(aggregate): apply celCostBudget on live evalRule path
+- :bug: fix(release): correct SLSA verify subjects in SECURITY.md (E9-S06)
 
 ### Other
 - :truck: chore: rename project to assent (D-009) — folder, module path, CLI, .assent/, apiVersion
@@ -338,6 +342,8 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - Merge remote-tracking branch 'origin/main' into lane-e9-s10
 - Merge remote-tracking branch 'origin/main' into lane-e9-s11
 - :test_tube: test(release): E9-S13 autonomous exit gate
+- :rocket: feat(release): tag-triggered workflow with goreleaser publish
+- :construction_worker: ci(verify): wire compare and release exit gates
 
 ### Refactoring
 - :recycle: refactor(examples): migrate policies and archetypes to prove/onFailure
