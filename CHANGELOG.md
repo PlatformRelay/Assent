@@ -243,6 +243,7 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :sparkles: feat(compare): adversarial corpus + CI dogfood (PCS-S08)
 - :sparkles: feat(compare): PCS-S09 exit gate closes D-057 deferred scope
 - :sparkles: feat(release): cosign keyless + SBOM + SLSA on release (E9-S06)
+- :sparkles: feat(release): wire Homebrew tap via goreleaser brews (E9-S07b)
 
 ### Fixes
 - :bug: specs(p3-e4): fix reviewer P1 (vacuous verify) + align schema/fixture paths
@@ -278,6 +279,7 @@ Release notes are generated from gitmoji-conventional commits on the default bra
 - :bug: fix(compare): classify points-only arithmetic as score-threshold
 - :bug: fix(aggregate): apply celCostBudget on live evalRule path
 - :bug: fix(release): correct SLSA verify subjects in SECURITY.md (E9-S06)
+- :bug: fix(release): correct brews archive id and url_template (E9-S07b)
 
 ### Other
 - :truck: chore: rename project to assent (D-009) — folder, module path, CLI, .assent/, apiVersion
