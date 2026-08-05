@@ -239,8 +239,8 @@ govulncheck — do not duplicate), mkdocs-material product-only nav (planning/op
 from published nav), README maturity table, VHS demo tapes, OQ-2 GitLab mirror disposition
 (**D-105 defer**). **Exit gate CLOSED (D-111):** `hack/release/exitgate_test.sh` green; tag
 `v0.1.0` published signed assets (S05–S06, D-109) + live curl install proof; **D-099–D-110 cited.**
-**Optional residual:** Homebrew Formula push to `PlatformRelay/homebrew-tap` when
-`HOMEBREW_TAP_GITHUB_TOKEN` is set (S07b / D-107). **14 stories** — **Next after E9:**
+**Homebrew Formula published** @ `v0.1.0` (S07b / D-107). **Optional residual:** rotate
+`HOMEBREW_TAP_GITHUB_TOKEN` to a fine-grained PAT. **14 stories** — **Next after E9:**
 PolicyComparisonSuite full runner (D-057, separate epic — PCS already AUTONOMOUS COMPLETE).
 Seeds: `.goreleaser.yaml`, `release.yaml`, `hack/release/**`, install script, product nav trim.
 

@@ -471,7 +471,7 @@ S01–S09. Do first: S01.**
 > `task release-snapshot && task release-verify && task docs-build` green via
 > `hack/release/exitgate_test.sh`; product docs nav fenced (D-103); snapshot checksum verify (D-110).
 > **Judgment calls D-099–D-110 cited.** **D-111 CLOSED** @ tag `v0.1.0` (signed assets + live
-> install proof). **Optional residual:** Homebrew Formula push (`HOMEBREW_TAP_GITHUB_TOKEN`, D-107).
+> install proof). **Homebrew Formula published** @ `v0.1.0`. **Optional residual:** rotate `HOMEBREW_TAP_GITHUB_TOKEN` to a fine-grained PAT (Contents: write on `homebrew-tap` only).
 
 ## Phases 3–5
 
@@ -482,7 +482,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S13, D-099–D-111 CLOSED; Homebrew Formula push optional); **PCS AUTONOMOUS COMPLETE** ([p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md), S01–S09, **D-057 closed**, D-118); E11/E12 **unlocked** (D-017); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E9 exit = tagged signed release + docs live (D-111); brew optional |
+| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S13, D-099–D-111 CLOSED; Homebrew Formula live; PAT rotate optional); **PCS AUTONOMOUS COMPLETE** ([p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md), S01–S09, **D-057 closed**, D-118); E11/E12 **unlocked** (D-017); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E9 exit = tagged signed release + docs live + brew Formula (D-111); PAT rotate optional |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).
