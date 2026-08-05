@@ -3,6 +3,7 @@
 # (E9-S07b, D-107). Do not commit this file to PlatformRelay/homebrew-tap — goreleaser
 # writes Formula/assent.rb there when HOMEBREW_TAP_GITHUB_TOKEN is set.
 #
+# Operator runbook: hack/release/README.md § Homebrew tap.
 # Placeholder version/checksums — replace with output from `goreleaser release --snapshot`
 # or the first tagged release assets.
 

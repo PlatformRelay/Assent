@@ -60,10 +60,16 @@ test_install_docs() {
   local doc=docs/usage/install.md
   [[ -f "$doc" ]] || fail "missing docs/usage/install.md"
   grep -qi 'Homebrew' "$doc" || fail "install.md must document Homebrew section"
-  grep -qi 'not yet available\|does not exist yet' "$doc" \
-    || fail "install.md must state Homebrew is not yet available"
-  grep -qi 'When the tap lands' "$doc" \
-    || fail "install.md must document future tap install path"
+  grep -q 'PlatformRelay/homebrew-tap' "$doc" \
+    || fail "install.md must link PlatformRelay/homebrew-tap"
+  # Tap repo exists; Formula publish still pending — must not claim tap is missing.
+  if grep -qi 'does not exist yet' "$doc"; then
+    fail "install.md must not claim homebrew-tap does not exist (repo exists)"
+  fi
+  grep -qiE 'not yet available|Formula .+ pending|formula not (yet )?published|token' "$doc" \
+    || fail "install.md must state Homebrew Formula install is not yet available"
+  grep -qiE 'When the (tap lands|Formula is published)|brew tap PlatformRelay/tap' "$doc" \
+    || fail "install.md must document future brew tap/install path"
   echo "OK: install.md Homebrew section honest (REQ-E9-S07b-03)"
 }
 

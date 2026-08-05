@@ -68,18 +68,21 @@ Default `--dest` is `/usr/local/bin` when writable, otherwise `~/.local/bin`.
 
 ## Homebrew
 
-Homebrew packaging is **configured but not yet available** (E9-S07b, D-107). Goreleaser
-targets [`PlatformRelay/homebrew-tap`](https://github.com/PlatformRelay/homebrew-tap), which
-**does not exist yet** — do not expect `brew install assent` to work until the operator creates
-the tap and the first tagged release publishes a formula.
+Homebrew packaging is **configured but not yet available** for adopters (E9-S07b,
+D-107): the Formula has **not yet been published**. Goreleaser targets
+[`PlatformRelay/homebrew-tap`](https://github.com/PlatformRelay/homebrew-tap) (repo
+exists; README only until `HOMEBREW_TAP_GITHUB_TOKEN` is set on `PlatformRelay/assent`
+and a tagged release / `workflow_dispatch` rebuild pushes `Formula/assent.rb`).
 
 **Today:** use `go install` or `hack/install.sh` above.
 
 **Review template:** [`hack/release/homebrew/assent.rb.template`](https://github.com/PlatformRelay/assent/blob/main/hack/release/homebrew/assent.rb.template)
 shows the Formula goreleaser will commit on release (checksums are placeholders until a real tag).
 
-**When the tap lands** (after `PlatformRelay/homebrew-tap` exists and a release runs with
-`HOMEBREW_TAP_GITHUB_TOKEN`):
+**Operator runbook:** [`hack/release/README.md`](https://github.com/PlatformRelay/assent/blob/main/hack/release/README.md#homebrew-tap-e9-s07b-d-107)
+(token + publish steps).
+
+**When the Formula is published**:
 
 ```bash
 brew tap PlatformRelay/tap
