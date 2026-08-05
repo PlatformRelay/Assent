@@ -89,7 +89,7 @@ commits; `verify-changelog.sh` keeps the committed file in sync.
 | --- | --- |
 | `hack/install.sh` | SHA256-verify archive, optional cosign, install binary |
 | `hack/release/install_test.sh` | REQ-E9-S07a gate: mismatch reject + snapshot-no-sig + docs |
-| `docs/usage/install.md` | Adopter docs (`go install`, curl script, Homebrew tap pending) |
+| `docs/usage/install.md` | Adopter docs (`go install`, curl script, Homebrew) |
 
 Cosign skip-when-absent matches D-110 (autonomous/snapshot path). Use
 `--require-signature` for post-S06 signed releases.
@@ -102,47 +102,43 @@ Cosign skip-when-absent matches D-110 (autonomous/snapshot path). Use
 | `hack/release/homebrew/assent.rb.template` | In-repo Formula review copy (placeholder checksums) |
 | `hack/release/brew_test.sh` | REQ-E9-S07b-01 autonomous gate |
 | `task release-brew-test` | Same check via Taskfile |
-| `docs/usage/install.md` | Honest Homebrew status — Formula not yet published |
+| `docs/usage/install.md` | Live Homebrew install (`brew tap` / `brew trust` / `brew install`) |
 
-**Current state (2026-08-05):** Tap repo
-[`PlatformRelay/homebrew-tap`](https://github.com/PlatformRelay/homebrew-tap) exists
-(README only). Tag **`v0.1.0`** released without Formula push because
-`HOMEBREW_TAP_GITHUB_TOKEN` is unset (`skip_upload`). Curl / `go install` work.
+**Current state (2026-08-05):** Formula **`Formula/assent.rb`** is on
+[`PlatformRelay/homebrew-tap`](https://github.com/PlatformRelay/homebrew-tap) for tag
+**`v0.1.0`** (release rebuild after removing tagged `--skip=publish`). Adopter path:
+`brew tap PlatformRelay/tap && brew trust PlatformRelay/tap && brew install assent`.
 
-### Operator runbook — publish Formula
+Prefer a **fine-grained PAT** for `HOMEBREW_TAP_GITHUB_TOKEN` (Contents: write on
+`homebrew-tap` only); classic `repo` PAT works but is broader.
+
+### Operator runbook — (re)publish Formula
 
 1. **Confirm tap** — `https://github.com/PlatformRelay/homebrew-tap` (public, `main`).
-2. **Create a fine-grained PAT** (GitHub → Settings → Developer settings → Fine-grained
-   tokens): resource owner **PlatformRelay**; repository access **Only** `homebrew-tap`;
-   permission **Contents: Read and write**. (Classic `repo` PAT works; prefer fine-grained.)
-3. **Add repo secret** on `PlatformRelay/assent` named exactly `HOMEBREW_TAP_GITHUB_TOKEN`:
+2. **Token:** fine-grained PAT (owner **PlatformRelay**, only `homebrew-tap`, **Contents:
+   Read and write**) as repo secret `HOMEBREW_TAP_GITHUB_TOKEN` on `PlatformRelay/assent`:
    ```bash
    gh secret set HOMEBREW_TAP_GITHUB_TOKEN -R PlatformRelay/assent
-   gh secret list -R PlatformRelay/assent   # name only; never log the value
    ```
-4. **Publish Formula** (pick one):
-   - **A (recommended):** rebuild existing tag — no new semver:
-     ```bash
-     gh workflow run release.yaml -R PlatformRelay/assent -f tag=v0.1.0
-     ```
-   - **B:** cut a patch tag (`v0.1.1`) on green `main` if you want a distinct “first brew”
-     release line (`git tag` + `git push origin <tag>` — never force-push tags).
-5. **Verify:**
+3. **Publish** on a tagged release (tagged job must **not** pass `--skip=publish` — that
+   skips the brew publisher; `release.disable: true` already blocks goreleaser’s GH Release):
+   ```bash
+   gh workflow run release.yaml -R PlatformRelay/assent -f tag=v0.1.0   # rebuild
+   # or: git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+4. **Verify:**
    ```bash
    gh api repos/PlatformRelay/homebrew-tap/contents/Formula/assent.rb --jq .path
    brew tap PlatformRelay/tap
+   brew trust PlatformRelay/tap
    brew install assent
    assent version
    ```
-6. **Docs follow-up:** flip `docs/usage/install.md` from “Formula not yet published” to live
-   `brew` instructions after step 5 succeeds.
 
 **Autonomous path:** `task release-snapshot` and PR CI pass `--skip=homebrew`; goreleaser also sets
-`skip_upload` when `HOMEBREW_TAP_GITHUB_TOKEN` is absent. Adopters use `go install` or
-`hack/install.sh` until `brew tap PlatformRelay/tap && brew install assent` works.
+`skip_upload` when `HOMEBREW_TAP_GITHUB_TOKEN` is absent.
 
-**REQ-E9-S07b-02** (live `brew install` proof) remains infra-gated — verify manually after the
-runbook above.
+**REQ-E9-S07b-02** live `brew install` proof: done @ `v0.1.0` (manual).
 
 
 ## Artifact verify (E9-S12)
@@ -167,12 +163,13 @@ Given a goreleaser `dist/` directory, `verify-artifacts.sh`:
 Local gate: `task release-snapshot && task release-verify`. CI (E9-S05/S13) runs
 `hack/release/verify_test.sh` after snapshot builds.
 
-## Exit gate (E9-S13 autonomous half)
+## Exit gate (E9-S13)
 
 | Script / task | Purpose |
 | --- | --- |
 | `hack/release/exitgate_test.sh` | REQ-E9-S13-01/03: snapshot + verify + strict docs-build + backlog/decisions pins |
 | `task release-exitgate-test` | Same check via Taskfile |
 
-Autonomous close path: no publish credentials required. **D-111 infra half** (tagged signed
-release, live install proof) remains operator-gated — see `docs/decisions/decisions.md`.
+**D-111 CLOSED** @ tag `v0.1.0` (signed assets + live install + Homebrew Formula). Autonomous
+exitgate still runs without publish credentials (snapshot path). See
+`docs/decisions/decisions.md`.

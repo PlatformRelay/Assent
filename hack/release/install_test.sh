@@ -90,11 +90,12 @@ test_docs() {
   grep -q 'go install' "$doc" || fail "install.md must document go install (REQ-E9-S07a-03)"
   grep -qi 'hack/install.sh\|install.sh' "$doc" || fail "install.md must document curl/install script"
   grep -q 'PlatformRelay/homebrew-tap' "$doc" || fail "install.md must link PlatformRelay/homebrew-tap"
-  if grep -qi 'does not exist yet' "$doc"; then
-    fail "install.md must not claim homebrew-tap does not exist (repo exists)"
+  if grep -qiE 'does not exist yet|not yet available|not yet been published|Formula .+ pending' "$doc"; then
+    fail "install.md must not claim Homebrew/Formula is unpublished (live @ v0.1.0)"
   fi
-  grep -qiE 'not yet available|Formula .+ pending|formula not (yet )?published' "$doc" \
-    || fail "install.md must state Homebrew Formula is not yet available"
+  grep -q 'brew tap PlatformRelay/tap' "$doc" || fail "install.md must show brew tap"
+  grep -q 'brew install assent' "$doc" || fail "install.md must show brew install assent"
+  grep -qiE 'brew trust|untrusted tap' "$doc" || fail "install.md must document brew trust"
   echo "OK: install.md docs (REQ-E9-S07a-03)"
 }
 
