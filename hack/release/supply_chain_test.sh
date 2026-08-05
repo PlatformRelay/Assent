@@ -48,8 +48,8 @@ test_release_workflow() {
   if echo "$snapshot_block" | grep -qE 'contents: write|attestations: write|id-token: write'; then
     fail "snapshot job must not grant contents:write, attestations:write, or id-token:write"
   fi
-  grep -q 'skip=publish,sign,sbom' "$wf" \
-    || fail "snapshot job must skip sign,sbom (no OIDC locally on PR path)"
+  grep -q 'skip=publish,sign,sbom,homebrew' "$wf" \
+    || fail "snapshot job must skip sign,sbom,homebrew (no OIDC locally on PR path)"
 
   echo "OK: release workflow supply-chain wiring"
 }
@@ -76,9 +76,9 @@ test_security_md() {
 }
 
 test_snapshot_skip_path() {
-  grep -q 'skip=publish,sign,sbom' Taskfile.yml \
-    || fail "task release-snapshot must skip sign,sbom (no fake local signatures)"
-  echo "OK: local snapshot skips signing"
+  grep -q 'skip=publish,sign,sbom,homebrew' Taskfile.yml \
+    || fail "task release-snapshot must skip sign,sbom,homebrew (no fake local signatures or tap push)"
+  echo "OK: local snapshot skips signing and homebrew"
 }
 
 test_goreleaser_signs_sboms

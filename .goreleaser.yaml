@@ -1,6 +1,7 @@
 # GoReleaser v2 config for assent (E9-S02, D-100).
-# Local dry-run: task release-snapshot (--skip=sign,sbom — no OIDC locally)
+# Local dry-run: task release-snapshot (--skip=publish,sign,sbom,homebrew — no OIDC/tap locally)
 # Tag-triggered publish + signing: E9-S05/E9-S06 (.github/workflows/release.yaml, D-109)
+# Homebrew tap push (E9-S07b, D-107): needs PlatformRelay/homebrew-tap + HOMEBREW_TAP_GITHUB_TOKEN
 version: 2
 
 project_name: assent
@@ -79,6 +80,30 @@ signs:
 
 snapshot:
   version_template: "{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}"
+
+# Homebrew Formula → PlatformRelay/homebrew-tap (D-107, E9-S07b).
+# Tagged release pushes when HOMEBREW_TAP_GITHUB_TOKEN is set and the tap repo exists.
+# In-repo review copy: hack/release/homebrew/assent.rb.template
+brews:
+  - name: assent
+    ids:
+      - assent
+    repository:
+      owner: PlatformRelay
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/PlatformRelay/assent"
+    description: "Policy lint and test CLI for Kubernetes admission and CI"
+    license: "Apache-2.0"
+    skip_upload: '{{ not (isEnvSet "HOMEBREW_TAP_GITHUB_TOKEN") }}'
+    test: |
+      system "#{bin}/assent", "version"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
 
 changelog:
   disable: true

@@ -1,0 +1,44 @@
+# frozen_string_literal: true
+# In-repo review template for the Homebrew Formula goreleaser generates on tagged release
+# (E9-S07b, D-107). Do not commit this file to PlatformRelay/homebrew-tap — goreleaser
+# writes Formula/assent.rb there when HOMEBREW_TAP_GITHUB_TOKEN is set.
+#
+# Placeholder version/checksums — replace with output from `goreleaser release --snapshot`
+# or the first tagged release assets.
+
+class Assent < Formula
+  desc "Policy lint and test CLI for Kubernetes admission and CI"
+  homepage "https://github.com/PlatformRelay/assent"
+  version "0.1.0"
+  license "Apache-2.0"
+
+  on_macos do
+    if Hardware::CPU.intel?
+      url "https://github.com/PlatformRelay/assent/releases/download/v0.1.0/assent_0.1.0_darwin_amd64.tar.gz"
+      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+    end
+    if Hardware::CPU.arm?
+      url "https://github.com/PlatformRelay/assent/releases/download/v0.1.0/assent_0.1.0_darwin_arm64.tar.gz"
+      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.intel?
+      url "https://github.com/PlatformRelay/assent/releases/download/v0.1.0/assent_0.1.0_linux_amd64.tar.gz"
+      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+    end
+    if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
+      url "https://github.com/PlatformRelay/assent/releases/download/v0.1.0/assent_0.1.0_linux_arm64.tar.gz"
+      sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+    end
+  end
+
+  def install
+    bin.install "assent"
+  end
+
+  test do
+    system "#{bin}/assent", "version"
+  end
+end

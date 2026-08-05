@@ -89,7 +89,7 @@ test_docs() {
   [[ -f "$doc" ]] || fail "docs/usage/install.md missing (REQ-E9-S07a-03)"
   grep -q 'go install' "$doc" || fail "install.md must document go install (REQ-E9-S07a-03)"
   grep -qi 'hack/install.sh\|install.sh' "$doc" || fail "install.md must document curl/install script"
-  grep -qi 'coming soon\|Homebrew' "$doc" || fail "install.md must mention Homebrew coming soon"
+  grep -qi 'homebrew-tap\|not yet available\|does not exist yet' "$doc" || fail "install.md must state tap is pending"
   echo "OK: install.md docs (REQ-E9-S07a-03)"
 }
 

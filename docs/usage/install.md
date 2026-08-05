@@ -68,5 +68,21 @@ Default `--dest` is `/usr/local/bin` when writable, otherwise `~/.local/bin`.
 
 ## Homebrew
 
-Homebrew install (`brew install assent` via `PlatformRelay/homebrew-tap`) is **coming soon**
-(E9-S07b). Until the tap lands, use `go install` or `hack/install.sh` above.
+Homebrew packaging is **configured but not yet available** (E9-S07b, D-107). Goreleaser
+targets [`PlatformRelay/homebrew-tap`](https://github.com/PlatformRelay/homebrew-tap), which
+**does not exist yet** — do not expect `brew install assent` to work until the operator creates
+the tap and the first tagged release publishes a formula.
+
+**Today:** use `go install` or `hack/install.sh` above.
+
+**Review template:** [`hack/release/homebrew/assent.rb.template`](https://github.com/PlatformRelay/assent/blob/main/hack/release/homebrew/assent.rb.template)
+shows the Formula goreleaser will commit on release (checksums are placeholders until a real tag).
+
+**When the tap lands** (after `PlatformRelay/homebrew-tap` exists and a release runs with
+`HOMEBREW_TAP_GITHUB_TOKEN`):
+
+```bash
+brew tap PlatformRelay/tap
+brew install assent
+assent version
+```
