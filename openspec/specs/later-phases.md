@@ -231,19 +231,18 @@ summary slot hermetic; wording changes provably do not break safety tests (ADR-0
 Seeds: `internal/render/**`; `examples/render/**`; `assent render --finding`; config
 `presentation:` (D-088); forge `UpsertComment` (S12); judgment calls D-088–D-097.
 
-### E9 — Distribution & release — **AUTONOMOUS COMPLETE (D-111 infra pending)**
+### E9 — Distribution & release — **AUTONOMOUS COMPLETE (D-111 CLOSED)**
 Full INVEST stories in [p5-e9-distribution/spec.md](p5-e9-distribution/spec.md). oss-playbook
 execution: goreleaser (binaries, brew, curl+checksum, `go install`), cosign keyless + SLSA +
 SBOM, git-cliff notes without SHAs, CI hardening **audit** (extend D-045 CodeQL/Scorecard/
 govulncheck — do not duplicate), mkdocs-material product-only nav (planning/openspec excluded
 from published nav), README maturity table, VHS demo tapes, OQ-2 GitLab mirror disposition
-(**D-105 defer**). **Autonomous exit gate CLOSED (S13 half):** `hack/release/exitgate_test.sh`
-runs snapshot + checksum verify + strict docs build; S01–S04 + S07a + S08→S09 + S10 + S11 + S12
-green; **D-099–D-110 cited.** **Infra half pending (D-111):** tag `v0.1.0` (D-108) publishes
-signed assets (S05–S06, D-109), Homebrew tap (S07b, D-107), live curl/go install + docs site proof.
-**14 stories (10 autonomous closed, 4 infra-gated)** — **Next after E9:** PolicyComparisonSuite
-full runner (D-057, separate epic). Seeds: `.goreleaser.yaml`, `release.yaml`, `hack/release/**`,
-install script, product nav trim.
+(**D-105 defer**). **Exit gate CLOSED (D-111):** `hack/release/exitgate_test.sh` green; tag
+`v0.1.0` published signed assets (S05–S06, D-109) + live curl install proof; **D-099–D-110 cited.**
+**Optional residual:** Homebrew Formula push to `PlatformRelay/homebrew-tap` when
+`HOMEBREW_TAP_GITHUB_TOKEN` is set (S07b / D-107). **14 stories** — **Next after E9:**
+PolicyComparisonSuite full runner (D-057, separate epic — PCS already AUTONOMOUS COMPLETE).
+Seeds: `.goreleaser.yaml`, `release.yaml`, `hack/release/**`, install script, product nav trim.
 
 ### PCS — PolicyComparisonSuite full runner — **AUTONOMOUS COMPLETE (D-118)**
 Full INVEST stories in [p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md).
