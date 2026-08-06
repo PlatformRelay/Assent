@@ -79,6 +79,7 @@ runs early/parallel. **Infra-gated (park for operator)**: S10 (L3 e2e green) the
 | **P4-CODEQL** | Enable CodeQL (Go + Actions) | **DONE** (2026-08-03, D-045) — `.github/workflows/codeql.yaml` | no | Pinned, workflow-based CodeQL with a `go`(manual build)+`actions`(build-mode none) matrix, consistent with sibling repos (MKurator/Kollect); chosen over the zero-config default setup for SHA-pinned reproducibility |
 | **P4-SEC-OSSF** | OpenSSF/security hardening (SECURITY.md, CODEOWNERS, Scorecard, scheduled govulncheck) | **DONE** (2026-08-03, D-045) | no | `SECURITY.md` + `.github/CODEOWNERS` + `scorecard.yaml` + schedule-only `vulncheck.yaml`; modeled on MKurator/Kollect. Residual: turn on branch protection + required checks on `main` (operator) |
 | **AUD-OPS** | Operator-only audit residuals: SEC-05 rotate `HOMEBREW_TAP_GITHUB_TOKEN` to fine-grained PAT · SEC-06 tag ruleset · RELSE-07 `enforce_admins` on main | **OPEN — operator** | **yes** | Fenced out of P5-AUD (live GitHub settings/secrets); see audit 2026-08-06 |
+| **AUD-RELSE-08** | RELSE-08: make `release-exitgate` a required PR check on `main` (today it can be skipped/pending at merge) | **OPEN — operator** | **yes** | Dispatched from AUD-S03 not-in-scope (live GitHub branch-protection/required-checks settings); see audit 2026-08-06 |
 
 ## Code-health / SonarCloud maintainability residuals
 
@@ -496,7 +497,7 @@ ruleset, RELSE-07 enforce_admins (see the AUD-OPS residual row). **Every story `
 | AUD-S07 | ARCH-01: depguard boundary rules + purity-walk extension (D-123; ADR-0011 Amendment 3 same-change) | **[autonomous]** | none | violating import fails CI (3rd-audit closure) |
 | AUD-S08 | ⚠️ REL-08: emit DecisionRecord before reconcile, atomic write-then-rename (D-122) | **[autonomous · engine-grade]** | S04 (lane) | audit-trail integrity; no record ⇒ no action |
 | AUD-S09 | SEC-04: pin Task version in verify.yaml | **[autonomous]** | S02 (lane) | no mutable gate toolchain |
-| AUD-S10 | REL-03: bounded response reads + pagination caps (fail-closed) | **[autonomous]** | S01 (lane) | transport availability hardening |
+| AUD-S10 | REL-03/SEC-08: bounded response reads + pagination caps (fail-closed) | **[autonomous]** | S01 (lane) | transport availability hardening |
 | AUD-S11 | REL-04: idempotent-GET retry/backoff + context deadlines (writes never retried) | **[autonomous]** | S10 | transient-failure availability |
 | AUD-S12 | ⚠️ REL-06: malformed bot-marker skip-with-warning (spoof surface unchanged) | **[autonomous · engine-grade]** | S10, S11 | reconcile un-brickable |
 | AUD-S13 | TEST-02/05/06 depth bundle + aggregate internal/ coverage ≥ 91.0% | **[autonomous]** | S10–S12 (lane) | D-010 headroom bought with behavior tests |

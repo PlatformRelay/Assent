@@ -35,7 +35,8 @@ ADR has been repointed to a dedicated ADR whose number is assigned when Spike D 
 regenerate + gate wired; S03 RELSE-05 verify-green tag gate. **Next**: S04 ARCH-03 toolDigest
 truth; S05 DOC-08 CLI help + reference; S06 docs truth-lag sweep (DOC-05/06/07/09/10/11); S07
 ARCH-01 automated boundaries; S08 REL-08 emit ordering; S09 SEC-04 task pin. **Later**: S10
-REL-03 bounded reads + page caps; S11 REL-04 retry/backoff/context; S12 REL-06 marker resilience;
+REL-03/SEC-08 bounded reads + page caps; S11 REL-04 retry/backoff/context; S12 REL-06 marker
+resilience;
 S13 TEST-02/05/06 depth bundle + coverage ≥91%; S14 SEC-01/SEC-03 supply-chain pins; S15 ARCH-02
 port lift (pre-E10); S16 ARCH-04 replay-bundle hash wiring; S17 ARCH-05 C4 sync; S18 exit gate.
 
@@ -92,7 +93,12 @@ separately raises it (log if raised).
 
 **Lane plan (implementation lanes own DISJOINT paths; sequence WITHIN a lane, not across)**:
 - **Lane A — forge/transport**: S01 → S10 → S11 → S12 → S15(+cmd swap, last). Owns
-  `internal/forge/**`, `internal/provider/transport.go`.
+  `internal/forge/**`, `internal/provider/transport.go`. Disjointness caveat (explicit):
+  S01's fold wiring is a PRODUCTION edit inside Lane C's tree — the checkout-less snapshot
+  fold in `cmd/assent` (`run.go` fold + `checkout.go`) — plus the
+  `cmd/assent/run_changedset_test.go` test file. Safe by wave ordering (S01 is wave-1;
+  Lane C's S04/S08/S16 are wave-2+), but Lane C must rebase on S01 before starting, and
+  neither lane touches those files concurrently.
 - **Lane B — CI/release plumbing**: S02 → S03 → S09 → S14. Owns `Taskfile.yml`, `CHANGELOG.md`,
   `.github/workflows/{verify,release,schemas}.yaml`, `hack/release/**`.
 - **Lane C — cmd run-path/record**: S04 → S08 → S16. Owns `cmd/assent/run.go` (+ the S04
@@ -152,7 +158,12 @@ diff-endpoint-404/5xx knobs; the conformance suite gains the three required case
 **Operator input**: no (ADR-0020 / D-119 decide the mechanism; cite them in the implementation
 commit).
 
-**Dependencies**: none (ADR-0020 + D-119 land in the same PR as this spec).
+**Dependencies**: none (ADR-0020 + D-119 land in the same PR as this spec). Lane coordination:
+besides the adapter work, points (1)/(4) are production edits OUTSIDE Lane A's owned paths — the
+`forge.Snapshot` widening and the checkout-less fold wiring in `cmd/assent` (`run.go` fold +
+`checkout.go`) sit in Lane C's tree. Wave ordering protects this (S01 is wave-1, Lane C starts
+wave-2 rebased on S01); state it in the lane handoff, same as the `run_changedset_test.go` note
+on REQ-AUD-S01-04.
 
 **Acceptance criteria (G-W-T)**:
 - Given a fake/httptest forge returning a paginated diff list that terminates below the ceiling
@@ -272,8 +283,8 @@ a wait hides red).
 extracted to `hack/release/verify-tag-gate.sh` so the polarity table is testable without a live
 run.
 
-**Not in scope**: making `release-exitgate` a required PR check (RELSE-08 residual — backlog note);
-branch/tag protection (operator, non-goals).
+**Not in scope**: making `release-exitgate` a required PR check (RELSE-08 — operator residual,
+backlog row AUD-RELSE-08); branch/tag protection (operator, non-goals).
 
 Requirements:
 - **REQ-AUD-S03-01** — the release job's first step fails unless verify concluded success on the tag SHA; covers push + dispatch paths. Test: `hack/release/verify_tag_gate_test.sh` (new — table over success/failure/pending/missing via a stubbed `gh`); Verify: `bash hack/release/verify_tag_gate_test.sh`; Level: L1
@@ -529,11 +540,13 @@ via a workflow-level `env` so the two jobs can't skew.
 Requirements:
 - **REQ-AUD-S09-01** — zero `@latest` installs across `.github/workflows/**`; task pinned + deduplicated via env. Test: `hack/lint/workflow_pins_test.sh` (new grep gate — also serves S14); Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L1
 
-## AUD-S10 — REL-03: bounded response reads + pagination caps [autonomous]
+## AUD-S10 — REL-03/SEC-08: bounded response reads + pagination caps [autonomous]
 
 **As a** repo operator **I want** every forge/provider HTTP response read bounded and every
 pagination loop capped **so that** a hostile or broken endpoint can't OOM the run or spin it
-unbounded (availability hardening; decision impact already capped by differ ceilings).
+unbounded (availability hardening; decision impact already capped by differ ceilings). Findings
+closed: **REL-03** and its security alias **SEC-08** (the audit lists the unbounded reads under
+both IDs — the S18 disposition gate maps both to this story).
 
 **Goal**: (1) `io.LimitReader` (with an over-limit = error, not silent truncation — truncated
 bytes must never be parsed as complete) at `internal/forge/gitlab/gitlab.go:108` (`c.do`) and
