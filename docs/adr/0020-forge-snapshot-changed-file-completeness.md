@@ -1,8 +1,5 @@
 # ADR-0020: Forge snapshot changed-file completeness contract
 
-<!-- AgDR: drafted by claude-fable-5 (Claude Code) on 2026-08-06, design-only session,
-     triggered by PROJECT-AUDIT-2026-08-06 finding REL-07 (P1). Operator review pending. -->
-
 | | |
 | --- | --- |
 | **Status** | Proposed |
@@ -92,10 +89,18 @@ Contract, normatively:
 - Large MRs cost up to 100 paginated requests; acceptable (bounded, read-only), and the
   ceiling is a named constant so instances with higher diff limits can be accommodated
   by a future flag without contract change.
+- Signal interplay: GitLab caps `changes_count` with a `+` suffix (commonly at 1000
+  files), so completeness becomes unprovable well below the 100-page/10,000-file
+  ceiling — most of the ceiling headroom is unreachable in practice. This skews in the
+  conservative direction only (the `+`-suffix violation degrades to REVIEW, never
+  fail-open); implementers must not "fix" it by trusting the ceiling alone and dropping
+  the `changes_count` cross-check.
 - `forge.Snapshot` widens (additive Go struct change; not a serialized public schema).
-  All fakes/tests must set the new fields — compile-time enforced by keeping them
-  value-typed (zero value `false` fails safe: an adapter that forgets to set
-  `ChangedFilesComplete` degrades to REVIEW rather than fail-open).
+  All fakes/tests must set the new fields explicitly. Go does not enforce struct-field
+  initialization, so the real safety net is the zero value: `ChangedFilesComplete`
+  defaults to `false`, which fails SAFE (an adapter that forgets to set it degrades to
+  REVIEW rather than fail-open), and the required conformance cases fail loudly against
+  an adapter that never reports completeness.
 - `/changes` usage is eliminated ahead of GitLab's removal of the endpoint.
 - Reversible: revert the adapter to `/changes` + `overflow` decode (option (a)) without
   touching the neutral contract — points 1/3/4/5/6 are endpoint-agnostic.
