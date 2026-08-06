@@ -300,10 +300,10 @@ policy comparison without treating every human revert as proof the decision was 
 same target-ref/no-self-modification trust rules as local policy (ADR-0010 amendment,
 ADR-0015 §1). Unlocks with a named consumer running a central policy repo (OQ-5).
 
-### E14 — Kubernetes CRD/CR validation adapter — **Planned, gated on Spike D + ADR-0020**
+### E14 — Kubernetes CRD/CR validation adapter — **Planned, gated on Spike D + a dedicated ADR**
 Optional adapter **outside the generic decision core** (D-017 B11), committed only if the
 [P2-E6 Spike D](p2-e6-spike-crd/spec.md) feasibility verdict supports it. Scope per the
-spike-informed ADR-0020: multi-document YAML with preserved boundaries/positions; GVK
+spike-informed ADR (number assigned when Spike D closes): multi-document YAML with preserved boundaries/positions; GVK
 classification; stable subjects from GVK + namespace + name; CRD schemas loaded from the
 trusted target ref, a checked-in pinned bundle, or a typed provider result with content
 digest; CR instances validated against the matching CRD version's structural OpenAPI v3

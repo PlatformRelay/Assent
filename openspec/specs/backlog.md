@@ -29,7 +29,7 @@ REQ ID format: `REQ-<epic>-S<story>-<nn>` (e.g. `REQ-P1-E2-S01-01`).
 | P2-E4 | Secure-setup adoption spike (OQ-24) | [spec](p2-e4-spike-secure-setup/spec.md) | **Done** (topology only) | — | topology evidence for ADR-0017 §9 |
 | **P2-E4-NS** | **OQ-24 north-star timed clean-room run** | [spike-secure-setup.md](../../docs/planning/spikes/spike-secure-setup.md) § North-star | **OPEN — operator** (stopwatch walkthrough; &lt;1h unconfirmed) | **yes** | north-star wording HOLDS/AMEND; do not claim &lt;1h until done |
 | P2-E5 | ADR acceptance round (0002–0017 → Accepted/Superseded) | [spec](p2-e5-adr-acceptance/spec.md) | **Done** — **Phase-2 gate CLOSED** (D-020) | yes (ratify 🔴 DECIDED INBOX) | **the Phase-2 gate** |
-| P2-E6 | Spike D — Kubernetes CRD/CR validation feasibility (D-017 B11) | [spec](p2-e6-spike-crd/spec.md) | Deferred to the Phase-3 window (D-018 — not first-wave); does **not** gate P2-E5 | no | feeds ADR-0020 + the E14 go/no-go |
+| P2-E6 | Spike D — Kubernetes CRD/CR validation feasibility (D-017 B11) | [spec](p2-e6-spike-crd/spec.md) | Deferred to the Phase-3 window (D-018 — not first-wave); does **not** gate P2-E5 | no | feeds a dedicated ADR (number assigned when Spike D closes) + the E14 go/no-go |
 
 **Phase-2 gate**: CLOSED — ADR-0002..0017 Accepted (D-020); evidence in
 [adr-acceptance-review.md](../../docs/planning/adr-acceptance-review.md).

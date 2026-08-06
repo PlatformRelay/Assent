@@ -31,3 +31,4 @@ supersessions by ADR-0016/0017 are noted on each ADR's status line (not full
 | [0017](0017-contract-model-obligations.md) | Contract model: governed subjects, required obligations, typed facts, preconditioned reconciliation | Accepted |
 | [0018](0018-policy-lifecycle-phase-profile-comparison.md) | Policy lifecycle — phase, profiles, comparison | Accepted (D-030) |
 | [0019](0019-publication-marker-reconciliation-protocol.md) | Publication marker + reconciliation protocol (database-free) | Accepted (D-030) |
+| [0020](0020-forge-snapshot-changed-file-completeness.md) | Forge snapshot changed-file completeness contract | Proposed |

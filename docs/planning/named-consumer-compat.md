@@ -35,7 +35,7 @@ generic core as packs/providers.
 | B8 | Post-merge audit + remediation (OQ-19) | **Seam now, implement later** — correlation pins already exist in the record model | E12 | post-Phase-4 |
 | B9 | Batch/sweep orchestration (OQ-20) | **Seam now, implement later**; no bulk bypass of per-MR preconditions, ever | E12 | post-Phase-4 |
 | B10 | Generated machine-readable rule catalogue | **Accept** — cheap, additive-tolerant report; not a safety schema | E3 seed (generation) + E9 (docs) | Phase 5 |
-| B11 | Kubernetes CRD/CR validation adapter | **Spike first, then decide** — the report itself concedes the dependency risk | new [P2-E6 Spike D](https://github.com/PlatformRelay/assent/blob/main/openspec/specs/p2-e6-spike-crd/spec.md) → ADR-0020 → E14 (Planned, gated) | spike: Phase-3 window (D-018 — not first-wave) · adapter: post-skeleton |
+| B11 | Kubernetes CRD/CR validation adapter | **Spike first, then decide** — the report itself concedes the dependency risk | new [P2-E6 Spike D](https://github.com/PlatformRelay/assent/blob/main/openspec/specs/p2-e6-spike-crd/spec.md) → a dedicated ADR (number assigned when Spike D closes) → E14 (Planned, gated) | spike: Phase-3 window (D-018 — not first-wave) · adapter: post-skeleton |
 
 ## Where the report over-reaches (declined or softened)
 
@@ -81,5 +81,5 @@ graph provider, observe/enforce comparison over an immutable corpus, approval ev
 then service-tier lifecycle (E12), then the remaining rules and companion tooling.
 
 New ADRs are authored inside their owning epics (ADR-0018 lifecycle, ADR-0019 publication
-protocol, ADR-0020 Kubernetes adapter) and are accepted at the Phase-3 freeze review — the
+protocol, Kubernetes-adapter ADR — number assigned when Spike D closes) and are accepted at the Phase-3 freeze review — the
 P2-E5 acceptance round still covers only ADR-0002–0017.

@@ -10,7 +10,7 @@ E14 commitment.
 **Scope**: dependency measurement, semantic conformance on real CRDs, trust-rule
 demonstration. **Non-goals**: adapter implementation (E14); admission webhooks, mutating
 admission, live cluster state; Helm/Kustomize rendering (rendered manifests only).
-ADRs: feeds ADR-0020 (new, authored post-spike); 0003 (fail-closed limits), 0015 §1
+ADRs: feeds a dedicated ADR (new, authored post-spike; number assigned when Spike D closes); 0003 (fail-closed limits), 0015 §1
 (target-ref trust); D-017 B11. Does **not** gate P2-E5 (which covers ADR-0002–0017 only).
 
 ## P2-E6-S01 — Dependency and semantics spike on real CRDs
@@ -63,7 +63,7 @@ Requirements:
 - **Dependencies**: P2-E6-S01.
 - **Definition of done**: both scenarios encoded as fixtures with expected outcomes; report
   section `## Trust rule` states the rule and links the fixtures; the outcome feeds the
-  ADR-0020 draft and the decision whether the Phase-3 fixture set gains a CRD fixture.
+  Kubernetes-adapter ADR draft (number assigned when Spike D closes) and the decision whether the Phase-3 fixture set gains a CRD fixture.
 
 Requirements:
 
