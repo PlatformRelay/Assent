@@ -78,6 +78,7 @@ runs early/parallel. **Infra-gated (park for operator)**: S10 (L3 e2e green) the
 | **P4-KIND-LAB** | Durable local kind GitLab lab (`task kind-up`, etc.) | **OPEN — authorized, deferred** (D-038) | no (agent lane when claimed) | Promote Spike-B `boot-kind.sh`; CI stays testcontainer |
 | **P4-CODEQL** | Enable CodeQL (Go + Actions) | **DONE** (2026-08-03, D-045) — `.github/workflows/codeql.yaml` | no | Pinned, workflow-based CodeQL with a `go`(manual build)+`actions`(build-mode none) matrix, consistent with sibling repos (MKurator/Kollect); chosen over the zero-config default setup for SHA-pinned reproducibility |
 | **P4-SEC-OSSF** | OpenSSF/security hardening (SECURITY.md, CODEOWNERS, Scorecard, scheduled govulncheck) | **DONE** (2026-08-03, D-045) | no | `SECURITY.md` + `.github/CODEOWNERS` + `scorecard.yaml` + schedule-only `vulncheck.yaml`; modeled on MKurator/Kollect. Residual: turn on branch protection + required checks on `main` (operator) |
+| **AUD-OPS** | Operator-only audit residuals: SEC-05 rotate `HOMEBREW_TAP_GITHUB_TOKEN` to fine-grained PAT · SEC-06 tag ruleset · RELSE-07 `enforce_admins` on main | **OPEN — operator** | **yes** | Fenced out of P5-AUD (live GitHub settings/secrets); see audit 2026-08-06 |
 
 ## Code-health / SonarCloud maintainability residuals
 
@@ -472,6 +473,43 @@ S01–S09. Do first: S01.**
 > `hack/release/exitgate_test.sh`; product docs nav fenced (D-103); snapshot checksum verify (D-110).
 > **Judgment calls D-099–D-110 cited.** **D-111 CLOSED** @ tag `v0.1.0` (signed assets + live
 > install proof). **Homebrew Formula published** @ `v0.1.0`. **Optional residual:** rotate `HOMEBREW_TAP_GITHUB_TOKEN` to a fine-grained PAT (Contents: write on `homebrew-tap` only).
+
+## Phase 5 — AUD audit-remediation (2026-08-06) stories
+
+Full INVEST stories in [p5-aud-audit-remediation/spec.md](p5-aud-audit-remediation/spec.md). AUD
+remediates `agent-context/PROJECT-AUDIT-2026-08-06.md` (verdict READY WITH CONDITIONS at `e668d0e`).
+**Next-tag release conditions: S01 (REL-07 P1 fail-closed enumeration), S02 (RELSE-01 changelog +
+gate), S03 (RELSE-05 verify-gated release)** — everything else is engineering health. S01/S04/S16
+bind to the architect decisions landed with the spec: **ADR-0020** (forge snapshot changed-file
+completeness) + **D-119..D-123**. Lanes own disjoint paths (A forge · B CI/release · C run-path ·
+D docs/CLI · E guardrails/tests). **Operator-only, fenced out:** SEC-05 PAT rotation, SEC-06 tag
+ruleset, RELSE-07 enforce_admins (see the AUD-OPS residual row). **Every story `[autonomous]`.**
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| AUD-S01 | ⚠️ REL-07 P1: fail-closed truncated/404 changed-file enumeration (mechanism per ADR-0020/D-119) | **[autonomous · engine-grade]** | none | **release condition**; D-042 guard integrity; **do first** |
+| AUD-S02 | RELSE-01: regenerate CHANGELOG + wire `changelog-verify` into `task check` + verify CI | **[autonomous]** | none | **release condition**; drift gate can't regress |
+| AUD-S03 | RELSE-05: release job asserts verify-green on the tag SHA before build | **[autonomous]** | none | **release condition**; no red-CI tags ship |
+| AUD-S04 | ARCH-03: `toolDigest` from Go build info + description-only schema edit (D-120) | **[autonomous]** | D-120 (landed) | record-pins contract honesty (semver-visible) |
+| AUD-S05 | DOC-08: real CLI help + `docs/usage/cli.md` reference | **[autonomous]** | none | front-door truth (CLI-surface visible) |
+| AUD-S06 | Docs truth-lag sweep: DOC-05/06/07/09/10/11 + stale comments | **[autonomous]** | S05 | quick-start runs green; published surfaces truthful |
+| AUD-S07 | ARCH-01: depguard boundary rules + purity-walk extension (D-123; ADR-0011 Amendment 3 same-change) | **[autonomous]** | none | violating import fails CI (3rd-audit closure) |
+| AUD-S08 | ⚠️ REL-08: emit DecisionRecord before reconcile, atomic write-then-rename (D-122) | **[autonomous · engine-grade]** | S04 (lane) | audit-trail integrity; no record ⇒ no action |
+| AUD-S09 | SEC-04: pin Task version in verify.yaml | **[autonomous]** | S02 (lane) | no mutable gate toolchain |
+| AUD-S10 | REL-03: bounded response reads + pagination caps (fail-closed) | **[autonomous]** | S01 (lane) | transport availability hardening |
+| AUD-S11 | REL-04: idempotent-GET retry/backoff + context deadlines (writes never retried) | **[autonomous]** | S10 | transient-failure availability |
+| AUD-S12 | ⚠️ REL-06: malformed bot-marker skip-with-warning (spoof surface unchanged) | **[autonomous · engine-grade]** | S10, S11 | reconcile un-brickable |
+| AUD-S13 | TEST-02/05/06 depth bundle + aggregate internal/ coverage ≥ 91.0% | **[autonomous]** | S10–S12 (lane) | D-010 headroom bought with behavior tests |
+| AUD-S14 | SEC-01 ajv lockfile (`npm ci`) + SEC-03 `persist-credentials: false` everywhere | **[autonomous]** | S09 (lane) | supply-chain pin closure |
+| AUD-S15 | ⚠️ ARCH-02: lift `MRInfo`/`ErrNotFound` into the forge port (pre-E10) | **[autonomous · engine-grade]** | Lanes A+C drained | GitHub-adapter readiness; byte-identical refactor |
+| AUD-S16 | ARCH-04: `ReplayBundleDigest` → `assent-jcs-v1` domain digest; byte artifacts stay raw (D-121) | **[autonomous]** | D-121 (landed); S08 (lane) | one documented hash truth (semver-visible) |
+| AUD-S17 | ARCH-05: C4 diagrams synced (planned vs shipped legend) | **[autonomous]** | none | contributor-facing architecture truth |
+| AUD-S18 | Exit gate: conditions closed + pins + ≥91% + disposition table complete | **[autonomous]** | S01..S17 | **the AUD exit gate** |
+
+**Dependency order**: {S01 ∥ S02 ∥ S03} (release conditions, three lanes) → {S04–S09 ∥ across
+lanes} → S10 → S11 → S12 → {S13, S14, S16, S17} → S15 (last code story) → S18. **Do first: S01**
+(the P1; the next tag is conditioned on it). **Release conditions: S01+S02+S03. Operator residuals
+(NOT stories): SEC-05, SEC-06, RELSE-07.**
 
 ## Phases 3–5
 
