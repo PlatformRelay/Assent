@@ -379,7 +379,10 @@ grep -qE 'run: bash hack/release/verify-tag-gate\.sh[[:space:]]*$' <<<"${gate_st
 if grep -qE '(^|[[:space:]])continue-on-error:' <<<"${gate_step}"; then
   fail "the gate step must not set continue-on-error — that turns the release gate into a warning (REQ-AUD-S03-01)"
 fi
-if grep -qE '^[0-9]+\t +if:' <<<"${gate_step}"; then
+# POSIX class, not `\t`: GNU grep (ubuntu-latest, where exitgate_test.sh runs this) treats
+# `\t` in an ERE as a literal `t`, and a negative assertion whose pattern never matches fails
+# OPEN — silently reporting "no if: present" exactly where CI enforces it.
+if grep -qE '^[0-9]+[[:space:]]+if:' <<<"${gate_step}"; then
   fail "the gate step must not be conditional — it applies to every release event (REQ-AUD-S03-01)"
 fi
 grep -qF "GH_TOKEN:" <<<"${gate_step}" \
