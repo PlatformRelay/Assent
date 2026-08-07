@@ -1,4 +1,5 @@
-# Starter pack for examples/repos/service-catalog (assent init --sample service-catalog).
+# Starter pack for examples/repos/service-catalog. Copy this .assent/ tree into your
+# repo root (there is no `assent init` subcommand — see docs/usage/walkthrough.md).
 # Keyed list: packs/catalog declares entries.mode=list with identity.pointer=/name
 # (never unkeyed — ADR-0017 §5). Reordering entries must not change EntryRef subjects.
 apiVersion: assent.dev/v1alpha1
