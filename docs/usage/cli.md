@@ -84,13 +84,29 @@ and is never a flag; without it the command exits `2` before contacting the forg
 | `-binding` | `.assent/ruleset-binding.yaml` | RulesetBinding path, loaded from the target ref |
 | `-config` | — | optional Config path; when set, provider posture is validated |
 | `-pack` | — | optional Pack path; its `spec.phase` caps every rule's phase |
-| `-checkout` | — | local checkout dir (`base/` + `head/` subtrees) used to enumerate the MR's full changed-file set; when unset, only the governed subject is diffed |
+| `-checkout` | — | local checkout dir (`base/` + `head/` subtrees) used to enumerate the MR's full changed-file set; when unset, the forge snapshot is the sole enumerator (see below) |
 | `-emit` | stdout | path to write the `DecisionRecord` JSON |
 | `-arm` | off | sandbox arming override — approve and merge only when set **and** the decision is APPROVE |
 
 Exit codes: `0` the run completed and produced a valid receipt (an advisory
 REVIEW/BLOCK, or an APPROVE without `--arm`, is still a clean `0`); `1` a hard error
 during orchestration; `2` a missing flag, a missing `GITLAB_TOKEN`, or `-h`.
+
+### Checkout-less runs and enumeration completeness
+
+Without `-checkout`, the forge snapshot's changed-file list is the only thing that can
+see a `.assent/**` policy edit outside the governed subject — so an incomplete list
+would silently starve the self-edit guard. Per [ADR-0020](../adr/0020-forge-snapshot-changed-file-completeness.md)
+the adapter must therefore *prove* completeness (paginated `/diffs`, cross-checked
+against the MR's `changes_count`, below a page ceiling). When it cannot, the run does
+not guess and does not fail silently: the change set is marked opaque and the decision
+degrades to **REVIEW** with finding code `changeset.undecidable`, carrying the gap
+reason. A `DecisionRecord` is still emitted and a thread still posted; approve and
+merge are impossible on that path. A `.assent/**` path that *is* visible in a partial
+list still dominates to BLOCK.
+
+With `-checkout` the local tree is the sole authority (D-077) and snapshot completeness
+is not consulted.
 
 ## assent doctor
 
