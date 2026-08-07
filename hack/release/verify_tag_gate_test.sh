@@ -34,6 +34,12 @@ mkdir -p "${BIN}" "${STUB}"
 # --- stubbed `gh` -------------------------------------------------------------
 # Serves fixture JSON per API path and honours the caller's --jq filter with real jq,
 # so the script's own projection is exercised rather than faked.
+#
+# The stub ALLOWLISTS query parameters and rejects anything else. It must, because a fixture
+# selected by path alone is blind to filtering: adding `&status=success`, `&status=completed`
+# or `&event=push` to the runs query would make the API hide the very runs the polarity table
+# exists to catch, while every presence-grep on the query string still passed. The stub
+# therefore refuses to answer a query it was not told how to model.
 cat >"${BIN}/gh" <<'STUBEOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -50,9 +56,28 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 printf '%s\n' "${path}" >>"${GH_STUB_DIR}/calls.log"
-case "${path}" in
+
+# Only pagination and the SHA selector may narrow a query; anything else is a server-side
+# filter that could hide a non-green run from the gate.
+route="${path%%\?*}"
+query=""
+[[ "${path}" == *\?* ]] && query="${path#*\?}"
+if [[ -n "${query}" ]]; then
+  IFS='&' read -r -a stub_params <<<"${query}"
+  for stub_kv in "${stub_params[@]}"; do
+    case "${stub_kv%%=*}" in
+      head_sha | per_page | page) : ;;
+      *)
+        echo "stub gh: refusing query parameter '${stub_kv%%=*}' — the gate must not filter runs server-side (a filter can hide a red or unfinished run); allowed: head_sha, per_page, page" >&2
+        exit 2
+        ;;
+    esac
+  done
+fi
+
+case "${route}" in
   */commits/*) fixture="${GH_STUB_DIR}/commit.json" ;;
-  */actions/workflows/*/runs*) fixture="${GH_STUB_DIR}/runs.json" ;;
+  */actions/workflows/*/runs) fixture="${GH_STUB_DIR}/runs.json" ;;
   *) echo "stub gh: unexpected api path: ${path}" >&2; exit 2 ;;
 esac
 if [[ ! -f "${fixture}" ]]; then
@@ -251,6 +276,35 @@ run_gate push v9.9.9 ""
 assert_rc 1 "runs-query-failure"
 assert_contains "actions: read" "runs-query-failure"
 
+# Both the script header and hack/release/README.md claim the gate has no override env var and
+# that the pinned workflow name is not tunable. Pin the claim: a hostile environment carrying
+# every plausible skip/force switch, plus an attempt to redirect the gate at a trivially-green
+# workflow, must not change the verdict or the workflow queried.
+reset_fixtures
+fixture_commit
+fixture_runs <<<"$(runs_doc "$(run_json completed failure push https://example.invalid/run/hostile)")"
+set +e
+OUT="$(
+  PATH="${BIN}:${PATH}" GH_STUB_DIR="${STUB}" GH_TOKEN=stub-token \
+  GITHUB_REPOSITORY="${REPO_SLUG}" GITHUB_EVENT_NAME=push GITHUB_REF_NAME=v9.9.9 TAG_INPUT="" \
+  VERIFY_WORKFLOW="always-green.yaml" \
+  ASSENT_SKIP_VERIFY_GATE=1 SKIP_VERIFY_GATE=1 ASSENT_FORCE_RELEASE=1 FORCE=1 \
+  SKIP_GATE=1 ASSENT_GATE_BYPASS=1 GATE_SHA="${SHA}" \
+  bash "${GATE}" 2>&1
+)"
+RC=$?
+set -e
+assert_rc 1 "no-override-env-var"
+# Positive control for the negative assertion below: `grep` on a missing file exits 2, which an
+# `if` reads as "no match" and passes vacuously.
+[[ -s "${STUB}/calls.log" ]] \
+  || fail "no-override-env-var: calls.log is empty — the negative assertion below would pass vacuously"
+if grep -qF "always-green.yaml" "${STUB}/calls.log"; then
+  fail "no-override-env-var: VERIFY_WORKFLOW must be pinned, not env-tunable — the gate queried always-green.yaml"
+fi
+grep -qF "verify.yaml/runs" "${STUB}/calls.log" \
+  || fail "no-override-env-var: gate must still query the pinned verify.yaml"
+
 # workflow_dispatch is NOT a bypass: same gate, dispatched tag's SHA
 reset_fixtures
 fixture_commit
@@ -260,6 +314,10 @@ assert_rc 1 "dispatch/failure"
 assert_contains "when verify is green" "dispatch/failure"
 grep -qF "repos/${REPO_SLUG}/commits/refs/tags/v9.9.9" "${STUB}/calls.log" \
   || fail "dispatch/failure: gate must use the dispatched tag input, not GITHUB_REF_NAME"
+# Positive control for the negative assertion below: on a missing/empty calls.log `grep` exits
+# 2, which an `if` reads as "no match" — the assertion would pass without proving anything.
+[[ -s "${STUB}/calls.log" ]] \
+  || fail "dispatch/failure: calls.log is empty — the negative assertion below would pass vacuously"
 if grep -qF "v0.0.0-otherref" "${STUB}/calls.log"; then
   fail "dispatch/failure: gate must ignore GITHUB_REF_NAME on the workflow_dispatch path"
 fi
@@ -321,13 +379,19 @@ release_block() {
   ' "${WF}"
 }
 
+# Captured ONCE, then read from a herestring everywhere below. Piping this into an awk or grep
+# that exits early (`step_index_of`, `step_block`, `grep -q`) SIGPIPEs the upstream awk, and
+# `set -o pipefail` turns that into 141 — a nondeterministic red on Linux, never on macOS.
+release_job="$(release_block)"
+[[ -n "${release_job}" ]] || fail "could not extract the release job from ${WF} (REQ-AUD-S03-02)"
+
 step_index_of() { # 1-based index of the release-job step whose body contains <marker>
   local marker="$1" idx
-  idx="$(release_block | awk -v m="${marker}" '
+  idx="$(awk -v m="${marker}" '
     /^[0-9]+\t      - / { n = n + 1 }
     index($0, m) > 0 { print n; found = 1; exit }
     END { if (!found) exit 0 }
-  ')"
+  ' <<<"${release_job}")"
   [[ -n "${idx}" ]] \
     || fail "step-order: marker not found in the release job: ${marker} (REQ-AUD-S03-02)"
   printf '%s\n' "${idx}"
@@ -358,12 +422,12 @@ for marker in \
 done
 
 step_block() { # the release-job step whose body contains <marker>
-  release_block | awk -v m="$1" '
+  awk -v m="$1" '
     function flush() { if (matched) { for (i = 1; i <= cnt; i++) print buf[i]; exit } }
     /^[0-9]+\t      - / { flush(); cnt = 0; matched = 0 }
     { cnt = cnt + 1; buf[cnt] = $0; if (index($0, m) > 0) matched = 1 }
     END { flush() }
-  '
+  ' <<<"${release_job}"
 }
 
 # The gate step must actually invoke the extracted script and carry a token to call the API.
@@ -385,6 +449,14 @@ fi
 if grep -qE '^[0-9]+[[:space:]]+if:' <<<"${gate_step}"; then
   fail "the gate step must not be conditional — it applies to every release event (REQ-AUD-S03-01)"
 fi
+# Positive controls for the two negative assertions above. A pattern that silently stops
+# matching — a PCRE-ism in an ERE is how this bit twice already — makes them fail OPEN, so each
+# is proven to still match a known-positive sample.
+grep -qE '(^|[[:space:]])continue-on-error:' <<<"        continue-on-error: true" \
+  || fail "positive control: the continue-on-error pattern no longer matches a known-positive sample, so the assertion above is vacuous"
+grep -qE '^[0-9]+[[:space:]]+if:' <<<"$(printf '42\t        if: false')" \
+  || fail "positive control: the gate-step if: pattern no longer matches a known-positive sample, so the assertion above is vacuous"
+
 grep -qF "GH_TOKEN:" <<<"${gate_step}" \
   || fail "the gate step must pass GH_TOKEN (checkout uses persist-credentials: false)"
 grep -qF "TAG_INPUT:" <<<"${gate_step}" \
@@ -392,8 +464,22 @@ grep -qF "TAG_INPUT:" <<<"${gate_step}" \
 
 # An explicit permissions: block sets unlisted scopes to none — the workflow-runs API needs
 # actions: read, otherwise the gate 403s on every real tag.
-release_block | grep -qE '[[:space:]]actions: read([[:space:]]|$)' \
+#
+# Captured into a variable rather than piped: `awk | grep -q` makes grep exit on first match,
+# SIGPIPEs awk, and under `set -o pipefail` the pipeline returns 141 — a nondeterministic red
+# that shows up on Linux (where this suite now runs in CI) and never on macOS.
+grep -qE '[[:space:]]actions: read([[:space:]]|$)' <<<"${release_job}" \
   || fail "release job permissions must grant 'actions: read' for the workflow-runs API (REQ-AUD-S03-01)"
+
+# Anti-rot on this suite's own callers. Nothing else asserts that anyone still RUNS it:
+# deleting one line from exitgate_test.sh or Taskfile.yml would remove all enforcement of
+# REQ-AUD-S03-01/02 with nothing going red.
+grep -qF "bash \"\$ROOT/hack/release/verify_tag_gate_test.sh\"" "${ROOT}/hack/release/exitgate_test.sh" \
+  || fail "hack/release/exitgate_test.sh must invoke verify_tag_gate_test.sh — it is the CI caller for REQ-AUD-S03-01/02 (release-exitgate job)"
+grep -qF "task: release-verify-tag-gate-test" "${ROOT}/Taskfile.yml" \
+  || fail "Taskfile.yml 'check' must run release-verify-tag-gate-test — release-exitgate is skipped on pull_request, so without it a regression merges green"
+grep -qF "bash hack/release/verify_tag_gate_test.sh" "${ROOT}/Taskfile.yml" \
+  || fail "Taskfile.yml must define release-verify-tag-gate-test running verify_tag_gate_test.sh"
 
 # Anti-rot: the workflow filename the gate asserts on must exist, or the gate becomes a
 # permanent hard-fail that the next person "fixes" by loosening it.
