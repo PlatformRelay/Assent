@@ -1,7 +1,7 @@
 # Walkthrough — adopting assent on a topic registry
 
-> **Mixed status — read the per-step banner.** This page began life as design fiction
-> before any code existed. Most of it now describes the shipped v0.1.0 binary; the steps
+> **Mixed status — read the per-step banner.** This page began life as a UX sketch
+> written before any code existed. Most of it now describes the shipped v0.1.0 binary; the steps
 > that still describe unbuilt commands are labelled **Planned**, and each one names what
 > you can do today instead. The authority for what exists is
 > [the CLI reference](cli.md), which is pinned byte-for-byte to `assent --help`.
