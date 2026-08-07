@@ -19,7 +19,9 @@ build stamped with the same version shared one digest; records carrying that der
 identifiable by exactly it. Builds after D-120 derive `toolDigest` from the binary's
 canonical Go build info instead (main module path/version/sum, dependency checksums, VCS
 revision and dirty flag), falling back to `sha256("buildinfo-unavailable\n" + toolVersion)`
-when build info is absent. The field, its type and the frozen `v1alpha1` schema are
+when that build info is absent or does not identify the main module's content (no module sum
+and no VCS revision — `go build -buildvcs=false`, test binaries). The field, its type and the
+frozen `v1alpha1` schema are
 unchanged — records published with `v0.1.0` remain schema-valid — but the *value* is not
 comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 record means
 "derived differently", not "different build".
@@ -61,6 +63,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :memo: docs(changelog): warn record consumers that pins.toolDigest changed value (D-120)
 - :memo: docs(decisions): record D-125 — CHANGELOG drift gate placement and its cost
 - :memo: docs(release): the changelog drift gate is in task check now, not outside it
+- :memo: docs(changelog): name the second toolDigest fallback branch
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -84,6 +87,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :construction_worker: ci(release): run the CHANGELOG drift gate in task check and on main CI
 - :construction_worker: ci(docs): wire the AUD-S06 docs truth-lag gates into task check (D-124)
 - :construction_worker: ci(lint): wire the depguard polarity proof into task check (AUD-S07)
+- :construction_worker: ci(release): wire the changelog gate test itself into task check
 
 ### Security
 - :lock: fix(forge): prove changed-file enumeration completeness or declare a gap
