@@ -96,7 +96,12 @@ probe_import() {
   case "$1" in
     net) echo "net/http" ;;
     "$MODULE"/*) echo "$1/depguardport" ;;
-    *) echo "$1" ;;
+    *)
+      # A new NON-local deny needs a deliberate probe target: blank-importing
+      # the denied path verbatim would only prove exact matching, silently
+      # weakening this gate's prefix claim. Add a case above instead.
+      fail "no probe import mapped for denied package '$1' — add a case to probe_import() that exercises a SUBPACKAGE of it"
+      ;;
   esac
 }
 
