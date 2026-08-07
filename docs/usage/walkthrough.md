@@ -119,7 +119,11 @@ assent:
   rules: [{ if: $CI_MERGE_REQUEST_IID }]
   resource_group: assent-mr-$CI_MERGE_REQUEST_IID
   before_script:
-    # Or fetch + checksum-verify a release archive — see the install guide.
+    # Simplest route, shown here to keep the example self-contained. It stamps the
+    # binary `0.0.0-dev`, so every DecisionRecord this job emits carries that in
+    # `pins.toolVersion` (`pins.toolDigest` still identifies the build, D-120).
+    # For a record that names the real tag, install the checksum-verified release
+    # archive instead — the full URL pattern is in the install guide.
     - go install github.com/PlatformRelay/assent/cmd/assent@v0.1.0
   script:
     - assent run --project "$CI_PROJECT_ID" --mr "$CI_MERGE_REQUEST_IID"
