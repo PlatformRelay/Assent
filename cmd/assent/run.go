@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
+	"sort"
 	"strings"
 	"time"
 
@@ -352,7 +354,7 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	}
 	pins := decision.Pins{
 		ToolVersion:     version,
-		ToolDigest:      sha256Prefix + sha256Hex([]byte(version)),
+		ToolDigest:      toolDigest(version),
 		PolicySha:       sha256Prefix + sha256Hex(mpBytes),
 		SourceSha:       info.SourceSHA,
 		TargetSha:       info.TargetSHA,
@@ -781,4 +783,99 @@ const sha256Prefix = "sha256:"
 func sha256Hex(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+// buildInfoUnavailableLabel prefixes the fallback digest input (D-120). It exists
+// so the fallback is an HONESTLY LABELLED value rather than a digest that looks
+// like a content claim: sha256("buildinfo-unavailable\n"+toolVersion) collides
+// only with other builds that also had nothing to prove, and the schema's
+// toolDigest description states this formula verbatim.
+const buildInfoUnavailableLabel = "buildinfo-unavailable\n"
+
+// toolDigest returns the pins.toolDigest value for THIS binary (D-120, AUD-S04 /
+// audit finding ARCH-03). Before D-120 this was sha256(version), which made the
+// schema's "content digest of the evaluating tool build" a false claim: every
+// build carrying `-X main.version=1.2.3` shared one digest regardless of content.
+func toolDigest(version string) string {
+	bi, ok := debug.ReadBuildInfo()
+	return toolDigestFrom(bi, ok, version)
+}
+
+// toolDigestFrom is toolDigest with the build info injected, so both branches are
+// reachable from tests (a test binary cannot forge its own build info).
+func toolDigestFrom(bi *debug.BuildInfo, ok bool, version string) string {
+	if ok && bi != nil {
+		if canonical, contentBearing := canonicalBuildInfo(bi); contentBearing {
+			return sha256Prefix + sha256Hex([]byte(canonical))
+		}
+	}
+	return sha256Prefix + sha256Hex([]byte(buildInfoUnavailableLabel+version))
+}
+
+// canonicalBuildInfo renders the D-120 content-bearing subset of Go build info —
+// main module path/version/sum, dependency (and replacement) checksums, VCS
+// revision and dirty flag — as deterministic text, and reports whether that text
+// actually identifies the MAIN module's content.
+//
+// Only two signals do: a module sum (present for `go install path@version`) and a
+// VCS revision (present for `go build`/goreleaser inside a checkout). Dependency
+// sums deliberately do NOT count: a binary with pinned deps and no main-module
+// identity — a `go test` binary, or `go build -buildvcs=false` — would otherwise
+// hash to the same value for every revision of this repo, i.e. exactly the
+// constant-digest false provenance ARCH-03 exists to remove. Such builds fall
+// back to the labelled digest instead.
+//
+// Deliberately EXCLUDED: the toolchain's environment settings (GOOS/GOARCH,
+// CGO_*, DefaultGODEBUG, -ldflags) and vcs.time. They are not part of the D-120
+// input list the schema description publishes, and several vary with the
+// toolchain rather than the source. Consequence, honestly: the per-platform
+// release binaries of one commit share a digest, and (per D-120) an uncommitted
+// edit's content is not captured — only flagged, via the hashed vcs.modified.
+//
+// The field separators are tab/newline, which module paths, versions, checksums
+// and revisions cannot contain, so distinct build info yields distinct text.
+func canonicalBuildInfo(bi *debug.BuildInfo) (string, bool) {
+	revision := buildSetting(bi, "vcs.revision")
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "mod\t%s\t%s\t%s\n", bi.Main.Path, bi.Main.Version, bi.Main.Sum)
+
+	// Sort by path: the toolchain already emits Deps sorted, but dependency ORDER
+	// is not build content and the digest must not rest on that promise.
+	deps := make([]*debug.Module, 0, len(bi.Deps))
+	for _, d := range bi.Deps {
+		if d != nil {
+			deps = append(deps, d)
+		}
+	}
+	sort.Slice(deps, func(i, j int) bool {
+		if deps[i].Path != deps[j].Path {
+			return deps[i].Path < deps[j].Path
+		}
+		return deps[i].Version < deps[j].Version
+	})
+	for _, d := range deps {
+		fmt.Fprintf(&b, "dep\t%s\t%s\t%s\n", d.Path, d.Version, d.Sum)
+		if d.Replace != nil {
+			// A replace directive is where the code actually came from.
+			fmt.Fprintf(&b, "rep\t%s\t%s\t%s\n", d.Replace.Path, d.Replace.Version, d.Replace.Sum)
+		}
+	}
+
+	fmt.Fprintf(&b, "vcs.revision\t%s\n", revision)
+	fmt.Fprintf(&b, "vcs.modified\t%s\n", buildSetting(bi, "vcs.modified"))
+
+	return b.String(), bi.Main.Sum != "" || revision != ""
+}
+
+// buildSetting looks a build setting up by key, returning "" when absent. Keys are
+// looked up by name rather than ranged over so toolchain- and platform-dependent
+// settings can never leak into the digest.
+func buildSetting(bi *debug.BuildInfo, key string) string {
+	for _, s := range bi.Settings {
+		if s.Key == key {
+			return s.Value
+		}
+	}
+	return ""
 }
