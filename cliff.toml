@@ -24,7 +24,9 @@ would be silently overwritten by the next `task changelog-write`.
   identifiable by exactly it. Builds after D-120 derive `toolDigest` from the binary's
   canonical Go build info instead (main module path/version/sum, dependency checksums, VCS
   revision and dirty flag), falling back to `sha256("buildinfo-unavailable\\n" + toolVersion)`
-  when build info is absent. The field, its type and the frozen `v1alpha1` schema are
+  when that build info is absent or does not identify the main module's content (no module sum
+  and no VCS revision — `go build -buildvcs=false`, test binaries). The field, its type and the
+  frozen `v1alpha1` schema are
   unchanged — records published with `v0.1.0` remain schema-valid — but the *value* is not
   comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 record means
   "derived differently", not "different build".
