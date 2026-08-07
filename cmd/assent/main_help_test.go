@@ -152,32 +152,43 @@ func isPinnedSource(path string) bool {
 }
 
 // dispatchMarkers returns, per subcommand name, a string that ONLY that command's
-// handler can produce when the built binary is invoked with the bare name and a
-// scrubbed environment. Five commands are pinned to their own `(usage: …)` line, so
-// this doubles as the table-usage-vs-reality check; the rest are pinned to their
-// distinguishing first output. Every marker is unique across the table, so a name
-// bound to the wrong handler cannot satisfy it.
-func dispatchMarkers(table []subcommand) map[string]string {
-	markers := map[string]string{
-		// The commands whose no-argument error prints the canonical usage line.
-		"lint":      "",
-		"test":      "",
-		"compare":   "",
-		"catalogue": "",
-		"render":    "",
-		// The rest, keyed on output no other handler emits.
-		"run":        "assent run: --project is required",
+// own handler can produce when the built binary is invoked with the bare name and a
+// scrubbed environment.
+//
+// Every marker is an `assent <name>:` diagnostic prefix (or, for version, the
+// stamped semver). None of them can be produced by usageText(), which renders the
+// name as `usage: assent <name>` with no colon — that matters, because usageText()
+// is emitted by three paths (the help alias, the help handler, usageError), so any
+// marker it can render would be satisfied by the usage listing rather than by the
+// handler actually running. TestDispatchMarkersAreUnique enforces both that
+// property and mutual exclusivity.
+//
+// `help` is the one legitimate exception: printing usageText() IS its handler's
+// job, so its marker is necessarily listing content. Its binding is pinned instead
+// by TestHelpExitCodesOnBuiltBinary, which requires the listing on stdout with an
+// empty stderr and exit 0 — usageError writes to stderr and exits 2, so it cannot
+// satisfy that.
+func dispatchMarkers() map[string]string {
+	return map[string]string{
+		"run":        "assent run:",
 		"doctor":     "assent doctor:",
-		"eval-input": "assent eval-input: assemble EvaluationInput:",
+		"lint":       "assent lint:",
+		"test":       "assent test:",
+		"compare":    "assent compare:",
+		"catalogue":  "assent catalogue:",
+		"render":     "assent render:",
+		"eval-input": "assent eval-input:",
 		"version":    "assent " + version,
 		"help":       tagline,
 	}
-	for _, sc := range table {
-		if marker, ok := markers[sc.name]; ok && marker == "" {
-			markers[sc.name] = sc.usage
-		}
-	}
-	return markers
+}
+
+// usagePinnedCommands are the commands whose no-argument diagnostic ends in their
+// canonical `(usage: …)` string. For those the binding probe additionally asserts
+// the table's usage line is what the command really prints, so the two cannot
+// drift. The remaining commands have no such string to pin against.
+var usagePinnedCommands = map[string]bool{
+	"lint": true, "test": true, "compare": true, "catalogue": true, "render": true,
 }
 
 // REQ-AUD-S05-01: every name in the dispatch table reaches ITS OWN handler in the
@@ -188,7 +199,7 @@ func dispatchMarkers(table []subcommand) map[string]string {
 func TestDispatchTableBindsEachNameToItsHandler(t *testing.T) {
 	bin := buildAssent(t, "")
 	table := subcommands()
-	markers := dispatchMarkers(table)
+	markers := dispatchMarkers()
 
 	if len(markers) != len(table) {
 		t.Fatalf("dispatchMarkers covers %d names, the table has %d — every subcommand needs a binding probe", len(markers), len(table))
@@ -200,22 +211,34 @@ func TestDispatchTableBindsEachNameToItsHandler(t *testing.T) {
 			continue
 		}
 		stdout, stderr, _ := runAssent(t, bin, sc.name)
-		if !strings.Contains(stdout+stderr, marker) {
+		out := stdout + stderr
+		if !strings.Contains(out, marker) {
 			t.Errorf("assent %s is not bound to its own handler: output lacks %q\nstdout:\n%s\nstderr:\n%s",
 				sc.name, marker, stdout, stderr)
+		}
+		if usagePinnedCommands[sc.name] && !strings.Contains(out, sc.usage) {
+			t.Errorf("assent %s: help table usage %q is not what the command prints:\n%s", sc.name, sc.usage, out)
 		}
 	}
 }
 
-// Negative polarity: the markers must be mutually exclusive, otherwise the binding
-// check would survive a transposition of two names in the table.
+// Negative polarity for the binding probe. Two ways it could be satisfied without
+// the handler having run, both closed here:
+//   - a marker the usage listing itself renders (usageText() reaches stdout on the
+//     help paths and stderr on every usage error, so such a marker proves nothing);
+//   - a marker that is a substring of another command's, which would let a
+//     two-name transposition satisfy both sides.
 func TestDispatchMarkersAreUnique(t *testing.T) {
-	table := subcommands()
-	markers := dispatchMarkers(table)
+	markers := dispatchMarkers()
+	usage := usageText()
 	for name, marker := range markers {
 		if strings.TrimSpace(marker) == "" {
 			t.Errorf("subcommand %q has an empty binding marker", name)
 			continue
+		}
+		// `help`'s handler exists to print the listing; see dispatchMarkers.
+		if name != "help" && strings.Contains(usage, marker) {
+			t.Errorf("marker for %q (%q) is rendered by usageText() — the usage listing alone would satisfy the binding probe", name, marker)
 		}
 		for other, otherMarker := range markers {
 			if other == name {
@@ -225,6 +248,19 @@ func TestDispatchMarkersAreUnique(t *testing.T) {
 				t.Errorf("marker for %q (%q) also matches %q — a %s/%s transposition would pass undetected",
 					name, marker, other, name, other)
 			}
+		}
+	}
+}
+
+// REQ-AUD-S05-01: each entry's usage line must name its own command. Without this,
+// transposing two `name:` fields while leaving `usage:` and `run:` in place leaves
+// the binding probe satisfied — the listing changes, but regenerating the embedded
+// block in docs/usage/cli.md is the documented loop for a help-text edit, so the
+// whole suite would go green on a binary answering the wrong command by name.
+func TestEachUsageLineNamesItsOwnCommand(t *testing.T) {
+	for _, sc := range subcommands() {
+		if want := "assent " + sc.name; !strings.Contains(sc.usage, want) {
+			t.Errorf("subcommand %q has usage %q, which does not invoke %q", sc.name, sc.usage, want)
 		}
 	}
 }
