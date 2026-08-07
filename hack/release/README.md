@@ -48,6 +48,12 @@ notes — same pattern as mkurator:
 `hack/release/snapshot_test.sh` — both run goreleaser without publish credentials (sign/sbom
 skipped — no fake signatures locally).
 
+**Never replace published assets in place (SEC-07).** Once a tag's artifacts are uploaded,
+fix anything wrong with them by cutting a **patch tag** (`v0.1.1`), not by re-running the
+workflow over the same tag: a consumer who verified the old checksum or attestation has no
+way to learn the bytes changed underneath them. `workflow_dispatch` on an existing tag is for
+recovering a *failed* upload, not for revising a successful one.
+
 ### Supply chain on tagged release (E9-S06, D-109)
 
 The publish job in `.github/workflows/release.yaml` (tag push / `workflow_dispatch` only):
