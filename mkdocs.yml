@@ -56,8 +56,9 @@ nav:
       - Context: architecture/c4-context.md
       - Containers: architecture/c4-container.md
   - Usage:
-      - Walkthrough: usage/walkthrough.md
       - Install: usage/install.md
+      - CLI reference: usage/cli.md
+      - Walkthrough: usage/walkthrough.md
   - API stability: api-stability.md
   - Decisions: decisions/decisions.md
 validation:
