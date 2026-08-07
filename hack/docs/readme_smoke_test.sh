@@ -10,15 +10,16 @@
 # Two command families are DELIBERATELY skipped, loudly (never silently dropped):
 #   go install …  — needs the network and the module proxy; and what it produces is
 #                   pinned separately by the DOC-11 caveat pin in truthlag_pins_test.sh.
-#   task …        — this script is INTENDED to run inside `task check` (D-124: wiring is
-#                   Lane B's, not yet landed), so invoking `task check` from here would
-#                   recurse the moment that wiring exists.
+#   task …        — this script RUNS inside `task check` (via `task docs-gates`, D-124),
+#                   so invoking `task check` from here would recurse without terminating.
+#                   The skip is load-bearing, not a convenience: if this case ever stops
+#                   matching, `task check` calls itself forever.
 # Every skip is printed with its reason and counted, so deleting the executed lines
 # cannot leave the script trivially green (see the "no assent command" fail below).
 #
-# NOT YET WIRED INTO ANY GATE (D-124): `Taskfile.yml` is Lane B's file, so today this
-# runs only when invoked by hand. Until Lane B adds it (and truthlag_pins_test.sh) to
-# `task check`, a README edit can reopen DOC-07 with nothing going red.
+# WIRED (D-124/D-125): `task docs-gates` runs this and truthlag_pins_test.sh, and
+# `task check` runs `docs-gates`. A README edit that reopens DOC-07 reds the gate every
+# developer runs before every commit.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -80,7 +81,7 @@ while IFS= read -r line; do
       continue
       ;;
     task*)
-      echo "SKIP  $cmd  (this script belongs inside \`task check\`; invoking it here would recurse once wired — D-124)"
+      echo "SKIP  $cmd  (this script runs inside \`task check\` via \`task docs-gates\`; invoking it here would recurse — D-124)"
       skipped=$((skipped + 1))
       continue
       ;;
