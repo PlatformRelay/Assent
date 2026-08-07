@@ -67,6 +67,15 @@ jobs:
         run: go install github.com/go-task/task/v3/cmd/task@latest
       - name: PCS compare exit gate (RELSE-03 — REQ-PCS-S09)
         run: bash hack/compare/exitgate_test.sh
+      # AUD-S02 (REQ-AUD-S02-02) — CHANGELOG.md drift gate, main + schedule only.
+      # NOT on pull_request (D-125): there actions/checkout builds refs/pull/N/merge, a
+      # merge commit minted at CI time whose subject ("Merge <sha> into <sha>") git-cliff
+      # renders through the catch-all commit parser. That line cannot exist in any
+      # committed CHANGELOG.md, so a PR-scoped step would be red by construction and
+      # unfixable by the author. `task check` runs this gate on every local commit.
+      - name: changelog drift gate (AUD-S02 — REQ-AUD-S02-02)
+        if: github.event_name != 'pull_request'
+        run: task changelog-verify
 
   # RELSE-03: release exit gate includes goreleaser snapshot + docs-build — main push and
   # weekly schedule only; PRs run compare-exitgate above without this job.

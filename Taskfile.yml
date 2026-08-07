@@ -76,6 +76,12 @@ tasks:
       - task: build
       - task: dogfood-comparison
       - task: compare-exitgate-test
+      # AUD-S02 (REQ-AUD-S02-02): CHANGELOG.md drift gate. It is the LOCAL half of the
+      # wiring — CI runs it only off pull_request (D-125), because on the PR merge ref
+      # the generated changelog always carries a synthetic merge subject. Consequence,
+      # stated plainly: a commit that changes history without regenerating CHANGELOG.md
+      # makes the NEXT `task check` red until `task changelog-write` is committed.
+      - task: changelog-verify
       # AUD-S03: the release gate's own guard. Its only other CI caller is release-exitgate,
       # which is skipped on pull_request — without this a regression merges green and only
       # reds main afterwards. Fast and offline (stubbed `gh`); needs jq.
