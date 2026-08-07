@@ -44,8 +44,10 @@ if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)
 fi
 
 # Resolve the tag to its commit SHA via the API on BOTH paths (the commits endpoint
-# dereferences annotated tags), so the dispatch rebuild path is gated identically.
-if ! SHA="$(gh api "repos/${REPO}/commits/${TAG}" --jq '.sha')"; then
+# dereferences annotated tags), so the dispatch rebuild path is gated identically. The full
+# `refs/tags/` ref is used rather than the bare name: `commits/{ref}` also accepts branch
+# names, so a branch called vX.Y.Z could otherwise shadow the tag being released.
+if ! SHA="$(gh api "repos/${REPO}/commits/refs/tags/${TAG}" --jq '.sha')"; then
   fail "could not resolve tag '${TAG}' to a commit SHA in ${REPO}"
 fi
 if [[ ! "${SHA}" =~ ^[0-9a-f]{40}$ ]]; then
@@ -96,7 +98,9 @@ if ((bad > 0)); then
 fi
 
 if ((green_non_pr == 0)); then
-  fail "every green '${VERIFY_WORKFLOW}' run on ${TAG} (${SHA}) is a pull_request run — those skip release-exitgate, so the release exit gate never ran on this commit; tag the tip of a push to main (or re-run verify on this commit from the Actions tab) and re-run this release when verify is green on that commit"
+  # No "re-run verify here" remedy is offered on purpose: verify.yaml has no workflow_dispatch
+  # trigger, and re-running a PR run preserves event=pull_request, so it would stay blocked.
+  fail "every green '${VERIFY_WORKFLOW}' run on ${TAG} (${SHA}) is a pull_request run — those skip release-exitgate, so the release exit gate never ran on this commit; tag the tip of a push to main instead and re-run this release when verify is green on that commit"
 fi
 
 echo "OK: ${VERIFY_WORKFLOW} concluded success on ${TAG} (${SHA}) — release may build"

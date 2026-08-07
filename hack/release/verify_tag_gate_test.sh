@@ -123,12 +123,16 @@ fixture_runs <<<"$(runs_doc "$(run_json completed success push https://example.i
 run_gate push v9.9.9 ""
 assert_rc 0 "success/push"
 assert_contains "OK" "success/push"
-grep -qF "repos/${REPO_SLUG}/commits/v9.9.9" "${STUB}/calls.log" \
+grep -qF "repos/${REPO_SLUG}/commits/refs/tags/v9.9.9" "${STUB}/calls.log" \
   || fail "success/push: gate must resolve the tag's commit SHA via gh api"
 grep -qF "head_sha=${SHA}" "${STUB}/calls.log" \
   || fail "success/push: gate must query verify runs for the resolved tag SHA"
 grep -qF "verify.yaml/runs" "${STUB}/calls.log" \
   || fail "success/push: gate must query the verify workflow's runs"
+grep -qF "per_page=100" "${STUB}/calls.log" \
+  || fail "success/push: gate must request a full page of runs (paired with --paginate)"
+grep -qE '(^|[[:space:]])--paginate([[:space:]]|$)' "${GATE}" \
+  || fail "gate must paginate the runs query so a SHA with many runs cannot hide a red one"
 
 # failure (push)
 reset_fixtures
@@ -168,6 +172,8 @@ assert_contains "when verify is green" "missing"
 # v0.1.0 shape: a green PR run (release-exitgate skipped) alongside a red main-push run on the
 # SAME ff-merged SHA. Newest-first ordering puts the green one first on purpose — a
 # "latest/first run wins" implementation would pass this row, so it must stay fail-closed.
+# NOTE: this row alone no longer isolates condition 1 — its only green run is a PR run, so
+# condition 2 would also reject it. The two rows above are what keep condition 1 honest.
 reset_fixtures
 fixture_commit
 fixture_runs <<<"$(runs_doc \
@@ -176,6 +182,36 @@ fixture_runs <<<"$(runs_doc \
 run_gate push v9.9.9 ""
 assert_rc 1 "mixed/green-pr-run-plus-red-push-run"
 assert_contains "https://example.invalid/run/push" "mixed/green-pr-run-plus-red-push-run"
+
+# Condition 1 (every run must be completed + success) must fail the gate ON ITS OWN, with a
+# green non-PR run present so condition 2 is satisfied and cannot be what produces the verdict.
+# Both rows assert the SUMMARY text as well as the offending URL: the URL is echoed by the
+# per-run loop regardless of the final verdict, so asserting it alone proves nothing.
+# Reachable: the weekly `schedule` verify run (verify.yaml cron) goes red on a SHA whose push
+# run was green — a fresh govulncheck advisory is the canonical case — and someone tags it.
+reset_fixtures
+fixture_commit
+fixture_runs <<<"$(runs_doc \
+  "$(run_json completed success push https://example.invalid/run/tip-green)" \
+  "$(run_json completed failure schedule https://example.invalid/run/weekly-red)")"
+run_gate push v9.9.9 ""
+assert_rc 1 "condition1/red-schedule-run-beside-green-push-run"
+assert_contains "https://example.invalid/run/weekly-red" "condition1/red-schedule-run-beside-green-push-run"
+assert_contains "run(s) on" "condition1/red-schedule-run-beside-green-push-run"
+assert_contains "are not green" "condition1/red-schedule-run-beside-green-push-run"
+
+# Same, for the other branch that increments `bad`: a re-run in flight on an otherwise green
+# SHA ("Re-run all jobs" pressed, new attempt still running, tag lands meanwhile).
+reset_fixtures
+fixture_commit
+fixture_runs <<<"$(runs_doc \
+  "$(run_json completed success push https://example.invalid/run/tip-green2)" \
+  "$(run_json in_progress null push https://example.invalid/run/rerun-inflight)")"
+run_gate push v9.9.9 ""
+assert_rc 1 "condition1/in-flight-rerun-beside-green-push-run"
+assert_contains "https://example.invalid/run/rerun-inflight" "condition1/in-flight-rerun-beside-green-push-run"
+assert_contains "run(s) on" "condition1/in-flight-rerun-beside-green-push-run"
+assert_contains "are not green" "condition1/in-flight-rerun-beside-green-push-run"
 
 # The ABSENCE direction of the same fact (F1): a SHA whose ONLY verify run is a green PR run
 # never ran release-exitgate at all. Every intermediate commit of a multi-commit ff-merged PR
@@ -222,7 +258,7 @@ fixture_runs <<<"$(runs_doc "$(run_json completed failure push https://example.i
 run_gate workflow_dispatch v0.0.0-otherref v9.9.9
 assert_rc 1 "dispatch/failure"
 assert_contains "when verify is green" "dispatch/failure"
-grep -qF "repos/${REPO_SLUG}/commits/v9.9.9" "${STUB}/calls.log" \
+grep -qF "repos/${REPO_SLUG}/commits/refs/tags/v9.9.9" "${STUB}/calls.log" \
   || fail "dispatch/failure: gate must use the dispatched tag input, not GITHUB_REF_NAME"
 if grep -qF "v0.0.0-otherref" "${STUB}/calls.log"; then
   fail "dispatch/failure: gate must ignore GITHUB_REF_NAME on the workflow_dispatch path"
@@ -336,8 +372,16 @@ step_block() { # the release-job step whose body contains <marker>
 gate_step="$(step_block "hack/release/verify-tag-gate.sh")"
 [[ -n "${gate_step}" ]] \
   || fail "could not isolate the gate step in the release job (REQ-AUD-S03-02)"
-grep -qF "run: bash hack/release/verify-tag-gate.sh" <<<"${gate_step}" \
-  || fail "the gate step must invoke hack/release/verify-tag-gate.sh (REQ-AUD-S03-01)"
+# Anchored: `run: bash hack/release/verify-tag-gate.sh || true` would otherwise satisfy a
+# substring match while disarming the gate completely.
+grep -qE 'run: bash hack/release/verify-tag-gate\.sh[[:space:]]*$' <<<"${gate_step}" \
+  || fail "the gate step's run: line must end at hack/release/verify-tag-gate.sh — no '|| true', no appended command (REQ-AUD-S03-01)"
+if grep -qE '(^|[[:space:]])continue-on-error:' <<<"${gate_step}"; then
+  fail "the gate step must not set continue-on-error — that turns the release gate into a warning (REQ-AUD-S03-01)"
+fi
+if grep -qE '^[0-9]+\t +if:' <<<"${gate_step}"; then
+  fail "the gate step must not be conditional — it applies to every release event (REQ-AUD-S03-01)"
+fi
 grep -qF "GH_TOKEN:" <<<"${gate_step}" \
   || fail "the gate step must pass GH_TOKEN (checkout uses persist-credentials: false)"
 grep -qF "TAG_INPUT:" <<<"${gate_step}" \
