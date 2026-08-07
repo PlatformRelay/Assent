@@ -59,6 +59,13 @@ func hardFailingFactory(f *fakeGitLab) func(string, string, string) forgePort {
 	}
 }
 
+// errWriter is a stdout that cannot be written to, so the DEFAULT emit mode
+// (--emit unset → stdout) can fail. Nothing in orchestrate writes to stdout
+// before emitRecord, so the failure lands exactly on the emit.
+type errWriter struct{}
+
+func (errWriter) Write([]byte) (int, error) { return 0, errors.New("stdout is gone") }
+
 // approving configures the fake for the APPROVE + armed-merge polarity (a
 // partitions GROW proves `non-destructive`; the default premium project JSON
 // makes the forge probe arm-eligible).
@@ -124,6 +131,24 @@ func TestEmitFailureBlocksForgeWrites(t *testing.T) {
 		assertNoForgeWrites(t, f)
 		if !strings.Contains(out.String(), "emit decision record") {
 			t.Errorf("expected an emit-decision-record error:\n%s", out.String())
+		}
+	})
+
+	// The DEFAULT emit mode is stdout (--emit unset). The invariant must hold
+	// there too: a stdout that cannot be written to aborts the run with zero
+	// forge writes, exactly like an unwritable file.
+	t.Run("stdout_emit_failure_no_writes", func(t *testing.T) {
+		f := newFakeGitLab(t)
+		approving(f)
+
+		var stderr bytes.Buffer
+		code := runRun(runArgs("--arm"), env("tok"), fixedClock(), errWriter{}, &stderr, f.factory())
+		if code == 0 {
+			t.Fatalf("a failed stdout emit must fail the run (non-zero), got 0\n%s", stderr.String())
+		}
+		assertNoForgeWrites(t, f)
+		if !strings.Contains(stderr.String(), "emit decision record") {
+			t.Errorf("expected an emit-decision-record error:\n%s", stderr.String())
 		}
 	})
 
