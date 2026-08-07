@@ -162,6 +162,13 @@ destructive change; `2` a missed authorization/ownership change; `3` an unexpect
 obligation removal; `4` auto-merge widening beyond the bound; `5` deltas that were not
 explicitly accepted; `6` fail-closed — a load, schema, digest or classification error.
 
+Two paths sit outside that contract and are easy to misread. `6` is also what an
+unreadable or missing input directory returns, so a wrapper invoking
+`assent compare "$DIR"` with `$DIR` unset reports fail-closed rather than a usage
+error — check the stderr message before assuming a classification failure. And
+`assent compare -h` prints the flag list and exits `0`, which here means "help was
+printed", not "all gates pass".
+
 ## assent catalogue
 
 Emit the generated rule catalogue for a policy tree as JSON on stdout, for the docs
