@@ -45,7 +45,7 @@ it destructive, which policy applies. assent encodes that reasoning as policy so
 - **Semantic diffs** — JSON, YAML, and HCL/tfvars parse into field-level adds/modifies/deletes,
   not line noise ([ADR-0003](docs/adr/0003-canonical-change-model.md)).
 - **Testable policies** — fixture changes in, expected decision out; policies without tests
-  are a lint error ([ADR-0014](docs/adr/0014-policy-test-harness.md)).
+  are a lint error ([ADR-0014](docs/adr/0014-adopter-test-format.md)).
 
 ## How it works
 
