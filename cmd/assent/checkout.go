@@ -12,6 +12,7 @@ import (
 
 	"github.com/PlatformRelay/assent/internal/change"
 	"github.com/PlatformRelay/assent/internal/core/classify"
+	"github.com/PlatformRelay/assent/internal/forge"
 )
 
 // localCheckout is the E1-S08 mechanism seam (ADR-0008 §4). It yields the MR's
@@ -219,14 +220,32 @@ func foldCheckout(co localCheckout, governed string) (checkoutFold, error) {
 
 // foldSnapshotPaths applies the E4-S06 path-only classifier fold over forge
 // Snapshot changed files when --checkout is unset. Any `.assent/**` path in the
-// Snapshot set dominates to assent-policy (BLOCK). Opaque detection is not
-// available from paths alone — that remains the checkout fold's job.
-func foldSnapshotPaths(paths []string) checkoutFold {
+// Snapshot set dominates to assent-policy (BLOCK).
+//
+// It also folds the ADR-0020 / D-119 COMPLETENESS signal. Here the Snapshot's
+// path list is the SOLE `.assent/**` detector, so an enumeration that cannot
+// prove itself complete is epistemically identical to an opaque diff: it is
+// folded opaque, which the decide() short-circuit turns into fail-safe REVIEW
+// (`changeset.undecidable`) — an auditable record and a resolvable thread, and
+// never an approve/merge. Byte-level opacity of individual files remains the
+// checkout fold's job; paths alone cannot see it.
+//
+// Ordering note: the class fold is NOT skipped when the enumeration is
+// incomplete. A `.assent/**` path that IS visible in the partial list must
+// still dominate to BLOCK (GUARD 1 over the gap-degrade), which decide()
+// enforces by checking the reserved class before the opaque short-circuit.
+func foldSnapshotPaths(snap forge.Snapshot) checkoutFold {
 	fold := checkoutFold{class: classify.ClassUnclassified}
-	for _, path := range paths {
+	for _, path := range snap.ChangedFiles {
 		if classify.FileClass(path) == classify.ClassAssentPolicy {
 			fold.class = classify.ClassAssentPolicy
 		}
+	}
+	if reason := snap.EnumerationOpaqueReason(); reason != "" {
+		fold.opaque = true
+		// The NORMATIVE reason, verbatim (ADR-0020 §4). The caller must not
+		// re-prefix it.
+		fold.opaqueReason = reason
 	}
 	return fold
 }
