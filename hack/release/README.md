@@ -60,7 +60,7 @@ The publish job in `.github/workflows/release.yaml` (tag push / `workflow_dispat
    (`release.disable: true` still blocks goreleaser’s own GitHub Release).
 3. **`actions/attest`** with `subject-checksums: dist/checksums.txt` — SLSA provenance; exported
    as `dist/release-provenance.intoto.jsonl` (mkurator pattern).
-5. **`softprops/action-gh-release`** uploads archives, checksums, SBOMs, sigstore bundles, and
+4. **`softprops/action-gh-release`** uploads archives, checksums, SBOMs, sigstore bundles, and
    provenance bundle.
 
 **Autonomous gates:** `bash hack/release/supply_chain_test.sh` (config + SECURITY.md wiring).
@@ -85,11 +85,13 @@ is green on the exact commit the tag points at.
 | Script / task | Purpose |
 | --- | --- |
 | `hack/release/verify-tag-gate.sh` | The gate itself — run by `.github/workflows/release.yaml` before any build/sign/publish step |
-| `hack/release/verify_tag_gate_test.sh` | REQ-AUD-S03 gate: polarity table via a stubbed `gh` + release.yaml step-order assertion |
-| `task release-verify-tag-gate-test` | Same check via Taskfile (also runs inside `hack/release/exitgate_test.sh`, so CI enforces it) |
+| `hack/release/verify_tag_gate_test.sh` | REQ-AUD-S03 gate: polarity table via a stubbed `gh` + release.yaml step-order assertion. **Requires `jq`** (the stub applies the script's own `--jq` filter); GitHub-hosted runners ship it, install it locally with `brew install jq` / `apt install jq` |
+| `task release-verify-tag-gate-test` | Same check via Taskfile (also runs inside `hack/release/exitgate_test.sh`, so CI enforces it — that script therefore needs `jq` too) |
 
-**Rule.** The tag is resolved to its commit SHA via `gh api repos/{repo}/commits/{tag}` on both
-the `push` and `workflow_dispatch` paths (the rebuild path is not a bypass), then **every**
+**Rule.** The tag is resolved to its commit SHA via `gh api repos/{repo}/commits/refs/tags/{tag}`
+on both the `push` and `workflow_dispatch` paths (the rebuild path is not a bypass; the full ref
+is used because `commits/{ref}` also accepts branch names, so a branch named `vX.Y.Z` could
+otherwise shadow the tag), then **every**
 `verify.yaml` run on that SHA must be `completed` + `success`, **and at least one green run must
 not be a `pull_request` run**. Both halves matter: a PR run skips `release-exitgate`
 (`if: github.event_name != 'pull_request'`), so its success says nothing about the release exit
