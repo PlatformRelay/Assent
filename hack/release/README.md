@@ -32,13 +32,14 @@ The tag-triggered `.github/workflows/release.yaml` consumes git-cliff output for
 notes — same pattern as mkurator:
 
 1. Checkout with `fetch-depth: 0` (full history + tags).
-2. **Build:** `goreleaser release --clean` (`.goreleaser.yaml` keeps
+2. **Verify-green gate (AUD-S03):** `hack/release/verify-tag-gate.sh` — see below.
+3. **Build:** `goreleaser release --clean` (`.goreleaser.yaml` keeps
    `release.disable: true` so goreleaser does not create the GitHub Release; Homebrew tap
    push still runs when `HOMEBREW_TAP_GITHUB_TOKEN` is set — do **not** pass `--skip=publish`,
    which skips the brew publisher). Softprops uploads archives below.
-3. Run **`orhun/git-cliff-action`** (SHA-pinned) with `config: cliff.toml` and
+4. Run **`orhun/git-cliff-action`** (SHA-pinned) with `config: cliff.toml` and
    `args: --latest --strip header` so the action emits the latest tagged section body.
-4. **`softprops/action-gh-release`** uploads `dist/` archives + `checksums.txt` with cliff body.
+5. **`softprops/action-gh-release`** uploads `dist/` archives + `checksums.txt` with cliff body.
 
 **Triggers:** `push.tags: v*.*.*`, `workflow_dispatch` (rebuild an existing tag), and PR
 `snapshot` dry-run on release-related paths.
@@ -59,7 +60,7 @@ The publish job in `.github/workflows/release.yaml` (tag push / `workflow_dispat
    (`release.disable: true` still blocks goreleaser’s own GitHub Release).
 3. **`actions/attest`** with `subject-checksums: dist/checksums.txt` — SLSA provenance; exported
    as `dist/release-provenance.intoto.jsonl` (mkurator pattern).
-4. **`softprops/action-gh-release`** uploads archives, checksums, SBOMs, sigstore bundles, and
+5. **`softprops/action-gh-release`** uploads archives, checksums, SBOMs, sigstore bundles, and
    provenance bundle.
 
 **Autonomous gates:** `bash hack/release/supply_chain_test.sh` (config + SECURITY.md wiring).
@@ -74,6 +75,40 @@ Verification commands: [`SECURITY.md`](../SECURITY.md) (REQ-E9-S06-03).
 
 Maintainers regenerate `CHANGELOG.md` on main via `task changelog-write` after merging user-facing
 commits; `verify-changelog.sh` keeps the committed file in sync.
+
+## Verify-green tag gate (AUD-S03, REQ-AUD-S03-01/02)
+
+`v0.1.0` published signed, attested artifacts from a commit whose `release-exitgate` was red.
+The `release` job's first step after checkout now refuses to build unless the `verify` workflow
+is green on the exact commit the tag points at.
+
+| Script / task | Purpose |
+| --- | --- |
+| `hack/release/verify-tag-gate.sh` | The gate itself — run by `.github/workflows/release.yaml` before any build/sign/publish step |
+| `hack/release/verify_tag_gate_test.sh` | REQ-AUD-S03 gate: polarity table via a stubbed `gh` + release.yaml step-order assertion |
+| `task release-verify-tag-gate-test` | Same check via Taskfile (also runs inside `hack/release/exitgate_test.sh`, so CI enforces it) |
+
+**Rule.** The tag is resolved to its commit SHA via `gh api repos/{repo}/commits/{tag}` on both
+the `push` and `workflow_dispatch` paths (the rebuild path is not a bypass), then **every**
+`verify.yaml` run on that SHA must be `completed` + `success`, **and at least one green run must
+not be a `pull_request` run**. Both halves matter: a PR run skips `release-exitgate`
+(`if: github.event_name != 'pull_request'`), so its success says nothing about the release exit
+gate — whether it stands alongside a red push run or stands alone. GitHub only creates a push
+run for the **tip** of a push, so intermediate commits of a multi-commit ff-merged PR carry a
+lone green PR run; tag the push tip.
+
+No wait-loop by design: `queued`/`in_progress` fails immediately, because re-dispatching a
+release is cheap and waiting hides red.
+
+**When the gate blocks you.** It reports each offending run's URL. A red *or cancelled* run
+stays on the SHA until it is re-run — use **Re-run all jobs** on that run in the Actions tab
+(re-running updates the existing run's conclusion), then re-dispatch the release. There is no
+override env var: the pinned workflow name and the polarity rules are not tunable, so a
+misconfiguration fails the release closed rather than open.
+
+The job needs `actions: read` in its `permissions:` block for the workflow-runs API — an
+explicit `permissions:` block sets every unlisted scope to `none`, so this is not covered by
+`contents: write`.
 
 ## Snapshot verify (E9-S02)
 

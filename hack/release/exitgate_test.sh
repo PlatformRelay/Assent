@@ -22,6 +22,13 @@ awk '
 ' "$wf" | grep -E 'astral-sh/setup-uv@|astral\.sh/uv/install' \
   || fail "release-exitgate must install uv (astral-sh/setup-uv or astral.sh installer) before docs-build"
 
+# AUD-S03: the release job's verify-green gate is itself a release gate — run its polarity
+# table + step-order assertion here so REQ-AUD-S03-02 is enforced by CI (this script runs in
+# verify.yaml's release-exitgate job) and not only when someone types the command. Fast and
+# offline: it drives a stubbed `gh`, no network. Needs jq, which GitHub-hosted runners ship.
+echo "== AUD-S03 release verify-tag gate (REQ-AUD-S03-01/02) =="
+bash "$ROOT/hack/release/verify_tag_gate_test.sh"
+
 echo "== E9-S13 autonomous exit gate (REQ-E9-S13-01) =="
 task release-snapshot
 task release-verify
