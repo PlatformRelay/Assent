@@ -56,7 +56,7 @@ echo "verify-tag-gate: asserting ${VERIFY_WORKFLOW} is green on ${TAG} (${SHA})"
 
 if ! RUNS="$(gh api --paginate \
   "repos/${REPO}/actions/workflows/${VERIFY_WORKFLOW}/runs?head_sha=${SHA}&per_page=100" \
-  --jq '.workflow_runs[] | [.status, (.conclusion // "null"), .html_url] | @tsv')"; then
+  --jq '.workflow_runs[] | [.status, (.conclusion // "null"), (.event // "null"), .html_url] | @tsv')"; then
   fail "could not query ${VERIFY_WORKFLOW} runs for ${SHA} (needs actions: read)"
 fi
 
@@ -64,25 +64,39 @@ if [[ -z "${RUNS}" ]]; then
   fail "no completed '${VERIFY_WORKFLOW}' run found for ${TAG} (${SHA}) — re-run this release when verify is green on that commit"
 fi
 
-# Every run on that SHA must be completed AND successful. A single ff-merged commit can carry
-# both a PR run (which skips release-exitgate) and a main-push run (which does not); taking
-# only the newest would let the green PR run mask the red push run — exactly the v0.1.0 shape.
+# Two conditions, both required.
+#
+# 1. Every run on that SHA must be completed AND successful. A single ff-merged commit can carry
+#    both a PR run (which skips release-exitgate) and a main-push run (which does not); taking
+#    only the newest would let the green PR run mask the red push run — the v0.1.0 shape.
+# 2. At least one of those green runs must NOT be a pull_request run. `release-exitgate` is
+#    guarded by `if: github.event_name != 'pull_request'`, so a PR run concludes success without
+#    ever executing the release exit gate. GitHub only creates a push run for the TIP of a push,
+#    so every intermediate commit of a multi-commit ff-merged PR carries a lone green PR run —
+#    tagging one would otherwise publish signed, attested artifacts from a tree the exit gate
+#    never saw. Same untrustworthy conclusion as (1), in its absence direction.
 bad=0
-while IFS=$'\t' read -r status conclusion url; do
+green_non_pr=0
+while IFS=$'\t' read -r status conclusion event url; do
   [[ -n "${status}" ]] || continue
   if [[ "${status}" != "completed" ]]; then
-    echo "verify-tag-gate: run not finished (status=${status}): ${url}" >&2
+    echo "verify-tag-gate: run not finished (status=${status}, event=${event}): ${url}" >&2
     bad=$((bad + 1))
   elif [[ "${conclusion}" != "success" ]]; then
-    echo "verify-tag-gate: run not green (conclusion=${conclusion}): ${url}" >&2
+    echo "verify-tag-gate: run not green (conclusion=${conclusion}, event=${event}): ${url}" >&2
     bad=$((bad + 1))
   else
-    echo "verify-tag-gate: run green: ${url}"
+    echo "verify-tag-gate: run green (event=${event}): ${url}"
+    [[ "${event}" == "pull_request" ]] || green_non_pr=$((green_non_pr + 1))
   fi
 done <<<"${RUNS}"
 
 if ((bad > 0)); then
-  fail "${bad} '${VERIFY_WORKFLOW}' run(s) on ${TAG} (${SHA}) are not green — re-run this release when verify is green on that commit"
+  fail "${bad} '${VERIFY_WORKFLOW}' run(s) on ${TAG} (${SHA}) are not green — re-run the red or cancelled run(s) above, then re-run this release when verify is green on that commit"
+fi
+
+if ((green_non_pr == 0)); then
+  fail "every green '${VERIFY_WORKFLOW}' run on ${TAG} (${SHA}) is a pull_request run — those skip release-exitgate, so the release exit gate never ran on this commit; tag the tip of a push to main (or re-run verify on this commit from the Actions tab) and re-run this release when verify is green on that commit"
 fi
 
 echo "OK: ${VERIFY_WORKFLOW} concluded success on ${TAG} (${SHA}) — release may build"

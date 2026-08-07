@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # REQ-AUD-S03-01: polarity table for hack/release/verify-tag-gate.sh (success / failure /
-#                 pending / missing) driven by a stubbed `gh` on PATH — no live run needed.
+#                 pending / missing / pull_request-run-only) driven by a stubbed `gh` on PATH —
+#                 no live run needed.
 # REQ-AUD-S03-02: step-order assertion over .github/workflows/release.yaml — the gate step
 #                 precedes every build/sign/publish step in the release job DAG.
 set -euo pipefail
@@ -70,9 +71,9 @@ fixture_commit() { printf '{"sha":"%s"}\n' "${1:-${SHA}}" >"${STUB}/commit.json"
 fixture_runs() { cat >"${STUB}/runs.json"; }
 reset_fixtures() { rm -f "${STUB}/commit.json" "${STUB}/runs.json" "${STUB}/calls.log"; }
 
-run_json() { # run_json <status> <conclusion> <url>
-  printf '{"status":"%s","conclusion":%s,"html_url":"%s"}' \
-    "$1" "$([[ "$2" == "null" ]] && echo null || printf '"%s"' "$2")" "$3"
+run_json() { # run_json <status> <conclusion> <event> <url>
+  printf '{"status":"%s","conclusion":%s,"event":"%s","html_url":"%s"}' \
+    "$1" "$([[ "$2" == "null" ]] && echo null || printf '"%s"' "$2")" "$3" "$4"
 }
 runs_doc() { # runs_doc <run-json>...
   local joined=""
@@ -118,7 +119,7 @@ echo "== REQ-AUD-S03-01 polarity table (stubbed gh) =="
 # success (push)
 reset_fixtures
 fixture_commit
-fixture_runs <<<"$(runs_doc "$(run_json completed success https://example.invalid/run/1)")"
+fixture_runs <<<"$(runs_doc "$(run_json completed success push https://example.invalid/run/1)")"
 run_gate push v9.9.9 ""
 assert_rc 0 "success/push"
 assert_contains "OK" "success/push"
@@ -132,7 +133,7 @@ grep -qF "verify.yaml/runs" "${STUB}/calls.log" \
 # failure (push)
 reset_fixtures
 fixture_commit
-fixture_runs <<<"$(runs_doc "$(run_json completed failure https://example.invalid/run/2)")"
+fixture_runs <<<"$(runs_doc "$(run_json completed failure push https://example.invalid/run/2)")"
 run_gate push v9.9.9 ""
 assert_rc 1 "failure/push"
 assert_contains "failure" "failure/push"
@@ -141,7 +142,7 @@ assert_contains "when verify is green" "failure/push"
 # pending — in_progress (push)
 reset_fixtures
 fixture_commit
-fixture_runs <<<"$(runs_doc "$(run_json in_progress null https://example.invalid/run/3)")"
+fixture_runs <<<"$(runs_doc "$(run_json in_progress null push https://example.invalid/run/3)")"
 run_gate push v9.9.9 ""
 assert_rc 1 "pending/in_progress"
 assert_contains "in_progress" "pending/in_progress"
@@ -150,7 +151,7 @@ assert_contains "when verify is green" "pending/in_progress"
 # pending — queued (push)
 reset_fixtures
 fixture_commit
-fixture_runs <<<"$(runs_doc "$(run_json queued null https://example.invalid/run/4)")"
+fixture_runs <<<"$(runs_doc "$(run_json queued null push https://example.invalid/run/4)")"
 run_gate push v9.9.9 ""
 assert_rc 1 "pending/queued"
 assert_contains "queued" "pending/queued"
@@ -170,16 +171,54 @@ assert_contains "when verify is green" "missing"
 reset_fixtures
 fixture_commit
 fixture_runs <<<"$(runs_doc \
-  "$(run_json completed success https://example.invalid/run/pr)" \
-  "$(run_json completed failure https://example.invalid/run/push)")"
+  "$(run_json completed success pull_request https://example.invalid/run/pr)" \
+  "$(run_json completed failure push https://example.invalid/run/push)")"
 run_gate push v9.9.9 ""
 assert_rc 1 "mixed/green-pr-run-plus-red-push-run"
 assert_contains "https://example.invalid/run/push" "mixed/green-pr-run-plus-red-push-run"
 
+# The ABSENCE direction of the same fact (F1): a SHA whose ONLY verify run is a green PR run
+# never ran release-exitgate at all. Every intermediate commit of a multi-commit ff-merged PR
+# has this shape, because GitHub only creates a push run for the tip of a push — so tagging one
+# would otherwise publish signed artifacts from a tree the release exit gate never saw.
+reset_fixtures
+fixture_commit
+fixture_runs <<<"$(runs_doc "$(run_json completed success pull_request https://example.invalid/run/pronly)")"
+run_gate push v9.9.9 ""
+assert_rc 1 "pull_request-run-only"
+assert_contains "pull_request" "pull_request-run-only"
+assert_contains "when verify is green" "pull_request-run-only"
+
+# ...and the counterpart that proves the rule is not over-tightened: a push tip carries BOTH a
+# PR run and a push run, and must still pass.
+reset_fixtures
+fixture_commit
+fixture_runs <<<"$(runs_doc \
+  "$(run_json completed success pull_request https://example.invalid/run/pr-ok)" \
+  "$(run_json completed success push https://example.invalid/run/push-ok)")"
+run_gate push v9.9.9 ""
+assert_rc 0 "pr-run-plus-green-push-run"
+
+# A green `schedule` run also satisfies the non-PR requirement (verify.yaml runs weekly and
+# release-exitgate is not skipped there).
+reset_fixtures
+fixture_commit
+fixture_runs <<<"$(runs_doc "$(run_json completed success schedule https://example.invalid/run/sched)")"
+run_gate push v9.9.9 ""
+assert_rc 0 "schedule-run-only"
+
+# Error path: tag resolves, but the workflow-runs query fails (403 when `actions: read` is
+# missing is the most likely real-world case, since this lane introduced that scope).
+reset_fixtures
+fixture_commit
+run_gate push v9.9.9 ""
+assert_rc 1 "runs-query-failure"
+assert_contains "actions: read" "runs-query-failure"
+
 # workflow_dispatch is NOT a bypass: same gate, dispatched tag's SHA
 reset_fixtures
 fixture_commit
-fixture_runs <<<"$(runs_doc "$(run_json completed failure https://example.invalid/run/5)")"
+fixture_runs <<<"$(runs_doc "$(run_json completed failure push https://example.invalid/run/5)")"
 run_gate workflow_dispatch v0.0.0-otherref v9.9.9
 assert_rc 1 "dispatch/failure"
 assert_contains "when verify is green" "dispatch/failure"
@@ -191,13 +230,13 @@ fi
 
 reset_fixtures
 fixture_commit
-fixture_runs <<<"$(runs_doc "$(run_json completed success https://example.invalid/run/6)")"
+fixture_runs <<<"$(runs_doc "$(run_json completed success push https://example.invalid/run/6)")"
 run_gate workflow_dispatch v0.0.0-otherref v9.9.9
 assert_rc 0 "dispatch/success"
 
 # unresolvable tag (gh api 404 on the commits endpoint)
 reset_fixtures
-fixture_runs <<<"$(runs_doc "$(run_json completed success https://example.invalid/run/7)")"
+fixture_runs <<<"$(runs_doc "$(run_json completed success push https://example.invalid/run/7)")"
 run_gate push v9.9.9 ""
 assert_rc 1 "unresolvable-tag"
 assert_contains "v9.9.9" "unresolvable-tag"
@@ -206,7 +245,7 @@ assert_contains "v9.9.9" "unresolvable-tag"
 for bad in "v9.9.9?head_sha=deadbeef" "../../evil" "not-a-tag" ""; do
   reset_fixtures
   fixture_commit
-  fixture_runs <<<"$(runs_doc "$(run_json completed success https://example.invalid/run/8)")"
+  fixture_runs <<<"$(runs_doc "$(run_json completed success push https://example.invalid/run/8)")"
   run_gate push "${bad}" ""
   assert_rc 1 "malformed-tag[${bad}]"
   [[ ! -s "${STUB}/calls.log" ]] \
@@ -216,13 +255,13 @@ done
 # unsupported event / missing repo → fail closed
 reset_fixtures
 fixture_commit
-fixture_runs <<<"$(runs_doc "$(run_json completed success https://example.invalid/run/9)")"
+fixture_runs <<<"$(runs_doc "$(run_json completed success push https://example.invalid/run/9)")"
 run_gate pull_request v9.9.9 ""
 assert_rc 1 "unsupported-event"
 
 reset_fixtures
 fixture_commit
-fixture_runs <<<"$(runs_doc "$(run_json completed success https://example.invalid/run/10)")"
+fixture_runs <<<"$(runs_doc "$(run_json completed success push https://example.invalid/run/10)")"
 set +e
 OUT="$(PATH="${BIN}:${PATH}" GH_STUB_DIR="${STUB}" GH_TOKEN=stub-token \
   GITHUB_REPOSITORY="" GITHUB_EVENT_NAME=push GITHUB_REF_NAME=v9.9.9 TAG_INPUT="" \
@@ -231,8 +270,9 @@ RC=$?
 set -e
 assert_rc 1 "missing-repo"
 
-echo "OK: REQ-AUD-S03-01 — success passes; failure / in_progress / queued / missing / mixed and
-     the workflow_dispatch rebuild path all fail closed"
+echo "OK: REQ-AUD-S03-01 — success passes (push tip, and schedule); failure / in_progress /
+     queued / missing / mixed / pull_request-run-only / runs-query-error and the
+     workflow_dispatch rebuild path all fail closed"
 
 # --- REQ-AUD-S03-02 step order + wiring --------------------------------------
 echo "== REQ-AUD-S03-02 release.yaml step order =="
