@@ -15,16 +15,30 @@ template emits **categorized subject lines only — no commit SHAs** (D-101, oss
 | `task changelog-write` | Regenerate `CHANGELOG.md` from tags + unreleased commits |
 | `task changelog-verify` | Fail closed if `CHANGELOG.md` drifts from `cliff.toml` output (release gate) |
 | `bash hack/release/verify-changelog.sh` | Same check as `task changelog-verify` (script entry point) |
+| `bash hack/release/changelog_gate_test.sh` | AUD-S02: proves the drift gate is wired and fires (REQ-AUD-S02-01/02) |
 
-**Not in `task check`:** regenerating `CHANGELOG.md` is a separate commit (`task changelog-write`).
-Running verify inside every local `task check` would chicken-egg — any commit after
-`changelog-write` fails until the next regeneration. Instead:
+Long-lived notes for consumers of released artifacts (currently the **D-120 `pins.toolDigest`**
+warning) live in `cliff.toml`'s `[changelog] header`, not in `CHANGELOG.md`: the file is
+regenerated in full, so a hand-edit is wiped by the next `changelog-write` while the drift gate
+stays green.
 
-- **Local / PR:** run `task changelog-verify` (or `bash hack/release/changelog_test.sh`) when
-  touching release docs or before opening a release-prep PR.
-- **CI (E9-S05):** PRs that touch release paths run the `snapshot` job in
-  `.github/workflows/release.yaml` (goreleaser `--snapshot --skip=publish`). Changelog drift is
-  still a separate gate (`task changelog-verify`) — not bundled into `task check`.
+**In `task check` since AUD-S02 (D-125).** `verify-changelog.sh` shipped in E9-S03 wired to
+nothing, and `CHANGELOG.md` lost its released section entirely after the v0.1.0 tag with nothing
+going red. Where it runs now:
+
+- **Local:** `task check` runs `changelog-verify` after `compare-exitgate-test`. It is
+  deliberately one commit behind — `check` is green at HEAD, the next commit makes the changelog
+  stale, and the following `check` is red until `task changelog-write` is committed. Prefix the
+  regeneration commit `:memo: chore(release):` or `:wrench: chore(release):` (the two subjects
+  `cliff.toml` skips), or the regeneration itself creates fresh drift. Regenerate after your last
+  content commit and after any `git merge origin/main`.
+- **CI:** the `verify` job in `.github/workflows/verify.yaml`, guarded
+  `if: github.event_name != 'pull_request'` — push-to-main and the weekly schedule only. On
+  `pull_request`, `actions/checkout` builds `refs/pull/N/merge`, a merge commit minted at CI time
+  whose subject git-cliff renders through the catch-all parser; that line cannot exist in any
+  committed `CHANGELOG.md`, so a PR-scoped step is red by construction (D-125).
+- **Release paths:** PRs touching them still run the `snapshot` job in
+  `.github/workflows/release.yaml` (goreleaser `--snapshot --skip=publish`).
 
 ### Release workflow (E9-S05)
 
