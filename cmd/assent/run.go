@@ -151,9 +151,13 @@ func parseRunFlags(args []string, stderr io.Writer) (runConfig, error) {
 // path: read MR → load the frozen MergePolicy + RulesetBinding from the TARGET
 // ref → route the covering binding → diff the governed file → classify → build the
 // typed EvaluationInput from the live diff → evaluate via the E2 coverage loop →
-// build+validate the DecisionRecord → reconcile → emit. Every fail-safe axis
-// (opaque/empty diff → REVIEW, unloadable policy → error/no write, reserved-class
-// self-edit → BLOCK, ArmEligible false → no write) is enforced here.
+// build+validate the DecisionRecord → EMIT → reconcile → summary. Every
+// fail-safe axis (opaque/empty diff → REVIEW, unloadable policy → error/no write,
+// reserved-class self-edit → BLOCK, ArmEligible false → no write, emit failure →
+// error/no write) is enforced here.
+//
+// The emit-before-reconcile order is normative (D-122, audit finding REL-08):
+// the forge is never mutated for a decision whose record could not be written.
 //
 // REQ-06 changes policy LOADING + input SHAPE + the EVALUATOR only; it does NOT
 // touch file SOURCING (the governed base/head is still read via FileAtRef, the
@@ -375,7 +379,22 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		return fmt.Errorf("decision record failed schema validation: %w", err)
 	}
 
-	// 8. Map the decision → forge intent, and reconcile — except GUARD 1
+	// 8. Emit the DecisionRecord — BEFORE any forge write (D-122, audit finding
+	//    REL-08). The invariant: no forge write without a schema-valid, durably
+	//    emitted record, so a merge can never outrun the record of the decision
+	//    that caused it. An emit failure is therefore a HARD error with ZERO
+	//    forge writes — no record ⇒ no action — not a warning.
+	//
+	//    The reorder is PURE: recordJSON is fully determined here (the reconcile
+	//    receipt lives in the summary line, not in the record), so the emitted
+	//    bytes and the marker digests derived from them are byte-identical to
+	//    the pre-D-122 order. Post-reconcile stamping was rejected by D-122
+	//    precisely because it would break that byte-stability.
+	if err := emitRecord(cfg, recordJSON, stdout); err != nil {
+		return fmt.Errorf("emit decision record: %w", err)
+	}
+
+	// 9. Map the decision → forge intent, and reconcile — except GUARD 1
 	//    (E4-S08 / D-042 F1): a self-modifying `.assent/**` MR earns BLOCK but
 	//    ZERO forge writes (no thread, approve, or merge).
 	//    GUARD 2 (E7-S03 / ADR-0015 §8): fork/untrusted MR context is advisory-only.
@@ -398,13 +417,14 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		receipt, recErr = forge.Reconcile(client, clockAdapter{now: clock}, desired, pre)
 	}
 
-	// 9. Emit the DecisionRecord + a one-line summary. A refusal from Reconcile
-	//    that is an EXPECTED fail-closed outcome (arming unmet, SHA moved) is NOT
-	//    a hard error — it is the advisory/no-write result the run is designed to
-	//    produce; report it in the summary and still exit 0.
-	if err := emitRecord(cfg, recordJSON, stdout); err != nil {
-		return fmt.Errorf("emit decision record: %w", err)
-	}
+	// 10. The one-line summary, which follows the already-emitted record on
+	//     stdout (ordering unchanged). A refusal from Reconcile that is an
+	//     EXPECTED fail-closed outcome (arming unmet, SHA moved) is NOT a hard
+	//     error — it is the advisory/no-write result the run is designed to
+	//     produce; report it in the summary and still exit 0. The summary, not
+	//     the record, is where the reconcile outcome is reported: the record
+	//     states the DECISION and its pins, never that the forge actions
+	//     completed.
 	var summary string
 	switch {
 	case reservedSelfEditBlock(result):
@@ -757,13 +777,37 @@ func isFailClosed(err error) bool {
 
 // emitRecord writes the DecisionRecord JSON to --emit (a file) or, when --emit
 // is empty, to the stdout writer ahead of the summary line.
+//
+// D-122 (AUD-S08 / audit finding REL-08): this runs BEFORE forge.Reconcile, so
+// the file write must be ATOMIC — a reader must never observe a half-written
+// record and then see the forge mutated to match it. The file branch writes
+// `<path>.tmp` in the SAME directory (so the rename is a same-filesystem atomic
+// replace, never a cross-device copy) and renames it into place; a failure at
+// either step removes the temp file and returns an error, which aborts the run
+// with zero forge writes. The stdout branch is unchanged — stdout has no
+// rename, and a partially written stream is already visible to the operator.
 func emitRecord(cfg runConfig, recordJSON []byte, stdout io.Writer) error {
 	if cfg.emit == "" {
 		_, err := stdout.Write(append(recordJSON, '\n'))
 		return err
 	}
-	return os.WriteFile(cfg.emit, recordJSON, 0o600) // #nosec G703 -- operator-supplied --emit path by design
+	tmp := emitTempPath(cfg.emit)
+	if err := os.WriteFile(tmp, recordJSON, 0o600); err != nil { // #nosec G703 -- operator-supplied --emit path by design
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, cfg.emit); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
+
+// emitTempPath is the same-directory staging path for the atomic --emit write
+// (D-122 names it `<path>.tmp`). Keeping the suffix on the full path — rather
+// than using a random temp name — keeps the staging file in the target's own
+// directory, which is what makes the subsequent os.Rename atomic.
+func emitTempPath(target string) string { return target + ".tmp" }
 
 // validateRecord validates DecisionRecord JSON against the frozen schema.
 func validateRecord(raw []byte) error {
