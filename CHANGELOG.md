@@ -7,7 +7,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Release notes are generated from gitmoji-conventional commits on the default branch using
 [git-cliff](https://git-cliff.org/).
 
+## Compatibility notes
+
+Long-lived notes for consumers of released artifacts. They live in `cliff.toml`'s changelog
+header because `CHANGELOG.md` is regenerated in full from commit history and a hand-edit here
+would be silently overwritten by the next `task changelog-write`.
+
+- **`pins.toolDigest` changes value after `v0.1.0` (D-120).** DecisionRecords emitted by
+`v0.1.0` and earlier pin `toolDigest` as sha256 over the *tool version string*, so every
+build stamped with the same version shared one digest; records carrying that derivation are
+identifiable by exactly it. Builds after D-120 derive `toolDigest` from the binary's
+canonical Go build info instead (main module path/version/sum, dependency checksums, VCS
+revision and dirty flag), falling back to `sha256("buildinfo-unavailable\n" + toolVersion)`
+when build info is absent. The field, its type and the frozen `v1alpha1` schema are
+unchanged — records published with `v0.1.0` remain schema-valid — but the *value* is not
+comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 record means
+"derived differently", not "different build".
+
 ## Unreleased
+
+### Chores
+- :wrench: chore(changelog): render version headings in Keep-a-Changelog bracket form
+
+### Documentation
+- :memo: docs(decisions): close D-111 E9 exit gate after v0.1.0
+- :memo: docs(release): Homebrew tap operator runbook and honest install
+- :memo: docs(install): document live Homebrew tap install
+- :memo: docs(decisions): record D-111 Homebrew Formula published
+- :memo: docs(openspec): Formula live; residual is PAT rotate
+- :memo: docs(adr): ADR-0020 forge snapshot changed-file completeness (REL-07 P1)
+- :memo: docs(decisions): D-119..D-123 audit-remediation designs
+- :memo: docs(openspec): P5-AUD audit-remediation epic — 18 stories, 3 release conditions
+- :memo: docs(adr): drop AI-provenance marker + review polish (D-019)
+- :memo: docs(openspec): review polish — S01 lane coordination, SEC-08 alias, RELSE-08 residual
+- :memo: docs(conformance): point each AUD-S01 catalog row at the test that proves it
+- :memo: docs(adr): ADR-0011 Amendment 3 -- boundary enforcement mechanism made true (D-123)
+- :memo: docs(release): note the jq dependency and fix the release-tooling list numbering
+- :memo: docs(usage): CLI reference pinned to the binary's help output (REQ-AUD-S05-02)
+- :memo: docs(usage): cover the two compare exit codes outside the gate contract (REQ-AUD-S05-02)
+- :memo: docs(schemas): publish the D-120 toolDigest description (annotation only)
+- :memo: docs(cli): correct the `assent run` step order to emit-before-reconcile (D-122)
+- :memo: docs(install): `go install` binaries report 0.0.0-dev, not a stamped version (DOC-11)
+- :memo: docs(contract): fileEvents ships add/delete — retire the "not yet implemented" note (DOC-06)
+- :memo: docs(walkthrough): per-step Shipped/Planned banners replace the design-fiction header (DOC-09)
+- :memo: docs(meta-plan): renumber the Phase-5 epic table to the epics that executed (DOC-10)
+- :memo: docs(adr): ADR-0020 is Accepted — its contract shipped in AUD-S01
+- :memo: docs(examples): drop the pre-alpha banner and the "once it exists" harness caveat
+- :memo: docs(usage): document the checkout-less enumeration contract on the -checkout flag
+- :memo: docs(release): mandate patch tags over in-place asset replacement (SEC-07)
+- :memo: docs(install): narrow the 0.0.0-dev consequence to the version string (D-120)
+- :memo: docs(decisions): record D-124 — the AUD-S06 docs gates are unwired, Lane B owns the wiring
+- :memo: docs(decisions): fold three unfixed residuals into D-124
+- :memo: docs(changelog): warn record consumers that pins.toolDigest changed value (D-120)
+- :memo: docs(decisions): record D-125 — CHANGELOG drift gate placement and its cost
+- :memo: docs(release): the changelog drift gate is in task check now, not outside it
+
+### Features
+- :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
+
+### Fixes
+- :bug: fix(ci): install uv on release-exitgate for docs-build
+- :bug: fix(release): do not skip=publish so Homebrew tap can push
+- :bug: fix(release): use a POSIX class, not \t, in the gate-step if: guard
+- :bug: fix(cli): show GITLAB_TOKEN in the run usage form (REQ-AUD-S05-01)
+- :bug: docs(readme): pass the repo root to lint/test, and execute the quick-start (DOC-07)
+- :bug: docs(readme): point the ADR-0014 link at the file that exists (DOC-05)
+- :bug: fix(docs-gates): the scripts claimed a wiring that does not exist
+- :bug: docs(examples): starter packs advertised a subcommand that does not exist
+
+### Other
+- :construction_worker: ci(lint): depguard deny-rules for the D-123 pure tree (REQ-AUD-S07-01)
+- :closed_lock_with_key: ci(release): gate the release job on verify green at the tag SHA
+- :construction_worker: ci(release): enforce the verify-tag gate's own test in CI and document it
+- :construction_worker: ci(release): run the verify-tag gate's test in task check
+- :construction_worker: ci(schemadrift): fence the D-120 toolDigest annotation edit
+- :construction_worker: ci(release): run the CHANGELOG drift gate in task check and on main CI
+- :construction_worker: ci(docs): wire the AUD-S06 docs truth-lag gates into task check (D-124)
+- :construction_worker: ci(lint): wire the depguard polarity proof into task check (AUD-S07)
+
+### Security
+- :lock: fix(forge): prove changed-file enumeration completeness or declare a gap
+- :lock: fix(run): degrade a checkout-less run to REVIEW when enumeration is incomplete
+- :lock: fix(release): reject a tag whose only verify run is a pull_request run
+- :lock: fix(run): derive pins.toolDigest from Go build info (D-120)
+- :lock: fix(run): emit the DecisionRecord before forge reconcile (D-122)
+
+### Testing
+- :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
+- :white_check_mark: test(cmd): serve the paginated diffs cassette in the run-path fakes
+- :white_check_mark: test(conformance): require the changed-file-completeness cases
+- :white_check_mark: test(core): extend the purity walk to evaldecode, compare and schemas (REQ-AUD-S07-02)
+- :white_check_mark: test(lint): fail the depguard gate on an unmapped deny target (REQ-AUD-S07-01)
+- :white_check_mark: test(release): scope the gate-step wiring assertions to the gate step
+- :white_check_mark: test(release): make the all-runs-green rule discriminate, and pin the gate step armed
+- :white_check_mark: test(release): bind the query string, drop the pipelines, and control the negatives
+- :white_check_mark: test(cli): prove each dispatch name reaches its own handler (REQ-AUD-S05-01)
+- :white_check_mark: test(cli): make the binding probe unsatisfiable by the usage listing (REQ-AUD-S05-01)
+- :white_check_mark: test(cli): walk the whole cmd/ tree in the stale-claim pin (REQ-AUD-S05-01)
+- :white_check_mark: test(schemadrift): derive the D-120 baseline anchor instead of pinning it
+- :white_check_mark: test(run): pin the atomic --emit replace by target file mode (D-122)
+- :white_check_mark: test(run): pin the emit-before-reconcile invariant on stdout too (D-122)
+- :white_check_mark: test(docs): pin the retired truth-lag claims so they cannot come back (DOC-05/06/09/10/11)
+- :white_check_mark: test(release): pin the CHANGELOG drift gate content, wiring and polarity
+## [0.1.0] - 2026-08-05
 
 ### Chores
 - :tada: chore: scaffold repository — vision, ADRs, C4, meta-plan, specs skeleton, Go module, examples
