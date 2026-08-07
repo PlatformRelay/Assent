@@ -1,5 +1,6 @@
 // Package schemadrift helpers verify git-tracked schema changes stay within
-// allowed epic fences (E8 D-088 presentation block in config.schema.json).
+// allowed epic fences: the E8 D-088 presentation block in config.schema.json,
+// and the D-120 toolDigest description annotation in decision-record.schema.json.
 package schemadrift
 
 import (
@@ -15,7 +16,25 @@ import (
 const (
 	d088ConfigSchemaPath = "schemas/policy/v1alpha1/config.schema.json"
 	d088GitBaseline      = "origin/main"
+
+	// d120DecisionRecordSchemaPath is the second (and only other) frozen schema
+	// permitted to drift from the baseline, and only in the one annotation D-120
+	// authorises: $defs.pins.properties.toolDigest.description. AUD-S04 makes the
+	// toolDigest value a Go-build-info digest, and the published description has
+	// to say so — an annotation, never a validation keyword, so records emitted by
+	// v0.1.0 stay valid.
+	d120DecisionRecordSchemaPath = "schemas/decision/v1alpha1/decision-record.schema.json"
+
+	// d120DescriptionSentinel replaces the toolDigest description in BOTH
+	// documents before they are compared, so "only that string differs" is one
+	// total assertion over the whole document rather than a key walk that could
+	// silently tolerate other annotation edits.
+	d120DescriptionSentinel = "\x00d120-tooldigest-description\x00"
 )
+
+// d120ToolDigestPath is the JSON pointer, in segments, to the sole annotation the
+// D-120 allowance may change.
+var d120ToolDigestPath = []string{"$defs", "pins", "properties", "toolDigest"}
 
 var d088AllowedPropertyKeys = map[string]struct{}{
 	"presentation": {},
@@ -27,8 +46,12 @@ var d088AllowedDefKeys = map[string]struct{}{
 }
 
 // CheckGitFrozenOrD088PresentationOnly reports whether schemas/ drift relative to
-// origin/main is absent or limited to the E8 D-088 presentation block in
-// config.schema.json.
+// origin/main is absent or limited to the two fenced edits: the E8 D-088
+// presentation block in config.schema.json, and the D-120 toolDigest description
+// annotation in decision-record.schema.json.
+//
+// The name is retained for its three call sites (one of which is outside this
+// lane's ownership); it now means "frozen, or within an explicitly decided fence".
 func CheckGitFrozenOrD088PresentationOnly(repoRoot string) error {
 	nameCmd := exec.Command("git", "diff", d088GitBaseline, "--name-only", "--", "schemas/")
 	nameCmd.Dir = repoRoot
@@ -40,21 +63,82 @@ func CheckGitFrozenOrD088PresentationOnly(repoRoot string) error {
 	if err := ValidateSchemaPathDrift(changed); err != nil {
 		return err
 	}
-	if len(changed) == 0 {
-		return nil
+	// ValidateSchemaPathDrift has already restricted this set to the two fenced
+	// literals, so each path is checked against exactly the change its decision
+	// authorises — and an unrecognised one is a hard error, never a pass.
+	for _, path := range schemaJSONPaths(changed) {
+		oldJSON, err := gitShow(repoRoot, d088GitBaseline+":"+path)
+		if err != nil {
+			return fmt.Errorf("read baseline %s:%s: %w", d088GitBaseline, path, err)
+		}
+		newPath := filepath.Join(repoRoot, path)
+		newJSON, err := os.ReadFile(newPath) //nolint:gosec // path is one of the two fenced schema literals
+		if err != nil {
+			return fmt.Errorf("read %s: %w", newPath, err)
+		}
+		switch path {
+		case d088ConfigSchemaPath:
+			if err := AllowedD088ConfigSchemaChange(oldJSON, newJSON); err != nil {
+				return fmt.Errorf("config.schema.json: %w", err)
+			}
+		case d120DecisionRecordSchemaPath:
+			if err := AllowedD120ToolDigestDescriptionChange(oldJSON, newJSON); err != nil {
+				return fmt.Errorf("decision-record.schema.json: %w", err)
+			}
+		default:
+			return fmt.Errorf("unfenced schema drift: %q", path)
+		}
 	}
-	oldJSON, err := gitShow(repoRoot, d088GitBaseline+":"+d088ConfigSchemaPath)
+	return nil
+}
+
+// AllowedD120ToolDigestDescriptionChange reports whether newJSON differs from
+// oldJSON ONLY at $defs.pins.properties.toolDigest.description (D-120: annotation,
+// not validation — published v0.1.0 records must stay valid).
+//
+// Both documents have that one string overwritten with a sentinel and are then
+// compared whole. That deliberately does NOT normalise descriptions generally: a
+// change to any other description — policySha's, say — survives normalisation and
+// is rejected, so the fence stays a single-field fence rather than a blanket
+// licence to edit annotations.
+func AllowedD120ToolDigestDescriptionChange(oldJSON, newJSON []byte) error {
+	oldDoc, err := parseJSONObject(oldJSON)
 	if err != nil {
-		return fmt.Errorf("read baseline %s:%s: %w", d088GitBaseline, d088ConfigSchemaPath, err)
+		return fmt.Errorf("parse baseline: %w", err)
 	}
-	newPath := filepath.Join(repoRoot, d088ConfigSchemaPath)
-	newJSON, err := os.ReadFile(newPath) //nolint:gosec // path joins repoRoot with a fixed schema literal
+	newDoc, err := parseJSONObject(newJSON)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", newPath, err)
+		return fmt.Errorf("parse candidate: %w", err)
 	}
-	if err := AllowedD088ConfigSchemaChange(oldJSON, newJSON); err != nil {
-		return fmt.Errorf("config.schema.json: %w", err)
+	if err := sealToolDigestDescription(oldDoc); err != nil {
+		return fmt.Errorf("baseline: %w", err)
 	}
+	if err := sealToolDigestDescription(newDoc); err != nil {
+		return fmt.Errorf("candidate: %w", err)
+	}
+	if !reflect.DeepEqual(oldDoc, newDoc) {
+		return fmt.Errorf("changed more than %s.description (D-120 permits that annotation only)",
+			strings.Join(d120ToolDigestPath, "."))
+	}
+	return nil
+}
+
+// sealToolDigestDescription replaces the toolDigest description with the sentinel
+// in place. A missing node or a non-string description is an error, so removing
+// the annotation (or retyping the toolDigest subschema) cannot pass as "unchanged".
+func sealToolDigestDescription(doc map[string]any) error {
+	node := doc
+	for _, key := range d120ToolDigestPath {
+		next, ok := node[key].(map[string]any)
+		if !ok {
+			return fmt.Errorf("no object at %s", strings.Join(d120ToolDigestPath, "."))
+		}
+		node = next
+	}
+	if _, ok := node["description"].(string); !ok {
+		return fmt.Errorf("%s has no description string", strings.Join(d120ToolDigestPath, "."))
+	}
+	node["description"] = d120DescriptionSentinel
 	return nil
 }
 
@@ -106,15 +190,17 @@ func AllowedD088ConfigSchemaChange(oldJSON, newJSON []byte) error {
 }
 
 // ValidateSchemaPathDrift ensures every changed frozen schema JSON path under
-// schemas/ is the lone D-088 config.schema.json file (or the set is empty).
+// schemas/ is one of the two fenced files — D-088 config.schema.json or D-120
+// decision-record.schema.json — or that the set is empty.
 func ValidateSchemaPathDrift(changed []string) error {
 	changed = schemaJSONPaths(changed)
 	if len(changed) == 0 {
 		return nil
 	}
 	for _, path := range changed {
-		if path != d088ConfigSchemaPath {
-			return fmt.Errorf("schemas/ drift must be D-088 %s only; also changed: %q", d088ConfigSchemaPath, path)
+		if path != d088ConfigSchemaPath && path != d120DecisionRecordSchemaPath {
+			return fmt.Errorf("schemas/ drift must be D-088 %s or D-120 %s only; also changed: %q",
+				d088ConfigSchemaPath, d120DecisionRecordSchemaPath, path)
 		}
 	}
 	return nil
