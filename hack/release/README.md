@@ -15,7 +15,7 @@ template emits **categorized subject lines only — no commit SHAs** (D-101, oss
 | `task changelog-write` | Regenerate `CHANGELOG.md` from tags + unreleased commits |
 | `task changelog-verify` | Fail closed if `CHANGELOG.md` drifts from `cliff.toml` output (release gate) |
 | `bash hack/release/verify-changelog.sh` | Same check as `task changelog-verify` (script entry point) |
-| `bash hack/release/changelog_gate_test.sh` | AUD-S02: proves the drift gate is wired and fires (REQ-AUD-S02-01/02) |
+| `task release-changelog-gate-test` | AUD-S02: proves the drift gate is wired and fires — in `task check` (REQ-AUD-S02-01/02) |
 
 Long-lived notes for consumers of released artifacts (currently the **D-120 `pins.toolDigest`**
 warning) live in `cliff.toml`'s `[changelog] header`, not in `CHANGELOG.md`: the file is
