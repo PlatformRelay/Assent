@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"runtime/debug"
+	"strings"
 	"testing"
 )
 
@@ -313,5 +314,62 @@ func TestRunRecordPinsToolDigest(t *testing.T) {
 	}
 	if !digestGrammar.MatchString(rec.Pins.ToolDigest) {
 		t.Errorf("pins.toolDigest = %q, want ^sha256:[0-9a-f]{64}$", rec.Pins.ToolDigest)
+	}
+}
+
+// TestToolDigestSchemaAgreement is the AUD-S04 acceptance criterion that the
+// PUBLISHED contract statement and the implementation agree. The frozen schema's
+// toolDigest description states the D-120 inputs and the exact fallback formula,
+// so drifting either side reddens here — the failure mode ARCH-03 was: a schema
+// promising something the code did not do.
+//
+// The D-120 edit is annotation-only, so the validation keywords are asserted
+// unchanged too (records emitted by v0.1.0 must stay valid).
+func TestToolDigestSchemaAgreement(t *testing.T) {
+	const schemaPath = "../../schemas/decision/v1alpha1/decision-record.schema.json"
+	raw, err := os.ReadFile(schemaPath) //nolint:gosec // hardcoded in-repo schema path
+	if err != nil {
+		t.Fatalf("read schema: %v", err)
+	}
+	var doc struct {
+		Defs struct {
+			Pins struct {
+				Properties struct {
+					ToolDigest struct {
+						Type        string `json:"type"`
+						MinLength   int    `json:"minLength"`
+						Description string `json:"description"`
+					} `json:"toolDigest"`
+				} `json:"properties"`
+			} `json:"pins"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse schema: %v", err)
+	}
+	td := doc.Defs.Pins.Properties.ToolDigest
+
+	if td.Type != "string" || td.MinLength != 1 {
+		t.Fatalf("toolDigest validation changed: type=%q minLength=%d, want string/1", td.Type, td.MinLength)
+	}
+
+	// Built from the implementation's OWN label, so renaming the label without
+	// republishing the description fails here rather than shipping a false claim.
+	wantFallback := `sha256("` + strings.ReplaceAll(buildInfoUnavailableLabel, "\n", `\n`) + `"+toolVersion)`
+	if !strings.Contains(td.Description, wantFallback) {
+		t.Errorf("schema description does not state the implemented fallback %s:\n%s", wantFallback, td.Description)
+	}
+	// The published input list must match canonicalBuildInfo's inputs exactly —
+	// no more (GOOS/GOARCH, ldflags and vcs.time are deliberately excluded) and
+	// no less.
+	for _, want := range []string{
+		"module path/version/sum",
+		"dependency checksums",
+		"VCS revision + dirty flag",
+		"D-120",
+	} {
+		if !strings.Contains(td.Description, want) {
+			t.Errorf("schema description missing %q:\n%s", want, td.Description)
+		}
 	}
 }

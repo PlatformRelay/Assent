@@ -71,7 +71,7 @@
         "toolDigest": {
           "type": "string",
           "minLength": 1,
-          "description": "Content digest of the evaluating tool build (OQ-9 replayability)."
+          "description": "Deterministic build-content proxy for the evaluating tool: sha256 over the binary's canonical Go build info (module path/version/sum, dependency checksums, VCS revision + dirty flag) per D-120 (OQ-9 replayability). Falls back to sha256(\"buildinfo-unavailable\\n\"+toolVersion) when build info is absent. Records emitted by pre-D-120 builds carry sha256 of toolVersion only."
         },
         "policySha": { "type": "string", "minLength": 1 },
         "sourceSha": { "type": "string", "minLength": 1 },
