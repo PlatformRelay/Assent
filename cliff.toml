@@ -12,6 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Release notes are generated from gitmoji-conventional commits on the default branch using
 [git-cliff](https://git-cliff.org/).
 
+## Compatibility notes
+
+Long-lived notes for consumers of released artifacts. They live in `cliff.toml`'s changelog
+header because `CHANGELOG.md` is regenerated in full from commit history and a hand-edit here
+would be silently overwritten by the next `task changelog-write`.
+
+- **`pins.toolDigest` changes value after `v0.1.0` (D-120).** DecisionRecords emitted by
+  `v0.1.0` and earlier pin `toolDigest` as sha256 over the *tool version string*, so every
+  build stamped with the same version shared one digest; records carrying that derivation are
+  identifiable by exactly it. Builds after D-120 derive `toolDigest` from the binary's
+  canonical Go build info instead (main module path/version/sum, dependency checksums, VCS
+  revision and dirty flag), falling back to `sha256("buildinfo-unavailable\\n" + toolVersion)`
+  when build info is absent. The field, its type and the frozen `v1alpha1` schema are
+  unchanged — records published with `v0.1.0` remain schema-valid — but the *value* is not
+  comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 record means
+  "derived differently", not "different build".
+
 """
 body = """
 {% if version %}## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}{% else %}## Unreleased{% endif %}
