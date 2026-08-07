@@ -1,4 +1,5 @@
-# Starter pack for examples/repos/infra-vars (assent init --sample infra-vars).
+# Starter pack for examples/repos/infra-vars. Copy this .assent/ tree into your
+# repo root (there is no `assent init` subcommand — see docs/usage/walkthrough.md).
 #
 # Opaque-change fallback (ADR-0003): when the HCL parser cannot classify a construct
 # (parse failure or unmodeled shape), the change is opaque → REVIEW — never silently

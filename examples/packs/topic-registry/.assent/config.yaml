@@ -1,4 +1,5 @@
-# Starter pack for examples/repos/topic-registry (assent init --sample topic-registry).
+# Starter pack for examples/repos/topic-registry. Copy this .assent/ tree into your
+# repo root (there is no `assent init` subcommand — see docs/usage/walkthrough.md).
 # Class kafka-topic: one YAML file per topic; map-at-root identity = the topic-name key
 # (EFE-S04: document mode leaves Entry nil under whole-pack replay — D-056 — so
 # entry.owner cannot bind; map mode reconstructs the topic object for ownership).
