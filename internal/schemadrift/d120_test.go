@@ -3,15 +3,26 @@ package schemadrift_test
 import (
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/PlatformRelay/assent/internal/schemadrift"
 )
 
+// toolDigestDescriptionLiteral captures the source text of the toolDigest
+// description — the one field D-120 fences — from the raw schema JSON. It is
+// DERIVED rather than hardcoded on purpose: once this lane merges, origin/main
+// carries the new wording, and a literal anchor would red main the moment the
+// baseline moved (silently turning the "description only" and "removing the
+// description" cases into vacuous no-op replaces first).
+var toolDigestDescriptionLiteral = regexp.MustCompile(
+	`(?s)"toolDigest":\s*\{.*?("description": "(?:[^"\\]|\\.)*")`)
+
 // baselineDecisionRecord returns decision-record.schema.json as origin/main has
-// it — the same baseline the drift guard compares against.
-func baselineDecisionRecord(t *testing.T) string {
+// it — the same baseline the drift guard compares against — together with the
+// exact toolDigest description literal it currently contains.
+func baselineDecisionRecord(t *testing.T) (schema, description string) {
 	t.Helper()
 	cmd := exec.Command("git", "show", "origin/main:schemas/decision/v1alpha1/decision-record.schema.json")
 	cmd.Dir = filepath.Join("..", "..")
@@ -19,7 +30,11 @@ func baselineDecisionRecord(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("read origin/main decision-record schema: %v", err)
 	}
-	return string(out)
+	m := toolDigestDescriptionLiteral.FindStringSubmatch(string(out))
+	if m == nil {
+		t.Fatalf("baseline has no toolDigest description literal; update this test")
+	}
+	return string(out), m[1]
 }
 
 // TestAllowedD120ToolDigestDescriptionChange fences the ONE annotation AUD-S04 is
@@ -28,11 +43,12 @@ func baselineDecisionRecord(t *testing.T) string {
 // — must fail, or the fence degrades into a blanket licence to edit annotations
 // on a frozen schema.
 func TestAllowedD120ToolDigestDescriptionChange(t *testing.T) {
-	baseline := baselineDecisionRecord(t)
-	const toolDigestDescription = `"description": "Content digest of the evaluating tool build (OQ-9 replayability)."`
-
-	if !strings.Contains(baseline, toolDigestDescription) {
-		t.Fatalf("baseline no longer contains the toolDigest description anchor; update this test")
+	baseline, toolDigestDescription := baselineDecisionRecord(t)
+	// Any wording that is not the baseline's own — so the "changed" cases below
+	// are real changes whatever the baseline currently says.
+	const newDescription = `"description": "Deterministic build-content proxy per D-120."`
+	if toolDigestDescription == newDescription {
+		t.Fatal("test fixture collides with the baseline wording; pick another")
 	}
 
 	t.Run("identical passes", func(t *testing.T) {
@@ -42,8 +58,7 @@ func TestAllowedD120ToolDigestDescriptionChange(t *testing.T) {
 	})
 
 	t.Run("toolDigest description only passes", func(t *testing.T) {
-		tampered := strings.Replace(baseline, toolDigestDescription,
-			`"description": "Deterministic build-content proxy per D-120."`, 1)
+		tampered := mustReplace(t, baseline, toolDigestDescription, newDescription)
 		if err := schemadrift.AllowedD120ToolDigestDescriptionChange([]byte(baseline), []byte(tampered)); err != nil {
 			t.Fatalf("description-only edit must pass: %v", err)
 		}
@@ -73,10 +88,7 @@ func TestAllowedD120ToolDigestDescriptionChange(t *testing.T) {
 			},
 		}
 		for name, pair := range cases {
-			if !strings.Contains(baseline, pair[0]) {
-				t.Fatalf("%s: anchor %q absent from baseline; update this test", name, pair[0])
-			}
-			tampered := strings.Replace(baseline, pair[0], pair[1], 1)
+			tampered := mustReplace(t, baseline, pair[0], pair[1])
 			if err := schemadrift.AllowedD120ToolDigestDescriptionChange([]byte(baseline), []byte(tampered)); err == nil {
 				t.Errorf("%s: must be rejected — D-120 fences the toolDigest description only", name)
 			}
@@ -120,10 +132,7 @@ func TestAllowedD120ToolDigestDescriptionChange(t *testing.T) {
 			},
 		}
 		for name, pair := range cases {
-			if !strings.Contains(baseline, pair[0]) {
-				t.Fatalf("%s: anchor absent from baseline; update this test", name)
-			}
-			tampered := strings.Replace(baseline, pair[0], pair[1], 1)
+			tampered := mustReplace(t, baseline, pair[0], pair[1])
 			if err := schemadrift.AllowedD120ToolDigestDescriptionChange([]byte(baseline), []byte(tampered)); err == nil {
 				t.Errorf("%s: must be rejected — D-120 permits an annotation, not validation", name)
 			}
@@ -132,19 +141,18 @@ func TestAllowedD120ToolDigestDescriptionChange(t *testing.T) {
 
 	// A co-mingled hunk must not ride along with the permitted annotation.
 	t.Run("permitted description plus a smuggled change fails", func(t *testing.T) {
-		tampered := strings.Replace(baseline, toolDigestDescription,
-			`"description": "Deterministic build-content proxy per D-120."`, 1)
-		tampered = strings.Replace(tampered,
+		tampered := mustReplace(t, baseline, toolDigestDescription, newDescription)
+		tampered = mustReplace(t, tampered,
 			`"policySha": { "type": "string", "minLength": 1 },`,
-			`"policySha": { "type": "string" },`, 1)
+			`"policySha": { "type": "string" },`)
 		if err := schemadrift.AllowedD120ToolDigestDescriptionChange([]byte(baseline), []byte(tampered)); err == nil {
 			t.Fatal("a smuggled policySha change must not ride along with the permitted annotation")
 		}
 	})
 
 	t.Run("removing the description fails", func(t *testing.T) {
-		tampered := strings.Replace(baseline, `"minLength": 1,
-          `+toolDigestDescription, `"minLength": 1`, 1)
+		tampered := mustReplace(t, baseline, `"minLength": 1,
+          `+toolDigestDescription, `"minLength": 1`)
 		if err := schemadrift.AllowedD120ToolDigestDescriptionChange([]byte(baseline), []byte(tampered)); err == nil {
 			t.Fatal("removing the annotation must fail — it cannot pass as unchanged")
 		}
@@ -217,4 +225,18 @@ func TestValidateSchemaPathDriftD120(t *testing.T) {
 			}
 		}
 	})
+}
+
+// mustReplace performs a single substitution and FAILS if it was a no-op. Every
+// tampered fixture in this file is built by string replacement against a baseline
+// that moves when the schema is edited; a silently-missed anchor would turn an
+// adversarial case into a comparison of the baseline with itself, i.e. a test
+// that asserts nothing while staying green.
+func mustReplace(t *testing.T, s, old, replacement string) string {
+	t.Helper()
+	out := strings.Replace(s, old, replacement, 1)
+	if out == s {
+		t.Fatalf("anchor not found in baseline (update this test): %q", old)
+	}
+	return out
 }
