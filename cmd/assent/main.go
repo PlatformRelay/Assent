@@ -31,8 +31,11 @@ var version = "0.0.0-dev"
 // tagline is the one-line product description printed above the command listing.
 const tagline = "assent — deterministic, policy-driven auto-merge for self-service repositories"
 
-// helpAliases are the spellings that print the usage listing on stdout and exit 0.
-var helpAliases = map[string]bool{"help": true, "--help": true, "-help": true, "-h": true}
+// helpAliases are the FLAG spellings that print the usage listing on stdout and
+// exit 0. The bare word `help` is deliberately absent: it is a real dispatch-table
+// entry, so its handler is live code reached the same way every other command is,
+// rather than a branch that shadows the table.
+var helpAliases = map[string]bool{"--help": true, "-help": true, "-h": true}
 
 // subcommand is one dispatched command. The same record supplies the dispatch, the
 // help listing and the drift assertions against docs/usage/cli.md — there is no
