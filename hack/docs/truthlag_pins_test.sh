@@ -20,9 +20,9 @@
 # Every check prints PASS or FAIL and the script exits 1 if any failed, so a
 # regression names the finding it reopens.
 #
-# NOT YET WIRED INTO ANY GATE (D-124): `Taskfile.yml` is Lane B's file, so today this
-# runs only when invoked by hand. Until Lane B adds it (and readme_smoke_test.sh) to
-# `task check`, a docs edit can reopen these findings with nothing going red.
+# WIRED (D-124/D-125): `task docs-gates` runs this and readme_smoke_test.sh, and
+# `task check` runs `docs-gates`. A docs edit that reopens one of these findings reds
+# the gate every developer runs before every commit.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

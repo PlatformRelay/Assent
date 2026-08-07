@@ -86,6 +86,17 @@ tasks:
       # which is skipped on pull_request — without this a regression merges green and only
       # reds main afterwards. Fast and offline (stubbed `gh`); needs jq.
       - task: release-verify-tag-gate-test
+      # D-124: the AUD-S06 docs truth-lag gates shipped green and invoked by nothing,
+      # which is the same manual-gate defect they exist to close. Sequential (not a
+      # `deps:` entry) — go-task runs deps in parallel and readme_smoke_test.sh builds
+      # a binary while `fmt` rewrites the tree.
+      - task: docs-gates
+
+  docs-gates:
+    desc: "D-124 docs truth-lag gates: README quick-start executes (REQ-AUD-S06-01) + 18 doc pins (REQ-AUD-S06-02)"
+    cmds:
+      - bash hack/docs/readme_smoke_test.sh
+      - bash hack/docs/truthlag_pins_test.sh
 
   compare-exitgate-test:
     desc: "PCS-S09 exit gate: full suite + E6 seed dir + schema drift guard (REQ-PCS-S09-01..03)"
