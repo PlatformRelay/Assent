@@ -3,6 +3,11 @@
 Assent ships as a single static Go binary. Prefer a checksum-verified install for
 release artifacts; use `go install` when developing from source.
 
+Only the **release archives and the Homebrew bottle carry a stamped version** —
+goreleaser injects it at link time (`-s -w -X main.version={{.Version}}` in
+`.goreleaser.yaml`). A `go install` build has no such injection; see the caveat below
+before you rely on `assent version` for provenance.
+
 ## go install
 
 Requires Go 1.25+ (see `go.mod`).
@@ -22,6 +27,22 @@ Confirm:
 ```bash
 assent version
 ```
+
+!!! warning "`go install` binaries report `0.0.0-dev`"
+
+    `go install` does not pass the release ldflags, so the version stays at its
+    compile-time default whatever ref you build:
+
+    ```console
+    $ go install github.com/PlatformRelay/assent/cmd/assent@v0.1.0
+    $ assent version
+    assent 0.0.0-dev
+    ```
+
+    That is cosmetic for local policy authoring (`assent lint` / `assent test`), but it
+    means a `go install` binary cannot identify itself in a `DecisionRecord` or a support
+    thread. Use the [release archive](#github-release-url-pattern) or
+    [Homebrew](#homebrew) route when the version string has to be true.
 
 ## curl / local install script (checksum-verified)
 
@@ -46,7 +67,7 @@ Pick the archive that matches your OS/arch if the glob expands to more than one 
 
 ### GitHub release URL pattern
 
-Once tagged releases publish (E9-S05/S06):
+Tagged releases publish under this pattern (`v0.1.0` onwards):
 
 ```bash
 VERSION=0.1.0
