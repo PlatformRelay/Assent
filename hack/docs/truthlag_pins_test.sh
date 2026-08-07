@@ -19,6 +19,10 @@
 #
 # Every check prints PASS or FAIL and the script exits 1 if any failed, so a
 # regression names the finding it reopens.
+#
+# NOT YET WIRED INTO ANY GATE (D-124): `Taskfile.yml` is Lane B's file, so today this
+# runs only when invoked by hand. Until Lane B adds it (and readme_smoke_test.sh) to
+# `task check`, a docs edit can reopen these findings with nothing going red.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
