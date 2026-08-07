@@ -25,7 +25,7 @@ Usage:
 Commands:
   run
       Evaluate a merge request against its policy and reconcile the decision on the forge
-      usage: assent run --project <id> --mr <iid> --subject file:<path> --bot-author <user> [flags]
+      usage: GITLAB_TOKEN=<pat> assent run --project <id> --mr <iid> --subject file:<path> --bot-author <user> [flags]
   doctor
       Report whether this environment can arm auto-merge, and why not when it cannot
       usage: assent doctor
@@ -66,11 +66,12 @@ build and schema-validate the `DecisionRecord`, reconcile against GitLab, and em
 record.
 
 ```
-assent run --project <id> --mr <iid> --subject file:<path> --bot-author <user> [flags]
+GITLAB_TOKEN=<pat> assent run --project <id> --mr <iid> --subject file:<path> --bot-author <user> [flags]
 ```
 
 The GitLab personal access token is read from the `GITLAB_TOKEN` environment variable
-and is never a flag. `assent run -h` prints the same flag list.
+and is never a flag; without it the command exits `2` before contacting the forge.
+`assent run -h` prints the same flag list.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
