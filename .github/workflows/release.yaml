@@ -62,12 +62,23 @@ jobs:
       contents: write
       id-token: write # cosign keyless signing (OIDC)
       attestations: write # SLSA provenance via actions/attest
+      actions: read # AUD-S03: read the verify workflow's runs for the tag SHA
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      # REQ-AUD-S03-01/02: first step that does anything — nothing is built, signed, or
+      # published unless `verify` concluded success on this tag's commit. Applies to the
+      # workflow_dispatch rebuild path too (it is not a bypass). Only checkout precedes it,
+      # because the gate logic lives in a repo script (REQ-AUD-S03-02 asserts the order).
+      - name: Verify is green on the tag SHA (release gate)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_INPUT: ${{ inputs.tag }}
+        run: bash hack/release/verify-tag-gate.sh
 
       - name: Resolve version
         id: version
