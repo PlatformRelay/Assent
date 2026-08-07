@@ -76,6 +76,10 @@ tasks:
       - task: build
       - task: dogfood-comparison
       - task: compare-exitgate-test
+      # AUD-S03: the release gate's own guard. Its only other CI caller is release-exitgate,
+      # which is skipped on pull_request — without this a regression merges green and only
+      # reds main afterwards. Fast and offline (stubbed `gh`); needs jq.
+      - task: release-verify-tag-gate-test
 
   compare-exitgate-test:
     desc: "PCS-S09 exit gate: full suite + E6 seed dir + schema drift guard (REQ-PCS-S09-01..03)"
