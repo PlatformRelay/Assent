@@ -48,15 +48,20 @@ replace — the broader hard-error table in [`docs/planning/lint-hard-errors.md`
 Executable guards: `go test ./schemas/... -run TestDoNotGeneralize`. Removing a schema guard
 so one of these fixtures validates is a failing regression, not a silent policy expansion.
 
-> **Match-domain implementation status (E1-S06).** The four match-domain *primitives* shipped in
-> `internal/core/classify/matcher.go` are `files` / `values.pointers` / `valueChanges` /
-> **`entryEvents`**. `entryEvents` matches collection-*entry* identity churn (a keyed map/list
-> entry added/removed/renamed within one file, via the E1-S05 `EntryRef`); it is deliberately a
-> distinct domain from ADR-0017 §5's **`fileEvents`**, which denotes ADR-0003's whole-file
-> git-detected add/delete/rename. Whole-file `fileEvents` is **not yet implemented** (deferred to a
-> fast-follow after E1-S08, which first enumerates the MR's full changed-file set). The frozen §5
-> vocabulary above is unchanged; this note records that the shipped primitive set substitutes
-> `entryEvents` for `fileEvents` until the latter lands.
+> **Match-domain implementation status (E1-S06, E-FILEEVENTS).** Alongside the ADR-0017 §5
+> vocabulary, `internal/core/classify/matcher.go` also ships **`entryEvents`** — collection-*entry*
+> identity churn (a keyed map/list entry added/removed/renamed within one file, via the E1-S05
+> `EntryRef`). It is deliberately a distinct domain from §5's **`fileEvents`**, which denotes
+> ADR-0003's whole-file git-detected lifecycle.
+>
+> Whole-file `fileEvents` **is implemented, for a narrowed kind set**: `internal/change.FileEvent`
+> mints whole-file lifecycle changes and the loader accepts `match.fileEvents.kinds` ⊆
+> **`{add, delete}`**. `modify` and `rename` have no minting path, so a rule naming either is
+> **rejected at load** with a located error (`internal/core/policy/loader.go`) rather than left to
+> match nothing — closing a vacuous-cover fail-open. This loader-level narrowing sits on top of the
+> frozen schema, which still accepts the full `add`/`modify`/`delete`/`rename` enum: widening the
+> accepted kinds later is additive and needs no `apiVersion` bump; the frozen §5 vocabulary above is
+> unchanged.
 
 ## Portability notes (validators)
 
