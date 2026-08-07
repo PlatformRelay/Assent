@@ -62,8 +62,9 @@ Full command reference: https://platformrelay.github.io/assent/usage/cli/
 
 Evaluate a merge request against its policy and reconcile the decision on the forge:
 read the MR, load the policy from the **target** ref, diff → classify → aggregate →
-build and schema-validate the `DecisionRecord`, reconcile against GitLab, and emit the
-record.
+build and schema-validate the `DecisionRecord`, emit the record, then reconcile against
+GitLab. The record is emitted **before** any forge write, so a run whose emit fails
+aborts without touching the forge (D-122 — no record, no action).
 
 ```
 GITLAB_TOKEN=<pat> assent run --project <id> --mr <iid> --subject file:<path> --bot-author <user> [flags]
