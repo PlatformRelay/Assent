@@ -57,7 +57,7 @@ func subcommands() []subcommand {
 		{
 			name:     "run",
 			synopsis: "Evaluate a merge request against its policy and reconcile the decision on the forge",
-			usage:    "assent run --project <id> --mr <iid> --subject file:<path> --bot-author <user> [flags]",
+			usage:    "GITLAB_TOKEN=<pat> assent run --project <id> --mr <iid> --subject file:<path> --bot-author <user> [flags]",
 			// The walking-skeleton end-to-end path (P4-E1-S10): read the MR, load the
 			// policy from the TARGET ref, diff → classify → aggregate → build+validate
 			// the DecisionRecord → Reconcile against the live GitLab, emit the record.
