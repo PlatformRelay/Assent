@@ -81,19 +81,28 @@ cases:
     adr: ADR-0015 §1
     level: L1
     req: REQ-AUD-S01-04
-    test: TestFoldSnapshotPathsIncompleteEnumeration
+    test: TestRunEnumerationIncompleteNeverApproves
     package: cmd/assent
     forge: gitlab
-    note: partial list carrying `.assent/**` still BLOCKs (GUARD 1 over the gap-degrade), zero writes
+    note: subtest visible_policy_path_in_partial_list_still_blocks — partial list carrying `.assent/**` still BLOCKs (GUARD 1 over the gap-degrade), zero writes
 
   - id: enumeration-diff-endpoint-404-hard-error
+    adr: ADR-0020
+    level: L1
+    req: REQ-AUD-S01-04
+    test: TestRunEnumerationIncompleteNeverApproves
+    package: cmd/assent
+    forge: gitlab
+    note: subtest diff_endpoint_404_is_hard_error_with_no_record — run exits non-zero, no DecisionRecord emitted, zero forge writes
+
+  - id: enumeration-diff-endpoint-non200-adapter
     adr: ADR-0020
     level: L1
     req: REQ-AUD-S01-03
     test: TestChangedFiles404IsError
     package: internal/forge/gitlab
     forge: gitlab
-    note: diffs endpoint 404/non-200 → hard error, no record, zero writes (404→empty mapping removed)
+    note: adapter level — 404/403/429/500 on the diffs endpoint all raise a hard error; the 404→empty-list mapping is removed
 
   # --- E4-S05 doctor forge probe (ADR-0015 §4) — catalog-index only ---
   - id: doctor-insecure-ci-topology
