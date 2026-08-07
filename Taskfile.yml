@@ -76,6 +76,10 @@ tasks:
       - task: build
       - task: dogfood-comparison
       - task: compare-exitgate-test
+      # AUD-S03: the release gate's own guard. Its only other CI caller is release-exitgate,
+      # which is skipped on pull_request — without this a regression merges green and only
+      # reds main afterwards. Fast and offline (stubbed `gh`); needs jq.
+      - task: release-verify-tag-gate-test
 
   compare-exitgate-test:
     desc: "PCS-S09 exit gate: full suite + E6 seed dir + schema drift guard (REQ-PCS-S09-01..03)"
@@ -173,6 +177,11 @@ tasks:
     desc: "Verify artifact harness gates (REQ-E9-S12-01..03)"
     cmds:
       - bash hack/release/verify_test.sh
+
+  release-verify-tag-gate-test:
+    desc: "AUD-S03 gate: verify-green-on-tag-SHA polarity table + release.yaml step order (REQ-AUD-S03-01/02)"
+    cmds:
+      - bash hack/release/verify_tag_gate_test.sh
 
   release-exitgate-test:
     desc: "E9-S13 autonomous exit gate: snapshot + verify + docs-build + backlog pins (REQ-E9-S13-01..03)"
