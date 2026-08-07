@@ -75,12 +75,17 @@ assent version
 Or verify a release archive with the checksum script — details in
 [docs/usage/install.md](https://platformrelay.github.io/assent/usage/install/).
 
-Lint and test policies locally:
+Lint and test policies locally. Both commands take the **repository root** — `assent`
+appends `.assent` itself, so passing `.assent/` makes it look for `.assent/.assent`:
 
 ```bash
-assent lint .assent/
-assent test .assent/
+assent lint .
+assent test .
 ```
+
+No repo of your own yet? A clone of this one ships runnable sample policy trees; run the
+two commands above from `examples/packs/service-catalog` (that is the fixture
+`hack/docs/readme_smoke_test.sh` executes this block against).
 
 Developers: gates live in the [`Taskfile`](Taskfile.yml):
 
