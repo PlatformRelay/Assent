@@ -64,6 +64,46 @@ cases:
     package: cmd/assent
     forge: gitlab
 
+  # --- AUD-S01 changed-file enumeration completeness (ADR-0020, D-119) ---
+  # REQUIRED, not optional: in checkout-less runs the snapshot changed-file list
+  # is the sole `.assent/**` detector, so an unprovable enumeration must never
+  # reach APPROVE and never write. Sub-cases live under the parent test.
+  - id: enumeration-incomplete-review
+    adr: ADR-0020
+    level: L1
+    req: REQ-AUD-S01-04
+    test: TestRunEnumerationIncompleteNeverApproves
+    package: cmd/assent
+    forge: gitlab
+    note: truncated enumeration → REVIEW changeset.undecidable, one thread, zero approve/merge
+
+  - id: enumeration-incomplete-visible-policy-block
+    adr: ADR-0015 §1
+    level: L1
+    req: REQ-AUD-S01-04
+    test: TestRunEnumerationIncompleteNeverApproves
+    package: cmd/assent
+    forge: gitlab
+    note: subtest visible_policy_path_in_partial_list_still_blocks — partial list carrying `.assent/**` still BLOCKs (GUARD 1 over the gap-degrade), zero writes
+
+  - id: enumeration-diff-endpoint-404-hard-error
+    adr: ADR-0020
+    level: L1
+    req: REQ-AUD-S01-04
+    test: TestRunEnumerationIncompleteNeverApproves
+    package: cmd/assent
+    forge: gitlab
+    note: subtest diff_endpoint_404_is_hard_error_with_no_record — run exits non-zero, no DecisionRecord emitted, zero forge writes
+
+  - id: enumeration-diff-endpoint-non200-adapter
+    adr: ADR-0020
+    level: L1
+    req: REQ-AUD-S01-03
+    test: TestChangedFiles404IsError
+    package: internal/forge/gitlab
+    forge: gitlab
+    note: adapter level — 404/403/429/500 on the diffs endpoint all raise a hard error; the 404→empty-list mapping is removed
+
   # --- E4-S05 doctor forge probe (ADR-0015 §4) — catalog-index only ---
   - id: doctor-insecure-ci-topology
     adr: ADR-0015 §4

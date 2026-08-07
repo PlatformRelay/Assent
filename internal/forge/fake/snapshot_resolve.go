@@ -19,6 +19,12 @@ const (
 
 // Snapshot implements forge.Snapshotter with deterministic, sorted outputs.
 func (f *Forge) Snapshot(_, _ string) (forge.Snapshot, error) {
+	// ADR-0020 §3: a diff-endpoint 404/5xx is a HARD ERROR — no snapshot, so no
+	// decision and no forge write can follow from an unenumerable change set.
+	if f.ChangedFilesErr != nil {
+		return forge.Snapshot{}, f.ChangedFilesErr
+	}
+
 	threads, err := f.ListBotThreads("", "")
 	if err != nil {
 		return forge.Snapshot{}, err
@@ -38,8 +44,13 @@ func (f *Forge) Snapshot(_, _ string) (forge.Snapshot, error) {
 			Author:            f.MRAuthor,
 		},
 		ChangedFiles: files,
-		Capabilities: f.Capabilities,
-		BotThreads:   threads,
+		// Set EXPLICITLY (ADR-0020 §1): the zero value would fail safe to REVIEW,
+		// but a fake that relies on that would silently degrade every test that
+		// uses it. ChangedFilesGap is the truncation knob; empty = complete.
+		ChangedFilesComplete: f.ChangedFilesGap == "",
+		ChangedFilesGap:      f.ChangedFilesGap,
+		Capabilities:         f.Capabilities,
+		BotThreads:           threads,
 	}, nil
 }
 

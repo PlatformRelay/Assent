@@ -282,9 +282,13 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	//       - `--checkout` unset → Snapshot changed files feed the path-only
 	//         classifier (assent-policy dominance over the MR's full forge-reported
 	//         set, not the governed subject alone).
-	//     Opaque detection stays on the local checkout fold only; Snapshot paths
-	//     carry no byte-level diff here. The governed subject's ChangeSet stays the
-	//     predicate input in both modes.
+	//     Byte-level opacity stays the local checkout fold's job (Snapshot paths
+	//     carry no diff bytes), but the Snapshot fold DOES carry the ADR-0020 /
+	//     D-119 enumeration-completeness signal: an enumeration the forge cannot
+	//     prove complete is folded opaque → fail-safe REVIEW, because here that
+	//     path list is the sole `.assent/**` detector and a truncated one would
+	//     starve the D-042 self-vouch guard. The governed subject's ChangeSet
+	//     stays the predicate input in both modes.
 	if cfg.checkout != "" {
 		fold, ferr := foldCheckout(dirCheckout{root: cfg.checkout}, governed)
 		if ferr != nil {
@@ -298,9 +302,15 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 			changeSet.OpaqueReason = "changed-file set opaque: " + fold.opaqueReason
 		}
 	} else {
-		fold := foldSnapshotPaths(snapshot.ChangedFiles)
+		fold := foldSnapshotPaths(snapshot)
 		if fold.class == classify.ClassAssentPolicy {
 			subjectClass = classify.ClassAssentPolicy
+		}
+		if fold.opaque && !changeSet.Opaque {
+			changeSet.Opaque = true
+			// The fold already carries the NORMATIVE ADR-0020 §4 reason; do not
+			// re-prefix it (that would double the contractual prefix).
+			changeSet.OpaqueReason = fold.opaqueReason
 		}
 	}
 

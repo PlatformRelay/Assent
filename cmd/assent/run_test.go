@@ -49,8 +49,16 @@ type fakeGitLab struct {
 	notes       []fakeNote
 
 	// E4-S06 forge Snapshot/Resolve probe configuration.
-	projectJSON         string
-	changedFiles        []string
+	projectJSON  string
+	changedFiles []string
+
+	// AUD-S01 / ADR-0020 changed-file completeness knobs. changesCount overrides
+	// the MR GET's changes_count (e.g. "1000+" — GitLab's capped form — to model
+	// an unprovable enumeration); diffsStatus, when non-200, models a
+	// diff-endpoint 404/5xx hard error.
+	changesCount string
+	diffsStatus  int
+
 	freeTier            bool
 	mrAuthor            string
 	approvalEligible    bool
@@ -135,14 +143,15 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 			"iid": 7, "project_id": 42, "source_project_id": sourceProjectID,
 			"sha":           f.sourceSHA,
 			"source_branch": f.sourceBranch, "target_branch": f.target,
-			"author": map[string]any{"id": 101, "username": f.mrAuthor},
+			"changes_count": f.changesCountBody(),
+			"author":        map[string]any{"id": 101, "username": f.mrAuthor},
 		})
 	case p == "/api/v4/projects/42/repository/branches/main" && r.Method == http.MethodGet:
 		_ = json.NewEncoder(w).Encode(map[string]any{"commit": map[string]any{"id": f.targetTip}})
 	case p == "/api/v4/projects/42" && r.Method == http.MethodGet:
 		_, _ = w.Write([]byte(f.projectJSONBody()))
-	case p == "/api/v4/projects/42/merge_requests/7/changes" && r.Method == http.MethodGet:
-		f.serveMRChanges(w)
+	case p == "/api/v4/projects/42/merge_requests/7/diffs" && r.Method == http.MethodGet:
+		f.serveMRDiffs(w, r)
 	case strings.HasPrefix(p, "/api/v4/projects/42/merge_requests/7/approval_rules") && r.Method == http.MethodGet:
 		f.serveApprovalRules(w)
 	case p == "/api/v4/projects/42/merge_requests/7/approval_state" && r.Method == http.MethodGet:
@@ -191,16 +200,46 @@ func (f *fakeGitLab) projectJSONBody() string {
 	return fakeForgePremiumProjectJSON
 }
 
-func (f *fakeGitLab) serveMRChanges(w http.ResponseWriter) {
-	files := f.changedFiles
-	if len(files) == 0 {
-		files = []string{f.governedPath}
+// enumeratedFiles is the changed-file set the /diffs cassette serves — one diff
+// ENTRY per path (old_path == new_path), so the entry count equals the path
+// count for this fixture.
+func (f *fakeGitLab) enumeratedFiles() []string {
+	if len(f.changedFiles) == 0 {
+		return []string{f.governedPath}
 	}
-	changes := make([]map[string]string, len(files))
+	return f.changedFiles
+}
+
+// changesCountBody is the MR GET's changes_count string — the ADR-0020 §2
+// completeness cross-check. It reports the TRUE entry count unless a test
+// overrides it (e.g. "1000+", GitLab's capped form) to model an unprovable
+// enumeration.
+func (f *fakeGitLab) changesCountBody() string {
+	if f.changesCount != "" {
+		return f.changesCount
+	}
+	return strconv.Itoa(len(f.enumeratedFiles()))
+}
+
+// serveMRDiffs is the paginated GET .../merge_requests/:iid/diffs cassette
+// (ADR-0020 §2). Page 1 carries every entry (a short page, which terminates the
+// enumeration below the ceiling); later pages are empty. diffsStatus models the
+// §3 hard-error axis.
+func (f *fakeGitLab) serveMRDiffs(w http.ResponseWriter, r *http.Request) {
+	if f.diffsStatus != 0 && f.diffsStatus != http.StatusOK {
+		http.Error(w, "diffs unavailable", f.diffsStatus)
+		return
+	}
+	if r.URL.Query().Get("page") != "1" {
+		_, _ = w.Write([]byte(`[]`))
+		return
+	}
+	files := f.enumeratedFiles()
+	entries := make([]map[string]string, len(files))
 	for i, path := range files {
-		changes[i] = map[string]string{"old_path": path, "new_path": path}
+		entries[i] = map[string]string{"old_path": path, "new_path": path}
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"changes": changes})
+	_ = json.NewEncoder(w).Encode(entries)
 }
 
 func (f *fakeGitLab) serveApprovalRules(w http.ResponseWriter) {

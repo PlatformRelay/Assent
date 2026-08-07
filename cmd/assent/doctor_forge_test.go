@@ -32,11 +32,15 @@ func forgeDoctorHandler(t *testing.T, projectJSON string, approvalRulesStatus in
 		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/merge_requests/7":
-			_, _ = w.Write([]byte(`{"iid":7,"project_id":42,"sha":"srcSHA","source_branch":"feature","target_branch":"main","author":{"username":"alice"}}`))
+			_, _ = w.Write([]byte(`{"iid":7,"project_id":42,"sha":"srcSHA","source_branch":"feature","target_branch":"main","changes_count":"1","author":{"username":"alice"}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/repository/branches/main":
 			_, _ = w.Write([]byte(`{"commit":{"id":"tgtTIP"}}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/merge_requests/7/changes":
-			_, _ = w.Write([]byte(`{"changes":[{"old_path":"a.go","new_path":"a.go"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/merge_requests/7/diffs":
+			if r.URL.Query().Get("page") == "1" {
+				_, _ = w.Write([]byte(`[{"old_path":"a.go","new_path":"a.go"}]`))
+				return
+			}
+			_, _ = w.Write([]byte(`[]`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42":
 			_, _ = w.Write([]byte(projectJSON))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/merge_requests/7/approval_rules":

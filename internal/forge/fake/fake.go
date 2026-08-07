@@ -51,6 +51,20 @@ type Forge struct {
 	Capabilities forge.CapabilityFlags
 	ResolveMode  ResolveMode
 
+	// ChangedFilesGap, when non-empty, models a TRUNCATED / unprovable
+	// changed-file enumeration (ADR-0020 §6): Snapshot then reports
+	// ChangedFilesComplete=false carrying this reason, while still returning
+	// whatever partial ChangedFiles list is configured — so a VISIBLE
+	// `.assent/**` path still dominates to BLOCK. Empty (the default) means the
+	// enumeration is provably complete.
+	ChangedFilesGap string
+
+	// ChangedFilesErr, when non-nil, models a diff-endpoint 404/5xx
+	// (ADR-0020 §3/§6): Snapshot returns it as a HARD ERROR with no snapshot at
+	// all. A missing diff resource is forge anomaly — never evidence of an empty
+	// change set, which is exactly the fail-open the 404→empty mapping created.
+	ChangedFilesErr error
+
 	// AfterCurrentHeads, when non-nil, is invoked at the END of CurrentHeads —
 	// AFTER the current heads are read but BEFORE MergeCAS runs. It is the TOCTOU
 	// seam: a test sets it to advance CurrentTargetSha (etc.) so Reconcile's

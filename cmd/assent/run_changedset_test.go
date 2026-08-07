@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/PlatformRelay/assent/internal/forge"
 )
 
 // writeCheckout materialises a fixture checkout directory with base/ and head/
@@ -427,4 +429,178 @@ func TestRunChangedFileSetDoubleRunStable(t *testing.T) {
 	if !strings.Contains(first, `"decision":"BLOCK"`) {
 		t.Fatalf("expected the smuggled-policy fixture to BLOCK:\n%s", first)
 	}
+}
+
+// cappedChangesCount is GitLab's capped changes_count form: the instance stops
+// counting past its diff limit and suffixes "+", so completeness is unprovable.
+const cappedChangesCount = "1000+"
+
+// REQ-AUD-S01-04 (ADR-0020 §4, D-119) — the run-level invariant behind the
+// REL-07 P1. In checkout-less runs `snapshot.ChangedFiles` is the SOLE
+// `.assent/**` detector, so a contributor who pads an MR past the instance diff
+// limit could hide a policy edit from the D-042 self-vouch guard and reach
+// approve + CAS-merge. An enumeration that cannot prove itself complete must
+// therefore NEVER reach APPROVE and NEVER perform a forge write.
+func TestRunEnumerationIncompleteNeverApproves(t *testing.T) {
+	t.Run("incomplete_enumeration_degrades_to_review", func(t *testing.T) {
+		f := newFakeGitLab(t)
+		f.baseFile = "partitions: 12\n"
+		f.headFile = "partitions: 24\n" // governed alone + --arm would APPROVE
+		// The forge reports ONLY the governed path; a `.assent/**` edit is hidden
+		// beyond the truncation. The capped count is the only evidence of the gap.
+		f.changedFiles = []string{f.governedPath}
+		f.changesCount = cappedChangesCount
+
+		var out bytes.Buffer
+		code := runRun(runArgs("--arm"), env("tok"), fixedClock(), &out, &out, f.factory())
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0 (an auditable REVIEW, not a red-CI lever)\n%s", code, out.String())
+		}
+		body := out.String()
+		if strings.Contains(body, `"decision":"APPROVE"`) {
+			t.Fatalf("an unprovable enumeration must NEVER reach APPROVE:\n%s", body)
+		}
+		if !strings.Contains(body, `"decision":"REVIEW"`) {
+			t.Fatalf("expected fail-safe REVIEW:\n%s", body)
+		}
+		if !strings.Contains(body, `"code":"changeset.undecidable"`) {
+			t.Fatalf("expected the frozen changeset.undecidable axis (no new finding code):\n%s", body)
+		}
+		if f.approvals != 0 || f.merges != 0 {
+			t.Fatalf("an unprovable enumeration must perform ZERO approve/merge writes: approvals=%d merges=%d", f.approvals, f.merges)
+		}
+		if f.discussionsPosted != 1 {
+			t.Errorf("threads posted = %d, want exactly 1 (the reviewer-visible reason)", f.discussionsPosted)
+		}
+	})
+
+	t.Run("visible_policy_path_in_partial_list_still_blocks", func(t *testing.T) {
+		f := newFakeGitLab(t)
+		f.baseFile = "partitions: 12\n"
+		f.headFile = "partitions: 24\n"
+		// GUARD 1 dominates the gap-degrade: what IS visible still routes to BLOCK.
+		f.changedFiles = []string{f.governedPath, ".assent/merge-policy.yaml"}
+		f.changesCount = cappedChangesCount
+
+		var out bytes.Buffer
+		code := runRun(runArgs("--arm"), env("tok"), fixedClock(), &out, &out, f.factory())
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+		}
+		body := out.String()
+		if !strings.Contains(body, `"decision":"BLOCK"`) {
+			t.Fatalf("a VISIBLE `.assent/**` path must dominate the incomplete-enumeration degrade:\n%s", body)
+		}
+		if !strings.Contains(body, `"code":"assent-policy.self-edit"`) {
+			t.Fatalf("expected the self-edit finding, not changeset.undecidable:\n%s", body)
+		}
+		if f.discussionsPosted != 0 || f.approvals != 0 || f.merges != 0 {
+			t.Errorf("GUARD 1 BLOCK must write NOTHING: threads=%d approvals=%d merges=%d",
+				f.discussionsPosted, f.approvals, f.merges)
+		}
+	})
+
+	t.Run("complete_enumeration_is_unchanged", func(t *testing.T) {
+		// The regression guard: a provably complete enumeration must reproduce
+		// today's decision exactly — the fail-closed degrade must not leak into
+		// the happy path.
+		f := newFakeGitLab(t)
+		f.baseFile = "partitions: 12\n"
+		f.headFile = "partitions: 24\n"
+		f.changedFiles = []string{f.governedPath}
+
+		var out bytes.Buffer
+		code := runRun(runArgs("--arm"), env("tok"), fixedClock(), &out, &out, f.factory())
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+		}
+		body := out.String()
+		if !strings.Contains(body, `"decision":"APPROVE"`) {
+			t.Fatalf("a complete enumeration must still APPROVE:\n%s", body)
+		}
+		if strings.Contains(body, "changeset.undecidable") {
+			t.Fatalf("a complete enumeration must not degrade:\n%s", body)
+		}
+		if f.approvals != 1 || f.merges != 1 {
+			t.Errorf("complete enumeration must still write: approvals=%d merges=%d", f.approvals, f.merges)
+		}
+	})
+
+	t.Run("diff_endpoint_404_is_hard_error_with_no_record", func(t *testing.T) {
+		f := newFakeGitLab(t)
+		f.baseFile = "partitions: 12\n"
+		f.headFile = "partitions: 24\n"
+		f.diffsStatus = 404
+
+		emit := filepath.Join(t.TempDir(), "record.json")
+		var out bytes.Buffer
+		code := runRun(runArgs("--arm", "--emit", emit), env("tok"), fixedClock(), &out, &out, f.factory())
+		if code == 0 {
+			t.Fatalf("a diff-endpoint 404 must fail HARD (never an empty change set):\n%s", out.String())
+		}
+		if f.discussionsPosted != 0 || f.approvals != 0 || f.merges != 0 {
+			t.Errorf("hard error must write NOTHING: threads=%d approvals=%d merges=%d",
+				f.discussionsPosted, f.approvals, f.merges)
+		}
+		if _, err := os.Stat(emit); !os.IsNotExist(err) {
+			t.Errorf("no DecisionRecord may be emitted when the change set is unenumerable (stat err = %v)", err)
+		}
+	})
+
+	t.Run("checkout_mode_ignores_snapshot_completeness", func(t *testing.T) {
+		// D-077: with --checkout the LOCAL tree is the sole classifier authority,
+		// so snapshot completeness is not consulted at all — a truncated snapshot
+		// over a clean checkout must NOT degrade.
+		f := newFakeGitLab(t)
+		f.baseFile = "partitions: 12\n"
+		f.headFile = "partitions: 24\n"
+		f.changesCount = cappedChangesCount
+		checkout := writeCheckout(t, map[string][2]string{
+			f.governedPath: {"partitions: 12\n", "partitions: 24\n"},
+		})
+
+		var out bytes.Buffer
+		code := runRun(runArgs("--arm", "--checkout", checkout), env("tok"), fixedClock(), &out, &out, f.factory())
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+		}
+		body := out.String()
+		if strings.Contains(body, "changeset.undecidable") {
+			t.Fatalf("--checkout must be unaffected by snapshot completeness (D-077):\n%s", body)
+		}
+		if !strings.Contains(body, `"decision":"APPROVE"`) {
+			t.Fatalf("clean checkout must still APPROVE:\n%s", body)
+		}
+	})
+}
+
+// REQ-AUD-S01-04 (ADR-0020 §4): the snapshot fold stamps the NORMATIVE
+// OpaqueReason — the exported prefix plus the adapter's specific gap, verbatim
+// and un-double-prefixed. Pinned here because that reason string is contractual
+// and never reaches the DecisionRecord.
+func TestFoldSnapshotPathsIncompleteEnumeration(t *testing.T) {
+	t.Run("incomplete", func(t *testing.T) {
+		fold := foldSnapshotPaths(forge.Snapshot{
+			ChangedFiles:         []string{"topics/orders.yaml"},
+			ChangedFilesComplete: false,
+			ChangedFilesGap:      `MR changes_count "1000+" is capped`,
+		})
+		if !fold.opaque {
+			t.Fatal("an incomplete enumeration must fold to opaque (fail-safe REVIEW)")
+		}
+		want := forge.EnumerationIncompletePrefix + `MR changes_count "1000+" is capped`
+		if fold.opaqueReason != want {
+			t.Fatalf("opaqueReason = %q, want %q", fold.opaqueReason, want)
+		}
+	})
+
+	t.Run("complete", func(t *testing.T) {
+		fold := foldSnapshotPaths(forge.Snapshot{
+			ChangedFiles:         []string{"topics/orders.yaml"},
+			ChangedFilesComplete: true,
+		})
+		if fold.opaque || fold.opaqueReason != "" {
+			t.Fatalf("a complete enumeration must not fold opaque: opaque=%v reason=%q", fold.opaque, fold.opaqueReason)
+		}
+	})
 }

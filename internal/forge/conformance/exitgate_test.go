@@ -36,6 +36,11 @@ var l1CatalogTests = []string{
 	"TestDoctorForgeInsecureCITopology",
 	"TestRunForkContextAdvisoryOnly",
 	"TestRunExpiredFactBlocksArming",
+	// AUD-S01 (ADR-0020, D-119) — REQUIRED changed-file-completeness cases. The
+	// three run-level cases are sub-cases of one parent test; each catalog row's
+	// note names the subtest it is satisfied by.
+	"TestRunEnumerationIncompleteNeverApproves",
+	"TestChangedFiles404IsError",
 }
 
 type catalogDoc struct {

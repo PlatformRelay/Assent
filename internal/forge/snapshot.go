@@ -5,6 +5,13 @@ type Snapshotter interface {
 	Snapshot(project, mr string) (Snapshot, error)
 }
 
+// EnumerationIncompletePrefix is the normative OpaqueReason prefix a
+// checkout-less run stamps on the change set when ChangedFilesComplete is false
+// (ADR-0020 §4, D-119). It is exported so the adapter contract, the run-path
+// wiring and their tests cannot drift apart; the specific gap reason
+// (ChangedFilesGap) is appended to it verbatim.
+const EnumerationIncompletePrefix = "forge changed-file enumeration incomplete: "
+
 // Snapshot is the typed read-side view of an MR at observation time.
 // No map[string]any at this boundary — every field is explicit.
 type Snapshot struct {
@@ -12,6 +19,37 @@ type Snapshot struct {
 	ChangedFiles []string
 	Capabilities CapabilityFlags
 	BotThreads   []Thread
+
+	// ChangedFilesComplete reports whether ChangedFiles is the PROVABLY COMPLETE
+	// set of paths the MR touches (ADR-0020 §1, D-119). In checkout-less runs
+	// ChangedFiles is the SOLE `.assent/**` detector, so a silently truncated
+	// list would starve the D-042 self-vouch guard and let a padded MR
+	// approve+merge its own policy edit.
+	//
+	// The ZERO VALUE (false) FAILS SAFE BY DESIGN: an adapter or fake that
+	// forgets to set this degrades the run to fail-safe REVIEW, never to a
+	// fail-open APPROVE. Every adapter and fake MUST therefore set it
+	// EXPLICITLY on the success path — the required conformance cases and the
+	// byte-identical happy-path regression tests fail loudly against one that
+	// never reports completeness.
+	ChangedFilesComplete bool
+
+	// ChangedFilesGap is the specific, human-readable reason completeness could
+	// not be proven. It is non-empty IFF ChangedFilesComplete is false
+	// (ADR-0020 §1; mirrors the ADR-0017 §1 mergeResultDigest/capabilityGap
+	// honesty pattern — an honest declared gap, never a silent short list).
+	ChangedFilesGap string
+}
+
+// EnumerationOpaqueReason returns the OpaqueReason a checkout-less run must
+// stamp on the change set for this snapshot, or "" when the enumeration is
+// provably complete. Deriving it here (rather than concatenating at each call
+// site) keeps the ADR-0020 §4 prefix single-sourced.
+func (s Snapshot) EnumerationOpaqueReason() string {
+	if s.ChangedFilesComplete {
+		return ""
+	}
+	return EnumerationIncompletePrefix + s.ChangedFilesGap
 }
 
 // MRHeads carries the SHAs and branch names the evaluation pins against.
