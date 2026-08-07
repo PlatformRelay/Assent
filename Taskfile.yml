@@ -91,6 +91,14 @@ tasks:
       # `deps:` entry) — go-task runs deps in parallel and readme_smoke_test.sh builds
       # a binary while `fmt` rewrites the tree.
       - task: docs-gates
+      # AUD-S07 / D-123: `task lint` proves only the CLEAN depguard polarity. Without
+      # this, deleting `- depguard` from .golangci.yml passes every wired gate.
+      - task: lint-depguard-test
+
+  lint-depguard-test:
+    desc: "AUD-S07 gate: adversarial proof the D-123 depguard boundary rules fire (REQ-AUD-S07-01)"
+    cmds:
+      - bash hack/lint/depguard_test.sh
 
   docs-gates:
     desc: "D-124 docs truth-lag gates: README quick-start executes (REQ-AUD-S06-01) + 18 doc pins (REQ-AUD-S06-02)"
