@@ -281,13 +281,27 @@ for marker in \
     || fail "step-order: gate (step ${gate_idx}) must precede '${marker}' (step ${idx}) (REQ-AUD-S03-02)"
 done
 
+step_block() { # the release-job step whose body contains <marker>
+  release_block | awk -v m="$1" '
+    function flush() { if (matched) { for (i = 1; i <= cnt; i++) print buf[i]; exit } }
+    /^[0-9]+\t      - / { flush(); cnt = 0; matched = 0 }
+    { cnt = cnt + 1; buf[cnt] = $0; if (index($0, m) > 0) matched = 1 }
+    END { flush() }
+  '
+}
+
 # The gate step must actually invoke the extracted script and carry a token to call the API.
-release_block | grep -qF "bash hack/release/verify-tag-gate.sh" \
-  || fail "release job must invoke hack/release/verify-tag-gate.sh (REQ-AUD-S03-01)"
-release_block | grep -qF "GH_TOKEN:" \
-  || fail "gate step must pass GH_TOKEN (checkout uses persist-credentials: false)"
-release_block | grep -qF "TAG_INPUT:" \
-  || fail "gate step must pass TAG_INPUT so the workflow_dispatch path is gated too"
+# Scoped to the gate step's own block: TAG_INPUT/GH_TOKEN also appear elsewhere in the job,
+# so a job-wide grep would pass even with the gate step's env stripped.
+gate_step="$(step_block "hack/release/verify-tag-gate.sh")"
+[[ -n "${gate_step}" ]] \
+  || fail "could not isolate the gate step in the release job (REQ-AUD-S03-02)"
+grep -qF "run: bash hack/release/verify-tag-gate.sh" <<<"${gate_step}" \
+  || fail "the gate step must invoke hack/release/verify-tag-gate.sh (REQ-AUD-S03-01)"
+grep -qF "GH_TOKEN:" <<<"${gate_step}" \
+  || fail "the gate step must pass GH_TOKEN (checkout uses persist-credentials: false)"
+grep -qF "TAG_INPUT:" <<<"${gate_step}" \
+  || fail "the gate step must pass TAG_INPUT so the workflow_dispatch path is gated too"
 
 # An explicit permissions: block sets unlisted scopes to none — the workflow-runs API needs
 # actions: read, otherwise the gate 403s on every real tag.
