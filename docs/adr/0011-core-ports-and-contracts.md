@@ -148,3 +148,26 @@ type Publisher interface {
   ADR-0012 amendment 2. `Comment`/`OpenThread` alone cannot express idempotent re-runs.
 - **Positions (P2-11):** `Change` carries file+line/column spans (ADR-0003 amendment 2) so
   findings can anchor inline threads; `Finding` gains an optional `Anchor`.
+
+## Amendment 3 (2026-08-06, D-123 — boundary enforcement mechanism made true)
+
+The first invariant above claimed "arch-lint enforced" while enforcement was in fact
+manual review plus a purity walk covering only part of the pure tree (audit finding
+ARCH-01, open across three audits). As of D-123 the invariant reads, and is enforced as:
+
+- `internal/core/**`, `internal/change/**`, `internal/glob`, `internal/lint`,
+  `internal/catalogue`, `internal/evaldecode`, `internal/compare`, and `schemas/**`
+  import no port implementations (`internal/forge/**`, `internal/render/**`, `cmd/**`)
+  and no `net/**` — enforced by golangci-lint `depguard` deny-rules in `.golangci.yml`
+  (package-level, fails `task check`/CI verify);
+- the same tree contains no `time.Now`, `os.Getenv`/`os.Environ`, or `math/rand`
+  call-sites — enforced by the `TestCorePurity` AST walk in
+  `internal/core/purity_test.go`, extended beyond its original directories to
+  `../evaldecode`, `../compare`, and `../../schemas` (call-level; keeps its adversarial
+  self-test proving the guard would fire).
+
+`internal/evaldecode` and `internal/compare` are added to the guarded tree
+deliberately: both sit on decision paths (engine input decode; D-116/D-117 compare
+gates) and inherit the hard rule that nothing probabilistic, wall-clock- or
+randomness-dependent may live there. "arch-lint enforced" elsewhere in this ADR should
+be read as "depguard + purity-walk enforced" per this amendment.
