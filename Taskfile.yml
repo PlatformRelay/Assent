@@ -82,6 +82,11 @@ tasks:
       # stated plainly: a commit that changes history without regenerating CHANGELOG.md
       # makes the NEXT `task check` red until `task changelog-write` is committed.
       - task: changelog-verify
+      # AUD-S02: the drift gate's own guard, and the ONLY thing that reds when the
+      # `- task: changelog-verify` line above is deleted. Runs after changelog-verify
+      # because it probes the real CHANGELOG.md (append + trap restore) — a restore
+      # failure must not red the simpler gate for the wrong reason.
+      - task: release-changelog-gate-test
       # AUD-S03: the release gate's own guard. Its only other CI caller is release-exitgate,
       # which is skipped on pull_request — without this a regression merges green and only
       # reds main afterwards. Fast and offline (stubbed `gh`); needs jq.
@@ -202,6 +207,11 @@ tasks:
     desc: "Verify artifact harness gates (REQ-E9-S12-01..03)"
     cmds:
       - bash hack/release/verify_test.sh
+
+  release-changelog-gate-test:
+    desc: "AUD-S02 gate: the CHANGELOG drift gate is wired and fires (REQ-AUD-S02-01/02)"
+    cmds:
+      - bash hack/release/changelog_gate_test.sh
 
   release-verify-tag-gate-test:
     desc: "AUD-S03 gate: verify-green-on-tag-SHA polarity table + release.yaml step order (REQ-AUD-S03-01/02)"
