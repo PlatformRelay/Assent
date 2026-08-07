@@ -97,9 +97,10 @@ type RuleDocs struct {
 	Summary string `yaml:"summary"`
 }
 
-// Match is restricted to exactly one of four ADR-0017 §5 domains. FileEvents is
-// modelled so an authored use is DETECTED and rejected at load — E1 deferred
-// whole-file fileEvents, so E2 supports only files/values/valueChanges.
+// Match is restricted to exactly one of four ADR-0017 §5 domains. All four are
+// supported; FileEvents is narrowed at load to the kinds the engine can actually
+// mint (add/delete — see LoadMergePolicy and fileEventKindEmittable), so an
+// authored modify/rename is DETECTED and rejected rather than matching nothing.
 type Match struct {
 	Files        *FilesMatch        `yaml:"files"`
 	Values       *ValuesMatch       `yaml:"values"`
@@ -118,7 +119,8 @@ type ValuesMatch struct {
 	Pointers []string `yaml:"pointers"`
 }
 
-// FileEventsMatch is the E1-deferred whole-file lifecycle domain (rejected).
+// FileEventsMatch is the whole-file lifecycle domain (EFE). Kinds are narrowed at
+// load to {add, delete}; modify and rename are rejected (no minting path exists).
 type FileEventsMatch struct {
 	Paths []string `yaml:"paths"`
 	Kinds []string `yaml:"kinds"`
