@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Proposed |
+| **Status** | Accepted (D-119 — implemented in P5-AUD-S01) |
 | **Date** | 2026-08-06 |
 | **Deciders** | Konrad Heimel |
 | **Context links** | [ADR-0008](0008-change-classification-routing-scope.md) §4 · [ADR-0015](0015-trust-boundaries-merge-integrity.md) §1 · [ADR-0017](0017-contract-model-obligations.md) §1 (honest capability gaps) · D-042 · D-076 · D-077 · REL-07 (PROJECT-AUDIT-2026-08-06) |
