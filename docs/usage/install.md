@@ -39,10 +39,12 @@ assent version
     assent 0.0.0-dev
     ```
 
-    That is cosmetic for local policy authoring (`assent lint` / `assent test`), but it
-    means a `go install` binary cannot identify itself in a `DecisionRecord` or a support
-    thread. Use the [release archive](#github-release-url-pattern) or
-    [Homebrew](#homebrew) route when the version string has to be true.
+    That is cosmetic for local policy authoring (`assent lint` / `assent test`). A
+    `DecisionRecord` from such a binary is still identifiable — `pins.toolDigest` is a
+    sha256 over the binary's Go build info (D-120), so different builds differ regardless
+    of the version string — but `pins.toolVersion` reads `0.0.0-dev` and cannot be mapped
+    back to a released tag. Use the [release archive](#github-release-url-pattern) or
+    [Homebrew](#homebrew) route when the version string itself has to be true.
 
 ## curl / local install script (checksum-verified)
 
