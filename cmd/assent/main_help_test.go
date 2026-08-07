@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,8 +93,15 @@ func TestHelpExitCodesOnBuiltBinary(t *testing.T) {
 }
 
 // REQ-AUD-S05-01: the shipped help text must not resurrect the pre-release claims,
-// and neither may the CLI sources or the docs tree (DOC-08 grep pin). The story
-// spec under openspec/ quotes the old string by design and is out of the walk.
+// and neither may the surfaces this pin walks (DOC-08).
+//
+// Scope, stated exactly: the walk covers the .go and .md files under cmd/,
+// internal/ and docs/, minus the two exclusions in isPinnedSource. It does NOT
+// cover repo-root markdown (README.md, API_STABILITY.md — AUD-S06's files),
+// examples/, openspec/, hack/, schemas/, .github/ or test/. The AC's "nowhere in
+// the repo" is therefore narrowed on purpose: openspec/ and docs/decisions/ quote
+// the phrases as history by design. Known live hit outside this scope:
+// examples/README.md — reported to the coordinator, owned by no story yet.
 func TestNoStaleProductClaims(t *testing.T) {
 	usage := strings.ToLower(usageText())
 	for _, claim := range staleClaims {
@@ -130,10 +136,10 @@ func TestNoStaleProductClaims(t *testing.T) {
 	}
 }
 
-// isPinnedSource reports whether a walked file is a user-facing surface covered by
-// the DOC-08 grep pin: Go sources and markdown docs. Two exclusions, both because
-// naming the phrase is their job: this test, and the append-only decision log,
-// which records superseded states (D-104's revert note) as history.
+// isPinnedSource reports whether a file reached by the walk roots is in scope for
+// the DOC-08 grep pin: .go and .md files, minus two exclusions where naming the
+// phrase is the file's job — this test, and the append-only decision log, which
+// records superseded states (D-104's revert note) as history.
 func isPinnedSource(path string) bool {
 	if filepath.Base(path) == "main_help_test.go" {
 		return false
@@ -145,33 +151,81 @@ func isPinnedSource(path string) bool {
 	return ext == ".go" || ext == ".md"
 }
 
-// REQ-AUD-S05-01: each table usage line is the same string the subcommand itself
-// prints when invoked without arguments, so the two cannot drift apart. Only the
-// commands that own a canonical `(usage: …)` error string are covered; run, doctor,
-// version, eval-input and help have no such string to pin against.
-func TestTableUsageMatchesSubcommandErrors(t *testing.T) {
-	byName := map[string]func(io.Writer) int{
-		"lint":      func(w io.Writer) int { return runLint(nil, io.Discard, w) },
-		"catalogue": func(w io.Writer) int { return runCatalogue(nil, io.Discard, w) },
-		"test":      func(w io.Writer) int { return runTest(nil, io.Discard, w) },
-		"compare":   func(w io.Writer) int { return runCompare(nil, io.Discard, w) },
-		"render":    func(w io.Writer) int { return runRender(nil, io.Discard, w) },
+// dispatchMarkers returns, per subcommand name, a string that ONLY that command's
+// handler can produce when the built binary is invoked with the bare name and a
+// scrubbed environment. Five commands are pinned to their own `(usage: …)` line, so
+// this doubles as the table-usage-vs-reality check; the rest are pinned to their
+// distinguishing first output. Every marker is unique across the table, so a name
+// bound to the wrong handler cannot satisfy it.
+func dispatchMarkers(table []subcommand) map[string]string {
+	markers := map[string]string{
+		// The commands whose no-argument error prints the canonical usage line.
+		"lint":      "",
+		"test":      "",
+		"compare":   "",
+		"catalogue": "",
+		"render":    "",
+		// The rest, keyed on output no other handler emits.
+		"run":        "assent run: --project is required",
+		"doctor":     "assent doctor:",
+		"eval-input": "assent eval-input: assemble EvaluationInput:",
+		"version":    "assent " + version,
+		"help":       tagline,
 	}
-	covered := 0
-	for _, sc := range subcommands() {
-		invoke, ok := byName[sc.name]
+	for _, sc := range table {
+		if marker, ok := markers[sc.name]; ok && marker == "" {
+			markers[sc.name] = sc.usage
+		}
+	}
+	return markers
+}
+
+// REQ-AUD-S05-01: every name in the dispatch table reaches ITS OWN handler in the
+// built binary. Asserted end-to-end rather than by calling runLint/runCompare/… in
+// process, because an in-process call bypasses the table and would stay green under
+// a hand transposition (`lint` wired to runCatalogue) that ships a binary answering
+// the wrong command behind a name.
+func TestDispatchTableBindsEachNameToItsHandler(t *testing.T) {
+	bin := buildAssent(t, "")
+	table := subcommands()
+	markers := dispatchMarkers(table)
+
+	if len(markers) != len(table) {
+		t.Fatalf("dispatchMarkers covers %d names, the table has %d — every subcommand needs a binding probe", len(markers), len(table))
+	}
+	for _, sc := range table {
+		marker, ok := markers[sc.name]
 		if !ok {
+			t.Errorf("subcommand %q has no binding probe", sc.name)
 			continue
 		}
-		covered++
-		var stderr bytes.Buffer
-		invoke(&stderr)
-		if !strings.Contains(stderr.String(), sc.usage) {
-			t.Errorf("%s: help table usage %q is not what the command prints:\n%s", sc.name, sc.usage, stderr.String())
+		stdout, stderr, _ := runAssent(t, bin, sc.name)
+		if !strings.Contains(stdout+stderr, marker) {
+			t.Errorf("assent %s is not bound to its own handler: output lacks %q\nstdout:\n%s\nstderr:\n%s",
+				sc.name, marker, stdout, stderr)
 		}
 	}
-	if covered != len(byName) {
-		t.Fatalf("covered %d subcommands, want %d — a pinned command left the dispatch table", covered, len(byName))
+}
+
+// Negative polarity: the markers must be mutually exclusive, otherwise the binding
+// check would survive a transposition of two names in the table.
+func TestDispatchMarkersAreUnique(t *testing.T) {
+	table := subcommands()
+	markers := dispatchMarkers(table)
+	for name, marker := range markers {
+		if strings.TrimSpace(marker) == "" {
+			t.Errorf("subcommand %q has an empty binding marker", name)
+			continue
+		}
+		for other, otherMarker := range markers {
+			if other == name {
+				continue
+			}
+			if strings.Contains(otherMarker, marker) {
+				t.Errorf("marker for %q (%q) also matches %q — a %s/%s transposition would pass undetected",
+					name, marker, other, name, other)
+			}
+		}
 	}
 }
 
@@ -187,10 +241,13 @@ func missingHelpEntries(help string, table []subcommand) []string {
 }
 
 // runAssent executes the built binary and returns stdout, stderr and the exit code
-// as separate streams — a combined capture would hide a stdout/stderr swap.
+// as separate streams — a combined capture would hide a stdout/stderr swap. The
+// environment is scrubbed: GITLAB_TOKEN, CI and CI_* would otherwise steer run,
+// doctor, test and eval-input down different paths depending on where the suite runs.
 func runAssent(t *testing.T, bin string, args ...string) (string, string, int) {
 	t.Helper()
 	cmd := exec.Command(bin, args...) // #nosec G204 -- test-built binary path
+	cmd.Env = []string{}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
