@@ -65,15 +65,18 @@ See [system context](docs/architecture/c4-context.md) for the full C4 diagram.
 
 ## Quick start
 
-Install a stamped binary ([install guide](docs/usage/install.md)):
+Install from source ([install guide](docs/usage/install.md)):
 
 ```bash
 go install github.com/PlatformRelay/assent/cmd/assent@latest
 assent version
 ```
 
-Or verify a release archive with the checksum script — details in
-[docs/usage/install.md](https://platformrelay.github.io/assent/usage/install/).
+`go install` compiles without link-time stamping, so the binary it produces reports
+`assent 0.0.0-dev` — even when you pin a tag (`@v0.1.0`). For a **version-stamped**
+binary take the Homebrew tap or a release archive: goreleaser injects the version
+(`-X main.version`) and the archives are checksum- and signature-verifiable. Both
+routes are in [docs/usage/install.md](https://platformrelay.github.io/assent/usage/install/).
 
 Lint and test policies locally. Both commands take the **repository root** — `assent`
 appends `.assent` itself, so passing `.assent/` makes it look for `.assent/.assent`:
