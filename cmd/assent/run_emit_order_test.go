@@ -281,6 +281,43 @@ func TestEmitBeforeReconcileByteStable(t *testing.T) {
 		}
 	})
 
+	// The atomic replace is OBSERVABLE on overwrite: the renamed-in staging file
+	// brings its own 0600 mode, whereas an in-place os.WriteFile would truncate
+	// the existing target and keep its mode. This is the assertion that
+	// distinguishes the atomic write from a plain one — and it pins the
+	// behaviour change it implies (an existing --emit target's mode is now reset
+	// to 0600 on every run).
+	t.Run("atomic_replace_owns_the_target_mode", func(t *testing.T) {
+		f := newFakeGitLab(t)
+		approving(f)
+		emitPath := filepath.Join(t.TempDir(), "record.json")
+		if err := os.WriteFile(emitPath, []byte("stale record"), 0o644); err != nil { // #nosec G306 -- deliberately loose: the mode under test.
+			t.Fatalf("seed a stale record with a loose mode: %v", err)
+		}
+
+		var out bytes.Buffer
+		if code := runRun(runArgs("--arm", "--emit", emitPath), env("tok"), fixedClock(), &out, &out, f.factory()); code != 0 {
+			t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+		}
+		st, err := os.Stat(emitPath)
+		if err != nil {
+			t.Fatalf("stat the emitted record: %v", err)
+		}
+		if got := st.Mode().Perm(); got != 0o600 {
+			t.Errorf("the atomic rename must install the 0600 staging file, got mode %#o (an in-place write would keep the target's 0644)", got)
+		}
+		emitted, err := os.ReadFile(emitPath) // #nosec G304 -- test-controlled temp path.
+		if err != nil {
+			t.Fatalf("read emitted record: %v", err)
+		}
+		if bytes.Contains(emitted, []byte("stale record")) {
+			t.Errorf("the stale content survived the replace:\n%s", emitted)
+		}
+		if _, err := os.Stat(emitTempPath(emitPath)); !os.IsNotExist(err) {
+			t.Errorf("no temp file may survive a successful emit (stat err = %v)", err)
+		}
+	})
+
 	// Existing contract preserved: a fail-CLOSED reconcile refusal (forge probe
 	// refuses arming) stays a clean exit 0, with the record already emitted.
 	t.Run("fail_closed_refusal_still_exit_zero", func(t *testing.T) {
