@@ -95,8 +95,9 @@ func TestHelpExitCodesOnBuiltBinary(t *testing.T) {
 // REQ-AUD-S05-01: the shipped help text must not resurrect the pre-release claims,
 // and neither may the surfaces this pin walks (DOC-08).
 //
-// Scope, stated exactly: the walk covers the .go and .md files under cmd/,
-// internal/ and docs/, minus the two exclusions in isPinnedSource. It does NOT
+// Scope, stated exactly: the walk roots are .. (the whole cmd/ tree, so a second
+// binary added later is covered too), ../../internal and ../../docs; within them
+// it reads .go and .md files, minus the two exclusions in isPinnedSource. It does NOT
 // cover repo-root markdown (README.md, API_STABILITY.md — AUD-S06's files),
 // examples/, openspec/, hack/, schemas/, .github/ or test/. The AC's "nowhere in
 // the repo" is therefore narrowed on purpose: openspec/ and docs/decisions/ quote
@@ -110,7 +111,7 @@ func TestNoStaleProductClaims(t *testing.T) {
 		}
 	}
 
-	for _, root := range []string{".", "../../internal", "../../docs"} {
+	for _, root := range []string{"..", "../../internal", "../../docs"} {
 		walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
