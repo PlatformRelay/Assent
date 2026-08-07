@@ -75,19 +75,31 @@ minimal.
 
 ## Phase 5 — Epic execution
 
-Spec-first, vertical slices per epic (proposed cut, refined in Phase 3):
+Spec-first, vertical slices per epic. The E-numbering below is the one that actually
+executed — each row names its spec under `openspec/specs/` — and it matches the README
+feature-maturity table. (The Phase-2 proposed cut had E2 as a Rego frontend and E8 as the
+GitHub adapter; both moved to the deferred tier, so the numbering shifted.)
 
-| Epic | Slice |
-| --- | --- |
-| E1 | Canonical change model: JSON + YAML (+ HCL/tfvars) |
-| E2 | Decision engine + Rego frontend |
-| E3 | Declarative YAML frontend |
-| E4 | Forge: GitLab adapter (threads, approve, merge) |
-| E5 | Provider host: built-ins + HTTP/exec |
-| E6 | Adopter test harness (`assent test`) + examples |
-| E7 | E2E infra: kind GitLab, sample-repo generator, conformance suite |
-| E8 | Forge: GitHub adapter + Actions entrypoint |
-| E9 | Distribution: releases, container, CI templates, docs site |
+| Epic | Slice | Spec | Status |
+| --- | --- | --- | --- |
+| E1 | Canonical change model: JSON + YAML (+ HCL/tfvars) | `p5-e1-canonical-change-model` | shipped |
+| E2 | Decision engine + CEL predicate backend | `p5-e2-decision-engine` | shipped |
+| E3 | Policy surface: `assent lint` hard errors + rule catalogue | `p5-e3-policy-surface` | shipped |
+| E4 | GitLab forge adapter: Snapshot / Resolve / Reconcile | `p5-e4-gitlab-forge` | shipped |
+| E5 | Provider host + builtins (HTTP/exec, gitlab-groups, ownership) | `p5-e5-provider-host` | shipped |
+| E6 | Adopter test harness (`assent test`) + `assent compare` seed | `p5-e6-adopter-test` | shipped |
+| E7 | E2E & conformance infra | `p5-e7-e2e-conformance` | shipped |
+| E8 | Renderer & presentation (ADR-0016 tier 0) | `p5-e8-renderer` | shipped |
+| E9 | Distribution & release (oss-playbook) | `p5-e9-distribution` | shipped (v0.1.0) |
+
+Follow-on epics cut during Phase 5, outside the E1–E9 sequence: **EFE**
+(`p5-e-fileevents`, whole-file `match.fileEvents`), **PCS**
+(`p5-pcs-policy-comparison`, full comparison-suite runner), **AUD**
+(`p5-aud-audit-remediation`, post-release audit remediation).
+
+Deferred tiers keep their own numbers and unlock only with a named consumer (D-012):
+**E10** GitHub adapter, **E11** Rego backend, **E12** `serve` (HTTP API), **E13** remote
+packs — see the feature-maturity table in `README.md`.
 
 Ordering constraint: E7 starts early (alongside E1) because every later epic's exit gate
 depends on it.
