@@ -6,9 +6,44 @@ run:
 linters:
   default: standard
   enable:
+    - depguard
     - misspell
     - revive
     - gosec
+  settings:
+    # depguard enforces the ADR-0011 / AGENTS.md rule-7 architecture boundary at
+    # PACKAGE level (D-123, finding ARCH-01): the pure decision tree imports no
+    # port implementation and no network stack. The clock/env/randomness axes
+    # stay CALL level in the internal/core purity walk (internal/core/
+    # purity_test.go) because depguard cannot tell `time.Now` from `time.Time`.
+    # Adversarial proof that these rules fire: hack/lint/depguard_test.sh.
+    depguard:
+      rules:
+        pure-tree:
+          # lax = everything not explicitly denied is allowed (there is no
+          # allow list; this is a deny-only boundary rule).
+          list-mode: lax
+          # Matched against ABSOLUTE file paths, so every pattern is **-rooted.
+          # Test files are in scope on purpose: a guarded package must not reach
+          # a port even from its own tests.
+          files:
+            - "**/internal/core/**"
+            - "**/internal/change/**"
+            - "**/internal/glob/**"
+            - "**/internal/lint/**"
+            - "**/internal/catalogue/**"
+            - "**/internal/evaldecode/**"
+            - "**/internal/compare/**"
+            - "**/schemas/**"
+          deny:
+            - pkg: "github.com/PlatformRelay/assent/internal/forge"
+              desc: "D-123: the pure decision tree must not import the forge port implementation (ADR-0011 core/ports boundary); forge access lives in cmd/assent."
+            - pkg: "github.com/PlatformRelay/assent/internal/render"
+              desc: "D-123: the pure decision tree must not import the render port implementation (ADR-0011 core/ports boundary); presentation lives in cmd/assent."
+            - pkg: "github.com/PlatformRelay/assent/cmd"
+              desc: "D-123: the pure decision tree must not import the CLI composition root (ADR-0011 core/ports boundary) — dependencies point inward only."
+            - pkg: "net"
+              desc: "D-123 / AGENTS.md rule 7: no network stack on the decision path — a decision must not depend on off-box state. Matches net and every net/* subpackage."
   exclusions:
     paths:
       - \.worktrees/
