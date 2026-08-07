@@ -36,6 +36,10 @@ var l1CatalogTests = []string{
 	"TestDoctorForgeInsecureCITopology",
 	"TestRunForkContextAdvisoryOnly",
 	"TestRunExpiredFactBlocksArming",
+	// AUD-S01 (ADR-0020, D-119) — REQUIRED changed-file-completeness cases.
+	"TestRunEnumerationIncompleteNeverApproves",
+	"TestFoldSnapshotPathsIncompleteEnumeration",
+	"TestChangedFiles404IsError",
 }
 
 type catalogDoc struct {
