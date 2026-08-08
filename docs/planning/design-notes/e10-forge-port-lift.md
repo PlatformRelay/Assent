@@ -3,7 +3,14 @@
 Status: note only (no decision taken; decide via ADR when the GitHub adapter epic opens).
 Trigger: ARCH-02, PROJECT-AUDIT-2026-08-06.
 
-Problem: `cmd/assent`'s orchestration read port leaks GitLab-named types —
+Progress: **steps 1 and 2 below shipped in AUD-S15** (`internal/forge/port.go`,
+`internal/forge/port_test.go`, the ARCH-02 section of `hack/lint/depguard_test.sh`). Steps
+3–5 remain open for E10. The "Problem" paragraph therefore describes the PRE-AUD-S15 state
+and is kept verbatim as the record of what was fixed; what is still true of `cmd/assent`
+today is only the `gitlab.SyntheticDigest` call (step 4), now grep-pinned to an allowlist
+of exactly `New`, `WithSleeper`, `SyntheticDigest`.
+
+Problem (pre-AUD-S15): `cmd/assent`'s orchestration read port leaks GitLab-named types —
 `forgePort` embeds `GetMR(...) (gitlab.MRInfo, error)` and `FileAtRef` whose absent-file
 sentinel is `gitlab.ErrNotFound` (run.go:57-63, :420; plus `gitlab.MRInfo` threaded
 through `decide`, `resolveRunApproval`, `mrFrom`, `buildDesired`, `run_render.go`), and

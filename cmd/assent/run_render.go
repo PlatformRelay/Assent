@@ -6,7 +6,7 @@ import (
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/core/decision"
 	"github.com/PlatformRelay/assent/internal/core/policy"
-	"github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/render"
 )
 
@@ -17,7 +17,7 @@ func buildRenderContext(
 	bind *policy.Binding,
 	cs change.ChangeSet,
 	facts map[string]map[string]aggregate.Fact,
-	info gitlab.MRInfo,
+	info forge.MRInfo,
 	mrAuthor string,
 ) render.Context {
 	env := ""
