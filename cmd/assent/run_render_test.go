@@ -8,7 +8,7 @@ import (
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/core/decision"
 	"github.com/PlatformRelay/assent/internal/core/policy"
-	"github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/render"
 )
 
@@ -57,10 +57,10 @@ func TestBuildDesiredUsesRenderer(t *testing.T) {
 		Old:  "5",
 		New:  "3",
 	}}}
-	rctx := buildRenderContext(render.DefaultOptions(), mp, bind, cs, nil, gitlab.MRInfo{}, "")
+	rctx := buildRenderContext(render.DefaultOptions(), mp, bind, cs, nil, forge.MRInfo{}, "")
 
 	cfg := runConfig{project: "42", mr: "7", subject: "file:topics/orders.yaml"}
-	info := gitlab.MRInfo{SourceSHA: "src", TargetSHA: "tgt"}
+	info := forge.MRInfo{SourceSHA: "src", TargetSHA: "tgt"}
 	head := []byte("head-bytes")
 
 	desired, _ := buildDesired(cfg, info, cfg.subject, head, result, recordJSON, false, report.Presentation, rctx)
@@ -98,7 +98,7 @@ func TestBuildDesiredSummaryUsesRenderer(t *testing.T) {
 		Path: "/partitions", Kind: change.KindModify, Old: "5", New: "3",
 	}}}
 	cfg := runConfig{project: "42", mr: "7", subject: "file:topics/orders.yaml"}
-	info := gitlab.MRInfo{SourceSHA: "src", TargetSHA: "tgt"}
+	info := forge.MRInfo{SourceSHA: "src", TargetSHA: "tgt"}
 	head := []byte("head-bytes")
 
 	cases := []struct {
