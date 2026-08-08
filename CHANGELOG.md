@@ -90,6 +90,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(decisions): correct D-128's margin arithmetic and its stale ownership line
 - :memo: docs(open-questions): widen OQ-27 to the full string-operand class, deepen OQ-28 (review F4/F5)
 - :memo: docs(aud-s18): mark AUD AUTONOMOUS COMPLETE and hand over the four operator residuals
+- :memo: docs(aud-s18): renumber this lane's decision row D-131 -> D-132 (D-131 taken by the relational-string lane)
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
