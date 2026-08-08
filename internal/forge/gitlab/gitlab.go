@@ -88,9 +88,56 @@ type MRInfo struct {
 	ForkMR bool
 }
 
+// Bounds on what a single forge interaction may consume (AUD-S10, audit
+// findings REL-03 / SEC-08). The GitLab instance sits across a network the
+// runner does not control: a hostile or broken endpoint must not be able to
+// exhaust the runner's memory with one response, nor spin a pagination loop
+// forever. Both bounds are FAIL-CLOSED — see readBounded and the list loops.
+const (
+	// maxResponseBytes caps a single response body. 8 MiB is MB-order and
+	// generously above legitimate traffic: a 100-item discussions page is
+	// KB-order, and the largest read (a governed file at a ref) is a policy or
+	// registry document, not a binary blob.
+	maxResponseBytes = 8 << 20
+
+	// listPerPage is the page size requested for the discussion/note/approval-rule
+	// listings. It is also the short-page test: a page with FEWER entries is the
+	// last one.
+	listPerPage = 100
+
+	// maxListPages caps those pagination loops. 100 pages × listPerPage = 10 000
+	// artifacts on a single MR — orders of magnitude above anything
+	// reconciliation legitimately produces (one summary note plus one thread per
+	// open finding). Reaching it means the forge is not shortening its pages,
+	// i.e. the listing cannot be proven complete.
+	maxListPages = 100
+)
+
+// readBounded reads at most limit bytes from r and errors when the source has
+// MORE than limit bytes to give. It reads limit+1 bytes precisely so a body of
+// exactly limit stays legitimate traffic while limit+1 is refused.
+//
+// FAIL-CLOSED: the partially-read prefix is DISCARDED (nil is returned with the
+// error). A truncated JSON array that happened to parse would silently shrink
+// the bot-artifact list and make reconcile create duplicates; truncated bytes
+// must therefore never reach a decoder.
+func readBounded(r io.Reader, limit int64) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, fmt.Errorf("response body exceeds the %d-byte limit — refusing to parse a truncated response", limit)
+	}
+	return raw, nil
+}
+
 // do issues an authenticated request and returns the status code + body bytes.
 // The PAT travels ONLY in the PRIVATE-TOKEN header (never the URL/body), so it
 // cannot leak into a log line that prints the request path or an error.
+//
+// The response read is BOUNDED at maxResponseBytes (AUD-S10 / REL-03 / SEC-08):
+// an over-limit body is an error, never a truncated parse.
 func (c *Client) do(method, path string, body io.Reader, contentType string) (int, []byte, error) {
 	req, err := http.NewRequest(method, c.endpoint+path, body)
 	if err != nil {
@@ -105,7 +152,7 @@ func (c *Client) do(method, path string, body io.Reader, contentType string) (in
 		return 0, nil, fmt.Errorf("gitlab: %s %s: %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := readBounded(resp.Body, maxResponseBytes)
 	if err != nil {
 		return resp.StatusCode, nil, fmt.Errorf("gitlab: read body %s %s: %w", method, path, err)
 	}
@@ -217,12 +264,21 @@ type discussion struct {
 // A contributor note carrying a well-formed marker is EXCLUDED. It paginates the
 // discussions endpoint until the last page. A discussion whose first note has no
 // marker is skipped (not a finding thread in this slice).
+//
+// The loop is CAPPED at maxListPages (AUD-S10 / REL-03) and the cap is
+// FAIL-CLOSED: a paginator that never returns a short page yields an error, not
+// a silent partial. An incomplete bot-thread list is the dangerous outcome —
+// reconcile would read it as "that finding has no thread yet" and duplicate it.
 func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 	var out []forge.Thread
-	page := 1
-	for {
-		path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/discussions?per_page=100&page=%d",
-			url.PathEscape(project), url.PathEscape(mr), page)
+	for page := 1; ; page++ {
+		if page > maxListPages {
+			return nil, fmt.Errorf(
+				"gitlab: list discussions %s!%s: pagination cap of %d pages reached without a short page — refusing to reconcile against a partial thread list",
+				project, mr, maxListPages)
+		}
+		path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/discussions?per_page=%d&page=%d",
+			url.PathEscape(project), url.PathEscape(mr), listPerPage, page)
 		status, raw, err := c.do(http.MethodGet, path, nil, "")
 		if err != nil {
 			return nil, err
@@ -263,10 +319,9 @@ func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 			})
 		}
 		// A short page (< per_page) is the last page.
-		if len(discs) < 100 {
+		if len(discs) < listPerPage {
 			break
 		}
-		page++
 	}
 	return out, nil
 }
@@ -283,12 +338,20 @@ type mrNote struct {
 // ListBotNotes returns bot-authored MR notes filtered by AUTHOR IDENTITY
 // (ADR-0019): a note counts iff its author username equals the configured
 // botAuthor. It paginates the notes endpoint until the last page.
+//
+// The loop is CAPPED at maxListPages (AUD-S10 / REL-03), FAIL-CLOSED for the
+// same reason as ListBotThreads: UpsertComment reads this list to decide
+// edit-in-place vs. create, so a silent partial would post a duplicate summary.
 func (c *Client) ListBotNotes(project, mr string) ([]forge.Note, error) {
 	var out []forge.Note
-	page := 1
-	for {
-		path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/notes?per_page=100&page=%d",
-			url.PathEscape(project), url.PathEscape(mr), page)
+	for page := 1; ; page++ {
+		if page > maxListPages {
+			return nil, fmt.Errorf(
+				"gitlab: list notes %s!%s: pagination cap of %d pages reached without a short page — refusing to reconcile against a partial note list",
+				project, mr, maxListPages)
+		}
+		path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/notes?per_page=%d&page=%d",
+			url.PathEscape(project), url.PathEscape(mr), listPerPage, page)
 		status, raw, err := c.do(http.MethodGet, path, nil, "")
 		if err != nil {
 			return nil, err
@@ -321,10 +384,9 @@ func (c *Client) ListBotNotes(project, mr string) ([]forge.Note, error) {
 				Body:   n.Body,
 			})
 		}
-		if len(notes) < 100 {
+		if len(notes) < listPerPage {
 			break
 		}
-		page++
 	}
 	return out, nil
 }
