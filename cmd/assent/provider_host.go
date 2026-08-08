@@ -239,25 +239,40 @@ func providerCallFor(
 	}
 }
 
+// refFilePort is the slice of the forge this function needs: one read at a ref.
+type refFilePort interface {
+	FileAtRef(project, path, ref string) ([]byte, error)
+}
+
+// loadResourceOwnerRegistry loads the resource→owner registry.
+//
+// D-130 / GUIDELINES §Safety 3: the registry decides WHO MAY APPROVE, so it is a
+// decision input and loads from the TARGET ref FIRST. It used to prefer repoFS —
+// which under `--checkout` is the merge request's own head tree — letting an MR
+// ship a registry naming its author as owner of the resource it is changing.
+// The checkout is now a FALLBACK only, for runs whose target ref carries no
+// registry (hermetic fixtures, local trees); it can no longer shadow the target.
 func loadResourceOwnerRegistry(
 	ctx context.Context,
-	client forgePort,
+	client refFilePort,
 	project, targetRef string,
 	repoFS fs.FS,
 	regPath string,
 ) (builtin.ResourceOwnerClient, error) {
 	_ = ctx
+	raw, err := client.FileAtRef(project, regPath, targetRef)
+	if err == nil {
+		fsys := fstest.MapFS{
+			path.Base(regPath): &fstest.MapFile{Data: raw},
+		}
+		return builtin.LoadResourceOwnerMap(fsys, path.Base(regPath))
+	}
 	if repoFS != nil {
-		if _, err := fs.Stat(repoFS, regPath); err == nil {
+		if _, statErr := fs.Stat(repoFS, regPath); statErr == nil {
+			// D-129: LoadResourceOwnerMap refuses a symlinked registry; repoFS is
+			// itself a symlink-safe root (checkoutFS).
 			return builtin.LoadResourceOwnerMap(repoFS, regPath)
 		}
 	}
-	raw, err := client.FileAtRef(project, regPath, targetRef)
-	if err != nil {
-		return nil, fmt.Errorf("resource-owner registry %q: %w", regPath, err)
-	}
-	fsys := fstest.MapFS{
-		path.Base(regPath): &fstest.MapFile{Data: raw},
-	}
-	return builtin.LoadResourceOwnerMap(fsys, path.Base(regPath))
+	return nil, fmt.Errorf("resource-owner registry %q: %w", regPath, err)
 }

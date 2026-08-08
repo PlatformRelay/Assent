@@ -261,6 +261,7 @@ invalid (never APPROVE via missing owner); C7 seedable in S10.
 Requirements:
 - **REQ-E5-S08-01** *(closes REF-GAP-1)* — `resource→owner` resolves for a fixture map. Test: `internal/provider/builtin/resource_owner_test.go`; Verify: `go test ./internal/provider/... -run TestResourceOwnerResolves`; Level: L0
 - **REQ-E5-S08-02** *(fail-safe)* — unknown resource does not resolve to an empty owner that would satisfy ownership. Test: same; Verify: `go test ./internal/provider/... -run TestResourceOwnerUnknownFailClosed`; Level: L0
+- **REQ-E5-S08-03** *(SECURITY · D-129 / D-130)* — the ownership registry decides who may approve, so it is a decision input: it loads from the **target ref** first and the checkout only as a fallback (never a shadow — ADR-0015 §1 / GUIDELINES §Safety 3), and a registry reached through a symlink is refused with an error (no client ⇒ the owner fact never resolves), never a partial load. Test: `internal/provider/builtin/resource_owner_symlink_test.go`, `cmd/assent/provider_host_registry_test.go`; Verify: `go test ./internal/provider/... -run TestResourceOwnerRegistry && go test ./cmd/assent/... -run TestResourceOwnerRegistry`; Level: L0+L1
 
 ---
 
