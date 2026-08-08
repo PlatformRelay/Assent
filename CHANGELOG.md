@@ -86,6 +86,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
 - :memo: docs: record D-133 and ADR-0008 Amendment 2 — the checkout is content under judgment
+- :memo: docs(checkout): state the truncation mechanism precisely — WalkDir is happy, the read is not
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
