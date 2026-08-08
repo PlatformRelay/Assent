@@ -132,6 +132,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :lock: fix(compare): domain-separate the replay-bundle digest per D-121 (ARCH-04)
 - :lock: fix(forge): bound response reads and cap pagination loops (AUD-S10, REL-03/SEC-08)
 - :lock: fix(forge): make retry-body safety structural, not conventional (review F5)
+- :lock: fix(lint): isolate the real CI step, and enforce command_view's scalar precondition (review N5/N6)
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
