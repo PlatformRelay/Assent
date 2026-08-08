@@ -90,7 +90,16 @@ func (m *mapResourceOwner) Owner(_ context.Context, resourceID string) (string, 
 
 // LoadResourceOwnerMap reads a YAML ownership registry from fsys.
 // Expected shape: top-level "owners" mapping resource ID → owner string.
+//
+// fsys MUST be a symlink-safe root (see RepoFileOpts.FS / OpenRepoRoot, D-129):
+// this registry decides who may approve, and it is read with NO roots clip, so a
+// registry reached through a symlink is refused outright. Refusal is an error —
+// the caller gets no client, and the owner fact then never resolves — rather than
+// a partially trusted map.
 func LoadResourceOwnerMap(fsys fs.FS, file string) (ResourceOwnerClient, error) {
+	if classifyCandidate(fsys, file) == candidateSymlink {
+		return nil, fmt.Errorf("builtin/resource-owner: refusing registry reached through a symlink: %s", file)
+	}
 	raw, err := fs.ReadFile(fsys, file)
 	if err != nil {
 		return nil, fmt.Errorf("builtin/resource-owner: read %s: %w", file, err)

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -57,7 +58,19 @@ func resolveRunFacts(
 	declDir := path.Join(path.Dir(configPath), "providers")
 	asOf := now.UTC()
 	anchor := anchorFromSubject(subject)
-	repoFS := checkoutFS(checkoutRoot)
+	repoFS, repoRoot, err := checkoutFS(checkoutRoot)
+	if err != nil {
+		// A --checkout that cannot be opened as a containment root is an operator
+		// error, and silently degrading to "no facts" would hide it. Fail loudly:
+		// no decision is emitted, so nothing can be armed off a half-read tree.
+		return nil, nil, err
+	}
+	if repoRoot != nil {
+		// Every builtin read happens inside this loop; nothing captures repoFS
+		// beyond it (providerCallFor's closures are invoked by ResolveFactsChecked
+		// in-loop, and the resource-owner registry is read eagerly).
+		defer func() { _ = repoRoot.Close() }()
+	}
 
 	for _, name := range names {
 		p := conf.Providers[name]
@@ -117,19 +130,27 @@ func anchorFromSubject(subject string) string {
 	return strings.TrimPrefix(s, "/")
 }
 
-func checkoutFS(checkoutRoot string) fs.FS {
+// checkoutFS opens the checkout tree builtins read facts from, as a SYMLINK-SAFE
+// root (D-129). The returned io.Closer is nil when there is no checkout.
+//
+// This tree is the MERGE-REQUEST HEAD — content under judgment, authored by the
+// contributor. `os.DirFS` used to be handed out here, and it is documented in Go
+// as not a security boundary: an MR could ship a symlink and read an arbitrary
+// host file into a decision fact. `(*os.Root).FS()` refuses every traversal that
+// leaves the root at the syscall level, for every consumer of this FS.
+func checkoutFS(checkoutRoot string) (fs.FS, io.Closer, error) {
 	root := strings.TrimSpace(checkoutRoot)
 	if root == "" {
-		return nil
+		return nil, nil, nil
 	}
 	// E1-S08 checkout layout: head/ is the MR source view; repo-file facts for
 	// live runs read the checkout head tree (hermetic exit-gate fixtures mirror
 	// in-repo quota/placement files beside the governed change).
 	head := filepath.Join(root, "head")
 	if st, err := os.Stat(head); err == nil && st.IsDir() {
-		return os.DirFS(head)
+		return builtin.OpenRepoRoot(head)
 	}
-	return os.DirFS(root)
+	return builtin.OpenRepoRoot(root)
 }
 
 func querySubject(p policy.Provider, hostCfg provider.Config, anchor, project string) provider.Subject {
