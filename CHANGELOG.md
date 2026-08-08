@@ -85,6 +85,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(adr): record the AUD-S12 malformed-marker behaviour change in ADR-0019 (review F3)
 - :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
+- :memo: docs: record D-133 and ADR-0008 Amendment 2 — the checkout is content under judgment
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -136,6 +137,8 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :lock: fix(forge): make retry-body safety structural, not conventional (review F5)
 - :lock: fix(lint): isolate the real CI step, and enforce command_view's scalar precondition (review N5/N6)
 - :lock: fix(test): report leaked credential names, never their values (review F1/F2)
+- :lock: fix(checkout): never return a truncated tree with a nil error
+- :lock: fix(checkout): contain checkout reads to the checkout root
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
@@ -157,6 +160,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
 - :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
 - :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
+- :white_check_mark: test(checkout): make every containment guard falsifiable
 ## [0.1.0] - 2026-08-05
 
 ### Chores
