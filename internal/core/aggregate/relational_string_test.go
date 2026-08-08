@@ -387,6 +387,58 @@ func TestLegacyAggregatePathAlsoRefusesTextOrdering(t *testing.T) {
 	}
 }
 
+// TestUnrepresentableNumericInterpolatesItsRefusal pins what an adopter actually
+// READS when a leaf whose operand toCEL refused to bind also interpolates that
+// operand into its message. `{{ old }}` / `{{ new }}` resolve straight out of the
+// activation, so since D-131 they resolve to the CEL error VALUE and render its
+// sentence where a number used to appear — an extreme corner (|v| beyond
+// ~1.8e308) with no safety consequence, since the leaf already errored and the
+// finding is predicate.error -> REVIEW either way.
+//
+// It is goldened deliberately, exact sentence and all: the rendering is a
+// judgement call (authored prose in a value slot, chosen over a bare `{{ old }}`
+// placeholder because it says WHY the rule could not decide), and this row makes
+// any future change to it a deliberate act rather than a silent side effect of
+// editing toCEL's message. MUTATION: restore toCEL's old `return x.String()`
+// fallback and the message renders "1e400 -> 9e399" — the numbers, from the very
+// demotion to text that D-131 closed.
+func TestUnrepresentableNumericInterpolatesItsRefusal(t *testing.T) {
+	mp, bind := shrinkRulePolicy()
+	mp.Spec.Rules[0].Prove.When.Leaf.Message = "partitions may not decrease ({{ old }} -> {{ new }})"
+	in := EvaluationInput{ChangeSet: ChangeSet{Changes: []EvalChange{{
+		Subject: "topic-registry:orders.events.v1",
+		File:    "topics/prod/orders-events.yaml",
+		Path:    "/partitions",
+		Kind:    "modify",
+		Old:     json.Number("1e400"),
+		New:     json.Number("9e399"),
+	}}}, Facts: map[string]map[string]Fact{}, Require: []string{"non-destructive"}}
+
+	res, err := Cover(mp, bind, &in)
+	if err != nil {
+		t.Fatalf("Cover: %v", err)
+	}
+	onlyPredicateError(t, res)
+
+	const want = "partitions may not decrease (" +
+		"the number 1e400 is too large for assent to compare (it exceeds the representable numeric range)" +
+		" -> " +
+		"the number 9e399 is too large for assent to compare (it exceeds the representable numeric range))"
+	if got := res.Findings[0].Message; got != want {
+		t.Errorf("finding message =\n  %q\nwant\n  %q", got, want)
+	}
+
+	// The OTHER message path diverges on this same input, and pinning that is the
+	// point: internal/render goes through EvalScalar, which rejects an error value
+	// (types.IsError) and propagates a Go error instead of rendering a sentence.
+	// Any future unification of the two interpolators changes one of these two
+	// behaviours — this row makes that visible instead of silent.
+	act := LeafActivation(in, in.ChangeSet.Changes[0], "prod")
+	if v, err := EvalScalar("new", act); err == nil {
+		t.Errorf("EvalScalar(\"new\") = (%v, nil) — an unrepresentable numeric must not render as a value on the render path", v)
+	}
+}
+
 // TestToCELNeverYieldsAStringForANumericLiteral pins the unit-level invariant the
 // evaldecode package doc asserts: toCEL never converts a numeric literal into its
 // string form (the silent lexical demotion).
