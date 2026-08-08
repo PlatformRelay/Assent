@@ -78,10 +78,10 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(decisions): record D-125 — CHANGELOG drift gate placement and its cost
 - :memo: docs(release): the changelog drift gate is in task check now, not outside it
 - :memo: docs(changelog): name the second toolDigest fallback branch
-- :memo: docs(compare): state the D-121 digest change where consumers will read it
 - :memo: docs(architecture): redraw the C4 diagrams from the real go list graph (AUD-S17)
 - :memo: docs: mark the rego backend and GitHub adapter as planned outside the C4 pages
 - :memo: docs: narrow the composition-root claim and hedge the planned modes in vision.md
+- :memo: docs(compare): state the D-121 digest change where consumers will read it
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -95,6 +95,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :bug: docs(readme): point the ADR-0014 link at the file that exists (DOC-05)
 - :bug: fix(docs-gates): the scripts claimed a wiring that does not exist
 - :bug: docs(examples): starter packs advertised a subcommand that does not exist
+- :bug: fix(release): stop stripping the changelog header from the GitHub Release body
 
 ### Other
 - :construction_worker: ci(lint): depguard deny-rules for the D-123 pure tree (REQ-AUD-S07-01)
@@ -113,6 +114,11 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :lock: fix(release): reject a tag whose only verify run is a pull_request run
 - :lock: fix(run): derive pins.toolDigest from Go build info (D-120)
 - :lock: fix(run): emit the DecisionRecord before forge reconcile (D-122)
+- :lock: security(ci): pin the Task version in verify.yaml via a single workflow env (AUD-S09 / SEC-04)
+- :lock: security(ci): lockfile-pin the ajv validator and scrub checkout credentials (AUD-S14 / SEC-01 + SEC-03)
+- :lock: fix(lint): close the comment-blind fail-opens in the workflow-pin gate (review F1/F3/F4/F5/F6)
+- :lock: security(deps): override fast-json-patch to ^3.1.1, clearing GHSA-8gh8-hqwg-xf34 (review F2)
+- :lock: fix(lint): match what EXECUTES, not what the line mentions (review N1/N2/N4)
 - :lock: fix(compare): domain-separate the replay-bundle digest per D-121 (ARCH-04)
 
 ### Testing
