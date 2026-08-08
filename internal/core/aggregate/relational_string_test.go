@@ -1,6 +1,6 @@
 package aggregate
 
-// relational_string_test.go is the regression suite for the D-129 fail-open:
+// relational_string_test.go is the regression suite for the D-131 fail-open:
 // CEL's relational operators (< <= > >=) are DEFINED over strings and compare
 // them LEXICALLY, so a change value that binds as a Go string (a YAML !!str the
 // decoder deliberately keeps a string, or a numeric literal too large to

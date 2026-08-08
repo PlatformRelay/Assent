@@ -38,7 +38,7 @@ admission object).
 - The ordering operators `<`, `<=`, `>`, `>=` compare **numbers**, not text. If an operand
   actually evaluates to a string — a YAML `!!str` such as `partitions: "12"` stays a string by
   design — the leaf is an evaluation error (→ `predicate.error` → REVIEW), never a lexical
-  answer (ADR-0013 Amendment 1, D-129). Order quoted numerics with `int(new) >= int(old)` or
+  answer (ADR-0013 Amendment 1, D-131). Order quoted numerics with `int(new) >= int(old)` or
   `double(...)`, and dates with `timestamp(a) < timestamp(b)`. Equality, `in`, and the string
   functions are unaffected.
 - Adding a field to this table requires a schema-fixture change (a new positive fixture that

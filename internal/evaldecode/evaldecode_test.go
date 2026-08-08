@@ -132,7 +132,7 @@ func TestRealDiffNumericShrinkBlocks(t *testing.T) {
 }
 
 // TestUndecodedStringOldNewFailsSafe is the MUTATION proof that the decoder is
-// load-bearing — rewritten for D-129. It used to assert that the un-decoded shape
+// load-bearing — rewritten for D-131. It used to assert that the un-decoded shape
 // APPROVEs a shrink (documenting the lexical fail-open as the thing the decoder
 // closes). That fail-open is now closed a SECOND time, at the engine seam: a
 // relational compare over two string-bound operands errors instead of answering
@@ -185,7 +185,7 @@ func TestUndecodedStringOldNewFailsSafe(t *testing.T) {
 	assertHasFinding(t, resStr.Findings, aggregate.EffectRequireReview, "predicate.error")
 }
 
-// TestQuotedNumericShrinkFailsSafeEndToEnd is the REACHABLE half of D-129, driven
+// TestQuotedNumericShrinkFailsSafeEndToEnd is the REACHABLE half of D-131, driven
 // through the whole production chain (change.Diff -> DecodeCanonical -> Cover) on
 // a real base/head YAML pair whose `partitions` is QUOTED — routine in adopter
 // YAML. The decoder keeps a !!str a Go string BY DESIGN (a quoted "12" is not the

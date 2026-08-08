@@ -46,7 +46,7 @@ func newEvalEnv() (*cel.Env, error) {
 // — the caller (a test here, E2-S04's coverage loop in production) hands it the
 // change. It returns (satisfied, nil) ONLY when the expression compiled,
 // evaluated under the cost budget without error, produced a boolean, AND ordered
-// nothing lexically (textOrderGuard, D-129); every other outcome (undeclared
+// nothing lexically (textOrderGuard, D-131); every other outcome (undeclared
 // reference, coercion/type error, cost overrun, non-boolean result, a relational
 // compare over text) returns a non-nil error so the caller fails safe. It NEVER
 // returns (true, nil) for a malformed or type-erroring predicate.
@@ -56,7 +56,7 @@ func evalLeaf(env *cel.Env, in EvaluationInput, ch EvalChange, envLabel, expr st
 		return false, fmt.Errorf("compile when %q: %w", expr, iss.Err())
 	}
 	// The guard watches every operand of every relational operator AS IT IS
-	// EVALUATED (D-129) — see newTextOrderGuard. It is per-program state, and this
+	// EVALUATED (D-131) — see newTextOrderGuard. It is per-program state, and this
 	// program is built and used exactly once, here.
 	guard := newTextOrderGuard(checked)
 	prg, err := env.Program(checked, cel.CostLimit(celCostBudget), cel.CustomDecorator(guard.decorate))
@@ -83,7 +83,7 @@ func evalLeaf(env *cel.Env, in EvaluationInput, ch EvalChange, envLabel, expr st
 	return b, nil
 }
 
-// textOrderGuard is the D-129 fail-safe guard. CEL defines < <= > >= over strings
+// textOrderGuard is the D-131 fail-safe guard. CEL defines < <= > >= over strings
 // as a LEXICAL (character-by-character) compare, so an ordering rule such as the
 // D-016 `new >= old` silently answers a BOOLEAN when its operands bind as text
 // instead of numbers — and lexically "6" >= "12" is TRUE, which APPROVEs a
@@ -94,7 +94,7 @@ func evalLeaf(env *cel.Env, in EvaluationInput, ch EvalChange, envLabel, expr st
 // The guard is VALUE-based, not syntax-based, because whether an operand is text
 // is a property of the adopter's DATA, not of the policy text: `new >= old` is
 // correct over numbers and unsound over strings, and no static check of the leaf
-// can tell the two apart. (That is why this defect is not lintable, D-129: lint
+// can tell the two apart. (That is why this defect is not lintable, D-131: lint
 // sees the rule, never the change it will judge.) It plants a watcher
 // on each operand of each relational operator and inspects what that operand
 // ACTUALLY produced, every time it was evaluated:
@@ -318,7 +318,7 @@ func mrToCEL(mr MR) map[string]any {
 // -> float64, maps/slices recursively, everything else passed through.
 //
 // A numeric literal that fits NEITHER int64 nor float64 (|v| beyond ~1.8e308)
-// binds a CEL ERROR value, not its string form (D-129). The string form was a
+// binds a CEL ERROR value, not its string form (D-131). The string form was a
 // silent demotion to text: `new > old` over 9e399 and 1e400 became the lexical
 // "9e399" > "1e400" = TRUE, the numerically wrong answer, with no error. An error
 // value propagates through every operator that touches it -> the caller's

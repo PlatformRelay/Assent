@@ -37,9 +37,9 @@
 // `partitions: "12"` is a !!str and this package keeps it the Go string "12" by
 // design (the differ deliberately distinguishes it from the number 12). CEL then
 // binds a string, and CEL's < <= > >= are DEFINED over strings as a lexical
-// compare — so before D-129 the D-016 `new >= old` over a quoted shrink 12->6
+// compare — so before D-131 the D-016 `new >= old` over a quoted shrink 12->6
 // answered the lexical "6" >= "12" = TRUE and the shrink APPROVEd. Decoding could
-// not prevent that; only the evaluator can. Since D-129 the engine seam refuses
+// not prevent that; only the evaluator can. Since D-131 the engine seam refuses
 // it: aggregate's textOrderGuard makes any relational compare whose operand
 // actually evaluates to text an evaluation ERROR -> predicate.error -> REVIEW.
 // The two layers are complementary and BOTH load-bearing — this package makes a
@@ -66,7 +66,7 @@ import (
 //   - `"..."`         -> the unquoted string (a !!str value; stays a STRING so a
 //     numeric rule over it does NOT numeric-compare it — the differ deliberately
 //     kept a string "12" distinct from the number 12. An ORDERING rule over that
-//     string does not compare it lexically either: since D-129 the evaluator
+//     string does not compare it lexically either: since D-131 the evaluator
 //     refuses to order text and fails safe to REVIEW).
 //   - anything else   -> json.Number(literal) (a numeric literal, bound typed by
 //     toCEL). Every bool (all six emitted spellings), JSON-quoted string, and null
@@ -77,7 +77,7 @@ import (
 // numeric literal larger than int64 flows through as json.Number and toCEL binds
 // it as float64 — a LOSSY compare, which is still live: two distinct literals
 // beyond 2^53 can compare equal. What is no longer live is the second half of the
-// old wording, "or its string form": since D-129 a literal representable as
+// old wording, "or its string form": since D-131 a literal representable as
 // NEITHER int64 nor float64 (beyond ~1.8e308) binds a CEL error value, so it can
 // never be ordered as text; it fails safe instead. DecodeCanonical itself is
 // unchanged — it preserves the literal faithfully and leaves the edge to toCEL.

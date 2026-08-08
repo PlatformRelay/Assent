@@ -30,7 +30,7 @@
 // with a 0/false/"" default: that would fail OPEN to APPROVE on a parse failure.
 // A value that is GENUINELY text (a YAML !!str, e.g. `partitions: "12"`) still
 // binds as a string, and a lexical compare over it is wrong in both directions
-// ("6" >= "12" is lexically true, "12" >= "6" lexically false) — so since D-129
+// ("6" >= "12" is lexically true, "12" >= "6" lexically false) — so since D-131
 // evalLeaf's textOrderGuard makes an ordering operator over a text operand an
 // EVALUATION ERROR (-> predicate.error -> REVIEW), never an answer. Ordering
 // quoted numerics deliberately means coercing first: int(new) >= int(old).
@@ -438,7 +438,7 @@ func bindActivation(cs change.ChangeSet) map[string]any {
 // operator over a text operand — returns a non-nil error so the caller fails safe
 // to REVIEW. It NEVER returns (true, nil) for a malformed rule.
 //
-// The D-129 textOrderGuard is applied here too, not only in evalLeaf. This
+// The D-131 textOrderGuard is applied here too, not only in evalLeaf. This
 // walking-skeleton env declares old/new as StringType and binds the differ's RAW
 // canonical strings, so EVERY bare relational here is a lexical compare — the
 // path mandated int()/double() by convention alone, with nothing enforcing it.

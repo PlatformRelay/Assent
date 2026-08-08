@@ -105,7 +105,7 @@ judgment (subjective); dependency scores are measured.
   spec with multiple implementations. Swapping *away from CEL* would break authored policies —
   that part of the decision is effectively one-way once packs exist.
 
-## Amendment 1 (2026-08-08, D-129): ordering operators refuse text operands
+## Amendment 1 (2026-08-08, D-131): ordering operators refuse text operands
 
 Residual code risk (1) above — "numeric type coercion YAML/HCL→CEL … highest risk" — turned out
 to have a fail-open in it. CEL defines `<`, `<=`, `>`, `>=` over **strings** as a lexical
