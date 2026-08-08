@@ -101,6 +101,8 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :lock: fix(run): emit the DecisionRecord before forge reconcile (D-122)
 - :lock: security(ci): pin the Task version in verify.yaml via a single workflow env (AUD-S09 / SEC-04)
 - :lock: security(ci): lockfile-pin the ajv validator and scrub checkout credentials (AUD-S14 / SEC-01 + SEC-03)
+- :lock: fix(lint): close the comment-blind fail-opens in the workflow-pin gate (review F1/F3/F4/F5/F6)
+- :lock: security(deps): override fast-json-patch to ^3.1.1, clearing GHSA-8gh8-hqwg-xf34 (review F2)
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
