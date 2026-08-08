@@ -119,6 +119,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :ambulance: fix(forge): skip malformed bot markers with a warning instead of bricking reconcile (AUD-S12, REL-06)
 - :test: test(provider): add the at-limit boundary control that kills the surviving mutant (review F2)
 - Merge remote-tracking branch 'origin/main' into lane/aud-s10-s12-forge-hardening
+- :twisted_rightwards_arrows: chore(aud-s18): merge AUD-S13 (PR #35) — the exit gate's 91% bar and the OQ-27/28 blocker rows are its dependency
 
 ### Refactoring
 - :recycle: fix(forge): retry idempotent GitLab reads with bounded jittered backoff (AUD-S11, REL-04)
@@ -161,6 +162,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
 - :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
 - :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
+- :white_check_mark: test(aud-s18): audit exit gate — 2026-08-06 conditions closed, gates green at the new bar
 - :white_check_mark: test(aud-s13): TEST-02/05/06 — toCEL overflow, reconcileClearSlot branches, repo_file containment + expiry
 - :white_check_mark: test(aud-s13): drop an unreachable assertion in the containment table (review F6)
 ## [0.1.0] - 2026-08-05
