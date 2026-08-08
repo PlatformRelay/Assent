@@ -6,8 +6,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/PlatformRelay/assent/internal/core/policy"
 	"github.com/PlatformRelay/assent/internal/provider/builtin"
 )
 
@@ -143,6 +146,40 @@ func TestResourceOwnerRegistrySymlinkInCheckoutRefused(t *testing.T) {
 	client, err := loadResourceOwnerRegistry(context.Background(), stub, "42", "main", repoFS, "governance/owners.yaml")
 	if err == nil {
 		t.Fatalf("OWNERSHIP ESCAPE: symlinked registry accepted; owner = %q", ownerOf(t, client))
+	}
+}
+
+// TestResolveRunFactsFailsLoudlyOnUnopenableCheckout — D-129 behaviour change:
+// a --checkout that cannot be opened as a containment root is a HARD error out of
+// resolveRunFacts, not a silent degrade to "no facts". Nothing upstream catches it
+// first (run.go's governed read and foldCheckout both tolerate a missing checkout),
+// so without this the run would evaluate a provider-configured policy with an empty
+// Facts map and never say why.
+func TestResolveRunFactsFailsLoudlyOnUnopenableCheckout(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.config = configQuotaRepoFile()
+	f.providerDecls = map[string]string{"quota": quotaDeclarationJSON}
+	client := f.factory()("", "tok", "assent-bot")
+
+	conf, err := policy.LoadConfig([]byte(configQuotaRepoFile()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(t.TempDir(), "no-such-checkout")
+
+	facts, resolvedAt, err := resolveRunFacts(
+		context.Background(), conf, ".assent/config.yaml", client,
+		"42", "main", missing, "file:topics/prod/orders.yaml", time.Now().UTC(),
+	)
+	if err == nil {
+		t.Fatalf("an unopenable --checkout must be a hard error; got facts=%v resolvedAt=%v", facts, resolvedAt)
+	}
+	if !strings.Contains(err.Error(), "checkout root") {
+		t.Fatalf("error %q must name the checkout root it could not open", err)
+	}
+	// Fail-closed shape: no partial fact map escapes alongside the error.
+	if facts != nil || resolvedAt != nil {
+		t.Fatalf("error path must return no facts; got %v / %v", facts, resolvedAt)
 	}
 }
 
