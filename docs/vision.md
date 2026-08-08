@@ -26,8 +26,9 @@ untested, invisible to the people governed by it, and dies with its author.
 
 1. **Install**: add one job to the repo's pipeline (GitLab CI first; GitHub Actions next) and a
    policy directory (e.g. `.assent/`) to the repo.
-2. **Describe**: write rules in **Rego** or a **Kyverno-style declarative YAML** against a
-   canonical model of the change — not against raw diff text.
+2. **Describe**: write rules in a **Kyverno-style declarative YAML** envelope with CEL
+   assertions, against a canonical model of the change — not against raw diff text. (A
+   `rego` rule-body backend is a *planned* tier — E11, [D-012](decisions/decisions.md).)
 3. **Trust**: assent evaluates every MR/PR deterministically and acts like a reviewer:
    resolvable review threads for findings, comments explaining the decision, approve/deny, and
    auto-merge when the decision is APPROVE and the platform's own gates (CI green, discussions
@@ -57,11 +58,11 @@ policy before trusting it, feeding `stats` — no database, just report artifact
 | Capability | Typical bespoke bot | assent |
 | --- | --- | --- |
 | Change understanding | regex on diff lines | canonical field-level change model for JSON / YAML / HCL-tfvars |
-| Rule language | imperative script | Rego or declarative YAML, versioned in the governed repo |
+| Rule language | imperative script | declarative YAML + CEL assertions, versioned in the governed repo (Rego backend *planned* — E11) |
 | Permission checks | hard-coded HTTP calls | pluggable providers: Keycloak, LDAP, GitLab/GitHub groups, ownership files, custom plugins |
 | Review UX | pipeline pass/fail | resolvable review threads, comments, approve/deny, auto-merge |
 | Testing | none | fixture-based policy tests, required by lint |
-| Platform | one forge | GitLab + GitHub behind one forge-neutral port |
+| Platform | one forge | one forge-neutral port — GitLab adapter shipped, GitHub adapter *planned* (E10) |
 
 ## Personas
 
