@@ -387,26 +387,66 @@ check_ci_wiring() {
 
   # N1: the command must BEGIN with the invocation. `run: echo skipped
   # # was: bash hack/lint/workflow_pins_test.sh` used to satisfy this.
-  grep -E '^[0-9]+:bash[[:space:]]+hack/lint/workflow_pins_test\.sh([[:space:]]|$)' "$cmds" >/dev/null || {
+  local wiring="$WORK/hits.wiring"
+  grep -E '^[0-9]+:bash[[:space:]]+hack/lint/workflow_pins_test\.sh([[:space:]]|$)' "$cmds" >"$wiring" || true
+  if [[ ! -s "$wiring" ]]; then
     echo "  verify.yaml does not RUN 'bash hack/lint/workflow_pins_test.sh' as an actual command — the workflow-pin gate would only ever run locally" >&2
-    rc=1
-  }
+    return 1
+  fi
 
-  # Review finding N2: being present is not being ENABLED. `continue-on-error:
+  # Review finding N2/N5: being present is not being ENABLED. `continue-on-error:
   # true` on this step leaves the gate and actionlint both green while the CI
   # half is neutered — the most realistic "just unblock CI" edit there is, and
-  # the silent one (`if: false` also disarms the step, but actionlint flags it).
-  # So the step's own block must carry neither.
+  # the silent one (`if:` is caught by actionlint only in some forms).
+  #
+  # N5 — the first attempt at this got the EXTRACTION wrong, and worse, its two
+  # controls only ever inserted the key AFTER `run:`, so the matrix certified
+  # the one position that happened to work and never exercised the one that did
+  # not. The old awk switched `inblock` on at the marker line, which is the
+  # `run:` line, having already reset it at the preceding `- name:` — so the
+  # "step" was a single line, and everything between `- name:` and `run:` was
+  # invisible. That is the CONVENTIONAL position for `if:` and
+  # `continue-on-error:`, the ordering GitHub's own docs use. It also swallowed
+  # the file-header comment (which names this script) plus `env:`/`jobs:`/
+  # `verify:`/`runs-on:`/`steps:`, because nothing reset `inblock` until the
+  # first `^      - ` — so the non-empty control passed on a region that was
+  # mostly not the step.
+  #
+  # Correct extraction: start from the line the command was actually FOUND on,
+  # walk BACK to the nearest preceding step start, then forward to the next one.
+  local lineno
+  lineno="$(awk -F: 'NR == 1 { print $1 }' "$wiring")"
   local step="$WORK/step.wiring"
-  awk '
-    /^      - / { inblock = 0 }
-    index($0, "workflow_pins_test.sh") > 0 { inblock = 1 }
-    inblock { print }
-  ' "$file" >"$step"
-  [[ -s "$step" ]] || {
-    echo "  could not isolate the workflow-pin gate step in verify.yaml — the extraction broke, so the assertions below would be vacuous" >&2
+  awk -v target="$lineno" '
+    { lines[NR] = $0 }
+    /^      - / { starts[NR] = 1 }
+    END {
+      start = 0
+      for (i = target; i >= 1; i--) if (i in starts) { start = i; break }
+      if (start == 0) exit 1
+      end = NR
+      for (i = start + 1; i <= NR; i++) if (i in starts) { end = i - 1; break }
+      for (i = start; i <= end; i++) print lines[i]
+    }
+  ' "$file" >"$step" || true
+
+  # Positive controls on the isolation itself. The previous version had only a
+  # non-empty check, which an 11-line slab of file header satisfied happily.
+  local n_step
+  n_step="$(wc -l <"$step" | tr -d '[:space:]')"
+  if [[ ! -s "$step" ]] || ((n_step > 6)); then
+    echo "  could not isolate the workflow-pin gate step in verify.yaml (got $n_step lines, expected 1..6) — the extraction broke, so the assertions below would be vacuous" >&2
+    return 1
+  fi
+  grep -Eq '^      - ' "$step" || {
+    echo "  the isolated region does not START with a step marker — it is not a step, so the assertions below would be vacuous" >&2
     return 1
   }
+  grep -Fq 'workflow_pins_test.sh' "$step" || {
+    echo "  the isolated step does not contain the gate invocation — the wrong step was isolated" >&2
+    return 1
+  }
+
   local disabled="$WORK/hits.step_disabled"
   grep -En '^[[:space:]]*(continue-on-error|if):' "$step" >"$disabled" || true
   if [[ -s "$disabled" ]]; then
@@ -415,6 +455,51 @@ check_ci_wiring() {
     rc=1
   fi
   return "$rc"
+}
+
+# Review finding N6 — `command_view` strips from the leftmost ` #`, which is
+# exactly YAML's rule for a PLAIN scalar (verified: `run: echo "step # 1" && …`
+# really is truncated by YAML too, and actionlint reds it with SC1072). It is
+# NOT the rule inside a BLOCK scalar (`run: |`) or a QUOTED scalar, where ` #`
+# is ordinary content. There, stripping discards live code: a body of
+# `echo "stage # 2" && npm --global install ajv-cli` reduces to `echo "stage`
+# and SEC-01 goes inert with the gate green.
+#
+# The previous commit documented this as a precondition of the current tree.
+# Documentation is not enforcement — the next workflow edit reopens it silently.
+# This turns the precondition into a gate: no workflow line may contain ` #`
+# preceded by an unbalanced quote. Zero hits across all 8 workflows today, so it
+# lands without touching a single workflow file.
+check_no_quoted_hash() {
+  local dir="$1"
+  local hits="$WORK/hits.quoted_hash"
+  : >"$hits"
+  local f
+  for f in "$dir"/*.yml "$dir"/*.yaml; do
+    [[ -f "$f" ]] || continue
+    # The single quote is built with sprintf so the awk program can stay inside
+    # a single-quoted shell string with no escaping games.
+    awk -v short="${f##*/}" '
+      BEGIN { SQ = sprintf("%c", 39); DQ = sprintf("%c", 34) }
+      {
+        idx = index($0, " #")
+        if (idx == 0) next
+        ndq = 0; nsq = 0
+        for (i = 1; i < idx; i++) {
+          c = substr($0, i, 1)
+          if (c == DQ) ndq++
+          else if (c == SQ) nsq++
+        }
+        if (ndq % 2 == 1 || nsq % 2 == 1) printf "%s:%d:%s\n", short, FNR, $0
+      }
+    ' "$f" >>"$hits"
+  done
+  if [[ -s "$hits" ]]; then
+    echo "  workflow line(s) carry ' #' inside a quoted scalar — command_view treats that as a comment and would silently discard the rest of the line, disarming every check that reads the command (N6):" >&2
+    sed 's/^/    /' "$hits" >&2
+    return 1
+  fi
+  return 0
 }
 
 # SEC-01(b): the committed manifest and lockfile are exact and complete.
@@ -804,15 +889,57 @@ m="$(mutant wiring-continue-on-error)"
 mutate_awk "$m/verify.yaml" \
   '{ print } /run: bash hack\/lint\/workflow_pins_test.sh/ { print "        continue-on-error: true" }' \
   'continue-on-error: true'
-expect_red check_ci_wiring "$m" "the gate step was neutered with continue-on-error: true (N2)" \
+expect_red check_ci_wiring "$m" "the gate step was neutered with continue-on-error: true AFTER run: (N2)" \
   'present but DISARMED'
 
 m="$(mutant wiring-if-false)"
 mutate_awk "$m/verify.yaml" \
   '{ print } /run: bash hack\/lint\/workflow_pins_test.sh/ { print "        if: false" }' \
   'if: false'
-expect_red check_ci_wiring "$m" "the gate step was neutered with if: false (N2)" \
+expect_red check_ci_wiring "$m" "the gate step was neutered with if: false AFTER run: (N2)" \
   'present but DISARMED'
+
+# Review finding N5. The two controls above insert AFTER `run:`. The
+# conventional position — the one GitHub's own docs use, and the one a person
+# reaching for `continue-on-error` would actually type — is BEFORE it, between
+# `- name:` and `run:`. The old extraction could not see that region at all, so
+# these two controls certified the only position that happened to work. Both
+# keys are now exercised in the position that previously bypassed the gate
+# silently (continue-on-error: gate green AND actionlint green).
+m="$(mutant wiring-continue-on-error-before)"
+mutate_awk "$m/verify.yaml" \
+  '{ if ($0 ~ /^        run: bash hack\/lint\/workflow_pins_test.sh$/) print "        continue-on-error: true"; print }' \
+  'continue-on-error: true'
+expect_red check_ci_wiring "$m" "continue-on-error inserted BEFORE run:, the conventional position (N5)" \
+  'present but DISARMED'
+
+m="$(mutant wiring-if-before)"
+mutate_awk "$m/verify.yaml" \
+  '{ if ($0 ~ /^        run: bash hack\/lint\/workflow_pins_test.sh$/) print "        if: ${{ false }}"; print }' \
+  'if: ${{ false }}'
+expect_red check_ci_wiring "$m" "if: inserted BEFORE run:, the conventional position (N5)" \
+  'present but DISARMED'
+
+# N5 secondary: the extraction must isolate a STEP, not a slab of file header.
+# The old one swallowed lines 13..24 of verify.yaml and still reported non-empty.
+m="$(mutant wiring-name-removed)"
+mutate "$m/verify.yaml" \
+  '/^      - name: workflow supply-chain pins/d' \
+  'run: bash hack/lint/workflow_pins_test.sh'
+expect_red check_ci_wiring "$m" "the step's own '- name:' line is gone, so no step start precedes the command (N5)" \
+  'the extraction broke'
+
+# ------------------------------ 6. N6: quoted-scalar precondition enforced --
+
+echo "== 6. N6: no ' #' inside a quoted scalar (command_view's precondition) =="
+expect_green check_no_quoted_hash "$WORKFLOWS" "no workflow line hides code behind a quoted ' #'"
+
+m="$(mutant quoted-hash)"
+mutate_awk "$m/schemas.yml" \
+  '{ if ($0 ~ /^        run: npm ci --ignore-scripts --prefix hack\/schemas-validator$/) { print "        run: echo \"stage # 2\" \\&\\& npm --global install ajv-cli" } else print }' \
+  'stage # 2'
+expect_red check_no_quoted_hash "$m" "a quoted ' #' hides a live global install from command_view (N6)" \
+  "inside a quoted scalar"
 
 echo
 echo "workflow_pins_test.sh: PASS"
