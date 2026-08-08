@@ -77,6 +77,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :bug: docs(readme): point the ADR-0014 link at the file that exists (DOC-05)
 - :bug: fix(docs-gates): the scripts claimed a wiring that does not exist
 - :bug: docs(examples): starter packs advertised a subcommand that does not exist
+- :bug: fix(forge): treat an over-limit body as deterministic, not retryable (AUD-S10 x S11)
 
 ### Other
 - :construction_worker: ci(lint): depguard deny-rules for the D-123 pure tree (REQ-AUD-S07-01)
