@@ -367,6 +367,20 @@ check_validator_lockfile() {
     echo "  package-lock.json has $n_resolved resolved package(s) and $n_integrity integrity hash(es) — expected them equal and >= 20 (SEC-01: the whole transitive tree must be hash-pinned)" >&2
     rc=1
   fi
+
+  # Review finding F2. ajv-cli@5.0.0 declares `fast-json-patch: ^2.0.0`, and
+  # 2.2.1 carries GHSA-8gh8-hqwg-xf34 (prototype pollution). An npm `overrides`
+  # entry lifts it out of that range — which is what `overrides` is for. Both
+  # halves are pinned here because either alone is silently reversible: drop the
+  # override and the next lockfile regeneration walks straight back to 2.2.1.
+  grep -Fq -- '"fast-json-patch": "^3.1.1"' "$pkg" || {
+    echo "  package.json no longer overrides fast-json-patch to ^3.1.1 — the next lockfile regeneration resolves ajv-cli's declared ^2.0.0 and reintroduces GHSA-8gh8-hqwg-xf34 (SEC-01)" >&2
+    rc=1
+  }
+  grep -Eq '/fast-json-patch-3\.' "$lock" || {
+    echo "  package-lock.json does not resolve fast-json-patch to a 3.x release — the override is declared but not applied to the locked tree (SEC-01)" >&2
+    rc=1
+  }
   return "$rc"
 }
 
@@ -602,6 +616,13 @@ mutate "$v/package.json" \
   '"ajv-cli": "^5.0.0"'
 expect_red check_validator_lockfile "$v" "package.json loosened an exact pin into a caret range" \
   'pins a RANGE rather than an exact version'
+
+v="$(validator_mutant no-override)"
+mutate "$v/package.json" \
+  '/"fast-json-patch": "\^3.1.1"/d' \
+  '"ajv-cli": "5.0.0"'
+expect_red check_validator_lockfile "$v" "the fast-json-patch override was removed, letting GHSA-8gh8-hqwg-xf34 back in (F2)" \
+  'no longer overrides fast-json-patch'
 
 v="$(validator_mutant no-integrity)"
 mutate "$v/package-lock.json" \
