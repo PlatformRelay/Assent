@@ -26,6 +26,20 @@ unchanged — records published with `v0.1.0` remain schema-valid — but the *v
 comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 record means
 "derived differently", not "different build".
 
+- **Every `replayBundleDigest` changes value after `v0.1.0` (D-121).** The comparison corpus
+published at `v0.1.0` pins each case with an undomained `sha256:<hex>` over the re-marshalled
+bundle. D-121 codifies the byte-vs-document split: a `ReplayBundle` is a schema-owned JSON
+*document* that consumers re-parse and re-verify, so its digest is now the domain-separated
+`assent-jcs-v1` digest — canonical JSON hashed under the replay-bundle schema `$id`
+(ADR-0017 §9) — rendered as bare lowercase hex with no `sha256:` tag, because the value is no
+longer sha256 over bytes and must not claim to be. Digests over BYTE artifacts are unaffected
+and stay raw `sha256:<hex>`: `pins.policySha`, `pins.toolDigest`, and the ADR-0019 marker
+occurrence/decision digests. **Action required if you pinned, cached, or recomputed a
+`replayBundleDigest`: regenerate it.** A stale pin does not silently pass — `assent compare
+--suite` rejects it with a fail-closed digest mismatch before any evaluation runs. The corpus
+identity itself is unchanged: no `caseId` was reused or retired and no bundle byte changed, so
+D-113 immutability holds — only the algorithm computing the pin moved, versioned by D-121.
+
 ## Unreleased
 
 ### Chores
@@ -64,6 +78,10 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :memo: docs(decisions): record D-125 — CHANGELOG drift gate placement and its cost
 - :memo: docs(release): the changelog drift gate is in task check now, not outside it
 - :memo: docs(changelog): name the second toolDigest fallback branch
+- :memo: docs(compare): state the D-121 digest change where consumers will read it
+- :memo: docs(architecture): redraw the C4 diagrams from the real go list graph (AUD-S17)
+- :memo: docs: mark the rego backend and GitHub adapter as planned outside the C4 pages
+- :memo: docs: narrow the composition-root claim and hedge the planned modes in vision.md
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -95,6 +113,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :lock: fix(release): reject a tag whose only verify run is a pull_request run
 - :lock: fix(run): derive pins.toolDigest from Go build info (D-120)
 - :lock: fix(run): emit the DecisionRecord before forge reconcile (D-122)
+- :lock: fix(compare): domain-separate the replay-bundle digest per D-121 (ARCH-04)
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
@@ -113,7 +132,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :white_check_mark: test(run): pin the emit-before-reconcile invariant on stdout too (D-122)
 - :white_check_mark: test(docs): pin the retired truth-lag claims so they cannot come back (DOC-05/06/09/10/11)
 - :white_check_mark: test(release): pin the CHANGELOG drift gate content, wiring and polarity
-- :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
+- :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
 ## [0.1.0] - 2026-08-05
 
 ### Chores
