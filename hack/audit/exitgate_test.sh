@@ -256,6 +256,14 @@ step_disarmed() { # <step-file> <out-file>
   [[ -s "$2" ]]
 }
 
+# `cmd | head -1` closes the read end early: under `set -o pipefail` the writer
+# takes SIGPIPE and the pipeline exits 141. This file bans that shape (it is one
+# of the repo's recurring "test that cannot fail" defects), so first lines come
+# from a file, never from a pipe.
+first_line() { # <file>
+  awk 'NR == 1 { print; exit }' "$1"
+}
+
 joined_run_re() { # <name>...
   local out="" n
   for n in "$@"; do out="${out:+$out|}$n"; done
@@ -602,7 +610,9 @@ check_release_verify_gate() { # <workflows-dir>
   # pull_request-only `snapshot` job whose goreleaser step legitimately precedes
   # everything (a file-scoped comparison reds on the clean tree — it did).
   local jobstart jobend
-  jobstart="$(grep -n '^  release:$' "$wf" | head -1 | cut -d: -f1 || true)"
+  local jobhits="$WORK/hits.release_job"
+  grep -n '^  release:$' "$wf" >"$jobhits" || true
+  jobstart="$(first_line "$jobhits" | cut -d: -f1)"
   if [[ -z "$jobstart" ]]; then
     echo "  RELSE-05: release.yaml has no '  release:' job — the ordering assertion has no scope" >&2
     return 1
@@ -1130,7 +1140,11 @@ check_post_audit_blockers() { # <spec> <open-questions>
       rc=1
       continue
     fi
-    printf '%s\n' "$line" | grep -Eq '(OPEN|CLOSED)' || {
+    # Not `printf … | grep -q`: the early read-end close raises SIGPIPE on the
+    # writer and, under `set -o pipefail`, the pipeline reports 141 — a status
+    # this branch would read as "no status token", intermittently.
+    printf '%s\n' "$line" >"$WORK/blockers.line"
+    grep -Eq '(OPEN|CLOSED)' "$WORK/blockers.line" || {
       echo "  AUD-S18: a Post-audit release blocker row carries no OPEN/CLOSED status token: $line" >&2
       rc=1
     }
@@ -1216,8 +1230,10 @@ check_ci_wiring() { # <workflows-dir>
 
   # It must live in release-exitgate: the verify job runs on pull_request, where
   # `task check`'s changelog stage is red by construction (D-125).
+  local joblines="$WORK/hits.audit_wiring_job"
+  grep -n '^  release-exitgate:' "$wf" >"$joblines" || true
   local jobline
-  jobline="$(grep -n '^  release-exitgate:' "$wf" | head -1 | cut -d: -f1 || true)"
+  jobline="$(first_line "$joblines" | cut -d: -f1)"
   if [[ -z "$jobline" ]]; then
     echo "  AUD-S18: verify.yaml has no release-exitgate job — REQ-AUD-S18-01 requires the gate to be wired there" >&2
     rc=1
@@ -1663,7 +1679,13 @@ if ((TEXT_ONLY == 0)); then
 
   echo "-- probe C: a frozen schema deleted in a COMMITTED change"
   CLONE="$(schema_probe_clone delete)"
-  victim="$(git -C "$CLONE" ls-files -- schemas | grep -E '\.json$' | grep -Fv decision-record | head -1)"
+  # Deliberately not `… | head -1`: the early close SIGPIPEs the writer and, with
+  # `set -o pipefail` plus `set -e`, this bare assignment would kill the gate
+  # outright instead of reporting anything.
+  git -C "$CLONE" ls-files -- schemas >"$WORK/probe.victims" || true
+  grep -E '\.json$' "$WORK/probe.victims" >"$WORK/probe.victims.json" || true
+  grep -Fv decision-record "$WORK/probe.victims.json" >"$WORK/probe.victims.pick" || true
+  victim="$(first_line "$WORK/probe.victims.pick")"
   [[ -n "$victim" ]] || fail "mutation harness: no second JSON schema to delete in the probe clone"
   git -C "$CLONE" rm --quiet -- "$victim"
   git -C "$CLONE" commit --quiet -m "probe: delete a frozen schema"
