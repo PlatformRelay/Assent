@@ -140,7 +140,12 @@ echo "OK: D-120 toolDigest note present in CHANGELOG.md and sourced from cliff.t
 echo "== 2. REQ-AUD-S02-02: gates wired into 'task check' =="
 # changelog-verify is this story's gate; the other two are the gates that AUD-S06
 # (D-124) and AUD-S07 shipped green but unwired — this lane owns Taskfile.yml.
-WIRED_TASKS=(changelog-verify docs-gates lint-depguard-test)
+# AUD-S09/S14 adds lint-workflow-pins-test here rather than letting
+# workflow_pins_test.sh assert its own wiring: a gate that checks whether
+# `task check` invokes it is unreachable precisely when the answer is "no".
+# This file is reached through a DIFFERENT check: entry, so it is the only
+# non-self-referential proof available.
+WIRED_TASKS=(changelog-verify docs-gates lint-depguard-test lint-workflow-pins-test)
 for t in "${WIRED_TASKS[@]}"; do
   check_lists_task "$TASKFILE" "$t" \
     || fail "'task check' does not run '$t' — the gate is defined but invoked by nothing"
