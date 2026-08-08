@@ -459,7 +459,8 @@ func (f *fakeGitLab) factory() func(string, string, string) forgePort {
 		if botAuthor != "" {
 			f.botAuthor = botAuthor
 		}
-		return gitlab.New(f.srv.URL, token, botAuthor)
+		return gitlab.New(f.srv.URL, token, botAuthor,
+			gitlab.WithSleeper(func(time.Duration) {}))
 	}
 }
 

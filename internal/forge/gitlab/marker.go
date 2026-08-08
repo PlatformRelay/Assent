@@ -56,6 +56,21 @@ func renderMarker(m forge.Marker) (string, error) {
 	return comment, nil
 }
 
+// markerSkipWarning is the operator-facing sentence recorded on the
+// PublicationReceipt when a BOT-authored artifact's marker payload cannot be
+// decoded (AUD-S12 / REL-06). It names the artifact so the operator can find
+// and delete it, and states plainly that reconcile continued.
+//
+// It embeds the DECODER's error only — never the raw payload — so a corrupted
+// marker cannot smuggle arbitrary text into the run summary, and the string
+// stays deterministic across runs (the receipt is compared byte-for-byte by the
+// determinism gate).
+func markerSkipWarning(kind, id string, err error) string {
+	return fmt.Sprintf(
+		"gitlab: skipped bot %s %s — malformed marker payload (%v); reconcile continued and the artifact was left in place",
+		kind, id, err)
+}
+
 // parseMarker extracts and decodes the ADR-0019 marker from a note body. It
 // returns (marker, true, nil) when a well-formed marker is present, (_, false,
 // nil) when the body carries no marker, and an error only when a marker sentinel

@@ -112,3 +112,42 @@ concerns cannot be superseded independently.
 spec (REQ-P3-E5-S04-01) requires three separately numbered decisions so each can be superseded
 independently later — e.g. a future multi-replica lock protocol must not force rewriting the
 marker grammar.
+
+## Amendment (2026-08-08, AUD-S12 / audit finding REL-06 — malformed-marker resilience)
+
+Decision 2's step 2 ("list paginated bot-authored artifacts") did not say what happens when a
+bot-authored artifact carries the marker sentinel but an **undecodable payload**. The
+implementation returned a hard error, so a single corrupted marker made every subsequent
+reconciliation on that MR fail until a human deleted the note: fail-closed, but it bricked the
+MR, and nothing in this ADR justified that severity.
+
+As of AUD-S12, step 2 **skips** such an artifact — it is treated as not-a-slot-note — records a
+warning, and reconciliation proceeds. Three properties make the skip safe, and they are the
+reason this is an amendment rather than a supersession:
+
+- **Decision 1 is unchanged and load-bearing.** Markers remain correlation metadata only — never
+  decision input, never authorization evidence — so an artifact whose marker could not be read
+  can never approve anything. The worst case is that its slot looks unoccupied.
+- **The author-identity filter is unchanged and still runs FIRST.** A contributor comment is
+  excluded before its marker is examined, so it stays invisible whether its marker is well-formed
+  or corrupt, and it never produces a warning. The spoofing surface is exactly as it was.
+- **The worst case converges — by reuse, NOT by step-8 repair.** Because the skipped artifact is
+  filtered out of the step-2 listing, it is invisible to every later step: it can never present
+  as a *visible* duplicate, so **step 8 never fires for it** and `PublicationReceipt.repairs`
+  stays empty. Convergence comes from the ordinary idempotent reuse path instead, identically for
+  both artifact kinds: run 1 posts exactly one healthy artifact for the slot, and every later run
+  finds and reuses that one — a re-posted thread is matched by (slot, occurrence) and left
+  untouched (step 4), and a re-posted summary note is edited in place (step 3). Either way no
+  second duplicate accumulates. The corrupted artifact itself is deliberately **not** auto-deleted
+  — write minimisation — so it keeps warning until an operator removes it, which is why the
+  warning must be visible.
+
+`PublicationReceipt` therefore gains a top-level `warnings` array of operator-facing strings,
+each naming the skipped artifact. It follows `repairs` exactly: additive, `omitempty`, and
+carried by the receipt schema's top-level `additionalProperties: true`, so no schema change is
+required and no prior receipt changes shape. Entries are deduplicated and sorted (step 9's rescan
+sees the same artifact more than once), which keeps a double run byte-identical. Warnings are
+attached on **every** Reconcile return, including the typed refusals
+(`ErrArmingRefused`/`ErrIncompletePreconditions`/`ErrSHAMoved`) — an unarmed advisory run is the
+default adopter posture, and dropping the warning there would restore the invisibility this
+amendment exists to remove.

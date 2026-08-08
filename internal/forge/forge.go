@@ -309,6 +309,34 @@ type PublicationReceipt struct {
 	Kind       string      `json:"kind"`
 	Operations []Operation `json:"operations"`
 	Repairs    []Repair    `json:"repairs,omitempty"`
+	// Warnings records non-fatal anomalies the forge reported while reconciling
+	// — today only the AUD-S12 malformed-bot-marker skip (finding REL-06). Like
+	// `repairs` it rides on the schema's top-level additionalProperties:true and
+	// is `omitempty`, so every prior receipt stays byte-identical. Entries are
+	// deduplicated and sorted by the adapter so a double run is stable.
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// Warner is the OPTIONAL capability a Forge implementation may add to report
+// non-fatal anomalies observed while listing (AUD-S12 / REL-06). Reconcile
+// copies whatever it returns onto the receipt; an implementation that does not
+// provide it simply reports no warnings.
+type Warner interface {
+	// Warnings returns the deduplicated, sorted anomalies observed so far.
+	Warnings() []string
+}
+
+// warningsOf returns the forge's reported warnings, or nil when it reports none.
+func warningsOf(f Forge) []string {
+	w, ok := f.(Warner)
+	if !ok {
+		return nil
+	}
+	got := w.Warnings()
+	if len(got) == 0 {
+		return nil
+	}
+	return got
 }
 
 const (
@@ -335,17 +363,26 @@ const (
 //   - APPROVE (Approve + Merge set): gated on ArmEligible AND a complete set of
 //     pins AND a compare-and-swap that honours source+target+mergeResultDigest.
 //     Any refusal returns a typed error with ZERO writes.
+//
+// AUD-S12 (REL-06) — WARNINGS RIDE OUT ON EVERY PATH, INCLUDING REFUSALS.
+// A refusal (ErrArmingRefused / ErrIncompletePreconditions / ErrSHAMoved) is an
+// EXPECTED, exit-0, advisory-only outcome — and an unarmed run is the default
+// adopter posture. Returning a bare PublicationReceipt{} there would drop the
+// malformed-marker warning precisely on the path most operators actually take,
+// which is the same invisibility this story exists to remove. Every return
+// below therefore goes through withWarnings; the receipt stays otherwise
+// untouched (no operations are invented on a refusal).
 func Reconcile(f Forge, clock Clocker, desired DesiredReviewState, pre Preconditions) (PublicationReceipt, error) {
 	path, err := reconcilePathOf(desired)
 	if err != nil {
-		return PublicationReceipt{}, err
+		return withWarnings(f, PublicationReceipt{}), err
 	}
 
 	var preambleOps []Operation
 	if desired.Summary != nil {
 		op, err := reconcileSummaryPreamble(f, clock, desired)
 		if err != nil {
-			return PublicationReceipt{}, err
+			return withWarnings(f, PublicationReceipt{}), err
 		}
 		preambleOps = append(preambleOps, op)
 	}
@@ -360,13 +397,19 @@ func Reconcile(f Forge, clock Clocker, desired DesiredReviewState, pre Precondit
 		receipt, err = reconcileApproveMerge(f, clock, desired, pre)
 	}
 	if err != nil {
-		return PublicationReceipt{}, err
+		return withWarnings(f, PublicationReceipt{}), err
 	}
-	if len(preambleOps) == 0 {
-		return receipt, nil
+	if len(preambleOps) > 0 {
+		receipt = receiptOf(append(preambleOps, receipt.Operations...)...)
 	}
-	all := append(preambleOps, receipt.Operations...)
-	return receiptOf(all...), nil
+	return withWarnings(f, receipt), nil
+}
+
+// withWarnings copies the forge's reported anomalies onto a receipt. A
+// zero-warning run leaves the field absent, so no prior receipt changes shape.
+func withWarnings(f Forge, r PublicationReceipt) PublicationReceipt {
+	r.Warnings = warningsOf(f)
+	return r
 }
 
 type reconcilePathKind int

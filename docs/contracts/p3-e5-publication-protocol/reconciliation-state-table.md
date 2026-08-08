@@ -30,6 +30,22 @@ finish": the protocol is idempotent by construction, not by detecting its own pr
    own comment/thread list is the sole durable record; a truncated (unpaginated) listing silently
    reintroduces exactly the missing-state problem a database would have solved, and is
    indistinguishable from data loss.
+
+   **Malformed markers are skipped, not fatal** (AUD-S12 / audit finding REL-06, ADR-0019
+   Amendment 2026-08-08). A bot-authored artifact carrying the marker sentinel with an
+   **undecodable payload** is treated as not-a-slot-note: it is skipped, an operator-facing entry
+   is appended to `PublicationReceipt.warnings`, and reconciliation proceeds. Previously this was
+   a hard error, which bricked the MR until a human deleted the artifact. The skip is safe
+   because markers are correlation metadata only (never decision input), and its worst case
+   converges **by reuse, not by step-8 repair**: the skipped artifact is invisible to this
+   listing, so it can never present as a *visible* duplicate and step 8 never fires for it
+   (`PublicationReceipt.repairs` stays empty). Instead run 1 posts exactly one healthy artifact
+   for the slot and every later run finds and reuses it — a thread via the step-4
+   matching-occurrence no-op, a summary note via step 3's edit-in-place — so no second duplicate
+   accumulates either way. The corrupted artifact is deliberately never auto-deleted (write
+   minimisation), so it keeps warning until an operator removes it. The **author-identity filter
+   still runs before the marker is parsed** — a contributor comment stays invisible whether its
+   marker is well-formed or corrupt, and never produces a warning.
 3. **Update the one summary slot in place.** The per-MR summary (`artifact.kind:
    summary-comment`) is edited in place; it is never re-posted (ADR-0012 amendment 2). Invariant
    protected: **determinism**. Exactly one summary artifact must exist per MR at all times, so a
@@ -110,6 +126,21 @@ Pre-existing duplicates (two-or-more artifacts occupying one slot) are not a six
 table — they are a precondition-violation the table assumes step 8 has already repaired down to
 one canonical artifact per slot before rows 1–5 are evaluated. The repair rule itself is frozen
 above (step 8) and pinned by [`fixtures/duplicate-repair.yaml`](fixtures/duplicate-repair.yaml).
+
+Artifacts with an **undecodable marker payload** are likewise not a sixth row (AUD-S12 / audit
+finding REL-06). Like a contributor-authored comment, they are filtered out during step 2's
+listing, *before* any slot is classified — so the slot they were occupying simply presents as
+row 1 ("no artifact exists for this slot") and takes the ordinary `create` action. That is
+precisely why the worst case is a re-posted slot rather than a wrong decision — and note that
+**step 8 is NOT what resolves it**. Being absent from the listing, the corrupt artifact is never
+a *visible* duplicate, so repair has nothing to act on and `PublicationReceipt.repairs` stays
+empty. Convergence is the ordinary reuse path: run 1 creates one healthy artifact, and every
+later run finds and reuses it (step 4's matching-occurrence no-op for a thread, step 3's
+edit-in-place for a summary note). The skip is recorded in `PublicationReceipt.warnings`, which
+mirrors `repairs` in every respect — an additive, `omitempty` top-level array carried by the
+receipt schema's `additionalProperties: true` (no schema change), deduplicated and sorted so a
+double run stays byte-identical, and attached on **every** Reconcile return including the typed
+refusals, so an unarmed advisory run still tells the operator which artifact to delete.
 
 ## One-publisher-per-MR topology (P3-E5-S03)
 

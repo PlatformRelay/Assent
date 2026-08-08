@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
 )
@@ -11,7 +12,7 @@ import (
 // badClient points at an endpoint that refuses connections, exercising the
 // transport-error branch of do() for every method.
 func badClient() *Client {
-	return New("http://127.0.0.1:0", "tok", botUser)
+	return New("http://127.0.0.1:0", "tok", botUser, WithSleeper(func(time.Duration) {}))
 }
 
 func TestTransportErrors(t *testing.T) {
