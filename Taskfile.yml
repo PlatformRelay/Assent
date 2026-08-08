@@ -32,7 +32,7 @@ tasks:
       - go test -race ./...
 
   coverage:
-    desc: "Coverage gate: >=90% on internal/ (D-010) — arms itself once internal/ has code"
+    desc: "Coverage gate: >=91% on internal/ (D-010, floor raised by D-128) — arms itself once internal/ has code"
     cmds:
       - |
         if ! ls internal/*/*.go >/dev/null 2>&1; then
@@ -40,8 +40,8 @@ tasks:
         fi
         go test -coverprofile=cov.out ./internal/...
         pct=$(go tool cover -func=cov.out | awk '/^total:/ {gsub("%","",$3); print $3}')
-        echo "coverage: ${pct}% (required: 90%)"
-        awk -v p="$pct" 'BEGIN { exit (p+0 >= 90 ? 0 : 1) }' || { echo "FAIL: coverage below 90% (D-010)"; exit 1; }
+        echo "coverage: ${pct}% (required: 91%)"
+        awk -v p="$pct" 'BEGIN { exit (p+0 >= 91 ? 0 : 1) }' || { echo "FAIL: coverage below 91% (D-010, floor raised by D-128)"; exit 1; }
 
   build:
     desc: Build the CLI

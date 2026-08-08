@@ -23,7 +23,7 @@ holds the *how*. Conflicts: ADRs win; update this file via PR when they do.
 ## Testing (D-010)
 
 - TDD: failing test first, always. One logical change per commit; `task check` green before
-  every commit (includes the ≥90% coverage gate on `internal/…`).
+  every commit (includes the ≥91% coverage gate on `internal/…` — D-010, floor raised by D-128).
 - Test at the level that gives the proof: golden decision tests (L0) for engine semantics;
   the adopter harness (L1) for policy behavior; cassettes (L2) for adapters; real GitLab
   (L3, `//go:build e2e`) for forge semantics — never mocks for thread/approval/merge flows.
