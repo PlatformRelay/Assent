@@ -25,6 +25,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # gitleaks scans history
+          persist-credentials: false # AUD-S14 / SEC-03 — nothing in this job pushes
       # AUD-S09 (SEC-04) — pure text gate over .github/workflows/**; no
       # toolchain, so it runs first and fails in seconds.
       - name: workflow supply-chain pins (AUD-S09 — SEC-04)
@@ -97,6 +98,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # AUD-S14 / SEC-03 — the exit-gate scripts build and verify artifacts
+          # locally; none of them pushes, so the token must not stay in .git/config.
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable

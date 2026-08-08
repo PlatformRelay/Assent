@@ -1,0 +1,11 @@
+{
+  "name": "assent-schemas-validator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pinned off-the-shelf JSON Schema Draft 2020-12 validator (ajv-cli) for hack/validate-schemas-stock.sh and the schemas CI job (P3-P1-3 / D-027; SEC-01 lockfile pin).",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "ajv-cli": "5.0.0",
+    "ajv-formats": "3.0.1"
+  }
+}

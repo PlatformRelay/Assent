@@ -15,3 +15,10 @@ updates:
     schedule:
       interval: weekly
     labels: [dependencies]
+  # AUD-S14 / SEC-01: the stock schema validator is lockfile-pinned, so it needs
+  # an updater — an unwatched lockfile is a pin that rots into a stale-CVE pin.
+  - package-ecosystem: npm
+    directory: /hack/schemas-validator
+    schedule:
+      interval: weekly
+    labels: [dependencies]
