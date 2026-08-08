@@ -88,6 +88,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs: renumber this lane's decision row D-129 -> D-131 (D-129/D-130 claimed by the containment lane)
 - :memo: docs(engine): the text-order refusal sentence reaches no adopter surface
 - :memo: docs: record the review close-out for the three non-blocking notes in D-131
+- :memo: docs(engine): narrow the bytes-binding claim to what was verified
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
