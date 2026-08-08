@@ -1,0 +1,4 @@
+metadata:
+  name: orders.events.v1
+partitions: "6"
+retentionMs: 604800000

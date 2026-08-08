@@ -35,6 +35,12 @@ admission object).
 - `facts.<provider>.<output>` and `mr.<field>` are the only two fields with a further-nested,
   provider/forge-defined shape; every other field's shape is fixed by the schemas in this epic
   (`EntryRef`, `Change`, the four matcher-domain shapes).
+- The ordering operators `<`, `<=`, `>`, `>=` compare **numbers**, not text. If an operand
+  actually evaluates to a string — a YAML `!!str` such as `partitions: "12"` stays a string by
+  design — the leaf is an evaluation error (→ `predicate.error` → REVIEW), never a lexical
+  answer (ADR-0013 Amendment 1, D-129). Order quoted numerics with `int(new) >= int(old)` or
+  `double(...)`, and dates with `timestamp(a) < timestamp(b)`. Equality, `in`, and the string
+  functions are unaffected.
 - Adding a field to this table requires a schema-fixture change (a new positive fixture that
   exercises it) — this table and `merge-policy.schema.json`'s `assert`/`cel` `description` stay
   in lockstep by construction, not by convention.

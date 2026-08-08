@@ -105,6 +105,31 @@ judgment (subjective); dependency scores are measured.
   spec with multiple implementations. Swapping *away from CEL* would break authored policies —
   that part of the decision is effectively one-way once packs exist.
 
+## Amendment 1 (2026-08-08, D-129): ordering operators refuse text operands
+
+Residual code risk (1) above — "numeric type coercion YAML/HCL→CEL … highest risk" — turned out
+to have a fail-open in it. CEL defines `<`, `<=`, `>`, `>=` over **strings** as a lexical
+compare, so an ordering leaf silently answers a boolean when its operands bind as text rather
+than numbers, and lexically `"6" >= "12"` is **true**: a quoted `partitions: "12"` → `"6"`
+shrink evaluated `new >= old` to true, proved `non-destructive`, and reached **APPROVE**. The
+converse is equally wrong — a legitimate grow `"6"` → `"12"` evaluated false and **BLOCKed**.
+
+**Amendment: in tier-1 `assert`, an ordering operator whose operand actually evaluates to text
+is an evaluation ERROR, not an answer** (fail-safe direction, GUIDELINES §2: the error routes to
+`predicate.error` → REVIEW). The check is on the value at evaluation time, not on the leaf's
+syntax — whether `new >= old` is sound depends on the adopter's data, so no static check of the
+policy can decide it.
+
+Consequences for authors:
+
+- Ordering **quoted** numerics means coercing first: `int(new) >= int(old)` (already the idiom
+  in this repo's tests), or `double(...)`. Comparing ISO-8601 dates means `timestamp(a) < timestamp(b)`.
+- **Ordering raw text is no longer expressible in tier-1** and graduates to the Rego escape
+  hatch (ADR-0002) — consistent with this ADR's design taste: don't grow a programming language
+  in YAML. No policy in the corpus, the comparison suite, or either dogfood pack ordered text.
+- Equality (`==`/`!=`), membership (`in`), and the string member functions (`startsWith`,
+  `contains`, `matches`, `size`) are exact rather than ordering and are untouched.
+
 ## Counterpoints considered
 
 - *"This isn't real Kyverno syntax, so D-006 is betrayed."* — Strongest objection. Answer:

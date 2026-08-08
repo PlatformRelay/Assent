@@ -20,15 +20,20 @@
 //
 // CEL numeric coercion (constraint c). change.Change.Old/New are the differ's
 // CANONICAL, TAG-DISCRIMINATING STRINGS ("12" for int 12, "\"12\"" for the
-// string "12", "016" kept literal). They are bound to CEL as raw string values;
-// the CEL EXPRESSION's own int()/double() conversions do the coercion. A
-// non-numeric or lossy input makes int()/double() ERROR (empirically verified in
-// cel-go v0.29.2: the error surfaces via BOTH the Eval error slot AND a
-// types.Err result value — this package checks both), which the tri-state routes
-// to REVIEW. We deliberately do NOT strconv-coerce Go-side with a 0/false/""
-// default: that would fail OPEN to APPROVE on a parse failure. A lexical string
-// compare is likewise wrong ("9" > "12" is true lexically), so numeric rules MUST
-// use int()/double() in the `when` expression; the differ doc mandates this.
+// string "12", "016" kept literal). internal/evaldecode INVERTS that render
+// before the engine sees it, so a numeric literal arrives as a json.Number and
+// toCEL binds it as int64/float64 — `new >= old` is a NUMERIC compare and needs
+// no int() in the expression. A non-numeric input to an explicit int()/double()
+// still ERRORS (empirically verified in cel-go: the error surfaces via BOTH the
+// Eval error slot AND a types.Err result value — this package checks both), which
+// the tri-state routes to REVIEW. We deliberately do NOT strconv-coerce Go-side
+// with a 0/false/"" default: that would fail OPEN to APPROVE on a parse failure.
+// A value that is GENUINELY text (a YAML !!str, e.g. `partitions: "12"`) still
+// binds as a string, and a lexical compare over it is wrong in both directions
+// ("6" >= "12" is lexically true, "12" >= "6" lexically false) — so since D-129
+// evalLeaf's textOrderGuard makes an ordering operator over a text operand an
+// EVALUATION ERROR (-> predicate.error -> REVIEW), never an answer. Ordering
+// quoted numerics deliberately means coercing first: int(new) >= int(old).
 //
 // Change-ness signal (constraint d). The PRESENCE of an entry in the ChangeSet is
 // the "this field changed" signal. Old==New string-equal can still be a real
@@ -426,17 +431,27 @@ func bindActivation(cs change.ChangeSet) map[string]any {
 }
 
 // evalRule compiles and evaluates one `when` expression. It returns (satisfied,
-// nil) ONLY when the predicate compiled, evaluated without error, and produced a
-// boolean. Every other outcome — a compile error (undecidable `when`), an eval
-// error (incl. numeric-coercion failure, surfaced via the error slot OR a
-// types.Err value), or a non-boolean result — returns a non-nil error so the
-// caller fails safe to REVIEW. It NEVER returns (true, nil) for a malformed rule.
+// nil) ONLY when the predicate compiled, evaluated without error, produced a
+// boolean, and ordered nothing lexically. Every other outcome — a compile error
+// (undecidable `when`), an eval error (incl. numeric-coercion failure, surfaced
+// via the error slot OR a types.Err value), a non-boolean result, or an ordering
+// operator over a text operand — returns a non-nil error so the caller fails safe
+// to REVIEW. It NEVER returns (true, nil) for a malformed rule.
+//
+// The D-129 textOrderGuard is applied here too, not only in evalLeaf. This
+// walking-skeleton env declares old/new as StringType and binds the differ's RAW
+// canonical strings, so EVERY bare relational here is a lexical compare — the
+// path mandated int()/double() by convention alone, with nothing enforcing it.
+// Guarding both evaluators is deliberate: one evaluation seam left unguarded is
+// how this class of fail-open comes back (the same drift argument that pulled the
+// canonical decoder into internal/evaldecode, D-055c).
 func evalRule(env *cel.Env, activation map[string]any, when string) (bool, error) {
 	ast, iss := env.Compile(when)
 	if iss != nil && iss.Err() != nil {
 		return false, fmt.Errorf("compile when %q: %w", when, iss.Err())
 	}
-	prg, err := env.Program(ast, cel.CostLimit(celCostBudget))
+	guard := newTextOrderGuard(ast)
+	prg, err := env.Program(ast, cel.CostLimit(celCostBudget), cel.CustomDecorator(guard.decorate))
 	if err != nil {
 		return false, fmt.Errorf("program when %q: %w", when, err)
 	}
@@ -448,6 +463,9 @@ func evalRule(env *cel.Env, activation map[string]any, when string) (bool, error
 	// a coercion failure either way — verified empirically); reject both.
 	if out == nil || types.IsError(out) {
 		return false, fmt.Errorf("eval when %q produced an error value", when)
+	}
+	if err := guard.err(); err != nil {
+		return false, fmt.Errorf("eval when %q: %w", when, err)
 	}
 	b, ok := out.Value().(bool)
 	if !ok {
