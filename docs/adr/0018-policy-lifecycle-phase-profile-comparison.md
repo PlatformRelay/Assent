@@ -143,3 +143,28 @@ remains a later operator story.
 **"Fold phase + profiles + comparison into one unnumbered Decision paragraph."** Rejected:
 the three concerns map to D-017 (B2–B4) and must remain independently supersedable — e.g. a
 future multi-writer lock protocol must not force rewriting the phase ceiling semantics.
+
+## Amendment (2026-08-08, D-121 — the corpus digest is algorithm-versioned, not eternal)
+
+The Decision above states that a `PolicyComparisonSuite` pins its corpus by stable `caseId`
++ `replayBundleDigest`, "revise by minting a new `caseId`, never in-place edit". Read
+literally, that made every published digest *value* permanent. It was written to fence one
+specific abuse — silently re-pointing an existing `caseId` at different bundle bytes, which
+would let a corpus entry drift out from under the gates — and that fence stands unchanged.
+
+It did not anticipate a change to the digest *function*. **D-121** made one, once, before
+v1: `compare.ReplayBundleDigest` moved from an undomained `sha256(json.Marshal(decoded))` to
+the domain-separated `assent-jcs-v1` digest — canonical JSON hashed under the replay-bundle
+schema `$id` (ADR-0017 §9) — rendered as bare lowercase hex with no `sha256:` tag, since the
+value is no longer sha256 over bytes. Every pin in `examples/comparison/*/suite.yaml` was
+regenerated in the same commit, with no `caseId` reused or retired and no bundle byte
+changed.
+
+The invariant is therefore restated as: **the corpus identity (`caseId` → bundle bytes) is
+immutable; the digest value is immutable *under a fixed algorithm*.** An algorithm revision
+requires its own logged decision, must regenerate the whole corpus atomically, and must not
+be used as a route to re-point a `caseId`. Stale pins fail closed with a digest mismatch
+before evaluation — the corpus cannot silently degrade.
+
+This amendment corrects the ADR's reach, not its intent; D-114 (which claimed the canonical
+digest the implementation never performed) is superseded by D-121 on that point.

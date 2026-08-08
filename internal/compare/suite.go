@@ -2,14 +2,13 @@ package compare
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
+	"github.com/PlatformRelay/assent/internal/core/hash"
 	"github.com/PlatformRelay/assent/schemas"
 )
 
@@ -40,19 +39,29 @@ type SuiteRunResult struct {
 	Gates   GateEvaluation     `json:"gates"`
 }
 
-// ReplayBundleDigest returns the canonical JSON SHA-256 digest for raw ReplayBundle
-// bytes (sha256:<hex>, D-114). Pure.
+// ReplayBundleDigest returns the domain-separated `assent-jcs-v1` digest of raw
+// ReplayBundle bytes: hash.Digest(<replay-bundle schema $id>, raw), lowercase hex
+// (D-121, ADR-0017 §9).
+//
+// A ReplayBundle is a SCHEMA-OWNED JSON DOCUMENT that consumers re-parse and
+// re-verify, so its digest is over the canonical form of the document in the
+// schema's hash domain — two byte-different but JCS-equivalent encodings of the
+// same bundle pin the same case. This is deliberately NOT the raw `sha256:<hex>`
+// used for BYTE artifacts (`pins.policySha` over policy bytes, the ADR-0019 marker
+// occurrence/decision digests, `pins.toolDigest`), where byte identity is the point
+// and canonicalization would be wrong. The value carries no `sha256:` tag precisely
+// because it is not sha256(bytes).
+//
+// D-121 corrects the D-114 drift: the shipped implementation computed an undomained
+// sha256(json.Marshal(decoded)). Pre-v1 migration regenerated the corpus pins in the
+// same commit; D-113 corpus immutability holds because the algorithm is versioned by
+// the D-121 row, not by the caseId. Pure.
 func ReplayBundleDigest(raw []byte) (string, error) {
-	doc, err := jsonNumberDoc(raw)
+	digest, err := hash.Digest(schemas.ReplayBundleSchemaID, raw)
 	if err != nil {
 		return "", fmt.Errorf("replay-bundle digest: %w", err)
 	}
-	canon, err := json.Marshal(doc)
-	if err != nil {
-		return "", fmt.Errorf("replay-bundle digest: %w", err)
-	}
-	sum := sha256.Sum256(canon)
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
+	return digest, nil
 }
 
 // LoadSuite strict-decodes raw PolicyComparisonSuite JSON against the frozen schema

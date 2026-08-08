@@ -8,7 +8,7 @@ spec:
   candidateProfile: prod-strict@7
   cases:
     - caseId: partition-shrink-wording-only
-      replayBundleDigest: sha256:91061647d8272743e4bcf4238bc7557ac8966f767f293566378d158814457db7
+      replayBundleDigest: 2691ac7fff5730b75d2050d03037cfe6998ee8c9b7d1deccf42c29d2cd6d5152
       description: Leaf message change only — explanation-only delta never trips gates.
   promotionGates:
     - gateId: zero-missed-destructive
