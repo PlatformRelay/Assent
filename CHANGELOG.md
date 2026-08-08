@@ -85,6 +85,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(adr): record the AUD-S12 malformed-marker behaviour change in ADR-0019 (review F3)
 - :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
+- :memo: docs: truth the D-129 checkout residuals, D-130's shadow claim, OQ-28
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -139,6 +140,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :lock: fix(lint): isolate the real CI step, and enforce command_view's scalar precondition (review N5/N6)
 - :lock: fix(provider): contain repo-file reads to a symlink-safe root
 - :lock: fix(provider): load the resource-owner registry from the target ref
+- :lock: fix(provider): fall back to the checkout registry on absence alone
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
@@ -161,6 +163,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
 - :white_check_mark: test(provider): pin the hard error on an unopenable --checkout
 - :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
+- :white_check_mark: test(provider): point the leak scan at the refusal reason
 ## [0.1.0] - 2026-08-05
 
 ### Chores
