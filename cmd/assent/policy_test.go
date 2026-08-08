@@ -6,7 +6,7 @@ import (
 	"github.com/PlatformRelay/assent/internal/change"
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/core/policy"
-	"github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/forge"
 )
 
 // selectBinding routes to the single covering binding and fails CLOSED on zero or
@@ -118,7 +118,7 @@ func TestSubjectOf(t *testing.T) {
 
 // mrFrom threads branch names and MR author from forge Snapshot heads (E4-S06).
 func TestMRFrom(t *testing.T) {
-	mr := mrFrom(gitlab.MRInfo{SourceBranch: "feature", TargetBranch: "main"}, "alice")
+	mr := mrFrom(forge.MRInfo{SourceBranch: "feature", TargetBranch: "main"}, "alice")
 	if mr.SourceBranch != "feature" || mr.TargetBranch != "main" {
 		t.Errorf("mrFrom = %+v, want source=feature target=main", mr)
 	}

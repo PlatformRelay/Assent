@@ -54,13 +54,18 @@ type runConfig struct {
 
 // forgePort is the subset of behaviour `assent run` needs from a forge: the
 // full write port plus orchestration reads (GetMR, FileAtRef, Snapshot, Resolve).
-// The concrete *gitlab.Client satisfies it; tests drive it against an httptest
-// GitLab through the same concrete client (no live network).
+// The GitLab adapter's concrete client satisfies it; tests drive it against an
+// httptest GitLab through the same concrete client (no live network).
+//
+// AUD-S15 (ARCH-02): every type in this port is forge-NEUTRAL — no adapter
+// appears in the signatures, so a second adapter satisfies it without a line
+// changing here. Keep it that way: adding an adapter-named type to this
+// interface is the regression this story exists to remove.
 type forgePort interface {
 	forge.Forge
 	forge.Snapshotter
 	forge.Resolver
-	GetMR(project, mr string) (gitlab.MRInfo, error)
+	GetMR(project, mr string) (forge.MRInfo, error)
 	FileAtRef(project, path, ref string) ([]byte, error)
 }
 
@@ -178,6 +183,13 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		return fmt.Errorf("forge snapshot: %w", err)
 	}
 	mrAuthor := snapshot.Heads.Author
+	// AUD-S15 residue, deliberately left: this is the LAST adapter-named call in
+	// the orchestration path. The merge-digest SCHEME is adapter-owned, so the fix
+	// is not to make it neutral but to stop computing it here — E10 collapses both
+	// call-sites (here and buildDesired) onto snapshot.Heads.MergeResultDigest,
+	// which Snapshot has already computed. Out of scope for the mechanical lift
+	// because it reorders what buildDesired depends on
+	// (docs/planning/design-notes/e10-forge-port-lift.md, step 4).
 	mergeDigest := gitlab.SyntheticDigest(info.SourceSHA, info.TargetSHA)
 	probe := forge.PreconditionFromCapabilities(snapshot.Capabilities)
 
@@ -449,7 +461,7 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 func fileAtRefOrAbsent(client forgePort, project, path, ref string) ([]byte, error) {
 	raw, err := client.FileAtRef(project, path, ref)
 	if err != nil {
-		if errors.Is(err, gitlab.ErrNotFound) {
+		if errors.Is(err, forge.ErrNotFound) {
 			return nil, nil
 		}
 		return nil, err
@@ -502,7 +514,7 @@ func selectBinding(rb *policy.RulesetBinding) (*policy.Binding, error) {
 //
 // facts is the E5-S05 host-resolved envelope (provider → name → Fact). Nil/empty
 // keeps the pre-S05 fail-safe empty map from buildEvaluationInput.
-func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergePolicy, bind *policy.Binding, ceiling policy.Phase, info gitlab.MRInfo, facts map[string]map[string]aggregate.Fact, appr *aggregate.ApprovalContext, mrAuthor string) (aggregate.Result, error) {
+func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergePolicy, bind *policy.Binding, ceiling policy.Phase, info forge.MRInfo, facts map[string]map[string]aggregate.Fact, appr *aggregate.ApprovalContext, mrAuthor string) (aggregate.Result, error) {
 	var res aggregate.Result
 	switch {
 	case subjectClass == classify.ClassAssentPolicy:
@@ -525,7 +537,7 @@ func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergeP
 
 // resolveRunApproval maps a require-review subject + pinned SHAs to forge-proven
 // ApprovalEvidence or an explicit capability gap (never silent APPROVE).
-func resolveRunApproval(client forgePort, cfg runConfig, info gitlab.MRInfo, mergeDigest, mrAuthor string) (*aggregate.ApprovalContext, error) {
+func resolveRunApproval(client forgePort, cfg runConfig, info forge.MRInfo, mergeDigest, mrAuthor string) (*aggregate.ApprovalContext, error) {
 	res, err := client.Resolve(forge.ResolveRequest{
 		Project:           cfg.project,
 		MR:                cfg.mr,
@@ -562,7 +574,7 @@ func resolveRunApproval(client forgePort, cfg runConfig, info gitlab.MRInfo, mer
 
 // mrFrom builds the engine's aggregate.MR from the forge MR metadata plus the
 // MR author (Snapshot heads) for require-review self-approval exclusion.
-func mrFrom(info gitlab.MRInfo, author string) aggregate.MR {
+func mrFrom(info forge.MRInfo, author string) aggregate.MR {
 	return aggregate.MR{
 		Author:       author,
 		SourceBranch: info.SourceBranch,
@@ -653,7 +665,9 @@ func sanitizeSubjects(res aggregate.Result, fallback string) aggregate.Result {
 // NOT from --arm or readPipelineDescription() env vars (D-034/D-074). When the
 // forge probe refuses, Reconcile returns ErrArmingRefused → no write even if
 // --arm was passed.
-func buildDesired(cfg runConfig, info gitlab.MRInfo, subject string, head []byte, result aggregate.Result, recordJSON []byte, armEligible bool, pm decision.PresentationModel, rctx render.Context) (forge.DesiredReviewState, forge.Preconditions) {
+func buildDesired(cfg runConfig, info forge.MRInfo, subject string, head []byte, result aggregate.Result, recordJSON []byte, armEligible bool, pm decision.PresentationModel, rctx render.Context) (forge.DesiredReviewState, forge.Preconditions) {
+	// AUD-S15 residue — see the note at the other SyntheticDigest call-site: E10
+	// collapses both onto the snapshot's already-computed MergeResultDigest.
 	digest := gitlab.SyntheticDigest(info.SourceSHA, info.TargetSHA)
 	desired := forge.DesiredReviewState{Project: cfg.project, MR: cfg.mr}
 
