@@ -95,6 +95,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :lock: fix(release): reject a tag whose only verify run is a pull_request run
 - :lock: fix(run): derive pins.toolDigest from Go build info (D-120)
 - :lock: fix(run): emit the DecisionRecord before forge reconcile (D-122)
+- :lock: fix(compare): domain-separate the replay-bundle digest per D-121 (ARCH-04)
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
@@ -113,6 +114,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :white_check_mark: test(run): pin the emit-before-reconcile invariant on stdout too (D-122)
 - :white_check_mark: test(docs): pin the retired truth-lag claims so they cannot come back (DOC-05/06/09/10/11)
 - :white_check_mark: test(release): pin the CHANGELOG drift gate content, wiring and polarity
+- :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
 ## [0.1.0] - 2026-08-05
 
 ### Chores
