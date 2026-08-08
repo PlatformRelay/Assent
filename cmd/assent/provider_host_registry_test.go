@@ -126,8 +126,10 @@ func TestResourceOwnerRegistryFallsBackToCheckout(t *testing.T) {
 // throttle, a proxy hiccup — would hand the who-may-approve document to the
 // merge request's own head tree, with no error surfaced and no trace in the
 // decision: exactly the shadow D-130 claims is impossible. A broken forge is
-// not an absent file, so it degrades to an error (no client ⇒ the owner fact
-// never resolves ⇒ fail-safe REVIEW), never to a contributor-authored registry.
+// not an absent file, so it degrades to an error — no client, and the error
+// propagates out of resolveRunFacts and aborts the run (no DecisionRecord, no
+// forge write; see TestResourceOwnerRegistryForgeErrorAbortsResolveRunFacts) —
+// never to a contributor-authored registry.
 //
 // Shape note: the 404 variant of this attack is separately mitigated (a
 // whole-file add of the registry folds opaque → REVIEW). The unmitigated shape
