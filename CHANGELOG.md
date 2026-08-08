@@ -142,6 +142,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :lock: fix(forge): make retry-body safety structural, not conventional (review F5)
 - :lock: fix(lint): isolate the real CI step, and enforce command_view's scalar precondition (review N5/N6)
 - :lock: fix(test): report leaked credential names, never their values (review F1/F2)
+- :lock: test(aud-s18): close the schema-freeze baseline disarm the gate left open
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
