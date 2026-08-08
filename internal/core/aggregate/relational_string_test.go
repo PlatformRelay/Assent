@@ -121,6 +121,15 @@ func TestRelationalOverStringOperandsErrors(t *testing.T) {
 		"entry >= oldEntry",          // the scalar-fallback entry binding
 		"string(new) >= string(old)", // an explicit coercion TO string is still text ordering
 		"mr.author < path",           // two unrelated string-typed scope fields
+		// bytes() is the SAME byte-wise lexical compare wearing a different type:
+		// `bytes("6") >= bytes("12")` is true for exactly the reason `"6" >= "12"`
+		// is. Exempting it would re-admit the identical defect through a tier-1
+		// form — the same reasoning that refuses the string(...) coercion above.
+		"bytes(new) >= bytes(old)",
+		"bytes(new) < bytes(old)",
+		`bytes(new) >= b"12"`, // a bytes LITERAL operand is no exemption either
+		`b"6" >= bytes(old)`,
+		"dyn(new) >= dyn(old)", // dyn() does not launder a text operand
 	} {
 		got, err := evalLeaf(env, in, ch, "prod", expr)
 		if err == nil {
@@ -174,6 +183,81 @@ func TestLegitimateComparesStillEvaluate(t *testing.T) {
 		}
 		if got != tc.want {
 			t.Errorf("evalLeaf(%q) = %v, want %v", tc.expr, got, tc.want)
+		}
+	}
+}
+
+// TestOnlyTextShapedOperandsAreRefused is the COMPLETENESS proof behind ADR-0013
+// Amendment 1's universal claim that "ordering raw text is no longer expressible
+// in tier-1". That claim is only true if the guard covers EVERY `<`-comparable
+// type in the frozen predicate scope whose compare is a character/byte-wise sort
+// — so this test enumerates the whole overload surface of `_<_` reachable from
+// newEvalEnv and asserts each type lands in the right bucket:
+//
+//   - text-shaped (string, bytes): REFUSED. bytes is not a theoretical case — it
+//     is the one form that used to slip through, because `bytes(a) < bytes(b)`
+//     performs the identical byte-wise compare as `a < b` (D-131 follow-up).
+//   - genuine orderings (int, uint, double, bool, duration, timestamp): still
+//     evaluate. A guard that errors on everything is not a guard, and
+//     `timestamp(a) < timestamp(b)` is the ADR's own stated migration path for
+//     ISO-8601 dates — it must keep working.
+//   - no `<` overload at all (list, map, type, cross-type numeric): a COMPILE
+//     error, so they need no guard.
+//
+// Mutations that red it: widening textOrderWatch to a legitimate type (add
+// types.Timestamp or types.Int) reds the second bucket; narrowing it back to
+// string only reds the first; and enabling cel.CrossTypeNumericComparisons or a
+// list/sort extension in newEvalEnv reds the third — which is exactly the drift
+// that would silently invalidate the ADR's census.
+func TestOnlyTextShapedOperandsAreRefused(t *testing.T) {
+	env, err := newEvalEnv()
+	if err != nil {
+		t.Fatalf("newEvalEnv: %v", err)
+	}
+	in := *stringScalarInput("12", "6")
+	ch := in.ChangeSet.Changes[0]
+
+	for _, expr := range []string{
+		`"a" < "b"`,
+		`bytes("a") < bytes("b")`,
+		`b"a" < b"b"`,
+	} {
+		if got, err := evalLeaf(env, in, ch, "prod", expr); err == nil {
+			t.Errorf("evalLeaf(%q) = (%v, nil) — a text-shaped ordering must ERROR", expr, got)
+		}
+	}
+
+	for _, tc := range []struct {
+		expr string
+		want bool
+	}{
+		{`1 < 2`, true},
+		{`uint(2) < uint(1)`, false},
+		{`1.5 < 2.5`, true},
+		{`false < true`, true},
+		{`duration("1s") < duration("2s")`, true},
+		// The ADR's stated migration path for ISO-8601 dates.
+		{`timestamp("2026-01-01T00:00:00Z") < timestamp("2026-02-01T00:00:00Z")`, true},
+		{`timestamp("2026-02-01T00:00:00Z") < timestamp("2026-01-01T00:00:00Z")`, false},
+	} {
+		got, err := evalLeaf(env, in, ch, "prod", tc.expr)
+		if err != nil {
+			t.Errorf("evalLeaf(%q) errored: %v — a genuine (non-text) ordering must still evaluate", tc.expr, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("evalLeaf(%q) = %v, want %v", tc.expr, got, tc.want)
+		}
+	}
+
+	for _, expr := range []string{
+		`[1] < [2]`,
+		`{1:1} < {2:2}`,
+		`type(1) < type(2)`,
+		`1 < 2.5`,
+	} {
+		if got, err := evalLeaf(env, in, ch, "prod", expr); err == nil {
+			t.Errorf("evalLeaf(%q) = (%v, nil) — this type pair had NO `<` overload when the census was taken; the guard's completeness claim must be re-derived", expr, got)
 		}
 	}
 }
@@ -278,7 +362,9 @@ func TestLegacyAggregatePathAlsoRefusesTextOrdering(t *testing.T) {
 	}
 	act := map[string]any{"old": "12", "new": "6", "changes": []map[string]string{}}
 
-	for _, expr := range []string{"new >= old", "new < old", "old > new"} {
+	// The bytes rows belong on THIS seam too: one unguarded evaluator is how the
+	// class returns, and that argument applies per-form as much as per-seam.
+	for _, expr := range []string{"new >= old", "new < old", "old > new", "bytes(new) >= bytes(old)", `b"6" >= b"12"`} {
 		if got, err := evalRule(env, act, expr); err == nil {
 			t.Errorf("evalRule(%q) = (%v, nil) — the walking-skeleton path ordered raw canonical text", expr, got)
 		}

@@ -38,9 +38,11 @@ admission object).
 - The ordering operators `<`, `<=`, `>`, `>=` compare **numbers**, not text. If an operand
   actually evaluates to a string — a YAML `!!str` such as `partitions: "12"` stays a string by
   design — the leaf is an evaluation error (→ `predicate.error` → REVIEW), never a lexical
-  answer (ADR-0013 Amendment 1, D-131). Order quoted numerics with `int(new) >= int(old)` or
-  `double(...)`, and dates with `timestamp(a) < timestamp(b)`. Equality, `in`, and the string
-  functions are unaffected.
+  answer (ADR-0013 Amendment 1, D-131). The same holds for a `bytes` operand: `bytes(a) < bytes(b)`
+  is the identical byte-wise sort and is refused too, as is `string(a) < string(b)` — there is no
+  exempt spelling. Order quoted numerics with `int(new) >= int(old)` or `double(...)`, and dates
+  with `timestamp(a) < timestamp(b)`; `duration`, `bool`, `uint` and the other numeric orderings
+  are unaffected. Equality, `in`, and the string functions are unaffected.
 - Adding a field to this table requires a schema-fixture change (a new positive fixture that
   exercises it) — this table and `merge-policy.schema.json`'s `assert`/`cel` `description` stay
   in lockstep by construction, not by convention.

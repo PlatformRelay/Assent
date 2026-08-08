@@ -114,11 +114,11 @@ than numbers, and lexically `"6" >= "12"` is **true**: a quoted `partitions: "12
 shrink evaluated `new >= old` to true, proved `non-destructive`, and reached **APPROVE**. The
 converse is equally wrong — a legitimate grow `"6"` → `"12"` evaluated false and **BLOCKed**.
 
-**Amendment: in tier-1 `assert`, an ordering operator whose operand actually evaluates to text
-is an evaluation ERROR, not an answer** (fail-safe direction, GUIDELINES §2: the error routes to
-`predicate.error` → REVIEW). The check is on the value at evaluation time, not on the leaf's
-syntax — whether `new >= old` is sound depends on the adopter's data, so no static check of the
-policy can decide it.
+**Amendment: in tier-1 `assert`, an ordering operator whose operand actually evaluates to text —
+a CEL `string` or `bytes` value — is an evaluation ERROR, not an answer** (fail-safe direction,
+GUIDELINES §2: the error routes to `predicate.error` → REVIEW). The check is on the value at
+evaluation time, not on the leaf's syntax — whether `new >= old` is sound depends on the
+adopter's data, so no static check of the policy can decide it.
 
 Consequences for authors:
 
@@ -126,7 +126,14 @@ Consequences for authors:
   in this repo's tests), or `double(...)`. Comparing ISO-8601 dates means `timestamp(a) < timestamp(b)`.
 - **Ordering raw text is no longer expressible in tier-1** and graduates to the Rego escape
   hatch (ADR-0002) — consistent with this ADR's design taste: don't grow a programming language
-  in YAML. No policy in the corpus, the comparison suite, or either dogfood pack ordered text.
+  in YAML. There is no exempt spelling: `string(a) < string(b)` and the byte-wise
+  `bytes(a) < bytes(b)` are the same lexical sort as `a < b` and are refused with it. No policy
+  in the corpus, the comparison suite, or either dogfood pack ordered text.
+- The refusal set is exactly CEL's two text-shaped types, `string` and `bytes`. Every other
+  `<`-comparable type in the frozen predicate scope — `int`, `uint`, `double`, `bool`,
+  `duration`, `timestamp` — is a genuine ordering and is untouched; `list`, `map`, `type` and
+  mixed numeric pairs have no `<` overload to begin with. That census is what makes the claim
+  above true rather than merely intended, and a test pins it against env drift.
 - Equality (`==`/`!=`), membership (`in`), and the string member functions (`startsWith`,
   `contains`, `matches`, `size`) are exact rather than ordering and are untouched.
 

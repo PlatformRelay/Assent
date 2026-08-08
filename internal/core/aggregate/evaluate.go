@@ -108,6 +108,17 @@ func evalLeaf(env *cel.Env, in EvaluationInput, ch EvalChange, envLabel, expr st
 //     a wrong `true`. A mixed text/number relational already errors inside cel-go
 //     (no such overload), so it never reaches here.
 //
+// "Text" means BOTH text-shaped CEL types, `string` and `bytes`: the two are the
+// same character/byte-wise sort, so an exemption for either re-admits the
+// identical defect through a tier-1 form (`string(a) < string(b)` and
+// `bytes(a) < bytes(b)` are refused for the same reason `a < b` is). That pair is
+// the complete refusal set, and the completeness is what makes the ADR's claim
+// true: every other `<`-comparable type reachable from newEvalEnv — int, uint,
+// double, bool, duration, timestamp — is a genuine ordering and passes through,
+// and list/map/type/cross-type-numeric have no `<` overload at all. The census is
+// pinned by TestOnlyTextShapedOperandsAreRefused, which reds if the env ever
+// gains a new comparable type.
+//
 // Deliberate ordering stays expressible by coercing first — `int(new) >= int(old)`
 // (already the repo's idiom), `double(...)`, or `timestamp(a) < timestamp(b)` for
 // ISO-8601 dates. Ordering raw text is NOT expressible in tier-1 `assert` and
@@ -125,10 +136,11 @@ type textOrderGuard struct {
 	hit      bool
 }
 
-// relationalOperators are the four CEL operators whose (string, string) overload
-// compares LEXICALLY — the only standard operators that silently turn a text
-// value into an ordering answer. Equality (== / !=), membership (in) and the
-// string member functions are exact, not ordering, and are deliberately excluded.
+// relationalOperators are the four CEL operators whose (string, string) and
+// (bytes, bytes) overloads compare LEXICALLY — the only standard operators that
+// silently turn a text value into an ordering answer. Equality (== / !=),
+// membership (in) and the string member functions are exact, not ordering, and
+// are deliberately excluded.
 var relationalOperators = map[string]string{
 	operators.Less:          "<",
 	operators.LessEquals:    "<=",
@@ -199,8 +211,19 @@ type textOrderWatch struct {
 
 func (w *textOrderWatch) Eval(activation interpreter.Activation) ref.Val {
 	v := w.Interpretable.Eval(activation)
-	if s, isText := v.(types.String); isText {
-		w.guard.record(w.op, string(s))
+	switch t := v.(type) {
+	case types.String:
+		w.guard.record(w.op, string(t))
+	case types.Bytes:
+		// bytes is the same text ordering wearing a different type: CEL compares
+		// bytes byte-by-byte, so `bytes(new) >= bytes(old)` over the quoted shrink
+		// 12 -> 6 answers TRUE for exactly the reason `new >= old` did. Nothing in
+		// the frozen predicate scope BINDS bytes (toCEL emits only numbers,
+		// strings, bools, lists and maps), so every bytes value here came from an
+		// explicit bytes(...) call or a b"..." literal — i.e. from text. Exempting
+		// it would leave a tier-1 form that orders text, which is precisely what
+		// ADR-0013 Amendment 1 says is no longer expressible.
+		w.guard.record(w.op, string(t))
 	}
 	return v
 }
