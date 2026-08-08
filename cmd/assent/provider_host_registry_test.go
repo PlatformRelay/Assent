@@ -256,6 +256,101 @@ func TestResolveRunFactsFailsLoudlyOnUnopenableCheckout(t *testing.T) {
 	}
 }
 
+// resourceOwnerDeclarationJSON is the host-owned declaration (D-065) that wires
+// the `builtin/resource-owner` provider to a registry path — the only shape that
+// reaches loadResourceOwnerRegistry from resolveRunFacts.
+const resourceOwnerDeclarationJSON = `{
+  "name": "owner",
+  "requests": {"values": {"pointers": []}},
+  "resourceOwner": {"registry": "governance/owners.yaml"},
+  "outputs": {
+    "team": {
+      "type": "string",
+      "cardinality": "single",
+      "subject": "entry",
+      "sensitive": false,
+      "maxAge": "1h"
+    }
+  }
+}`
+
+// configOwnerResourceOwner configures the controlling `owner` provider as the
+// resource-owner builtin. No example, exit gate or run test configured this type
+// before, which is why the wiring below was correct but unproven.
+const configOwnerResourceOwner = `apiVersion: assent.dev/v1alpha1
+kind: Config
+environments:
+  - name: prod
+    match: { paths: ["topics/**"] }
+classes:
+  - name: topic-registry
+    match: { paths: ["topics/**.yaml"] }
+providers:
+  owner:
+    type: builtin/resource-owner
+    failure: closed
+`
+
+// registry503Port is the whole forge with ONE read broken: the ownership
+// registry answers 503, everything else (the host declaration included) answers
+// normally. That is the live shape of a flaky forge, which a stub covering only
+// loadResourceOwnerRegistry cannot express.
+type registry503Port struct {
+	forgePort
+	regPath string
+}
+
+func (c registry503Port) FileAtRef(project, p, ref string) ([]byte, error) {
+	if p == c.regPath {
+		return nil, brokenForge(p, ref, 503)
+	}
+	return c.forgePort.FileAtRef(project, p, ref)
+}
+
+// TestResourceOwnerRegistryForgeErrorAbortsResolveRunFacts — the wiring the unit
+// tests cannot see: providerCallFor → loadResourceOwnerRegistry → resolveRunFacts.
+//
+// TestResourceOwnerRegistryTransientForgeErrorNeverFallsBackToCheckout pins the
+// LOADER's refusal; nothing pinned that the refusal actually leaves the host, and
+// providerCallFor's resource-owner branch is the one arm no cmd-level test ever
+// entered. Drop the error there (`return nil, err` → `return nil, nil`) and the
+// provider is silently skipped: the run continues with an empty fact map and the
+// forge failure is never mentioned. This test reds on exactly that mutation.
+func TestResourceOwnerRegistryForgeErrorAbortsResolveRunFacts(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.config = configOwnerResourceOwner
+	f.providerDecls = map[string]string{"owner": resourceOwnerDeclarationJSON}
+	client := registry503Port{
+		forgePort: f.factory()("", "tok", "assent-bot"),
+		regPath:   "governance/owners.yaml",
+	}
+
+	conf, err := policy.LoadConfig([]byte(configOwnerResourceOwner))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The checkout carries a registry the MR rewrote: if the 503 opened the
+	// fallback here, `attacker` would become the who-may-approve authority.
+	poisoned := ownersTree(t, "attacker")
+
+	facts, resolvedAt, err := resolveRunFacts(
+		context.Background(), conf, ".assent/config.yaml", client,
+		"42", "main", poisoned, "file:topics/orders.yaml", time.Now().UTC(),
+	)
+	if err == nil {
+		t.Fatalf("a 503 on the ownership registry must abort fact resolution; "+
+			"got facts=%v resolvedAt=%v", facts, resolvedAt)
+	}
+	if !strings.Contains(err.Error(), `provider "owner"`) || !strings.Contains(err.Error(), "503") {
+		t.Fatalf("error %q must name the provider and carry the forge's own failure", err)
+	}
+	// Fail-closed shape: no partial fact map escapes beside the error, so no
+	// caller can evaluate a provider-configured policy on an empty Facts map.
+	if facts != nil || resolvedAt != nil {
+		t.Fatalf("error path must return no facts; got %v / %v", facts, resolvedAt)
+	}
+}
+
 // TestProviderHostRepoFileContractDocumented pins that the FS the cmd edge injects
 // really is a symlink-safe root and not a bare os.DirFS: an escaping symlink read
 // through it must fail, whatever the builtin does on top.
