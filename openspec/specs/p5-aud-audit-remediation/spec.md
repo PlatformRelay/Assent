@@ -913,3 +913,89 @@ with:
 ```json
 "description": "Deterministic build-content proxy for the evaluating tool: sha256 over the binary's canonical Go build info (module path/version/sum, dependency checksums, VCS revision + dirty flag) per D-120 (OQ-9 replayability). Falls back to sha256(\"buildinfo-unavailable\\n\"+toolVersion) when build info is absent. Records emitted by pre-D-120 builds carry sha256 of toolVersion only."
 ```
+
+---
+
+## Appendix B — 2026-08-06 audit finding → disposition table (AUD-S18)
+
+**This table is the authority REQ-AUD-S18-02 checks.** `hack/audit/exitgate_test.sh` carries the
+canonical list of finding IDs and asserts this table has exactly one row per ID, that every `Done`
+row names a story heading and REQ IDs that exist in this spec, that every `Operator` row names a
+row that exists in `openspec/specs/backlog.md`, and that every `Accepted` row names a decision row
+that exists in `docs/decisions/decisions.md` and mentions that finding.
+
+**Derivation of the 37 IDs** (the audit file `agent-context/PROJECT-AUDIT-2026-08-06.md` is
+session-local and gitignored, so the gate's embedded list is the in-tree authority — this paragraph
+is how a future reader re-derives it): every ID named in that audit's *Findings — P1*, *Findings —
+P2 (deduplicated)* and *Findings — P3 (grouped)* sections, PLUS every ID its *Prior findings
+disposition* table re-marked "still open" or "accepted" at `e668d0e` (SEC-02, DOC-04, A-01). Prior
+IDs the same table marked **fixed** (REL-02, REL-05, DOC-01, DOC-02, RELSE-02, RELSE-03, RELSE-04)
+are deliberately NOT rows here: they map to none of the three dispositions, having been closed
+before this epic opened. The coordinator-hygiene note (stale `lane-*` worktrees) carries no finding
+ID and is `/handover` work, not a story.
+
+**Disposition vocabulary** — exactly three tokens:
+- `Done` — closed by a story in this epic. Owner = the `AUD-Snn` story; Evidence = its REQ IDs.
+- `Operator` — fenced out of the epic because it is a live GitHub setting or secret. Owner = the
+  backlog residual row that tracks it.
+- `Accepted` — deliberately not fixed. Owner = the decision row that logs the acceptance.
+
+**Scope statement — what this table and its gate do NOT certify.** This is the exit gate for the
+**2026-08-06** audit only. It says nothing about defects found after that audit. Two decision-path
+fail-opens found during this epic's own execution are tracked in
+[open-questions.md](../../../docs/planning/open-questions.md) and **block the release tag
+independently of this table**; see *Post-audit release blockers* below. A green run of
+`hack/audit/exitgate_test.sh` means "the audit's conditions are closed and the epic's bar holds" —
+it does **not** mean "all known fail-opens are closed" and it is **not** a release clearance.
+
+| Finding | Sev | Disposition | Owner | Evidence |
+| --- | --- | --- | --- | --- |
+| REL-07 | P1 | Done | AUD-S01 | REQ-AUD-S01-01 REQ-AUD-S01-02 REQ-AUD-S01-03 REQ-AUD-S01-04 |
+| RELSE-01 | P2 | Done | AUD-S02 | REQ-AUD-S02-01 REQ-AUD-S02-02 |
+| RELSE-05 | P2 | Done | AUD-S03 | REQ-AUD-S03-01 REQ-AUD-S03-02 |
+| ARCH-03 | P2 | Done | AUD-S04 | REQ-AUD-S04-01 REQ-AUD-S04-02 |
+| DOC-08 | P2 | Done | AUD-S05 | REQ-AUD-S05-01 REQ-AUD-S05-02 |
+| DOC-05 | P3 | Done | AUD-S06 | REQ-AUD-S06-02 |
+| DOC-06 | P2 | Done | AUD-S06 | REQ-AUD-S06-02 |
+| DOC-07 | P2 | Done | AUD-S06 | REQ-AUD-S06-01 |
+| DOC-09 | P2 | Done | AUD-S06 | REQ-AUD-S06-02 |
+| DOC-10 | P3 | Done | AUD-S06 | REQ-AUD-S06-02 |
+| DOC-11 | P3 | Done | AUD-S06 | REQ-AUD-S06-02 |
+| ARCH-01 | P2 | Done | AUD-S07 | REQ-AUD-S07-01 REQ-AUD-S07-02 |
+| REL-08 | P3 | Done | AUD-S08 | REQ-AUD-S08-01 REQ-AUD-S08-02 |
+| SEC-04 | P3 | Done | AUD-S09 | REQ-AUD-S09-01 |
+| REL-03 | P3 | Done | AUD-S10 | REQ-AUD-S10-01 REQ-AUD-S10-02 |
+| SEC-08 | P3 | Done | AUD-S10 | REQ-AUD-S10-01 |
+| REL-04 | P3 | Done | AUD-S11 | REQ-AUD-S11-01 REQ-AUD-S11-02 |
+| REL-06 | P3 | Done | AUD-S12 | REQ-AUD-S12-01 REQ-AUD-S12-02 |
+| TEST-02 | P3 | Done | AUD-S13 | REQ-AUD-S13-01 |
+| TEST-05 | P3 | Done | AUD-S13 | REQ-AUD-S13-02 |
+| TEST-06 | P3 | Done | AUD-S13 | REQ-AUD-S13-03 |
+| TEST-03 | P3 | Done | AUD-S13 | REQ-AUD-S13-04 |
+| SEC-01 | P3 | Done | AUD-S14 | REQ-AUD-S14-01 |
+| SEC-03 | P3 | Done | AUD-S14 | REQ-AUD-S14-02 |
+| ARCH-02 | P3 | Done | AUD-S15 | REQ-AUD-S15-01 REQ-AUD-S15-02 |
+| ARCH-04 | P3 | Done | AUD-S16 | REQ-AUD-S16-01 REQ-AUD-S16-02 |
+| ARCH-05 | P3 | Done | AUD-S17 | REQ-AUD-S17-01 |
+| SEC-05 | P2 | Operator | AUD-OPS | rotate `HOMEBREW_TAP_GITHUB_TOKEN` to a fine-grained PAT (live repo secret) |
+| SEC-06 | P3 | Operator | AUD-OPS | tag ruleset on `v*.*.*` (live GitHub ruleset) |
+| RELSE-07 | P3 | Operator | AUD-OPS | branch protection `enforce_admins` on `main` (live GitHub setting) |
+| RELSE-08 | P3 | Operator | AUD-RELSE-08 | make `release-exitgate` a required PR check (live branch protection) |
+| SEC-02 | P3 | Accepted | D-131 | check-gap compensated by the four required CI contexts |
+| SEC-07 | P3 | Accepted | D-131 | in-place asset replacement; patch-tag runbook line landed in AUD-S06 |
+| TEST-04 | P3 | Accepted | D-131 | `cmd/assent` outside the D-010 denominator; compensated by binary dogfood gates |
+| DOC-03 | P3 | Accepted | D-131 | globally-gitignored operator-local `AGENTS.md`; not in the tree |
+| DOC-04 | P3 | Accepted | D-131 | planning docs out of the public nav by design |
+| A-01 | P3 | Accepted | D-131 | glob recompile; no hot-path evidence (E3) |
+
+### Post-audit release blockers (NOT 2026-08-06 findings — outside this table's disposition)
+
+Found during this epic's execution, after the audit anchor. They are **not** audit findings, so they
+are not rows above; they **are** tag blockers, so the exit gate names them and refuses to be read as
+release clearance. The gate asserts this section exists, that each row cites an `OQ-<n>` that
+resolves in `docs/planning/open-questions.md`, and that each carries a status token.
+
+| Defect | Question | Status |
+| --- | --- | --- |
+| A relational CEL leaf over string-bound operands returns a silently wrong boolean instead of erroring (verified BLOCK→APPROVE flip on quoted YAML scalars) | OQ-27 | OPEN — dedicated decision-path lane |
+| `builtin/repo-file` enforces path containment but not filesystem containment: a symlink under a declared root yields facts from outside the roots | OQ-28 | OPEN — dedicated provider lane |

@@ -16,8 +16,15 @@ permissions:
 # that it is a literal vX.Y.Z, and that every `cmd/task@` site interpolates it.
 # (That gate bans the floating-tag token outright, comments included — hence the
 # wording here.)
+# AUD-S18 / D-128 precedent: golangci-lint is now needed in TWO jobs — the verify
+# job lints through the action, and release-exitgate needs the BINARY on PATH
+# because `task check` (which the audit exit gate runs) includes `task lint` and
+# `lint-depguard-test`, and the action leaves nothing on PATH for a later step
+# (D-125). Single-sourced here for the same reason TASK_VERSION is: two literals
+# is how the coverage floor skewed.
 env:
   TASK_VERSION: v3.52.0
+  GOLANGCI_LINT_VERSION: v2.12.2
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -38,7 +45,9 @@ jobs:
       - name: golangci-lint (incl. gosec)
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.12.2 # matches the v2 config schema in .golangci.yml
+          # Single-sourced with release-exitgate's `go install` (workflow env
+          # GOLANGCI_LINT_VERSION); matches the v2 config schema in .golangci.yml.
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
       # Scope to HEAD history only — fetch-depth:0 still downloads sibling lane refs;
@@ -96,9 +105,19 @@ jobs:
   release-exitgate:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # AUD-S18: this job now also runs the audit exit gate, which runs a full
+    # `task check` plus the determinism double-run. Bounded so a hung gate does
+    # not sit on a runner for six hours.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # AUD-S18: the audit exit gate's schema-freeze check is REF-RELATIVE —
+          # it diffs schemas/**/*.json against the immutable v0.1.0 tag, because
+          # a working-tree diff is silent on committed schema changes (D-131).
+          # A shallow checkout has no tags, so the gate would be unable to
+          # resolve its baseline and would fail closed.
+          fetch-depth: 0
           # AUD-S14 / SEC-03 — the exit-gate scripts build and verify artifacts
           # locally; none of them pushes, so the token must not stay in .git/config.
           persist-credentials: false
@@ -114,5 +133,19 @@ jobs:
           enable-cache: true
       - name: install Task
         run: go install github.com/go-task/task/v3/cmd/task@"${TASK_VERSION}"
+      # AUD-S18: `task check` runs `task lint` and `lint-depguard-test`, both of
+      # which need the golangci-lint BINARY on PATH. The verify job lints via the
+      # action, which leaves nothing behind for a later step (D-125), so the exit
+      # gate needs its own pinned install. Version single-sourced at workflow level.
+      - name: install golangci-lint (AUD-S18 — task check needs it on PATH)
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@"${GOLANGCI_LINT_VERSION}"
       - name: E9 release exit gate (RELSE-03 — REQ-E9-S13)
         run: bash hack/release/exitgate_test.sh
+      # AUD-S18 (REQ-AUD-S18-01/02) — the P5-AUD exit gate: the 2026-08-06 audit's
+      # conditions closed, all 14 `task check` stages green, coverage at the raised
+      # bar, the frozen JSON schemas unchanged against the v0.1.0 tag, and every
+      # audit finding dispositioned. Invoked with NO arguments on purpose:
+      # `--text-only` skips the toolchain layer, and the gate's own CI-wiring check
+      # reds if this line ever grows an argument, an `if:` or a `continue-on-error:`.
+      - name: AUD audit exit gate (AUD-S18 — REQ-AUD-S18-01/02)
+        run: bash hack/audit/exitgate_test.sh
