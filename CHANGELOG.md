@@ -26,6 +26,20 @@ unchanged — records published with `v0.1.0` remain schema-valid — but the *v
 comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 record means
 "derived differently", not "different build".
 
+- **Every `replayBundleDigest` changes value after `v0.1.0` (D-121).** The comparison corpus
+published at `v0.1.0` pins each case with an undomained `sha256:<hex>` over the re-marshalled
+bundle. D-121 codifies the byte-vs-document split: a `ReplayBundle` is a schema-owned JSON
+*document* that consumers re-parse and re-verify, so its digest is now the domain-separated
+`assent-jcs-v1` digest — canonical JSON hashed under the replay-bundle schema `$id`
+(ADR-0017 §9) — rendered as bare lowercase hex with no `sha256:` tag, because the value is no
+longer sha256 over bytes and must not claim to be. Digests over BYTE artifacts are unaffected
+and stay raw `sha256:<hex>`: `pins.policySha`, `pins.toolDigest`, and the ADR-0019 marker
+occurrence/decision digests. **Action required if you pinned, cached, or recomputed a
+`replayBundleDigest`: regenerate it.** A stale pin does not silently pass — `assent compare
+--suite` rejects it with a fail-closed digest mismatch before any evaluation runs. The corpus
+identity itself is unchanged: no `caseId` was reused or retired and no bundle byte changed, so
+D-113 immutability holds — only the algorithm computing the pin moved, versioned by D-121.
+
 ## Unreleased
 
 ### Chores
@@ -64,6 +78,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :memo: docs(decisions): record D-125 — CHANGELOG drift gate placement and its cost
 - :memo: docs(release): the changelog drift gate is in task check now, not outside it
 - :memo: docs(changelog): name the second toolDigest fallback branch
+- :memo: docs(compare): state the D-121 digest change where consumers will read it
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
