@@ -86,6 +86,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
 - :memo: docs: truth the D-129 checkout residuals, D-130's shadow claim, OQ-28
+- :memo: docs: point the OQ-28 decision-log link at docs/decisions/
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
