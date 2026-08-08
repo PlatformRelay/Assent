@@ -78,10 +78,10 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(decisions): record D-125 — CHANGELOG drift gate placement and its cost
 - :memo: docs(release): the changelog drift gate is in task check now, not outside it
 - :memo: docs(changelog): name the second toolDigest fallback branch
+- :memo: docs(compare): state the D-121 digest change where consumers will read it
 - :memo: docs(architecture): redraw the C4 diagrams from the real go list graph (AUD-S17)
 - :memo: docs: mark the rego backend and GitHub adapter as planned outside the C4 pages
 - :memo: docs: narrow the composition-root claim and hedge the planned modes in vision.md
-- :memo: docs(compare): state the D-121 digest change where consumers will read it
 - :memo: docs(adr): record the AUD-S12 malformed-marker behaviour change in ADR-0019 (review F3)
 - :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
@@ -98,9 +98,9 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :bug: docs(readme): point the ADR-0014 link at the file that exists (DOC-05)
 - :bug: fix(docs-gates): the scripts claimed a wiring that does not exist
 - :bug: docs(examples): starter packs advertised a subcommand that does not exist
-- :bug: fix(release): stop stripping the changelog header from the GitHub Release body
 - :bug: fix(forge): treat an over-limit body as deterministic, not retryable (AUD-S10 x S11)
 - :bug: fix(forge): carry reconcile warnings on refusal paths too (review F1)
+- :bug: fix(release): stop stripping the changelog header from the GitHub Release body
 
 ### Other
 - :construction_worker: ci(lint): depguard deny-rules for the D-123 pure tree (REQ-AUD-S07-01)
@@ -115,6 +115,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :ambulance: fix(forge): skip malformed bot markers with a warning instead of bricking reconcile (AUD-S12, REL-06)
 - :test: test(provider): add the at-limit boundary control that kills the surviving mutant (review F2)
 - Merge remote-tracking branch 'origin/main' into lane/aud-s10-s12-forge-hardening
+- Merge remote-tracking branch 'origin/main' into lane/fix-provider-symlink-containment
 
 ### Refactoring
 - :recycle: fix(forge): retry idempotent GitLab reads with bounded jittered backoff (AUD-S11, REL-04)
@@ -126,16 +127,18 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :lock: fix(release): reject a tag whose only verify run is a pull_request run
 - :lock: fix(run): derive pins.toolDigest from Go build info (D-120)
 - :lock: fix(run): emit the DecisionRecord before forge reconcile (D-122)
+- :lock: fix(compare): domain-separate the replay-bundle digest per D-121 (ARCH-04)
+- :lock: fix(test): report leaked credential names, never their values (review F1/F2)
+- :lock: fix(forge): bound response reads and cap pagination loops (AUD-S10, REL-03/SEC-08)
+- :lock: fix(forge): make retry-body safety structural, not conventional (review F5)
 - :lock: security(ci): pin the Task version in verify.yaml via a single workflow env (AUD-S09 / SEC-04)
 - :lock: security(ci): lockfile-pin the ajv validator and scrub checkout credentials (AUD-S14 / SEC-01 + SEC-03)
 - :lock: fix(lint): close the comment-blind fail-opens in the workflow-pin gate (review F1/F3/F4/F5/F6)
 - :lock: security(deps): override fast-json-patch to ^3.1.1, clearing GHSA-8gh8-hqwg-xf34 (review F2)
 - :lock: fix(lint): match what EXECUTES, not what the line mentions (review N1/N2/N4)
-- :lock: fix(compare): domain-separate the replay-bundle digest per D-121 (ARCH-04)
-- :lock: fix(forge): bound response reads and cap pagination loops (AUD-S10, REL-03/SEC-08)
-- :lock: fix(forge): make retry-body safety structural, not conventional (review F5)
 - :lock: fix(lint): isolate the real CI step, and enforce command_view's scalar precondition (review N5/N6)
-- :lock: fix(test): report leaked credential names, never their values (review F1/F2)
+- :lock: fix(provider): contain repo-file reads to a symlink-safe root
+- :lock: fix(provider): load the resource-owner registry from the target ref
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
@@ -154,9 +157,10 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(run): pin the emit-before-reconcile invariant on stdout too (D-122)
 - :white_check_mark: test(docs): pin the retired truth-lag claims so they cannot come back (DOC-05/06/09/10/11)
 - :white_check_mark: test(release): pin the CHANGELOG drift gate content, wiring and polarity
-- :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
-- :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
 - :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
+- :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
+- :white_check_mark: test(provider): pin the hard error on an unopenable --checkout
+- :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
 ## [0.1.0] - 2026-08-05
 
 ### Chores
