@@ -84,9 +84,42 @@ func hostSecretValues() map[string]bool {
 	return out
 }
 
+// MaxResponseBytes bounds how much of an HTTP provider response is read
+// (AUD-S10, audit findings REL-03 / SEC-08). A provider is off-box and only as
+// trustworthy as the operator who declared it; an unbounded io.ReadAll lets a
+// hostile or broken endpoint exhaust the runner's memory.
+//
+// 8 MiB is MB-order and generously above legitimate traffic: a FactSet is a
+// handful of scalar/array fact values — KB-order in every shipped example and
+// in the conformance corpus — so the bound is invisible to real providers.
+//
+// FAIL-CLOSED: exceeding the bound is an ERROR, never a truncated read. A
+// truncated prefix that happened to parse would become a "resolved" fact
+// derived from half a document; ResolveFacts instead classifies the error as
+// unavailable, which keeps auto-merge disarmed.
+const MaxResponseBytes = 8 << 20
+
+// readBounded reads at most limit bytes from r and errors if the source has
+// MORE than limit bytes to give. It reads limit+1 bytes precisely so that
+// "exactly at the limit" stays legitimate traffic while limit+1 is refused; the
+// partially-read bytes are DISCARDED (nil is returned with the error) so no
+// caller can accidentally parse a truncated document.
+func readBounded(r io.Reader, limit int64) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, fmt.Errorf("response body exceeds the %d-byte limit — refusing to parse a truncated response", limit)
+	}
+	return raw, nil
+}
+
 // CallHTTP posts the FactQuery to an HTTP provider and returns the raw body.
 // Caller-enforced timeout via context; errors (incl. deadline) surface to
-// ResolveFacts as unavailable (REQ-E5-S03-04).
+// ResolveFacts as unavailable (REQ-E5-S03-04). The response read is BOUNDED at
+// MaxResponseBytes (AUD-S10 / REL-03 / SEC-08) — an over-limit body is an
+// error, never a truncated parse.
 func CallHTTP(ctx context.Context, url string, q FactQuery, timeout time.Duration) ([]byte, error) {
 	body, err := json.Marshal(q)
 	if err != nil {
@@ -104,7 +137,7 @@ func CallHTTP(ctx context.Context, url string, q FactQuery, timeout time.Duratio
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	return io.ReadAll(resp.Body)
+	return readBounded(resp.Body, MaxResponseBytes)
 }
 
 // CallExec runs an exec provider with the FactQuery on stdin, a scrubbed

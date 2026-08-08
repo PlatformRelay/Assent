@@ -306,11 +306,21 @@ func (c *Client) probeCapabilities(project, mr string) (forge.CapabilityFlags, e
 
 // hasApprovalRulesAPI probes GET .../approval_rules with pagination. A 404 or 403
 // fail-safes to false (Free tier — no invented Premium features).
+//
+// The loop is CAPPED at maxListPages (AUD-S10 / REL-03). The cap is an ERROR,
+// deliberately NOT the 404/403 Free-tier fail-safe: a paginator that never
+// shortens is a forge anomaly, not evidence that the instance lacks the
+// approval-rules API. Erroring aborts the run with zero forge writes, which is
+// strictly safer than the previous unbounded spin.
 func (c *Client) hasApprovalRulesAPI(project, mr string) (bool, error) {
-	page := 1
-	for {
-		path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/approval_rules?per_page=100&page=%d",
-			url.PathEscape(project), url.PathEscape(mr), page)
+	for page := 1; ; page++ {
+		if page > maxListPages {
+			return false, fmt.Errorf(
+				"gitlab: probe approval rules %s!%s: pagination cap of %d pages reached without a short page",
+				project, mr, maxListPages)
+		}
+		path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/approval_rules?per_page=%d&page=%d",
+			url.PathEscape(project), url.PathEscape(mr), listPerPage, page)
 		status, raw, err := c.do(http.MethodGet, path, nil, "")
 		if err != nil {
 			return false, err
@@ -337,10 +347,9 @@ func (c *Client) hasApprovalRulesAPI(project, mr string) (bool, error) {
 					return true, nil
 				}
 			}
-			if len(rules) < 100 {
+			if len(rules) < listPerPage {
 				return false, nil
 			}
-			page++
 		default:
 			return false, fmt.Errorf("gitlab: get approval rules %s!%s: unexpected status %d", project, mr, status)
 		}

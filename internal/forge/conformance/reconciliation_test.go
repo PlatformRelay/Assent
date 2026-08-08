@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/PlatformRelay/assent/internal/core/decision"
 	"github.com/PlatformRelay/assent/internal/forge"
@@ -365,7 +366,8 @@ func (h *gitlabHarness) client(t interface {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(h.handle))
 	t.Cleanup(srv.Close)
-	return gitlab.New(srv.URL, "test-token", h.botAuthor)
+	return gitlab.New(srv.URL, "test-token", h.botAuthor,
+		gitlab.WithSleeper(func(time.Duration) {}))
 }
 
 func (h *gitlabHarness) handle(w http.ResponseWriter, r *http.Request) {
@@ -805,6 +807,99 @@ func TestConformanceSpoofedMarkerIgnored(t *testing.T) {
 		}
 		if len(threads) != 1 || threads[0].Author != botID {
 			t.Fatalf("only bot-authored thread counts, got %+v", threads)
+		}
+	})
+}
+
+// seedRaw seeds a discussion with a VERBATIM body — used to plant a corrupted
+// marker that h.seed (which renders a valid envelope) could never produce.
+func (h *gitlabHarness) seedRaw(id, author, body string) {
+	h.discussions = append(h.discussions, gitlabDiscussion{id: id, body: body, author: author})
+}
+
+// corruptMarkerBody carries the real marker SENTINEL with a payload the regexp
+// extracts but the decoder rejects — the REL-06 corruption.
+func corruptMarkerBody() string {
+	return "<!-- " + render.MarkerSentinel + ` {"slot": 12345} -->` + "\n\nbody"
+}
+
+// TestSpoofedMarkerStillIgnored — REQ-AUD-S12-02 (spoof half). The AUD-S12
+// skip-with-warning change must NOT weaken the ADR-0019 author-identity filter.
+// The filter runs BEFORE the marker is parsed, so a CONTRIBUTOR note is
+// invisible whether its marker is perfect or garbage, and it never reaches the
+// warning channel.
+//
+// The bot sub-case is the POSITIVE CONTROL: with an identical corrupt body but
+// a bot author, a warning DOES appear. If someone ever moves parseMarker above
+// the author check, the contributor cases start warning and this test reds.
+func TestSpoofedMarkerStillIgnored(t *testing.T) {
+	m := rerunCommentMarker()
+
+	for _, tc := range []struct {
+		name string
+		body func(t *testing.T) string
+	}{
+		{
+			name: "contributor/well-formed-marker",
+			body: func(t *testing.T) string {
+				t.Helper()
+				body, err := render.Envelope(m, "spoof")
+				if err != nil {
+					t.Fatal(err)
+				}
+				return body
+			},
+		},
+		{
+			name: "contributor/malformed-marker",
+			body: func(*testing.T) string { return corruptMarkerBody() },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newGitLabHarness(m.Slot.Project, m.Slot.MR)
+			h.seedRaw("note/6660", "contributor-mallory", tc.body(t))
+			c := h.client(t)
+
+			threads, err := c.ListBotThreads(m.Slot.Project, m.Slot.MR)
+			if err != nil {
+				t.Fatalf("a contributor note must never fail the listing: %v", err)
+			}
+			if len(threads) != 0 {
+				t.Fatalf("contributor note must be invisible, got %+v", threads)
+			}
+			if got := c.Warnings(); len(got) != 0 {
+				t.Fatalf("a contributor note must never reach the warning channel "+
+					"(the author filter runs BEFORE parseMarker), got %v", got)
+			}
+
+			receipt, err := forge.Reconcile(c, testClock(), desiredThreadFor(m, nil), forge.Preconditions{})
+			if err != nil {
+				t.Fatalf("Reconcile: %v", err)
+			}
+			if h.createCalls != 1 {
+				t.Fatalf("the spoof must not satisfy the slot; createCalls=%d, want 1", h.createCalls)
+			}
+			if len(receipt.Warnings) != 0 {
+				t.Fatalf("receipt must carry no warnings for a contributor note, got %v", receipt.Warnings)
+			}
+		})
+	}
+
+	t.Run("bot/malformed-marker-does-warn", func(t *testing.T) {
+		h := newGitLabHarness(m.Slot.Project, m.Slot.MR)
+		h.seedRaw("note/7770", botID, corruptMarkerBody())
+		c := h.client(t)
+
+		receipt, err := forge.Reconcile(c, testClock(), desiredThreadFor(m, nil), forge.Preconditions{})
+		if err != nil {
+			t.Fatalf("a corrupted BOT marker must be skipped, not fatal: %v", err)
+		}
+		if len(receipt.Warnings) != 1 {
+			t.Fatalf("an identical body authored by the BOT must warn — otherwise the "+
+				"contributor assertions above are vacuous; got %v", receipt.Warnings)
+		}
+		if !strings.Contains(receipt.Warnings[0], "note/7770") {
+			t.Fatalf("the warning must name the skipped artifact, got %q", receipt.Warnings[0])
 		}
 	})
 }

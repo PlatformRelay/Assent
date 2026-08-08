@@ -751,6 +751,24 @@ func drivingFinding(result aggregate.Result) (effect, rule, code string) {
 // summarize builds the one-line run summary from the decision, arming, and the
 // reconcile outcome.
 func summarize(dec aggregate.Decision, arm bool, receipt forge.PublicationReceipt, recErr error) string {
+	return summarizeOutcome(dec, arm, receipt, recErr) + warningSuffix(receipt)
+}
+
+// warningSuffix appends the AUD-S12 (REL-06) non-fatal reconcile warnings —
+// today only a skipped malformed bot marker — to the run summary. It is a
+// SUFFIX, and empty when there is nothing to report, so every pre-existing
+// summary line stays byte-identical. Without it the warning would reach the
+// receipt and stop there, invisible to the operator who has to delete the
+// corrupted artifact.
+func warningSuffix(receipt forge.PublicationReceipt) string {
+	if len(receipt.Warnings) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" [%d forge warning(s): %s]",
+		len(receipt.Warnings), strings.Join(receipt.Warnings, "; "))
+}
+
+func summarizeOutcome(dec aggregate.Decision, arm bool, receipt forge.PublicationReceipt, recErr error) string {
 	switch {
 	case recErr != nil && errors.Is(recErr, forge.ErrArmingRefused):
 		return fmt.Sprintf("decision=%s arm=%t → advisory-only (arming precondition unmet, no approve/merge)", dec, arm)
