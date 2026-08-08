@@ -48,10 +48,13 @@ always produce the same decision. No LLM in the decision path.
 
 ### Modes
 
-The same pipeline runs as: a **CI job** (primary), a **local dry-run** ("what would the gate
-say?"), **explain** (full per-rule trace), a **historical scan** over past MRs (backtesting a
-policy before trusting it, feeding `stats` — no database, just report artifacts), and later a
-**webhook service** for orgs that prefer event-driven operation (ADR-0009).
+The same pipeline runs as: a **CI job** (primary) and a **local dry-run** ("what would the
+gate say?"). Three further modes are *planned*, not shipped — **explain** (full per-rule
+trace; today the emitted `DecisionRecord` carries the same information), a **historical
+scan** over past MRs feeding `stats` (backtesting a policy before trusting it — no database,
+just report artifacts; `assent compare` covers the corpus-replay case today), and a
+**webhook service** for orgs that prefer event-driven operation (E12, ADR-0009). See the
+[walkthrough](usage/walkthrough.md) for what each of them does and does not do yet.
 
 ## What makes it different
 

@@ -8,9 +8,12 @@ Hexagonal: a pure decision core, ports for everything with a side effect.
     has **no code**: it is designed, not shipped, and unlocks only when a named consumer
     commits ([D-012](../decisions/decisions.md)). Arrows follow the decision path, and
     every solid pair drawn is backed by a real import between those two packages. This is
-    not the complete edge set: `cmd/assent` is the composition root and imports every
-    ingestion, core, provider, render and forge package directly — those edges are
-    omitted for legibility.
+    not the complete edge set: `cmd/assent` is the composition root and **directly imports
+    15 of the 22 internal packages** plus the root `schemas` package; those edges are
+    omitted for legibility. It reaches two more — `internal/glob` and
+    `internal/render/locale` — only transitively. The remaining five are not linked into
+    the binary at all (see *Packages with no production importer*). Derive both sets with
+    `go list -f '{{.Imports}}' ./cmd/assent` and `go list -deps ./cmd/assent`.
 
 ```mermaid
 flowchart LR
