@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // --- fixture helpers -------------------------------------------------------
@@ -139,6 +141,53 @@ func TestCollectTreeNeverReturnsTruncatedTreeWithNilError(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatalf("an errored collectTree must not hand back a partial tree: %v", keysOf(got))
+	}
+}
+
+// enoentOnOpenFS lists every file its base FS lists, but refuses to OPEN one of
+// them with fs.ErrNotExist — a directory entry that vanishes between ReadDir and
+// open. That is the whole Defect-1 class with no symlink involved, and it is the
+// only way to produce it deterministically once reads are contained.
+type enoentOnOpenFS struct {
+	base fs.FS
+	deny string
+}
+
+func (e enoentOnOpenFS) Open(name string) (fs.File, error) {
+	if name == e.deny {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+	}
+	return e.base.Open(name)
+}
+
+// TestCollectFSPropagatesMidWalkNotExist is the falsifiable pin on Defect 1: the
+// tolerance belongs to the ROOT ALONE. Restoring `!errors.Is(err, fs.ErrNotExist)`
+// on the walk's error reds this test — a truncated map with a nil error.
+func TestCollectFSPropagatesMidWalkNotExist(t *testing.T) {
+	// `.aaa.yaml` sorts before `.assent/`, so the walk aborts before ever
+	// reaching the policy file — the sort-order trick, reproduced hermetically.
+	base := fstest.MapFS{
+		".aaa.yaml":            {Data: []byte("x\n")},
+		".assent/newpack.yaml": {Data: []byte("threshold: 1\n")},
+		"topics/orders.yaml":   {Data: []byte("partitions: 24\n")},
+	}
+
+	got, err := collectFS(enoentOnOpenFS{base: base, deny: ".aaa.yaml"}, "head")
+	if err == nil {
+		t.Fatalf("a mid-walk ENOENT must propagate; got err=nil and %d entries %v", len(got), keysOf(got))
+	}
+	if got != nil {
+		t.Fatalf("an errored walk must not hand back a partial tree: %v", keysOf(got))
+	}
+
+	// Control: the same FS without the denial collects everything, so the red
+	// above is the denial and not a broken fixture.
+	all, err := collectFS(base, "head")
+	if err != nil {
+		t.Fatalf("clean walk: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("clean walk must collect all 3 entries, got %v", keysOf(all))
 	}
 }
 
@@ -325,7 +374,7 @@ func TestFileContentsKeepsNilAbsentDistinctFromEmpty(t *testing.T) {
 	present := "enabled: true\n"
 	empty := ""
 
-	t.Run("absent on head is nil", func(t *testing.T) {
+	t.Run("absent on head is nil (whole side missing)", func(t *testing.T) {
 		root := writeCheckoutPresence(t, map[string][2]*string{
 			"topics/orders.yaml": {&present, nil},
 		})
@@ -338,6 +387,28 @@ func TestFileContentsKeepsNilAbsentDistinctFromEmpty(t *testing.T) {
 		}
 		if head != nil {
 			t.Fatalf("absent head must be nil, got non-nil len=%d", len(head))
+		}
+	})
+
+	// The production shape: a real checkout ALWAYS has base/ and head/, so the
+	// absence is of the FILE, not of the side. A fixture that omits the whole
+	// side short-circuits before the per-file read and leaves that branch
+	// untested — which is how a collapse of absent into empty would slip through.
+	t.Run("absent on head is nil (side exists, file does not)", func(t *testing.T) {
+		sibling := "keep: true\n"
+		root := writeCheckoutPresence(t, map[string][2]*string{
+			"topics/orders.yaml": {&present, nil},
+			"topics/keep.yaml":   {&sibling, &sibling}, // makes head/ exist
+		})
+		base, head, err := dirCheckout{root: root}.FileContents("topics/orders.yaml")
+		if err != nil {
+			t.Fatalf("FileContents: %v", err)
+		}
+		if base == nil {
+			t.Fatalf("base must be PRESENT (non-nil)")
+		}
+		if head != nil {
+			t.Fatalf("a file absent from an EXISTING side must still be nil, got len=%d", len(head))
 		}
 	})
 
@@ -374,6 +445,88 @@ func TestFileContentsKeepsNilAbsentDistinctFromEmpty(t *testing.T) {
 			t.Fatalf("the refusal must say why: %v", err)
 		}
 	})
+}
+
+// TestLiveCheckoutMintsFileEventWithBothSidesPresent is the ENTRY-POINT half of
+// the `nil = absent` pin, in the production shape.
+//
+// The existing EFE-S03 suite fixtures a one-sided governed file by omitting the
+// whole side directory, so it never exercises the per-file absence a real
+// checkout produces. A sibling identical on both sides makes base/ and head/
+// both exist (and, being unchanged, stays out of the changed-file set, so the
+// fold is untouched). If absence stopped reading back as nil, the whole-file ADD
+// would no longer be minted and this would fall to fail-safe REVIEW.
+func TestLiveCheckoutMintsFileEventWithBothSidesPresent(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.mergePolicy = mergePolicyFileEvents
+	f.rulesetBinding = rulesetBindingReviewedDeletion
+	f.baseFile = "enabled: true\n"
+	f.headFile = "enabled: true\n"
+
+	present := "enabled: true\n"
+	sibling := "keep: true\n"
+	checkout := writeCheckoutPresence(t, map[string][2]*string{
+		"topics/orders.yaml": {nil, &present},      // ADD: absent base, present head
+		"topics/keep.yaml":   {&sibling, &sibling}, // makes BOTH sides exist
+	})
+
+	var out bytes.Buffer
+	code := runRun(runArgs("--checkout", checkout), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), `"decision":"APPROVE"`) {
+		t.Fatalf("a per-file absence in an EXISTING side must still mint the whole-file ADD:\n%s", out.String())
+	}
+}
+
+// TestCheckoutSideIsASymlinkSafeRoot pins the SECOND containment layer, which
+// the explicit refusal would otherwise hide: the refusal runs before the read,
+// so nothing in the suite notices if the FS handed out stops being a root.
+//
+// `os.DirFS` is documented as not a security boundary. The residual it leaves is
+// a TOCTOU: a leaf that is a real file when `Lstat` inspects it and an escaping
+// symlink by the time it is opened. `(*os.Root).FS()` refuses that at the
+// syscall level; `os.DirFS` reads the host file.
+func TestCheckoutSideIsASymlinkSafeRoot(t *testing.T) {
+	requireSymlinks(t)
+
+	const offTreeMarker = "OFF-TREE-HOST-BYTES"
+	host := hostFile(t, "host.yaml", offTreeMarker+"\n")
+
+	side := filepath.Join(t.TempDir(), "head")
+	leaf := filepath.Join(side, "topics", "orders.yaml")
+	if err := os.MkdirAll(filepath.Dir(leaf), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(leaf, []byte("in-tree\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	fsys, closeSide, err := openCheckoutSide(side)
+	if err != nil {
+		t.Fatalf("openCheckoutSide: %v", err)
+	}
+	if fsys == nil {
+		t.Fatalf("side exists, expected an FS")
+	}
+	defer closeSide()
+
+	// Swap the leaf AFTER the side is open — past every up-front check.
+	if err := os.Remove(leaf); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if err := os.Symlink(host, leaf); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	got, err := fs.ReadFile(fsys, "topics/orders.yaml")
+	if strings.Contains(string(got), offTreeMarker) {
+		t.Fatalf("off-tree host bytes were read through the checkout side: %q", got)
+	}
+	if err == nil {
+		t.Fatalf("a post-open escape must be refused at the syscall level; read %q", got)
+	}
 }
 
 // TestCheckoutEscapeAttempts is the adversarial battery: every symlink shape a

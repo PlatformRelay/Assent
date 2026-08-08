@@ -126,17 +126,28 @@ func (d dirCheckout) FileContents(rel string) ([]byte, []byte, error) {
 // self-vouch guard — BLOCK became APPROVE. A truncated tree must never be
 // returned with a nil error; below the root, every failure propagates.
 func collectTree(root string) (map[string][]byte, error) {
-	out := map[string][]byte{}
 	fsys, closeRoot, err := openCheckoutSide(root)
 	if err != nil {
 		return nil, err
 	}
 	if fsys == nil {
-		return out, nil // the whole side is absent
+		return map[string][]byte{}, nil // the whole side is absent
 	}
 	defer closeRoot()
+	return collectFS(fsys, root)
+}
 
-	err = fs.WalkDir(fsys, ".", func(p string, dirent fs.DirEntry, err error) error {
+// collectFS is collectTree's walk, over an already-opened side.
+//
+// The seam exists so the no-truncation property above is FALSIFIABLE. Once reads
+// are contained, the only mid-walk ENOENT a real directory can produce is a race
+// (an entry removed between ReadDir and open) — untestable from outside, so a
+// test driving only real trees would leave this guard unfalsifiable, green
+// whether or not it works. A fixture FS that lists a file and then refuses to
+// open it reproduces the class deterministically.
+func collectFS(fsys fs.FS, root string) (map[string][]byte, error) {
+	out := map[string][]byte{}
+	err := fs.WalkDir(fsys, ".", func(p string, dirent fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
