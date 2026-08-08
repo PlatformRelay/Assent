@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/PlatformRelay/assent/internal/core/policy"
+	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/provider/builtin"
 )
 
@@ -41,6 +42,22 @@ func ownersTree(t *testing.T, owner string) string {
 		t.Fatal(err)
 	}
 	return dir
+}
+
+// absentAtRef is the error shape the real adapter returns for a file that is
+// genuinely missing at the ref: the neutral port sentinel wrapped with the
+// adapter's own prefix (`internal/forge/gitlab.FileAtRef`, 404 branch). The
+// stubs use the WRAPPED form on purpose — matching must survive the wrap chain,
+// which a bare sentinel would not prove.
+func absentAtRef(regPath, ref string) error {
+	return fmt.Errorf("gitlab: %w: file %q at ref %q", forge.ErrNotFound, regPath, ref)
+}
+
+// brokenForge is the error shape the real adapter returns for a NON-404 status
+// — a forge that is down, throttled, or misconfigured (`gitlab.FileAtRef`,
+// default branch). It is NOT absence, and it must never be read as absence.
+func brokenForge(regPath, ref string, status int) error {
+	return fmt.Errorf("gitlab: get file %q at ref %q: unexpected status %d", regPath, ref, status)
 }
 
 func ownerOf(t *testing.T, client builtin.ResourceOwnerClient) string {
@@ -91,13 +108,57 @@ func TestResourceOwnerRegistryFallsBackToCheckout(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = closer.Close() })
 
-	stub := &registryStub{err: errors.New("404 file not found")}
+	stub := &registryStub{err: absentAtRef("governance/owners.yaml", "main")}
 	client, err := loadResourceOwnerRegistry(context.Background(), stub, "42", "main", repoFS, "governance/owners.yaml")
 	if err != nil {
 		t.Fatalf("registry load: %v", err)
 	}
 	if got := ownerOf(t, client); got != "team-payments" {
 		t.Fatalf("owner = %q, want team-payments from the checkout fallback", got)
+	}
+}
+
+// TestResourceOwnerRegistryTransientForgeErrorNeverFallsBackToCheckout — the
+// fallback is gated on ABSENCE, not on "the forge answered badly".
+//
+// The registry decides WHO MAY APPROVE (D-130 / GUIDELINES §Safety 2+3). If any
+// FileAtRef error opened the fallback, a forge that is merely DOWN — a 503, a
+// throttle, a proxy hiccup — would hand the who-may-approve document to the
+// merge request's own head tree, with no error surfaced and no trace in the
+// decision: exactly the shadow D-130 claims is impossible. A broken forge is
+// not an absent file, so it degrades to an error (no client ⇒ the owner fact
+// never resolves ⇒ fail-safe REVIEW), never to a contributor-authored registry.
+//
+// Shape note: the 404 variant of this attack is separately mitigated (a
+// whole-file add of the registry folds opaque → REVIEW). The unmitigated shape
+// is MODIFY-plus-transient-error — a plain value diff on an existing file —
+// which is what this test drives: the checkout carries a registry the MR
+// rewrote, and the target-ref read fails with a non-404.
+func TestResourceOwnerRegistryTransientForgeErrorNeverFallsBackToCheckout(t *testing.T) {
+	poisoned := ownersTree(t, "attacker") // the MR head tree, registry MODIFIED
+	repoFS, closer, err := checkoutFS(poisoned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = closer.Close() })
+
+	for _, status := range []int{500, 502, 503, 429, 401} {
+		t.Run(fmt.Sprintf("status_%d", status), func(t *testing.T) {
+			stub := &registryStub{err: brokenForge("governance/owners.yaml", "main", status)}
+			client, err := loadResourceOwnerRegistry(
+				context.Background(), stub, "42", "main", repoFS, "governance/owners.yaml")
+			if err == nil {
+				t.Fatalf("OWNERSHIP SHADOW: a %d from the forge yielded a registry; owner = %q "+
+					"— a transient forge error must never promote the MR head tree to the "+
+					"who-may-approve authority", status, ownerOf(t, client))
+			}
+			if client != nil {
+				t.Fatalf("error path must yield no client; got %#v", client)
+			}
+			if !strings.Contains(err.Error(), fmt.Sprintf("%d", status)) {
+				t.Fatalf("error %q must carry the forge's own failure so the operator can see WHY", err)
+			}
+		})
 	}
 }
 
@@ -112,7 +173,7 @@ func TestResourceOwnerRegistryBothMissingFailsClosed(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = closer.Close() })
 
-	stub := &registryStub{err: errors.New("404 file not found")}
+	stub := &registryStub{err: absentAtRef("governance/owners.yaml", "main")}
 	client, err := loadResourceOwnerRegistry(context.Background(), stub, "42", "main", repoFS, "governance/owners.yaml")
 	if err == nil {
 		t.Fatalf("missing registry must be an error, got client %#v", client)
@@ -121,6 +182,18 @@ func TestResourceOwnerRegistryBothMissingFailsClosed(t *testing.T) {
 
 // TestResourceOwnerRegistrySymlinkInCheckoutRefused — D-129 at the cmd edge: the
 // checkout fallback must not read a registry through a symlink either.
+//
+// WHAT THIS PINS, precisely: the OUTCOME of the two D-129 layers TOGETHER, not
+// the builtin guard on its own. With the symlink-safe root that `checkoutFS`
+// injects, `fs.Stat(repoFS, regPath)` already errors on the escaping link, so
+// the fallback is never entered and `LoadResourceOwnerMap`'s own refusal is
+// never reached — this test stays green if you delete the builtin guard but
+// keep the root, and green if you keep the guard but the root refuses first. It
+// reds only when BOTH layers are gone, which is the honest reading: it is the
+// end-to-end "no registry through a symlink at the cmd edge" assertion.
+// Layer (b) in isolation — the builtin's own refusal, which is the only layer
+// that survives a non-root FS — is pinned by
+// `internal/provider/builtin/resource_owner_symlink_test.go`.
 func TestResourceOwnerRegistrySymlinkInCheckoutRefused(t *testing.T) {
 	requireSymlinks(t)
 
@@ -142,7 +215,7 @@ func TestResourceOwnerRegistrySymlinkInCheckoutRefused(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = closer.Close() })
 
-	stub := &registryStub{err: errors.New("404 file not found")}
+	stub := &registryStub{err: absentAtRef("governance/owners.yaml", "main")}
 	client, err := loadResourceOwnerRegistry(context.Background(), stub, "42", "main", repoFS, "governance/owners.yaml")
 	if err == nil {
 		t.Fatalf("OWNERSHIP ESCAPE: symlinked registry accepted; owner = %q", ownerOf(t, client))

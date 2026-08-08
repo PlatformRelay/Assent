@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/core/policy"
+	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/provider"
 	"github.com/PlatformRelay/assent/internal/provider/builtin"
 )
@@ -251,7 +253,16 @@ type refFilePort interface {
 // which under `--checkout` is the merge request's own head tree — letting an MR
 // ship a registry naming its author as owner of the resource it is changing.
 // The checkout is now a FALLBACK only, for runs whose target ref carries no
-// registry (hermetic fixtures, local trees); it can no longer shadow the target.
+// registry (hermetic fixtures, local trees).
+//
+// The fallback is gated on ABSENCE ALONE (GUIDELINES §Safety 2). Falling back on
+// ANY FileAtRef error conflated "the file is not there" with "the forge did not
+// answer": a 503, a throttle or an expired token would silently promote the
+// merge request's own head tree to the who-may-approve authority — the same
+// shadow, reachable without touching the target ref at all, and invisible
+// because no error surfaced. `forge.ErrNotFound` is the neutral port sentinel
+// for absence (adapters wrap it with %w); every other error degrades to an
+// error here, so no client is built and the owner fact never resolves.
 func loadResourceOwnerRegistry(
 	ctx context.Context,
 	client refFilePort,
@@ -266,6 +277,11 @@ func loadResourceOwnerRegistry(
 			path.Base(regPath): &fstest.MapFile{Data: raw},
 		}
 		return builtin.LoadResourceOwnerMap(fsys, path.Base(regPath))
+	}
+	if !errors.Is(err, forge.ErrNotFound) {
+		// A broken forge is not an absent file. Fail here rather than reading a
+		// contributor-authored registry: no client → no owner fact → fail-safe.
+		return nil, fmt.Errorf("resource-owner registry %q at ref %q: %w", regPath, targetRef, err)
 	}
 	if repoFS != nil {
 		if _, statErr := fs.Stat(repoFS, regPath); statErr == nil {
