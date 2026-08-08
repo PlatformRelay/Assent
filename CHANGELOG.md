@@ -156,6 +156,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(release): pin the CHANGELOG drift gate content, wiring and polarity
 - :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
 - :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
+- :white_check_mark: test(provider): pin the hard error on an unopenable --checkout
 ## [0.1.0] - 2026-08-05
 
 ### Chores
