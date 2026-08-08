@@ -154,6 +154,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(docs): pin the retired truth-lag claims so they cannot come back (DOC-05/06/09/10/11)
 - :white_check_mark: test(release): pin the CHANGELOG drift gate content, wiring and polarity
 - :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
+- :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
 ## [0.1.0] - 2026-08-05
 
 ### Chores
