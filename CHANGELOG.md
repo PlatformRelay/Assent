@@ -84,6 +84,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(compare): state the D-121 digest change where consumers will read it
 - :memo: docs(adr): record the AUD-S12 malformed-marker behaviour change in ADR-0019 (review F3)
 - :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
+- :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -117,6 +118,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 
 ### Refactoring
 - :recycle: fix(forge): retry idempotent GitLab reads with bounded jittered backoff (AUD-S11, REL-04)
+- :recycle: refactor(forge): lift MRInfo/ErrNotFound onto the forge port (ARCH-02)
 
 ### Security
 - :lock: fix(forge): prove changed-file enumeration completeness or declare a gap
