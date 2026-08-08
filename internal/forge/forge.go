@@ -363,17 +363,26 @@ const (
 //   - APPROVE (Approve + Merge set): gated on ArmEligible AND a complete set of
 //     pins AND a compare-and-swap that honours source+target+mergeResultDigest.
 //     Any refusal returns a typed error with ZERO writes.
+//
+// AUD-S12 (REL-06) — WARNINGS RIDE OUT ON EVERY PATH, INCLUDING REFUSALS.
+// A refusal (ErrArmingRefused / ErrIncompletePreconditions / ErrSHAMoved) is an
+// EXPECTED, exit-0, advisory-only outcome — and an unarmed run is the default
+// adopter posture. Returning a bare PublicationReceipt{} there would drop the
+// malformed-marker warning precisely on the path most operators actually take,
+// which is the same invisibility this story exists to remove. Every return
+// below therefore goes through withWarnings; the receipt stays otherwise
+// untouched (no operations are invented on a refusal).
 func Reconcile(f Forge, clock Clocker, desired DesiredReviewState, pre Preconditions) (PublicationReceipt, error) {
 	path, err := reconcilePathOf(desired)
 	if err != nil {
-		return PublicationReceipt{}, err
+		return withWarnings(f, PublicationReceipt{}), err
 	}
 
 	var preambleOps []Operation
 	if desired.Summary != nil {
 		op, err := reconcileSummaryPreamble(f, clock, desired)
 		if err != nil {
-			return PublicationReceipt{}, err
+			return withWarnings(f, PublicationReceipt{}), err
 		}
 		preambleOps = append(preambleOps, op)
 	}
@@ -388,17 +397,19 @@ func Reconcile(f Forge, clock Clocker, desired DesiredReviewState, pre Precondit
 		receipt, err = reconcileApproveMerge(f, clock, desired, pre)
 	}
 	if err != nil {
-		return PublicationReceipt{}, err
+		return withWarnings(f, PublicationReceipt{}), err
 	}
 	if len(preambleOps) > 0 {
 		receipt = receiptOf(append(preambleOps, receipt.Operations...)...)
 	}
-	// AUD-S12 (REL-06): non-fatal anomalies observed while listing ride out on
-	// the receipt. They are attached LAST, on the success path only — a failed
-	// reconcile already returns a hard error, and a zero-warning run leaves the
-	// field absent so no prior receipt changes shape.
-	receipt.Warnings = warningsOf(f)
-	return receipt, nil
+	return withWarnings(f, receipt), nil
+}
+
+// withWarnings copies the forge's reported anomalies onto a receipt. A
+// zero-warning run leaves the field absent, so no prior receipt changes shape.
+func withWarnings(f Forge, r PublicationReceipt) PublicationReceipt {
+	r.Warnings = warningsOf(f)
+	return r
 }
 
 type reconcilePathKind int
