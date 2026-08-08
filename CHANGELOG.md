@@ -89,6 +89,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
 - :memo: docs(decisions): correct D-128's margin arithmetic and its stale ownership line
 - :memo: docs(open-questions): widen OQ-27 to the full string-operand class, deepen OQ-28 (review F4/F5)
+- :memo: docs(aud-s18): mark AUD AUTONOMOUS COMPLETE and hand over the four operator residuals
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -165,6 +166,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(aud-s18): audit exit gate — 2026-08-06 conditions closed, gates green at the new bar
 - :white_check_mark: test(aud-s13): TEST-02/05/06 — toCEL overflow, reconcileClearSlot branches, repo_file containment + expiry
 - :white_check_mark: test(aud-s13): drop an unreachable assertion in the containment table (review F6)
+- :white_check_mark: test(aud-s18): fix four vacuity defects the gate's own controls caught
 ## [0.1.0] - 2026-08-05
 
 ### Chores
