@@ -109,6 +109,47 @@ code_view_dir() { # <dir>
   done
 }
 
+# Review finding N1: `code_view` alone does NOT close the class it was credited
+# with closing. It drops a line only when the FIRST non-blank character is `#`,
+# so the flag text hiding in a live line's COMMENT TAIL still satisfied a
+# presence grep. Three confirmed bypasses, gate green and actionlint clean:
+#
+#   fetch-depth: 1  # was: persist-credentials: false
+#   run: npm --global install ajv-cli  # was: run: npm ci --ignore-scripts …
+#   run: echo skipped  # was: bash hack/lint/workflow_pins_test.sh
+#
+# The second is the dangerous one — a plausible "just unblock it" edit that
+# leaves the entire SEC-01 supply-chain pin inert while the gate reports OK.
+#
+# So presence checks no longer match raw lines. They match what actually
+# EXECUTES: comment tail removed (YAML and shell agree — whitespace then `#`),
+# then the list dash and the `run:` key stripped, leaving the command itself.
+# Anchoring on that makes a comment tail structurally unable to satisfy a check.
+# Verified beforehand that no workflow line carries ` #` inside a quoted value,
+# which is the only case where tail-stripping could lose real content.
+#
+# Emits `<lineno>:<command>`.
+command_view() { # <file>
+  awk '{
+    s = $0
+    sub(/^[[:space:]]+/, "", s)
+    if (substr(s, 1, 1) == "#") next          # whole-line comment
+    sub(/[[:space:]]#.*$/, "", s)             # inline comment tail
+    sub(/^-[[:space:]]+/, "", s)              # list item dash
+    sub(/^run:[[:space:]]*/, "", s)           # the run: key itself
+    sub(/[[:space:]]+$/, "", s)
+    printf "%d:%s\n", FNR, s
+  }' "$1"
+}
+
+command_view_dir() { # <dir>
+  local f
+  for f in "$1"/*.yml "$1"/*.yaml; do
+    [[ -f "$f" ]] || continue
+    command_view "$f" | sed "s|^|${f##*/}:|"
+  done
+}
+
 # ------------------------------------------------------------------ checks --
 # Contract for every check_* function: takes a workflows DIRECTORY, prints the
 # offending lines to stderr, returns 0 (clean) or 1 (violation). They must never
@@ -139,11 +180,16 @@ check_task_pinned() {
   local sites="$WORK/hits.task_sites"
   local rc=0
 
-  # Install sites only: comments are excluded so the prose above the `env:`
-  # block that names this very check is not mistaken for an unpinned install.
+  # Install sites, read as COMMANDS (N1): the comment tail is stripped, so
+  # `…cmd/task@v3.0.0  # cmd/task@"${TASK_VERSION}"` can no longer satisfy the
+  # interpolation check below. That bypass was found by extending the review's
+  # N1 class to this check — it was not in the reported set, but it is the same
+  # defect, and it would have re-opened exactly the skew SEC-04 exists to stop.
+  local cmds="$WORK/cmd.workflows"
   local code="$WORK/code.workflows"
+  command_view_dir "$dir" >"$cmds"
   code_view_dir "$dir" >"$code"
-  grep -F -- 'cmd/task@' "$code" >"$sites" || true
+  grep -F -- 'cmd/task@' "$cmds" >"$sites" || true
   local n_sites
   n_sites="$(wc -l <"$sites" | tr -d '[:space:]')"
   if ((n_sites == 0)); then
@@ -231,8 +277,11 @@ check_persist_credentials() {
         is_comment = (substr(stripped, 1, 1) == "#")
       }
       /^[[:space:]]*- / && !is_comment { flush(); start = FNR }
-      /uses:[[:space:]]*actions\/checkout@/ && !is_comment { is_checkout = 1 }
-      /persist-credentials:[[:space:]]*false/ && !is_comment { has_pc = 1 }
+      /^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*actions\/checkout@/ && !is_comment { is_checkout = 1 }
+      # N1: ANCHORED to the start of the line, with only an optional comment
+      # tail allowed after the value. `fetch-depth: 1 # was: persist-credentials:
+      # false` therefore no longer counts as the flag being set.
+      /^[[:space:]]*persist-credentials:[[:space:]]*false[[:space:]]*(#.*)?$/ && !is_comment { has_pc = 1 }
       END { flush() }
     ' short="${f##*/}" seen_out="$seen" "$f" >>"$hits"
   done
@@ -275,20 +324,37 @@ check_npm_ci_in_workflow() {
   }
 
   local code="$WORK/code.schemas"
+  local cmds="$WORK/cmd.schemas"
   code_view "$file" >"$code"
+  command_view "$file" >"$cmds"
 
+  # N1: judged on the COMMAND, anchored at its start. An npm invocation is a
+  # line whose command begins with `npm`, and it must begin with `npm ci`.
+  # `run: npm --global install ajv-cli  # was: run: npm ci …` is now a finding
+  # instead of a pass — previously it defeated SEC-01 outright while the gate
+  # printed OK, because the comment tail contained the string being searched.
   local npm_lines="$WORK/hits.npm_lines"
   local bad="$WORK/hits.npm_install"
-  grep -F -- 'npm' "$code" >"$npm_lines" || true
-  grep -Fv -- 'npm ci' "$npm_lines" >"$bad" || true
+  grep -E '^[0-9]+:npm([[:space:]]|$)' "$cmds" >"$npm_lines" || true
+  # Positive control on the extraction. Without it, an anchor that stops
+  # matching leaves this sweeping an empty set and reporting clean over any
+  # install at all — which is precisely what a wrong prefix anchor did here
+  # during development, caught only because a sibling assertion still failed.
+  if [[ ! -s "$npm_lines" ]]; then
+    echo "  found NO npm command in schemas.yml — the job must install the validator, so the extraction is broken and every npm assertion below would be vacuous (SEC-01)" >&2
+    return 1
+  fi
+  grep -Ev '^[0-9]+:npm[[:space:]]+ci([[:space:]]|$)' "$npm_lines" >"$bad" || true
   if [[ -s "$bad" ]]; then
     echo "  schemas.yml invokes npm in a form other than 'npm ci' — dependencies would resolve at run time instead of from the committed lockfile (SEC-01):" >&2
     sed 's/^/    /' "$bad" >&2
     rc=1
   fi
 
-  grep -Fq -- 'npm ci --ignore-scripts' "$code" || {
-    echo "  schemas.yml does not RUN 'npm ci --ignore-scripts' on an uncommented line — the transitive tree is not lockfile-pinned (SEC-01)" >&2
+  # And the install must actually be RUN: a command that BEGINS with `npm ci`
+  # and carries --ignore-scripts. Presence anywhere on the line is not enough.
+  grep -E '^[0-9]+:npm[[:space:]]+ci([[:space:]].*)?[[:space:]]--ignore-scripts([[:space:]]|$)' "$cmds" >/dev/null || {
+    echo "  schemas.yml does not RUN 'npm ci --ignore-scripts' as an actual command — the transitive tree is not lockfile-pinned (SEC-01)" >&2
     rc=1
   }
 
@@ -311,17 +377,44 @@ check_npm_ci_in_workflow() {
 check_ci_wiring() {
   local dir="$1"
   local file="$dir/verify.yaml"
+  local rc=0
   [[ -f "$file" ]] || {
     echo "  missing $file" >&2
     return 1
   }
-  local code="$WORK/code.verify"
-  code_view "$file" >"$code"
-  grep -Fq -- 'bash hack/lint/workflow_pins_test.sh' "$code" || {
-    echo "  verify.yaml does not run 'bash hack/lint/workflow_pins_test.sh' on an uncommented line — the workflow-pin gate would only ever run locally" >&2
+  local cmds="$WORK/cmd.verify"
+  command_view "$file" >"$cmds"
+
+  # N1: the command must BEGIN with the invocation. `run: echo skipped
+  # # was: bash hack/lint/workflow_pins_test.sh` used to satisfy this.
+  grep -E '^[0-9]+:bash[[:space:]]+hack/lint/workflow_pins_test\.sh([[:space:]]|$)' "$cmds" >/dev/null || {
+    echo "  verify.yaml does not RUN 'bash hack/lint/workflow_pins_test.sh' as an actual command — the workflow-pin gate would only ever run locally" >&2
+    rc=1
+  }
+
+  # Review finding N2: being present is not being ENABLED. `continue-on-error:
+  # true` on this step leaves the gate and actionlint both green while the CI
+  # half is neutered — the most realistic "just unblock CI" edit there is, and
+  # the silent one (`if: false` also disarms the step, but actionlint flags it).
+  # So the step's own block must carry neither.
+  local step="$WORK/step.wiring"
+  awk '
+    /^      - / { inblock = 0 }
+    index($0, "workflow_pins_test.sh") > 0 { inblock = 1 }
+    inblock { print }
+  ' "$file" >"$step"
+  [[ -s "$step" ]] || {
+    echo "  could not isolate the workflow-pin gate step in verify.yaml — the extraction broke, so the assertions below would be vacuous" >&2
     return 1
   }
-  return 0
+  local disabled="$WORK/hits.step_disabled"
+  grep -En '^[[:space:]]*(continue-on-error|if):' "$step" >"$disabled" || true
+  if [[ -s "$disabled" ]]; then
+    echo "  the workflow-pin gate step is present but DISARMED — 'continue-on-error' or 'if:' means a red gate does not fail the job:" >&2
+    sed 's/^/    /' "$disabled" >&2
+    rc=1
+  fi
+  return "$rc"
 }
 
 # SEC-01(b): the committed manifest and lockfile are exact and complete.
@@ -524,6 +617,16 @@ mutate_awk "$m/verify.yaml" \
 expect_red check_task_pinned "$m" "a JOB-level TASK_VERSION overrides the workflow-level pin (F3)" \
   'expected exactly ONE TASK_VERSION definition'
 
+# N1 extended to this check by our own audit: the real interpolation is
+# replaced by a hard-coded version and the expected text hidden in a comment
+# tail, which the pre-N1 substring match accepted.
+m="$(mutant task-tail-comment)"
+mutate "$m/verify.yaml" \
+  's|cmd/task@"\${TASK_VERSION}"|cmd/task@v3.0.0  # cmd/task@"${TASK_VERSION}"|' \
+  'cmd/task@v3.0.0  # cmd/task@'
+expect_red check_task_pinned "$m" "a hard-coded version hides behind the expected text in a COMMENT TAIL (N1)" \
+  'install site(s) not single-sourced through'
+
 # -------------------------------- 3. SEC-03: credential-scrubbed checkouts --
 
 echo "== 3. SEC-03: every actions/checkout sets persist-credentials: false =="
@@ -572,6 +675,16 @@ mutate_awk "$m/release.yaml" \
 expect_red check_persist_credentials "$m" "only the SECOND checkout in release.yaml lost the flag — proves step scoping, not file scoping (F4)" \
   'leaving the workflow token in .git/config'
 
+# Review finding N1 — the flag text survives in a live line's COMMENT TAIL,
+# which `code_view` alone did not catch: the line is not a comment, so it was
+# kept, and an unanchored substring match found the flag inside it.
+m="$(mutant persist-tail-comment)"
+mutate "$m/verify.yaml" \
+  's|^          persist-credentials: false.*$|          fetch-depth: 1  # was: persist-credentials: false|' \
+  'fetch-depth: 1  # was: persist-credentials: false'
+expect_red check_persist_credentials "$m" "the flag survives only in a COMMENT TAIL on a live line (N1)" \
+  'leaving the workflow token in .git/config'
+
 # ------------------------------ 4. SEC-01: lockfile-pinned schema validator --
 
 echo "== 4. SEC-01: the stock schema validator installs from a committed lockfile =="
@@ -602,6 +715,16 @@ mutate_awk "$m/schemas.yml" \
 expect_red check_npm_ci_in_workflow "$m" "'npm ci' was commented out and replaced by 'npm --global install' (F5)" \
   'does not RUN'
 
+# Review finding N1, the highest-impact instance: a single plausible
+# "just unblock it" edit that left the ENTIRE SEC-01 supply-chain pin inert
+# while the gate reported OK, because the searched-for text sat in the tail.
+m="$(mutant npm-tail-comment)"
+mutate "$m/schemas.yml" \
+  's|^        run: npm ci --ignore-scripts --prefix hack/schemas-validator$|        run: npm --global install ajv-cli  # was: run: npm ci --ignore-scripts --prefix hack/schemas-validator|' \
+  'run: npm --global install ajv-cli  # was:'
+expect_red check_npm_ci_in_workflow "$m" "the lockfile install survives only in a COMMENT TAIL beside a live global install (N1)" \
+  'invokes npm in a form other than'
+
 echo "== 4b. SEC-01: the committed manifest and lockfile are exact and complete =="
 expect_green check_validator_lockfile "$VALIDATOR" "package.json pins exact versions and package-lock.json hash-pins the tree"
 
@@ -623,6 +746,17 @@ mutate "$v/package.json" \
   '"ajv-cli": "5.0.0"'
 expect_red check_validator_lockfile "$v" "the fast-json-patch override was removed, letting GHSA-8gh8-hqwg-xf34 back in (F2)" \
   'no longer overrides fast-json-patch'
+
+# Review finding N4: only the package.json half of the F2 guard had a control
+# (the mutant above leaves the lock untouched). This is the other half — the
+# override stays declared while the LOCKED tree walks back to the vulnerable
+# release, which is exactly what a careless regeneration would produce.
+v="$(validator_mutant lock-reverted)"
+mutate "$v/package-lock.json" \
+  's|fast-json-patch-3\.1\.1\.tgz|fast-json-patch-2.2.1.tgz|' \
+  'fast-json-patch-2.2.1.tgz'
+expect_red check_validator_lockfile "$v" "the lockfile reverted to fast-json-patch 2.2.1 while the override stayed declared (N4)" \
+  'does not resolve fast-json-patch to a 3.x release'
 
 v="$(validator_mutant no-integrity)"
 mutate "$v/package-lock.json" \
@@ -655,6 +789,30 @@ mutate "$m/verify.yaml" \
   '# run: bash hack/lint/workflow_pins_test.sh'
 expect_red check_ci_wiring "$m" "the CI step invoking this gate was COMMENTED OUT (F6)" \
   'the workflow-pin gate would only ever run locally'
+
+# N1 again: the invocation survives only in a comment tail on a live line.
+m="$(mutant wiring-tail-comment)"
+mutate "$m/verify.yaml" \
+  's|^        run: bash hack/lint/workflow_pins_test.sh$|        run: echo skipped  # was: bash hack/lint/workflow_pins_test.sh|' \
+  'run: echo skipped  # was: bash'
+expect_red check_ci_wiring "$m" "the invocation survives only in a COMMENT TAIL beside a live no-op (N1)" \
+  'the workflow-pin gate would only ever run locally'
+
+# Review finding N2: present but DISARMED. actionlint stays green on this, which
+# is what makes it the realistic "unblock CI" edit rather than an obvious one.
+m="$(mutant wiring-continue-on-error)"
+mutate_awk "$m/verify.yaml" \
+  '{ print } /run: bash hack\/lint\/workflow_pins_test.sh/ { print "        continue-on-error: true" }' \
+  'continue-on-error: true'
+expect_red check_ci_wiring "$m" "the gate step was neutered with continue-on-error: true (N2)" \
+  'present but DISARMED'
+
+m="$(mutant wiring-if-false)"
+mutate_awk "$m/verify.yaml" \
+  '{ print } /run: bash hack\/lint\/workflow_pins_test.sh/ { print "        if: false" }' \
+  'if: false'
+expect_red check_ci_wiring "$m" "the gate step was neutered with if: false (N2)" \
+  'present but DISARMED'
 
 echo
 echo "workflow_pins_test.sh: PASS"
