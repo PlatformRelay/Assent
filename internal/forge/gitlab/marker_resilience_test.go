@@ -23,10 +23,13 @@ import (
 //
 // Now a bot-authored note with a malformed marker is SKIPPED — treated as
 // not-a-slot-note — with a warning carried on the PublicationReceipt, and
-// reconcile proceeds. The worst case is a duplicate slot post, which the
-// existing step-8 duplicate-repair converges on the next run; a wrongly-parsed
-// marker can never approve anything, because markers are correlation metadata
-// only and never decision input.
+// reconcile proceeds. The worst case is that the slot is re-posted ONCE, after
+// which every later run reuses the healthy artifact. Step-8 duplicate-repair
+// plays no part — the skipped artifact is absent from the listing, so it is
+// never a visible duplicate (proved by
+// TestMalformedBotThreadConvergesWithoutDuplicateRepair). A wrongly-parsed
+// marker can never approve anything either way, because markers are correlation
+// metadata only and never decision input.
 //
 // The AUTHOR-IDENTITY filter is UNTOUCHED and runs BEFORE the marker is even
 // looked at: a contributor note is invisible whether its marker is perfect or
@@ -238,14 +241,14 @@ func TestHealthyReconcileEmitsNoWarning(t *testing.T) {
 
 // TestMalformedBotMarkerDoubleRunConverges — REQ-AUD-S12-02 (convergence half).
 //
-// A malformed marker on a bot SUMMARY note is the case the duplicate-repair
-// path does NOT cover: repair works on threads (resolve the non-canonical
-// duplicate), and the protocol deliberately never deletes notes (write
-// minimisation, "not in scope" of this story). Convergence therefore comes from
-// the upsert itself: run 1 cannot see the corrupt note, so it posts one healthy
-// summary; run 2 finds THAT one and edits it in place. Exactly one junk note
-// lingers, no new duplicate is ever created, and the warning is stable across
-// runs — so a double run is byte-identical.
+// Duplicate-repair covers NEITHER artifact kind here — see
+// TestMalformedBotThreadConvergesWithoutDuplicateRepair for the thread case.
+// For a SUMMARY note there is the additional reason that the protocol never
+// deletes notes (write minimisation, "not in scope" of this story).
+// Convergence comes from the upsert itself: run 1 cannot see the corrupt note,
+// so it posts one healthy summary; run 2 finds THAT one and edits it in place.
+// Exactly one junk note lingers, no new duplicate is ever created, and the
+// warning is stable across runs — so a double run is byte-identical.
 func TestMalformedBotMarkerDoubleRunConverges(t *testing.T) {
 	const project, mr = "42", "7"
 	sm := summaryMarkerFor(project, mr)
@@ -292,6 +295,78 @@ func TestMalformedBotMarkerDoubleRunConverges(t *testing.T) {
 	if len(second.Warnings) != 1 {
 		t.Fatalf("the lingering corrupt note must keep warning, got %v", second.Warnings)
 	}
+}
+
+// TestMalformedBotThreadConvergesWithoutDuplicateRepair — review finding F8.
+//
+// It is TEMPTING to say a skipped THREAD converges via step-8 duplicate-repair.
+// It does not, and this test is the proof rather than the argument: a corrupt
+// thread is filtered out of ListBotThreads, so it can never present as a
+// VISIBLE duplicate for repair to act on. `repairs` stays EMPTY on every run.
+//
+// Convergence is real, but it is the same no-new-duplicate/reuse mechanism that
+// governs summary notes: run 1 posts one healthy artifact for the slot, and
+// every later run finds and reuses THAT one. The corrupt artifact lingers,
+// warning, until an operator deletes it.
+//
+// ADR-0019's amendment and reconciliation-state-table.md must state this
+// mechanism, not the repair one — a frozen normative contract that names the
+// wrong mechanism misleads the next implementer even though behaviour is fine.
+func TestMalformedBotThreadConvergesWithoutDuplicateRepair(t *testing.T) {
+	const project, mr = "42", "7"
+	tm := threadMarker(project, mr)
+
+	h := &markerHarness{
+		project: project, mr: mr,
+		// The ONLY bot artifact for this slot is corrupt: nothing healthy to reuse.
+		discussions: []markerFixture{{id: "d-corrupt", author: botUser, body: malformedMarkerBody()}},
+	}
+	c := h.client(t)
+	desired := forge.DesiredReviewState{
+		Project: project, MR: mr,
+		Thread: &forge.DesiredThread{Marker: tm, Body: "finding body"},
+	}
+
+	first, err := forge.Reconcile(c, fixedClock{}, desired, forge.Preconditions{})
+	if err != nil {
+		t.Fatalf("run 1: %v", err)
+	}
+	if h.discussionPosts != 1 {
+		t.Fatalf("run 1 must post exactly one healthy thread, posted %d", h.discussionPosts)
+	}
+	if len(first.Repairs) != 0 {
+		t.Fatalf("run 1: duplicate-repair must NOT fire — the corrupt thread is "+
+			"invisible to the listing, so no duplicate is visible; got %+v", first.Repairs)
+	}
+
+	second, err := forge.Reconcile(c, fixedClock{}, desired, forge.Preconditions{})
+	if err != nil {
+		t.Fatalf("run 2: %v", err)
+	}
+	// THE LOAD-BEARING ASSERTION: convergence is reuse, not repair.
+	if h.discussionPosts != 1 {
+		t.Fatalf("run 2 must REUSE the healthy thread, not post again — total posts %d, want 1",
+			h.discussionPosts)
+	}
+	if len(second.Repairs) != 0 {
+		t.Fatalf("run 2: duplicate-repair still must NOT fire; got %+v", second.Repairs)
+	}
+	if len(second.Operations) != 1 || second.Operations[0].TargetID != "d-new-1" {
+		t.Fatalf("run 2 must target the healthy thread run 1 created, got %+v", second.Operations)
+	}
+	if len(second.Warnings) != 1 {
+		t.Fatalf("the lingering corrupt thread must keep warning, got %v", second.Warnings)
+	}
+	if fmt.Sprintf("%+v", first) != fmt.Sprintf("%+v", second) {
+		t.Fatalf("double run must be stable:\n run1 = %+v\n run2 = %+v", first, second)
+	}
+
+	// The evidence the corrected contract text rests on, visible under -v.
+	// (That `repairs` CAN be non-empty is pinned separately by the conformance
+	// suite's TestConformanceDuplicateRepair — so "empty" here is a finding,
+	// not an artefact of repair being unreachable in general.)
+	t.Logf("run1: discussionPosts=1 repairs=%v | run2: discussionPosts=%d repairs=%v",
+		first.Repairs, h.discussionPosts, second.Repairs)
 }
 
 // TestContributorMarkersAreInvisible — REQ-AUD-S12-02 (spoof half), in the

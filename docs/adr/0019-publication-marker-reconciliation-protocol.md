@@ -131,11 +131,16 @@ reason this is an amendment rather than a supersession:
 - **The author-identity filter is unchanged and still runs FIRST.** A contributor comment is
   excluded before its marker is examined, so it stays invisible whether its marker is well-formed
   or corrupt, and it never produces a warning. The spoofing surface is exactly as it was.
-- **The worst case converges.** A skipped *thread* re-posts its slot, and step 8's deterministic
-  duplicate-repair resolves the duplicate on the next run. A skipped *summary note* is re-posted
-  once and then edited in place by every later run (step 3), so no duplicate accumulates. The
-  corrupted artifact itself is deliberately **not** auto-deleted — write minimisation — so it
-  keeps warning until an operator removes it, which is why the warning must be visible.
+- **The worst case converges — by reuse, NOT by step-8 repair.** Because the skipped artifact is
+  filtered out of the step-2 listing, it is invisible to every later step: it can never present
+  as a *visible* duplicate, so **step 8 never fires for it** and `PublicationReceipt.repairs`
+  stays empty. Convergence comes from the ordinary idempotent reuse path instead, identically for
+  both artifact kinds: run 1 posts exactly one healthy artifact for the slot, and every later run
+  finds and reuses that one — a re-posted thread is matched by (slot, occurrence) and left
+  untouched (step 4), and a re-posted summary note is edited in place (step 3). Either way no
+  second duplicate accumulates. The corrupted artifact itself is deliberately **not** auto-deleted
+  — write minimisation — so it keeps warning until an operator removes it, which is why the
+  warning must be visible.
 
 `PublicationReceipt` therefore gains a top-level `warnings` array of operator-facing strings,
 each naming the skipped artifact. It follows `repairs` exactly: additive, `omitempty`, and

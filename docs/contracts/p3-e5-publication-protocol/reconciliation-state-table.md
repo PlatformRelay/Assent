@@ -37,12 +37,15 @@ finish": the protocol is idempotent by construction, not by detecting its own pr
    is appended to `PublicationReceipt.warnings`, and reconciliation proceeds. Previously this was
    a hard error, which bricked the MR until a human deleted the artifact. The skip is safe
    because markers are correlation metadata only (never decision input), and its worst case
-   converges: a skipped thread re-posts its slot and step 8 repairs the duplicate, while a
-   skipped summary note is re-posted once and then edited in place by step 3 forever after. The
-   corrupted artifact is deliberately never auto-deleted (write minimisation), so it keeps
-   warning until an operator removes it. The **author-identity filter still runs before the
-   marker is parsed** — a contributor comment stays invisible whether its marker is well-formed
-   or corrupt, and never produces a warning.
+   converges **by reuse, not by step-8 repair**: the skipped artifact is invisible to this
+   listing, so it can never present as a *visible* duplicate and step 8 never fires for it
+   (`PublicationReceipt.repairs` stays empty). Instead run 1 posts exactly one healthy artifact
+   for the slot and every later run finds and reuses it — a thread via the step-4
+   matching-occurrence no-op, a summary note via step 3's edit-in-place — so no second duplicate
+   accumulates either way. The corrupted artifact is deliberately never auto-deleted (write
+   minimisation), so it keeps warning until an operator removes it. The **author-identity filter
+   still runs before the marker is parsed** — a contributor comment stays invisible whether its
+   marker is well-formed or corrupt, and never produces a warning.
 3. **Update the one summary slot in place.** The per-MR summary (`artifact.kind:
    summary-comment`) is edited in place; it is never re-posted (ADR-0012 amendment 2). Invariant
    protected: **determinism**. Exactly one summary artifact must exist per MR at all times, so a
@@ -128,9 +131,12 @@ Artifacts with an **undecodable marker payload** are likewise not a sixth row (A
 finding REL-06). Like a contributor-authored comment, they are filtered out during step 2's
 listing, *before* any slot is classified — so the slot they were occupying simply presents as
 row 1 ("no artifact exists for this slot") and takes the ordinary `create` action. That is
-precisely why the worst case is a duplicate slot post rather than a wrong decision, and why it
-converges: step 8 repairs the duplicated thread on the next run, and step 3 edits the re-posted
-summary in place from then on. The skip is recorded in `PublicationReceipt.warnings`, which
+precisely why the worst case is a re-posted slot rather than a wrong decision — and note that
+**step 8 is NOT what resolves it**. Being absent from the listing, the corrupt artifact is never
+a *visible* duplicate, so repair has nothing to act on and `PublicationReceipt.repairs` stays
+empty. Convergence is the ordinary reuse path: run 1 creates one healthy artifact, and every
+later run finds and reuses it (step 4's matching-occurrence no-op for a thread, step 3's
+edit-in-place for a summary note). The skip is recorded in `PublicationReceipt.warnings`, which
 mirrors `repairs` in every respect — an additive, `omitempty` top-level array carried by the
 receipt schema's `additionalProperties: true` (no schema change), deduplicated and sorted so a
 double run stays byte-identical, and attached on **every** Reconcile return including the typed

@@ -545,7 +545,10 @@ func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 				// AUD-S12 / REL-06: SKIP-WITH-WARNING. One corrupted marker used
 				// to error every reconcile on this MR until a human deleted the
 				// note. It is now treated as not-a-slot-note; worst case the slot
-				// is re-posted and step-8 duplicate-repair converges next run.
+				// is re-posted once, and every later run REUSES that healthy
+				// thread (step 4). Step-8 repair never fires here: the skipped
+				// artifact is absent from this listing, so it is never a VISIBLE
+				// duplicate for repair to act on.
 				c.warn(markerSkipWarning("discussion", d.ID, err))
 				continue
 			}
