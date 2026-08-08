@@ -243,7 +243,10 @@ func TestBuiltinRepoFileAbsentUnavailable(t *testing.T) {
 //
 // 99 is the sibling-prefix tell: a containment check written as
 // strings.HasPrefix(p, root) instead of HasPrefix(p, root+"/") treats
-// "topics-archive/..." as inside "topics", and 99 leaks.
+// "topics-archive/..." as inside "topics". The assertion that BITES is the state
+// one (the case expects unavailable and the leak makes it resolved); the distinct
+// per-directory values exist so the failure output names the source unambiguously
+// rather than leaving "resolved, but from where?".
 func containmentFixture(t *testing.T) fs.FS {
 	t.Helper()
 	dir := t.TempDir()
@@ -438,10 +441,6 @@ func TestRepoFileContainment(t *testing.T) {
 			}
 			if !strings.Contains(fact.Reason, tc.wantReason) {
 				t.Fatalf("reason = %q, want it to contain %q (rejected for the wrong cause?)", fact.Reason, tc.wantReason)
-			}
-			// Belt and braces against the sibling-prefix leak specifically.
-			if fact.Value == float64(99) {
-				t.Fatal("the sibling directory's value escaped the declared root")
 			}
 		})
 	}
