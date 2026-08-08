@@ -25,6 +25,7 @@ on:
       - "examples/packs/**"
       - "hack/check-migration-invariants.sh"
       - "hack/validate-schemas-stock.sh"
+      - "hack/schemas-validator/**" # AUD-S14 / SEC-01 — the validator's own pin
       - "hack/testdata/stock-validator-negative/**"
       - ".github/workflows/schemas.yml"
   push:
@@ -37,6 +38,7 @@ on:
       - "examples/packs/**"
       - "hack/check-migration-invariants.sh"
       - "hack/validate-schemas-stock.sh"
+      - "hack/schemas-validator/**" # AUD-S14 / SEC-01 — the validator's own pin
       - "hack/testdata/stock-validator-negative/**"
       - ".github/workflows/schemas.yml"
 permissions:
@@ -46,6 +48,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false # AUD-S14 / SEC-03 — this job only validates
       - name: migration invariants (P3-E3-S04)
         run: bash hack/check-migration-invariants.sh
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -56,7 +60,11 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-      - name: install stock Draft 2020-12 validator (ajv-cli)
-        run: npm install -g --ignore-scripts ajv-cli@5.0.0 ajv-formats@3.0.1
+      # AUD-S14 / SEC-01 — installed from the committed lockfile, so the whole
+      # transitive tree is hash-pinned, not just the two roots. The install is
+      # local to hack/schemas-validator/node_modules;
+      # hack/validate-schemas-stock.sh prefers that binary over any global one.
+      - name: install stock Draft 2020-12 validator (ajv-cli, lockfile-pinned)
+        run: npm ci --ignore-scripts --prefix hack/schemas-validator
       - name: stock validator over schemas + contract fixtures (P3-P1-3)
         run: bash hack/validate-schemas-stock.sh

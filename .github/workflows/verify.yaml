@@ -9,6 +9,15 @@ on:
     - cron: "0 6 * * 1"
 permissions:
   contents: read
+# AUD-S09 / SEC-04: single source for the Task version. Both jobs below install
+# Task; pinning it here (workflow scope) is what stops them skewing, and what
+# stops a mutable floating upstream release changing gate behaviour under CI.
+# hack/lint/workflow_pins_test.sh asserts exactly one such definition exists,
+# that it is a literal vX.Y.Z, and that every `cmd/task@` site interpolates it.
+# (That gate bans the floating-tag token outright, comments included — hence the
+# wording here.)
+env:
+  TASK_VERSION: v3.52.0
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -16,6 +25,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # gitleaks scans history
+          persist-credentials: false # AUD-S14 / SEC-03 — nothing in this job pushes
+      # AUD-S09 (SEC-04) — pure text gate over .github/workflows/**; no
+      # toolchain, so it runs first and fails in seconds.
+      - name: workflow supply-chain pins (AUD-S09 — SEC-04)
+        run: bash hack/lint/workflow_pins_test.sh
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable # go.mod stays the minimum; CI runs latest stable (govulncheck needs it)
@@ -64,7 +78,7 @@ jobs:
       - name: comparison corpus dogfood (PCS-S08 — examples/comparison validates and runs green)
         run: go test ./examples/comparison/...
       - name: install Task (exit gate scripts)
-        run: go install github.com/go-task/task/v3/cmd/task@latest
+        run: go install github.com/go-task/task/v3/cmd/task@"${TASK_VERSION}"
       - name: PCS compare exit gate (RELSE-03 — REQ-PCS-S09)
         run: bash hack/compare/exitgate_test.sh
       # AUD-S02 (REQ-AUD-S02-02) — CHANGELOG.md drift gate, main + schedule only.
@@ -84,6 +98,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # AUD-S14 / SEC-03 — the exit-gate scripts build and verify artifacts
+          # locally; none of them pushes, so the token must not stay in .git/config.
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
@@ -95,6 +113,6 @@ jobs:
         with:
           enable-cache: true
       - name: install Task
-        run: go install github.com/go-task/task/v3/cmd/task@latest
+        run: go install github.com/go-task/task/v3/cmd/task@"${TASK_VERSION}"
       - name: E9 release exit gate (RELSE-03 — REQ-E9-S13)
         run: bash hack/release/exitgate_test.sh

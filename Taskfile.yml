@@ -99,6 +99,16 @@ tasks:
       # AUD-S07 / D-123: `task lint` proves only the CLEAN depguard polarity. Without
       # this, deleting `- depguard` from .golangci.yml passes every wired gate.
       - task: lint-depguard-test
+      # AUD-S09/S14: workflow supply-chain pins (SEC-04 Task pin, SEC-01 ajv
+      # lockfile, SEC-03 persist-credentials). Nothing else in `task check` reads
+      # .github/workflows/**, so without this line an unpinned workflow is caught
+      # only by CI — and only for as long as the CI step itself survives.
+      - task: lint-workflow-pins-test
+
+  lint-workflow-pins-test:
+    desc: "AUD-S09/S14 gate: workflow supply-chain pins are present and the checks can fail (REQ-AUD-S09-01, REQ-AUD-S14-01/02)"
+    cmds:
+      - bash hack/lint/workflow_pins_test.sh
 
   lint-depguard-test:
     desc: "AUD-S07 gate: adversarial proof the D-123 depguard boundary rules fire (REQ-AUD-S07-01)"
