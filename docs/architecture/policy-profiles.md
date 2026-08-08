@@ -15,7 +15,7 @@ profile is **recorder-only** (`spec.writes: false`).
 Recorder-only evaluation is an **architectural invariant**, not a runtime best-effort
 check: no code path reachable from a `writes: false` profile's evaluation may invoke
 the forge `Reconcile` port (or any write adapter method that `Reconcile` would call).
-Side-effect-free comparison (`assent compare`, Phase 5+ / E6) evaluates recorder
+Side-effect-free comparison (`assent compare`, shipped in E6) evaluates recorder
 profiles over the same ChangeSet solely to produce DecisionRecords for delta
 classification.
 
