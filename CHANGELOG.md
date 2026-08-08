@@ -78,11 +78,11 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(decisions): record D-125 — CHANGELOG drift gate placement and its cost
 - :memo: docs(release): the changelog drift gate is in task check now, not outside it
 - :memo: docs(changelog): name the second toolDigest fallback branch
-- :memo: docs(adr): record the AUD-S12 malformed-marker behaviour change in ADR-0019 (review F3)
 - :memo: docs(compare): state the D-121 digest change where consumers will read it
 - :memo: docs(architecture): redraw the C4 diagrams from the real go list graph (AUD-S17)
 - :memo: docs: mark the rego backend and GitHub adapter as planned outside the C4 pages
 - :memo: docs: narrow the composition-root claim and hedge the planned modes in vision.md
+- :memo: docs(adr): record the AUD-S12 malformed-marker behaviour change in ADR-0019 (review F3)
 - :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
 
 ### Features
@@ -123,9 +123,10 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :lock: fix(release): reject a tag whose only verify run is a pull_request run
 - :lock: fix(run): derive pins.toolDigest from Go build info (D-120)
 - :lock: fix(run): emit the DecisionRecord before forge reconcile (D-122)
+- :lock: fix(compare): domain-separate the replay-bundle digest per D-121 (ARCH-04)
+- :lock: fix(test): report leaked credential names, never their values (review F1/F2)
 - :lock: fix(forge): bound response reads and cap pagination loops (AUD-S10, REL-03/SEC-08)
 - :lock: fix(forge): make retry-body safety structural, not conventional (review F5)
-- :lock: fix(compare): domain-separate the replay-bundle digest per D-121 (ARCH-04)
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
