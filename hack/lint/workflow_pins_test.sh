@@ -75,12 +75,52 @@ for expected in actionlint.yaml codeql.yaml docs.yaml release.yaml schemas.yml s
 done
 echo "OK: inventory — ${#WORKFLOW_FILES[@]} workflow files, all 8 pinned names present"
 
+# ------------------------------------------------------- comment-safe view --
+# Review finding F1: a check that greps for the PRESENCE of a safety flag and
+# does not exclude comments fails OPEN. `# persist-credentials: false` disarms
+# the flag while satisfying a naive grep, so the gate printed OK over a checkout
+# that leaks the workflow token. The same blindness was confirmed in the npm
+# check (F5) and the CI-wiring check (F6): all three are PRESENCE assertions,
+# and every presence assertion in this file must now read through code_view.
+#
+# Direction matters, and the two polarities are treated differently:
+#   * PRESENCE assertions ("the flag is set", "the gate is invoked") fail OPEN
+#     when comment-blind ⇒ they MUST use code_view.
+#   * ABSENCE assertions ("no floating tag anywhere") fail CLOSED when
+#     comment-blind — a mention in prose merely reds the gate. check_no_latest
+#     keeps its blunt total ban deliberately; see its comment.
+#
+# Emits `<lineno>:<original line>` for every line whose first non-blank
+# character is not `#`, so line numbers in findings still point at the file.
+code_view() { # <file>
+  awk '{
+    s = $0
+    sub(/^[[:space:]]+/, "", s)
+    if (substr(s, 1, 1) != "#") printf "%d:%s\n", FNR, $0
+  }' "$1"
+}
+
+# Same, for every workflow in a directory, prefixed `<file>:<lineno>:<line>`.
+code_view_dir() { # <dir>
+  local f
+  for f in "$1"/*.yml "$1"/*.yaml; do
+    [[ -f "$f" ]] || continue
+    code_view "$f" | sed "s|^|${f##*/}:|"
+  done
+}
+
 # ------------------------------------------------------------------ checks --
 # Contract for every check_* function: takes a workflows DIRECTORY, prints the
 # offending lines to stderr, returns 0 (clean) or 1 (violation). They must never
 # call fail() — the mutation harness below needs to observe their return code.
 
 # SEC-04(a): no mutable `@latest` install anywhere in CI.
+#
+# Deliberately NOT comment-aware, unlike the presence checks above: this is an
+# ABSENCE assertion, so blindness here fails CLOSED (prose mentioning the token
+# reds the gate — which it did during authoring, and the prose was reworded
+# rather than the ban weakened). A commented-out floating install is also one
+# uncomment away from being real.
 check_no_latest() {
   local dir="$1"
   local hits="$WORK/hits.no_latest"
@@ -99,16 +139,11 @@ check_task_pinned() {
   local sites="$WORK/hits.task_sites"
   local rc=0
 
-  # Install sites only: the first non-blank character must not be `#`, so the
-  # prose above the `env:` block that names this very check is not mistaken for
-  # an unpinned install. Grepped per-file (not `-R`) so `^` anchors the LINE
-  # rather than grep's `file:line:` prefix.
-  : >"$sites"
-  local f
-  for f in "$dir"/*.yml "$dir"/*.yaml; do
-    [[ -f "$f" ]] || continue
-    grep -En '^[[:space:]]*[^#[:space:]].*cmd/task@' "$f" | sed "s|^|${f##*/}:|" >>"$sites" || true
-  done
+  # Install sites only: comments are excluded so the prose above the `env:`
+  # block that names this very check is not mistaken for an unpinned install.
+  local code="$WORK/code.workflows"
+  code_view_dir "$dir" >"$code"
+  grep -F -- 'cmd/task@' "$code" >"$sites" || true
   local n_sites
   n_sites="$(wc -l <"$sites" | tr -d '[:space:]')"
   if ((n_sites == 0)); then
@@ -132,23 +167,25 @@ check_task_pinned() {
     rc=1
   fi
 
-  # Exactly one workflow-level definition. Two-space indent == workflow scope;
-  # a job-level env would be indented six, a step-level one ten. Grepped
-  # per-file (not `-R`) so `^` anchors the LINE, not grep's `file:line:` prefix.
+  # Review finding F3: counting only TWO-space definitions left the actual
+  # invariant ("the two jobs cannot skew") unchecked — a JOB-level
+  # `env: TASK_VERSION: v3.0.0` sits at six-space indent, silently overrides the
+  # workflow-level value for that job, and was invisible here. So: count
+  # definitions at ANY indent, require exactly one, and require THAT one to be
+  # at workflow scope with a literal version. An override cannot hide in the
+  # indentation any more.
   local defs="$WORK/hits.task_defs"
   local good="$WORK/hits.task_defs_literal"
-  : >"$defs"
-  for f in "$dir"/*.yml "$dir"/*.yaml; do
-    [[ -f "$f" ]] || continue
-    grep -En '^  TASK_VERSION:' "$f" | sed "s|^|${f##*/}:|" >>"$defs" || true
-  done
-  grep -E 'TASK_VERSION: v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?[[:space:]]*(#.*)?$' "$defs" >"$good" || true
+  grep -E ':[0-9]+:[[:space:]]*TASK_VERSION:' "$code" >"$defs" || true
+  # `<file>:<lineno>:` prefix, then EXACTLY two spaces = workflow scope.
+  grep -E ':[0-9]+:  TASK_VERSION: v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?[[:space:]]*(#.*)?$' \
+    "$defs" >"$good" || true
 
   local n_defs n_good
   n_defs="$(wc -l <"$defs" | tr -d '[:space:]')"
   n_good="$(wc -l <"$good" | tr -d '[:space:]')"
   if ((n_defs != 1)) || ((n_good != 1)); then
-    echo "  expected exactly ONE workflow-level 'TASK_VERSION: vX.Y.Z' definition; found $n_defs definition(s), $n_good of them a literal version (SEC-04: the pin must be single-sourced AND a real version)" >&2
+    echo "  expected exactly ONE TASK_VERSION definition, at workflow scope, as a literal vX.Y.Z; found $n_defs definition(s) at any scope, $n_good of them workflow-scoped literals (SEC-04: a job-level definition overrides the workflow-level pin and lets the two jobs skew)" >&2
     sed 's/^/    /' "$defs" >&2
     rc=1
   fi
@@ -160,9 +197,17 @@ check_task_pinned() {
 # dependency's build — can push with the workflow token.
 #
 # Step-scoped, not file-scoped: a job-wide grep would pass as long as ONE
-# checkout in the file set the flag. Steps are delimited by `- ` at list indent;
-# a nested list inside a checkout step would split it early and report a
+# checkout in the file set the flag (proven by its own mutation control, which
+# deletes ONLY the second occurrence in release.yaml — review finding F4: the
+# three whole-file deletions previously used could not distinguish a step-scoped
+# implementation from a file-scoped one). Steps are delimited by `- ` at list
+# indent; a nested list inside a checkout step would split it early and report a
 # violation, i.e. the parse fails CLOSED.
+#
+# Review finding F1: every line test here is guarded by `!is_comment`. This is a
+# PRESENCE assertion, so without that guard `# persist-credentials: false`
+# satisfied it and the gate reported OK over a checkout that keeps the workflow
+# token in .git/config — a fail-OPEN, reproduced under GNU grep + mawk.
 check_persist_credentials() {
   local dir="$1"
   local hits="$WORK/hits.persist_creds"
@@ -176,13 +221,18 @@ check_persist_credentials() {
       function flush() {
         if (is_checkout) {
           printf "%s:%d\n", short, start >> seen_out
-          if (!has_pc) printf "%s:%d: actions/checkout without `persist-credentials: false`\n", short, start
+          if (!has_pc) printf "%s:%d: actions/checkout without an ACTIVE `persist-credentials: false` (a commented-out flag is not a flag)\n", short, start
         }
         is_checkout = 0; has_pc = 0
       }
-      /^[[:space:]]*- / { flush(); start = FNR }
-      /uses:[[:space:]]*actions\/checkout@/ { is_checkout = 1 }
-      /persist-credentials:[[:space:]]*false/ { has_pc = 1 }
+      {
+        stripped = $0
+        sub(/^[[:space:]]+/, "", stripped)
+        is_comment = (substr(stripped, 1, 1) == "#")
+      }
+      /^[[:space:]]*- / && !is_comment { flush(); start = FNR }
+      /uses:[[:space:]]*actions\/checkout@/ && !is_comment { is_checkout = 1 }
+      /persist-credentials:[[:space:]]*false/ && !is_comment { has_pc = 1 }
       END { flush() }
     ' short="${f##*/}" seen_out="$seen" "$f" >>"$hits"
   done
@@ -206,6 +256,15 @@ check_persist_credentials() {
 
 # SEC-01(a): the schemas job installs its validator from a committed lockfile,
 # not from a registry range resolved at run time.
+#
+# Review finding F5, two defects, both fixed here:
+#   * comment-blind, like F1 — a commented-out `npm ci` satisfied the presence
+#     assertion, so `# run: npm ci …` plus a live global install passed. Every
+#     line test now reads through code_view.
+#   * the old negative pattern `npm[[:space:]]+install` did not match
+#     `npm --global install`, nor `npm i`, nor `npm add`. Enumerating bad forms
+#     is a losing game, so the polarity is inverted: EVERY npm invocation must
+#     be an `npm ci`, and anything else is a finding by default.
 check_npm_ci_in_workflow() {
   local dir="$1"
   local file="$dir/schemas.yml"
@@ -215,16 +274,21 @@ check_npm_ci_in_workflow() {
     return 1
   }
 
+  local code="$WORK/code.schemas"
+  code_view "$file" >"$code"
+
+  local npm_lines="$WORK/hits.npm_lines"
   local bad="$WORK/hits.npm_install"
-  grep -En 'npm[[:space:]]+install' "$file" >"$bad" || true
+  grep -F -- 'npm' "$code" >"$npm_lines" || true
+  grep -Fv -- 'npm ci' "$npm_lines" >"$bad" || true
   if [[ -s "$bad" ]]; then
-    echo "  schemas.yml resolves npm dependencies at run time instead of from the committed lockfile (SEC-01):" >&2
+    echo "  schemas.yml invokes npm in a form other than 'npm ci' — dependencies would resolve at run time instead of from the committed lockfile (SEC-01):" >&2
     sed 's/^/    /' "$bad" >&2
     rc=1
   fi
 
-  grep -Fqs -- 'npm ci --ignore-scripts' "$file" || {
-    echo "  schemas.yml does not run 'npm ci --ignore-scripts' — the transitive tree is not lockfile-pinned (SEC-01)" >&2
+  grep -Fq -- 'npm ci --ignore-scripts' "$code" || {
+    echo "  schemas.yml does not RUN 'npm ci --ignore-scripts' on an uncommented line — the transitive tree is not lockfile-pinned (SEC-01)" >&2
     rc=1
   }
 
@@ -232,12 +296,32 @@ check_npm_ci_in_workflow() {
   # directory is not listed, moving the pin does not re-run the job that
   # depends on it — the lockfile would be pinned and never revalidated.
   local n_paths
-  n_paths="$(grep -Fc -- '"hack/schemas-validator/**"' "$file" || true)"
+  n_paths="$(grep -Fc -- '"hack/schemas-validator/**"' "$code" || true)"
   if ((n_paths < 2)); then
     echo "  schemas.yml lists 'hack/schemas-validator/**' in only $n_paths of its 2 paths: filters (pull_request and push) — a lockfile change would not trigger the job that consumes it" >&2
     rc=1
   fi
   return "$rc"
+}
+
+# F6: the verify workflow actually RUNS this gate. Previously a straight-line
+# `grep -Fqs` with no mutation control — the one shape this file's preamble
+# forbids — and comment-blind, so `# run: bash hack/lint/workflow_pins_test.sh`
+# satisfied it. Now a check function like every other, with its own control.
+check_ci_wiring() {
+  local dir="$1"
+  local file="$dir/verify.yaml"
+  [[ -f "$file" ]] || {
+    echo "  missing $file" >&2
+    return 1
+  }
+  local code="$WORK/code.verify"
+  code_view "$file" >"$code"
+  grep -Fq -- 'bash hack/lint/workflow_pins_test.sh' "$code" || {
+    echo "  verify.yaml does not run 'bash hack/lint/workflow_pins_test.sh' on an uncommented line — the workflow-pin gate would only ever run locally" >&2
+    return 1
+  }
+  return 0
 }
 
 # SEC-01(b): the committed manifest and lockfile are exact and complete.
@@ -327,17 +411,47 @@ mutate() { # <file> <sed-program> <string that must appear afterwards>
     fail "mutation harness: expected '$witness' in $file after mutation, but it is absent"
 }
 
+# awk variant of mutate(), for mutations sed cannot express portably: inserting
+# lines (BSD sed needs a literal newline in the replacement, GNU takes `\n`) and
+# "change only the Nth occurrence" (`0,/re/s` is GNU-only). Same landed-mutation
+# assertion — an awk program that silently matched nothing would otherwise leave
+# the mutant identical to the clean tree.
+mutate_awk() { # <file> <awk-program> <string that must appear afterwards>
+  local file="$1" program="$2" witness="$3"
+  local before after
+  before="$(cat "$file")"
+  awk "$program" "$file" >"$file.mut"
+  mv "$file.mut" "$file"
+  after="$(cat "$file")"
+  [[ "$before" != "$after" ]] ||
+    fail "mutation harness: awk program did not change $file — the mutant is identical to the clean tree, so any 'the check fires' conclusion is false"
+  grep -Fq -- "$witness" "$file" ||
+    fail "mutation harness: expected '$witness' in $file after mutation, but it is absent"
+}
+
 expect_green() { # <check-fn> <dir> <label>
   local fn="$1" dir="$2" label="$3"
   "$fn" "$dir" || fail "$label — the real tree violates $fn (see the offending lines above)"
   echo "OK: $label"
 }
 
-expect_red() { # <check-fn> <dir> <label>
-  local fn="$1" dir="$2" label="$3"
-  if "$fn" "$dir" 2>/dev/null; then
+# A control that reds is not yet a control that WORKS: it could be red for an
+# unrelated reason (a broken extraction, a missing file), which would mask the
+# fact that the mutation itself goes undetected. So every control also pins the
+# FINDING TEXT it must produce. The independent review arrived at the same
+# method by patching this function locally; making it permanent means the
+# property is enforced on every run rather than during one review.
+expect_red() { # <check-fn> <dir> <label> <required stderr fragment>
+  local fn="$1" dir="$2" label="$3" want="$4"
+  local err="$WORK/expect_red.err"
+  if "$fn" "$dir" 2>"$err"; then
     fail "mutation control: $fn accepted a tree that DOES carry the violation ($label) — this check cannot fail and is therefore not a gate"
   fi
+  grep -Fq -- "$want" "$err" || {
+    echo "  actual finding was:" >&2
+    sed 's/^/    /' "$err" >&2
+    fail "mutation control: $fn went red on '$label' but NOT for its stated reason — the finding was expected to mention: $want"
+  }
   echo "OK: mutation control — $fn goes red on: $label"
 }
 
@@ -350,7 +464,8 @@ m="$(mutant no-latest)"
 mutate "$m/verify.yaml" \
   's|cmd/task@"\${TASK_VERSION}"|cmd/task@latest|' \
   'cmd/task@latest'
-expect_red check_no_latest "$m" "a Task install reverted to @latest"
+expect_red check_no_latest "$m" "a Task install reverted to @latest" \
+  'reference(s) — a mutable upstream release'
 
 # ------------------------------------------- 2. SEC-04: Task pin sourcing --
 
@@ -361,25 +476,39 @@ m="$(mutant task-latest)"
 mutate "$m/verify.yaml" \
   's|cmd/task@"\${TASK_VERSION}"|cmd/task@latest|' \
   'cmd/task@latest'
-expect_red check_task_pinned "$m" "an install site stopped interpolating \${TASK_VERSION}"
+expect_red check_task_pinned "$m" "an install site stopped interpolating \${TASK_VERSION}" \
+  'install site(s) not single-sourced through'
 
 m="$(mutant task-skew)"
 mutate "$m/verify.yaml" \
   's|cmd/task@"\${TASK_VERSION}"|cmd/task@v3.0.0|' \
   'cmd/task@v3.0.0'
-expect_red check_task_pinned "$m" "an install site hard-codes its own version (the two jobs can skew)"
+expect_red check_task_pinned "$m" "an install site hard-codes its own version (the two jobs can skew)" \
+  'install site(s) not single-sourced through'
 
 m="$(mutant task-unset)"
 mutate "$m/verify.yaml" \
   's|^  TASK_VERSION: v[0-9].*$|  TASK_VERSION: latest|' \
   'TASK_VERSION: latest'
-expect_red check_task_pinned "$m" "TASK_VERSION is defined but is not a literal vX.Y.Z"
+expect_red check_task_pinned "$m" "TASK_VERSION is defined but is not a literal vX.Y.Z" \
+  'expected exactly ONE TASK_VERSION definition'
 
 m="$(mutant task-removed)"
 mutate "$m/verify.yaml" \
   '/^  TASK_VERSION: v[0-9]/d' \
   'cmd/task@"${TASK_VERSION}"'
-expect_red check_task_pinned "$m" "the workflow-level TASK_VERSION definition was deleted"
+expect_red check_task_pinned "$m" "the workflow-level TASK_VERSION definition was deleted" \
+  'expected exactly ONE TASK_VERSION definition'
+
+# Review finding F3. A job-level env sits at six-space indent and overrides the
+# workflow-level pin for that job — the exact skew the story exists to prevent,
+# and previously invisible because only two-space definitions were counted.
+m="$(mutant task-job-override)"
+mutate_awk "$m/verify.yaml" \
+  '{ print } /^  verify:$/ { print "    env:"; print "      TASK_VERSION: v3.0.0" }' \
+  'TASK_VERSION: v3.0.0'
+expect_red check_task_pinned "$m" "a JOB-level TASK_VERSION overrides the workflow-level pin (F3)" \
+  'expected exactly ONE TASK_VERSION definition'
 
 # -------------------------------- 3. SEC-03: credential-scrubbed checkouts --
 
@@ -390,19 +519,44 @@ m="$(mutant persist-verify)"
 mutate "$m/verify.yaml" \
   '/persist-credentials: false/d' \
   'actions/checkout@'
-expect_red check_persist_credentials "$m" "verify.yaml checkout(s) stopped scrubbing credentials"
+expect_red check_persist_credentials "$m" "verify.yaml checkout(s) stopped scrubbing credentials" \
+  'leaving the workflow token in .git/config'
 
 m="$(mutant persist-schemas)"
 mutate "$m/schemas.yml" \
   '/persist-credentials: false/d' \
   'actions/checkout@'
-expect_red check_persist_credentials "$m" "the schemas.yml checkout stopped scrubbing credentials"
+expect_red check_persist_credentials "$m" "the schemas.yml checkout stopped scrubbing credentials" \
+  'leaving the workflow token in .git/config'
 
 m="$(mutant persist-release)"
 mutate "$m/release.yaml" \
   '/persist-credentials: false/d' \
   'actions/checkout@'
-expect_red check_persist_credentials "$m" "release.yaml checkouts stopped scrubbing credentials (the highest-privilege job)"
+expect_red check_persist_credentials "$m" "release.yaml checkouts stopped scrubbing credentials (the highest-privilege job)" \
+  'leaving the workflow token in .git/config'
+
+# Review finding F1 — the fail-OPEN this check shipped with. A commented-out
+# flag is not a flag: the token stays in .git/config while a naive presence
+# grep reports OK. Reproduced under GNU grep 3.11 + mawk before the fix.
+m="$(mutant persist-commented)"
+mutate "$m/verify.yaml" \
+  's|^          persist-credentials: false.*$|          # persist-credentials: false  # TEMPORARILY DISABLED|' \
+  '# persist-credentials: false  # TEMPORARILY DISABLED'
+expect_red check_persist_credentials "$m" "a persist-credentials flag was COMMENTED OUT rather than removed (F1)" \
+  'leaving the workflow token in .git/config'
+
+# Review finding F4 — the "step-scoped, not file-scoped" claim had zero
+# coverage: the three mutations above delete EVERY occurrence in their file, so
+# a file-scoped implementation would red on them identically. Deleting only the
+# SECOND occurrence in release.yaml leaves the first intact, which a file-scoped
+# check would happily accept. This is the control that proves the property.
+m="$(mutant persist-second-only)"
+mutate_awk "$m/release.yaml" \
+  '/persist-credentials: false/ { n++; if (n == 2) next } { print }' \
+  'persist-credentials: false'
+expect_red check_persist_credentials "$m" "only the SECOND checkout in release.yaml lost the flag — proves step scoping, not file scoping (F4)" \
+  'leaving the workflow token in .git/config'
 
 # ------------------------------ 4. SEC-01: lockfile-pinned schema validator --
 
@@ -413,32 +567,48 @@ m="$(mutant npm-install)"
 mutate "$m/schemas.yml" \
   's|npm ci --ignore-scripts.*|npm install -g --ignore-scripts ajv-cli@5.0.0 ajv-formats@3.0.1|' \
   'npm install -g'
-expect_red check_npm_ci_in_workflow "$m" "the job reverted to a run-time 'npm install' (unpinned transitives)"
+expect_red check_npm_ci_in_workflow "$m" "the job reverted to a run-time 'npm install' (unpinned transitives)" \
+  'invokes npm in a form other than'
 
 m="$(mutant npm-paths)"
 mutate "$m/schemas.yml" \
   '/"hack\/schemas-validator\/\*\*"/d' \
   'npm ci --ignore-scripts'
-expect_red check_npm_ci_in_workflow "$m" "the validator directory dropped out of the paths: filters"
+expect_red check_npm_ci_in_workflow "$m" "the validator directory dropped out of the paths: filters" \
+  'of its 2 paths: filters'
+
+# Review finding F5, both halves in one mutant: the `npm ci` line is COMMENTED
+# OUT (which the old presence grep still accepted) and replaced by
+# `npm --global install`, a form the old `npm[[:space:]]+install` pattern did
+# not match either. Both defects had to be fixed for this to red.
+m="$(mutant npm-commented-global)"
+mutate_awk "$m/schemas.yml" \
+  '{ if ($0 ~ /run: npm ci --ignore-scripts --prefix/) { print "        # run: npm ci --ignore-scripts --prefix hack/schemas-validator"; print "        run: npm --global install ajv-cli@5.0.0 ajv-formats@3.0.1" } else print }' \
+  'run: npm --global install'
+expect_red check_npm_ci_in_workflow "$m" "'npm ci' was commented out and replaced by 'npm --global install' (F5)" \
+  'does not RUN'
 
 echo "== 4b. SEC-01: the committed manifest and lockfile are exact and complete =="
 expect_green check_validator_lockfile "$VALIDATOR" "package.json pins exact versions and package-lock.json hash-pins the tree"
 
 v="$(validator_mutant no-lock)"
 rm -f "$v/package-lock.json"
-expect_red check_validator_lockfile "$v" "package-lock.json was deleted"
+expect_red check_validator_lockfile "$v" "package-lock.json was deleted" \
+  'cannot run and the transitive tree is unpinned'
 
 v="$(validator_mutant range)"
 mutate "$v/package.json" \
   's|"ajv-cli": "5.0.0"|"ajv-cli": "^5.0.0"|' \
   '"ajv-cli": "^5.0.0"'
-expect_red check_validator_lockfile "$v" "package.json loosened an exact pin into a caret range"
+expect_red check_validator_lockfile "$v" "package.json loosened an exact pin into a caret range" \
+  'pins a RANGE rather than an exact version'
 
 v="$(validator_mutant no-integrity)"
 mutate "$v/package-lock.json" \
   's|"integrity": "sha512-|"XXintegrityXX": "sha512-|' \
   '"XXintegrityXX"'
-expect_red check_validator_lockfile "$v" "a resolved package lost its integrity hash"
+expect_red check_validator_lockfile "$v" "a resolved package lost its integrity hash" \
+  'integrity hash(es)'
 
 # --------------------------------------------------------------- CI wiring --
 # `task check` runs this script (proven non-self-referentially by
@@ -448,10 +618,22 @@ expect_red check_validator_lockfile "$v" "a resolved package lost its integrity 
 # the author's machine.
 
 echo "== 5. wiring: the verify workflow runs this gate =="
-if ! grep -Fqs 'bash hack/lint/workflow_pins_test.sh' "$WORKFLOWS/verify.yaml"; then
-  fail "verify.yaml does not run 'bash hack/lint/workflow_pins_test.sh' — the workflow-pin gate would only ever run locally"
-fi
-echo "OK: verify.yaml runs hack/lint/workflow_pins_test.sh"
+expect_green check_ci_wiring "$WORKFLOWS" "verify.yaml runs hack/lint/workflow_pins_test.sh"
+
+m="$(mutant wiring-deleted)"
+mutate "$m/verify.yaml" \
+  '/run: bash hack\/lint\/workflow_pins_test.sh/d' \
+  'actions/checkout@'
+expect_red check_ci_wiring "$m" "the CI step invoking this gate was deleted" \
+  'the workflow-pin gate would only ever run locally'
+
+# F6: and commented out, which the previous straight-line `grep -Fqs` accepted.
+m="$(mutant wiring-commented)"
+mutate "$m/verify.yaml" \
+  's|^        run: bash hack/lint/workflow_pins_test.sh$|        # run: bash hack/lint/workflow_pins_test.sh|' \
+  '# run: bash hack/lint/workflow_pins_test.sh'
+expect_red check_ci_wiring "$m" "the CI step invoking this gate was COMMENTED OUT (F6)" \
+  'the workflow-pin gate would only ever run locally'
 
 echo
 echo "workflow_pins_test.sh: PASS"
