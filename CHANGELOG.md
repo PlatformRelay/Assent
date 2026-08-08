@@ -87,6 +87,8 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
 - :memo: docs: truth the D-129 checkout residuals, D-130's shadow claim, OQ-28
 - :memo: docs: point the OQ-28 decision-log link at docs/decisions/
+- :memo: docs: truth D-130 — a non-absence registry error aborts the run, not REVIEW
+- :memo: docs: record the sibling host-declaration skip in D-130
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -165,6 +167,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(provider): pin the hard error on an unopenable --checkout
 - :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
 - :white_check_mark: test(provider): point the leak scan at the refusal reason
+- :white_check_mark: test(provider): pin the registry forge error out of resolveRunFacts
 ## [0.1.0] - 2026-08-05
 
 ### Chores
