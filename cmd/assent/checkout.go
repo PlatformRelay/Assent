@@ -116,15 +116,23 @@ func (d dirCheckout) FileContents(rel string) ([]byte, []byte, error) {
 // slash-normalised path relative to root. A missing root is an EMPTY tree (an
 // all-adds or all-deletes checkout), not an error.
 //
-// The missing-root tolerance is scoped to THE ROOT ALONE, by stating it once up
-// front instead of as a predicate on the walk's error. Tolerating fs.ErrNotExist
-// over the whole walk returned a SILENTLY TRUNCATED map with a nil error: any
-// mid-walk ENOENT (a dangling symlink is the cheap one to commit) aborted
-// WalkDir on its first entry, and every path the walk had not reached yet
-// simply vanished from the changed-file set. Sorted lexically, an entry named
-// `.aaa` therefore erased `.assent/**` dominance and starved the D-042
-// self-vouch guard — BLOCK became APPROVE. A truncated tree must never be
-// returned with a nil error; below the root, every failure propagates.
+// The missing-root tolerance is scoped to THE ROOT ALONE, and it is stated once
+// up front rather than as a predicate on the walk's error. Tolerating
+// fs.ErrNotExist over the whole walk returned a SILENTLY TRUNCATED map with a
+// nil error, and every path the walk had not reached yet simply vanished from
+// the changed-file set. Sorted lexically, an entry named `.aaa` therefore
+// erased `.assent/**` dominance and starved the D-042 self-vouch guard —
+// BLOCK became APPROVE.
+//
+// The mechanism, precisely, because it dictates the shape of the fix: WalkDir
+// itself is happy. Its DirEntry comes from ReadDir, which is Lstat-based, so a
+// dangling symlink is just an entry with a symlink mode. The ENOENT was raised
+// INSIDE the callback, by the read, at arbitrary depth — indistinguishable BY
+// KIND from "the root does not exist". The two are separated by WHERE they
+// arise, never by `errors.Is`: stat the root once, then propagate every in-walk
+// failure unconditionally. A dangling symlink is only the cheapest trigger; a
+// permission error, a device node or a plain race produce the same truncation,
+// which is why the guard is pinned by a non-symlink test (collectFS, below).
 func collectTree(root string) (map[string][]byte, error) {
 	fsys, closeRoot, err := openCheckoutSide(root)
 	if err != nil {
