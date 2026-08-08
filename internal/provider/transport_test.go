@@ -106,6 +106,60 @@ func TestBoundedReadOverLimitFailsClosed(t *testing.T) {
 	}
 }
 
+// TestBoundedReadAtLimitStillSucceeds is the BOUNDARY positive control (review
+// finding F2). An under-limit control alone does not pin WHERE the boundary
+// sits: flipping `len(raw) > limit` to `>=` shifts it by one byte and an
+// under-limit test never notices. A body of EXACTLY MaxResponseBytes is
+// legitimate traffic and must parse; only this case kills that mutant.
+func TestBoundedReadAtLimitStillSucceeds(t *testing.T) {
+	q := isolationQuery()
+	// A REAL, schema-valid FactResponse padded to exactly the limit with
+	// INSIGNIFICANT TRAILING WHITESPACE — not a giant value. That keeps the
+	// document decodable at the boundary, so the test can assert the at-limit
+	// body both READS and RESOLVES.
+	doc := resolvedResponseBytes(t, q, fixedAsOf.Add(time.Hour))
+	pad := provider.MaxResponseBytes - len(doc)
+	if pad <= 0 {
+		t.Fatalf("MaxResponseBytes %d is too small for this fixture", provider.MaxResponseBytes)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(doc)
+		const chunk = 64 << 10
+		filler := strings.Repeat(" ", chunk)
+		for n := pad; n > 0; n -= chunk {
+			if n < chunk {
+				_, _ = io.WriteString(w, filler[:n])
+				break
+			}
+			_, _ = io.WriteString(w, filler)
+		}
+	}))
+	defer srv.Close()
+
+	raw, err := provider.CallHTTP(t.Context(), srv.URL, q, 30*time.Second)
+	if err != nil {
+		t.Fatalf("a body of exactly the limit is legitimate traffic: %v", err)
+	}
+	if len(raw) != provider.MaxResponseBytes {
+		t.Fatalf("read %d bytes, want exactly the limit %d", len(raw), provider.MaxResponseBytes)
+	}
+
+	// Drive the production entry point too: the at-limit body must RESOLVE, not
+	// merely be read — a bound that errors here would disarm auto-merge.
+	call := func(ctx context.Context) ([]byte, error) {
+		return provider.CallHTTP(ctx, srv.URL, q, 30*time.Second)
+	}
+	got := provider.ResolveFacts(t.Context(), call, q, fixedAsOf)
+	f, ok := got.Facts["groups"]
+	if !ok {
+		t.Fatal("fact key silently absent — must never happen")
+	}
+	if f.State != provider.StateResolved {
+		t.Fatalf("at-limit state = %q, want resolved (reason: %q)", f.State, f.Reason)
+	}
+}
+
 // TestBoundedReadUnderLimitUnaffected is the POSITIVE CONTROL for the bound: a
 // legitimate (small) provider payload still resolves. Without it, a limit of
 // zero would pass TestBoundedReadOverLimitFailsClosed.
