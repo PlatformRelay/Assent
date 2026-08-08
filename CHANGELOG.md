@@ -83,6 +83,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(architecture): redraw the C4 diagrams from the real go list graph (AUD-S17)
 - :memo: docs: mark the rego backend and GitHub adapter as planned outside the C4 pages
 - :memo: docs: narrow the composition-root claim and hedge the planned modes in vision.md
+- :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
