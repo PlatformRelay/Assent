@@ -220,6 +220,12 @@ func TestListBotThreadsPagination(t *testing.T) {
 	}
 }
 
+// TestListBotThreadsMalformedMarker — AUD-S12 / REL-06 BEHAVIOUR CHANGE
+// (ADR-0019). This test previously asserted that a malformed bot marker made
+// ListBotThreads ERROR. That failed closed but bricked the MR: every later
+// reconcile failed until a human deleted the note. The listing now SKIPS the
+// artifact and records a warning; the deep coverage lives in
+// marker_resilience_test.go.
 func TestListBotThreadsMalformedMarker(t *testing.T) {
 	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("page") == "1" {
@@ -233,9 +239,16 @@ func TestListBotThreadsMalformedMarker(t *testing.T) {
 		}
 		_, _ = io.WriteString(w, `[]`)
 	})
-	_, err := c.ListBotThreads("42", "7")
-	if err == nil {
-		t.Fatal("expected error on malformed bot marker payload")
+	threads, err := c.ListBotThreads("42", "7")
+	if err != nil {
+		t.Fatalf("a malformed bot marker must be skipped, not error: %v", err)
+	}
+	if len(threads) != 0 {
+		t.Fatalf("the malformed artifact must not become a slot, got %+v", threads)
+	}
+	warnings := c.Warnings()
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "bad") {
+		t.Fatalf("the skip must be warned about and name the artifact, got %v", warnings)
 	}
 }
 

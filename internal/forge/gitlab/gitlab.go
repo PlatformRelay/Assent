@@ -32,8 +32,10 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
@@ -55,6 +57,40 @@ type Client struct {
 	// one client per run, so one parent context per client is the right grain.
 	ctx   context.Context
 	retry RetryPolicy
+
+	// warnings is the AUD-S12 (REL-06) non-fatal anomaly channel: a SET, so the
+	// step-9 rescan seeing the same corrupt artifact twice does not grow the
+	// receipt, and so a double run stays byte-identical. Guarded because one
+	// client may be shared across goroutines.
+	warnMu   sync.Mutex
+	warnings map[string]struct{}
+}
+
+// warn records a non-fatal anomaly (AUD-S12 / REL-06). Duplicates collapse.
+func (c *Client) warn(msg string) {
+	c.warnMu.Lock()
+	defer c.warnMu.Unlock()
+	if c.warnings == nil {
+		c.warnings = map[string]struct{}{}
+	}
+	c.warnings[msg] = struct{}{}
+}
+
+// Warnings implements forge.Warner: the anomalies observed so far, deduplicated
+// and SORTED so the PublicationReceipt is deterministic regardless of the order
+// the forge returned its pages in.
+func (c *Client) Warnings() []string {
+	c.warnMu.Lock()
+	defer c.warnMu.Unlock()
+	if len(c.warnings) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(c.warnings))
+	for msg := range c.warnings {
+		out = append(out, msg)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Retry defaults (AUD-S11 / REL-04). A run that would have decided correctly
@@ -489,7 +525,12 @@ func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 			}
 			marker, ok, err := parseMarker(first.Body)
 			if err != nil {
-				return nil, err
+				// AUD-S12 / REL-06: SKIP-WITH-WARNING. One corrupted marker used
+				// to error every reconcile on this MR until a human deleted the
+				// note. It is now treated as not-a-slot-note; worst case the slot
+				// is re-posted and step-8 duplicate-repair converges next run.
+				c.warn(markerSkipWarning("discussion", d.ID, err))
+				continue
 			}
 			if !ok {
 				// A bot note without a marker is not a finding thread in this slice.
@@ -556,7 +597,12 @@ func (c *Client) ListBotNotes(project, mr string) ([]forge.Note, error) {
 			}
 			marker, ok, err := parseMarker(n.Body)
 			if err != nil {
-				return nil, err
+				// AUD-S12 / REL-06: SKIP-WITH-WARNING, as in ListBotThreads. A
+				// corrupted summary note is invisible to UpsertComment, which
+				// posts one healthy replacement; the next run edits THAT in place
+				// (write minimisation — the corrupt note is never auto-deleted).
+				c.warn(markerSkipWarning("note", fmt.Sprintf("note/%d", n.ID), err))
+				continue
 			}
 			if !ok {
 				continue

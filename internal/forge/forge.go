@@ -309,6 +309,34 @@ type PublicationReceipt struct {
 	Kind       string      `json:"kind"`
 	Operations []Operation `json:"operations"`
 	Repairs    []Repair    `json:"repairs,omitempty"`
+	// Warnings records non-fatal anomalies the forge reported while reconciling
+	// — today only the AUD-S12 malformed-bot-marker skip (finding REL-06). Like
+	// `repairs` it rides on the schema's top-level additionalProperties:true and
+	// is `omitempty`, so every prior receipt stays byte-identical. Entries are
+	// deduplicated and sorted by the adapter so a double run is stable.
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// Warner is the OPTIONAL capability a Forge implementation may add to report
+// non-fatal anomalies observed while listing (AUD-S12 / REL-06). Reconcile
+// copies whatever it returns onto the receipt; an implementation that does not
+// provide it simply reports no warnings.
+type Warner interface {
+	// Warnings returns the deduplicated, sorted anomalies observed so far.
+	Warnings() []string
+}
+
+// warningsOf returns the forge's reported warnings, or nil when it reports none.
+func warningsOf(f Forge) []string {
+	w, ok := f.(Warner)
+	if !ok {
+		return nil
+	}
+	got := w.Warnings()
+	if len(got) == 0 {
+		return nil
+	}
+	return got
 }
 
 const (
@@ -362,11 +390,15 @@ func Reconcile(f Forge, clock Clocker, desired DesiredReviewState, pre Precondit
 	if err != nil {
 		return PublicationReceipt{}, err
 	}
-	if len(preambleOps) == 0 {
-		return receipt, nil
+	if len(preambleOps) > 0 {
+		receipt = receiptOf(append(preambleOps, receipt.Operations...)...)
 	}
-	all := append(preambleOps, receipt.Operations...)
-	return receiptOf(all...), nil
+	// AUD-S12 (REL-06): non-fatal anomalies observed while listing ride out on
+	// the receipt. They are attached LAST, on the success path only — a failed
+	// reconcile already returns a hard error, and a zero-warning run leaves the
+	// field absent so no prior receipt changes shape.
+	receipt.Warnings = warningsOf(f)
+	return receipt, nil
 }
 
 type reconcilePathKind int
