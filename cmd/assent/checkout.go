@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -36,9 +37,29 @@ type localCheckout interface {
 
 // dirCheckout is the filesystem-backed localCheckout: base/ and head/ subtrees
 // under a root directory. The changed set is every relative path whose base and
-// head bytes differ (including present-on-one-side-only). All reads are
-// os.ReadFile/WalkDir on the given root — no network, no forge API, satisfying
-// the ADR-0008 §4 fence.
+// head bytes differ (including present-on-one-side-only). Every read is a
+// filesystem read under those two directories — no network, no forge API,
+// satisfying the ADR-0008 §4 fence.
+//
+// CONTAINMENT (D-133). `head/` is the MERGE-REQUEST HEAD: content under
+// judgment, authored by the contributor, and with `--checkout` the local tree is
+// the SOLE authority (D-077). Git stores a symlink as a mode-120000 blob and
+// `git clone` / `git worktree` / `git checkout` materialise it as a real,
+// possibly dangling, POSIX symlink — so a contributor can ship one. Reads are
+// therefore anchored with `os.OpenRoot` + `(*os.Root).FS()` (the same idiom as
+// `builtin.OpenRepoRoot`, D-129) AND a symlinked candidate is REFUSED rather
+// than followed.
+//
+// Both layers are needed. The root FS blocks traversal that leaves the root at
+// the syscall level, but it happily follows a RELATIVE symlink that resolves
+// back inside the root — verified, not assumed — so it alone cannot stop a
+// head-side `topics/prod/orders.yaml -> ../decoy.yaml` from substituting the
+// document under judgment. The explicit refusal covers that; the root covers
+// what the refusal cannot see (a leaf swapped between Lstat and open).
+//
+// Refusal is an ERROR, never "absent". Silent-absent would be a fail-open: it
+// would erase the path from the changed-file set and collapse into the EFE-S03
+// presence signal, where nil means a whole-file lifecycle event.
 type dirCheckout struct{ root string }
 
 func (d dirCheckout) baseDir() string { return filepath.Join(d.root, "base") }
@@ -79,12 +100,12 @@ func (d dirCheckout) ChangedFiles() ([]string, error) {
 // missing side returns nil (not an error): nil is ABSENT (one-sided lifecycle →
 // FileEvent); a present empty file returns non-nil []byte{} and stays a value
 // diff / opaque — never a fabricated delete (EFE-S03).
-func (d dirCheckout) FileContents(path string) ([]byte, []byte, error) {
-	base, err := readIfPresent(filepath.Join(d.baseDir(), filepath.FromSlash(path)))
+func (d dirCheckout) FileContents(rel string) ([]byte, []byte, error) {
+	base, err := readIfPresent(d.baseDir(), rel)
 	if err != nil {
 		return nil, nil, err
 	}
-	head, err := readIfPresent(filepath.Join(d.headDir(), filepath.FromSlash(path)))
+	head, err := readIfPresent(d.headDir(), rel)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -106,34 +127,39 @@ func (d dirCheckout) FileContents(path string) ([]byte, []byte, error) {
 // returned with a nil error; below the root, every failure propagates.
 func collectTree(root string) (map[string][]byte, error) {
 	out := map[string][]byte{}
-	// Lstat, not Stat: a root that is itself a DANGLING symlink is a broken
-	// checkout, not an empty side.
-	if _, err := os.Lstat(root); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return out, nil
-		}
+	fsys, closeRoot, err := openCheckoutSide(root)
+	if err != nil {
 		return nil, err
 	}
-	err := filepath.WalkDir(root, func(p string, dirent fs.DirEntry, err error) error {
+	if fsys == nil {
+		return out, nil // the whole side is absent
+	}
+	defer closeRoot()
+
+	err = fs.WalkDir(fsys, ".", func(p string, dirent fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		// A symlink is REFUSED, never followed and never skipped. Skipping would
+		// drop the path from the changed-file set, which is the same fail-open the
+		// truncated walk was: a head-side `.assent/**` add shipped as a symlink
+		// would stop dominating.
+		if dirent.Type()&fs.ModeSymlink != 0 {
+			return symlinkRefusal(root, p, p)
 		}
 		if dirent.IsDir() {
 			return nil
 		}
-		rel, err := filepath.Rel(root, p)
+		if !dirent.Type().IsRegular() {
+			// Sockets, devices and FIFOs are not repository content. Reading a FIFO
+			// would block the run forever.
+			return fmt.Errorf("refusing non-regular file %q in checkout tree %s", p, root)
+		}
+		data, err := fs.ReadFile(fsys, p)
 		if err != nil {
 			return err
 		}
-		// #nosec G304 G122 -- operator-supplied local checkout dir walked read-only,
-		// not remote/attacker input; symlink TOCTOU is out of scope for a local tree
-		// the operator hands us (ADR-0008 §4 checkout), fixing it belongs to the
-		// checkout-provisioning story, not this classifier read.
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		out[filepath.ToSlash(rel)] = data
+		out[p] = data // fs.WalkDir paths are already slash-separated and root-relative
 		return nil
 	})
 	if err != nil {
@@ -142,16 +168,104 @@ func collectTree(root string) (map[string][]byte, error) {
 	return out, nil
 }
 
-// readIfPresent returns a file's bytes, or nil (no error) when it does not exist.
-func readIfPresent(p string) ([]byte, error) {
-	data, err := os.ReadFile(p) // #nosec G304 -- operator-supplied local checkout dir, not remote input.
+// readIfPresent returns rel's bytes read from within the checkout side rooted at
+// root, or nil (no error) when it does not exist.
+//
+// The nil-vs-empty return is a PRESENCE SIGNAL entangled with E1-S08 fold
+// semantics and EFE-S03, and containment must not disturb it:
+//
+//	nil            = ABSENT       (one-sided lifecycle -> FileEvent)
+//	non-nil len 0  = PRESENT empty (a value diff / opaque, never a delete)
+//
+// A symlinked candidate is therefore an ERROR, not "absent" — answering absent
+// would let a substitution attempt mint a fabricated whole-file delete.
+func readIfPresent(root, rel string) ([]byte, error) {
+	name := path.Clean(filepath.ToSlash(rel))
+	if !fs.ValidPath(name) || name == "." {
+		return nil, fmt.Errorf("checkout path %q is not a valid repo-relative path", rel)
+	}
+	fsys, closeRoot, err := openCheckoutSide(root)
+	if err != nil {
+		return nil, err
+	}
+	if fsys == nil {
+		return nil, nil // the whole side is absent
+	}
+	defer closeRoot()
+
+	if err := refuseSymlinkedPath(fsys, root, name); err != nil {
+		return nil, err
+	}
+	data, err := fs.ReadFile(fsys, name)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	if data == nil {
+		// Defensive: PRESENT-but-empty must never read back as ABSENT.
+		data = []byte{}
+	}
 	return data, nil
+}
+
+// openCheckoutSide opens one checkout side (base/ or head/) as a symlink-safe
+// root, the same containment idiom as builtin.OpenRepoRoot (D-129). A side that
+// does not exist yields (nil, nil, nil) — an all-adds/all-deletes checkout, the
+// ONE absence this package tolerates. The caller must call the returned func.
+//
+// Containment is anchored AT base/ and head/: those two directories are
+// operator-provisioned (`--checkout`), everything beneath them is contributor
+// content. The side directory may itself be a symlink the operator chose;
+// nothing under it may be.
+func openCheckoutSide(dir string) (fs.FS, func(), error) {
+	// Lstat, not Stat: a side that is itself a DANGLING symlink is a broken
+	// checkout, not an empty side — OpenRoot below turns it into a hard error.
+	if _, err := os.Lstat(dir); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open checkout tree %s: %w", dir, err)
+	}
+	return root.FS(), func() { _ = root.Close() }, nil
+}
+
+// refuseSymlinkedPath rejects name if ANY component on the way to it is a
+// symlink — including the final component, and including a link that stays
+// inside the root (which `(*os.Root).FS()` would follow).
+//
+// `os.Root`'s Lstat reports the link rather than erroring, so the refusal has to
+// be explicit. A component that does not exist ends the scan: the path is
+// genuinely absent, which the caller answers as the EFE-S03 nil.
+func refuseSymlinkedPath(fsys fs.FS, root, name string) error {
+	parts := strings.Split(name, "/")
+	for i := range parts {
+		prefix := strings.Join(parts[:i+1], "/")
+		st, err := fs.Lstat(fsys, prefix)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil // absent, not contained-unsafe
+			}
+			return fmt.Errorf("stat %q in checkout tree %s: %w", prefix, root, err)
+		}
+		if st.Mode()&fs.ModeSymlink != 0 {
+			return symlinkRefusal(root, name, prefix)
+		}
+	}
+	return nil
+}
+
+// symlinkRefusal is the single wording for a containment refusal, so operators
+// and contributors see one message whichever read tripped it.
+func symlinkRefusal(root, name, at string) error {
+	return fmt.Errorf(
+		"refusing %q in checkout tree %s: reached through a symlink at %q — the checkout is the content under judgment, so symlinks are refused, never followed",
+		name, root, at)
 }
 
 // checkoutFold is the E1-S08 verdict the full changed-file set contributes on top
