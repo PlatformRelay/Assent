@@ -846,6 +846,21 @@ check_schema_freeze() { # <repo-dir> <base-ref> <min-json-at-base>
     echo "  ARCH-03: git is not available — the ref-relative schema freeze cannot be evaluated" >&2
     return 1
   }
+
+  # The base is overridable (ASSENT_AUDIT_SCHEMA_BASE) so the guard can be moved
+  # FORWARD to a later released tag. Nothing else: `HEAD`, a branch or a raw SHA
+  # would make the diff trivially empty and this check vacuous, which is exactly
+  # the disarm shape the rest of this file exists to refuse. Note that
+  # "base resolves to HEAD" is NOT the discriminator — right after a tag that is
+  # legitimate — so the constraint is on the SHAPE of the ref: a release tag.
+  if [[ ! "$base" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "  ARCH-03: schema-freeze base '$base' is not a release tag of the form vX.Y.Z — the baseline must be an IMMUTABLE ref, or the freeze check compares the tree against itself and passes over any schema change (D-131)" >&2
+    return 1
+  fi
+  git -C "$dir" rev-parse --verify --quiet "refs/tags/${base}" >/dev/null || {
+    echo "  ARCH-03: '$base' is not a tag in $dir — the baseline must be the released tag itself, not a same-named branch or a loose revision" >&2
+    return 1
+  }
   git -C "$dir" rev-parse --verify --quiet "${base}^{commit}" >/dev/null || {
     echo "  ARCH-03: base ref '$base' does not resolve in $dir — the frozen-schema baseline is unreachable (a shallow checkout without tags will do this; the job needs fetch-depth: 0)" >&2
     return 1
@@ -1183,6 +1198,19 @@ check_ci_wiring() { # <workflows-dir>
   if step_disarmed "$step" "$disabled"; then
     echo "  AUD-S18: the audit exit-gate step is present but DISARMED — 'continue-on-error' or 'if:' means a red exit gate does not fail the job:" >&2
     sed 's/^/    /' "$disabled" >&2
+    rc=1
+  fi
+
+  # `--text-only` is not the only way to hollow this gate out from the workflow:
+  # a step-level `env:` can set ASSENT_AUDIT_SCHEMA_BASE and make check (6)
+  # compare the tree against itself. check_schema_freeze refuses a non-tag base
+  # on its own, but the step carrying NO env at all is the cheaper invariant and
+  # it also covers whatever knob is added next. The gate needs no environment.
+  local envkeys="$WORK/hits.audit_wiring_env"
+  grep -En '^[[:space:]]*env:' "$step" >"$envkeys" || true
+  if [[ -s "$envkeys" ]]; then
+    echo "  AUD-S18: the audit exit-gate step carries an 'env:' block — this gate takes no configuration, and an env key (ASSENT_AUDIT_SCHEMA_BASE above all) is a way to hollow out a check while the step still looks wired:" >&2
+    sed 's/^/    /' "$envkeys" >&2
     rc=1
   fi
 
@@ -1643,8 +1671,17 @@ if ((TEXT_ONLY == 0)); then
   expect_red check_schema_freeze "a frozen JSON schema was deleted" \
     'added, deleted or renamed since' "$CLONE" "$SCHEMA_BASE" "$SCHEMA_JSON_MIN"
 
-  expect_red check_schema_freeze "the base ref does not resolve (a shallow checkout with no tags)" \
-    "does not resolve in" "$ROOT" "refs/tags/v99.99.99-nonexistent" "$SCHEMA_JSON_MIN"
+  expect_red check_schema_freeze "the base tag does not resolve (a shallow checkout with no tags)" \
+    "is not a tag in" "$ROOT" "v99.99.99" "$SCHEMA_JSON_MIN"
+
+  # The disarm this check is most exposed to: a step-level
+  # `env: ASSENT_AUDIT_SCHEMA_BASE: HEAD` empties the diff and leaves the whole
+  # freeze guard vacuous while the gate prints OK.
+  expect_red check_schema_freeze "the base was overridden to HEAD, which would make the diff trivially empty" \
+    'is not a release tag of the form' "$ROOT" "HEAD" "$SCHEMA_JSON_MIN"
+
+  expect_red check_schema_freeze "the base was overridden to a branch name" \
+    'is not a release tag of the form' "$ROOT" "main" "$SCHEMA_JSON_MIN"
 
   expect_red check_schema_freeze "the baseline pathspec stopped matching (positive control on the base file list)" \
     'the pathspec is not matching' "$ROOT" "$SCHEMA_BASE" 9999
@@ -1760,6 +1797,13 @@ mutate_awk "$wm/verify.yaml" \
   'continue-on-error: true'
 expect_red check_ci_wiring "the gate step was neutered with continue-on-error BEFORE run:" \
   'present but DISARMED' "$wm"
+
+wm="$(workflows_mutant audit-env-base)"
+mutate_awk "$wm/verify.yaml" \
+  '{ if ($0 ~ /^        run: bash hack\/audit\/exitgate_test.sh$/) { print "        env:"; print "          ASSENT_AUDIT_SCHEMA_BASE: HEAD" } print }' \
+  'ASSENT_AUDIT_SCHEMA_BASE: HEAD'
+expect_red check_ci_wiring "the step gained an env: block overriding the schema-freeze baseline" \
+  "carries an 'env:' block" "$wm"
 
 wm="$(workflows_mutant audit-if-after)"
 mutate_awk "$wm/verify.yaml" \
