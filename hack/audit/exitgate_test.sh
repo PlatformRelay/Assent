@@ -526,7 +526,7 @@ check_coverage_floor() { # <taskfile>
   local code="$WORK/taskfile.code"
   code_view "$tf" >"$code"
   local defs="$WORK/hits.coverage_min"
-  grep -E ':[0-9]+:[[:space:]]*COVERAGE_MIN:[[:space:]]*[0-9]+[[:space:]]*$' "$code" >"$defs" || true
+  grep -E '^[0-9]+:[[:space:]]*COVERAGE_MIN:[[:space:]]*[0-9]+[[:space:]]*$' "$code" >"$defs" || true
   local n
   n="$(wc -l <"$defs" | tr -d '[:space:]')"
   if ((n != 1)); then
@@ -598,10 +598,27 @@ check_release_verify_gate() { # <workflows-dir>
   fi
 
   # Order: nothing may be built, signed, SBOM'd, attested or published before
-  # the gate. Marker set is positive-controlled — if none matched, the ordering
-  # assertion would pass over any ordering at all.
+  # the gate. JOB-scoped, not file-scoped: release.yaml also carries a
+  # pull_request-only `snapshot` job whose goreleaser step legitimately precedes
+  # everything (a file-scoped comparison reds on the clean tree — it did).
+  local jobstart jobend
+  jobstart="$(grep -n '^  release:$' "$wf" | head -1 | cut -d: -f1 || true)"
+  if [[ -z "$jobstart" ]]; then
+    echo "  RELSE-05: release.yaml has no '  release:' job — the ordering assertion has no scope" >&2
+    return 1
+  fi
+  jobend="$(awk -v s="$jobstart" 'NR > s && /^  [a-zA-Z0-9_-]+:$/ { print NR; exit }' "$wf")"
+  [[ -n "$jobend" ]] || jobend="$(wc -l <"$wf" | tr -d '[:space:]')"
+  if ((lineno < jobstart || lineno > jobend)); then
+    echo "  RELSE-05: the verify-green gate step (line $lineno) is not inside the release job (lines $jobstart..$jobend) — it gates the wrong job" >&2
+    return 1
+  fi
+
+  # Marker set is positive-controlled — if none matched, the ordering assertion
+  # would pass over any ordering at all.
   local builders="$WORK/hits.release_builders"
-  grep -En 'uses:[[:space:]]*(goreleaser/goreleaser-action|sigstore/cosign-installer|anchore/sbom-action|actions/attest|softprops/action-gh-release)' "$wf" >"$builders" || true
+  grep -En 'uses:[[:space:]]*(goreleaser/goreleaser-action|sigstore/cosign-installer|anchore/sbom-action|actions/attest|softprops/action-gh-release)' "$wf" |
+    awk -F: -v s="$jobstart" -v e="$jobend" '$1 + 0 >= s + 0 && $1 + 0 <= e + 0 { print }' >"$builders" || true
   local n_builders
   n_builders="$(wc -l <"$builders" | tr -d '[:space:]')"
   if ((n_builders < 3)); then
@@ -1331,7 +1348,17 @@ m="$WORK/check.synth.nocov"
 cp "$SYNTH_CHECK" "$m"
 mutate "$m" '/^coverage: /d' 'task: [coverage]'
 expect_red check_coverage_bar "the coverage stage printed no percentage at all" \
-  "no 'coverage: NN.N%' line" "$m"
+  "expected exactly ONE line starting 'coverage: NN.N%'" "$m"
+
+# The per-PACKAGE `coverage: 92.3% of statements` lines `go test -coverprofile`
+# emits must not be mistaken for the gate's aggregate echo — grading on those
+# would compare the worst package against the aggregate bar.
+m="$WORK/check.synth.pkgcov"
+cp "$SYNTH_CHECK" "$m"
+mutate_awk "$m" \
+  '{ print } /^coverage: /  { print "ok  	github.com/PlatformRelay/assent/internal/glob	0.2s	coverage: 62.5% of statements" }' \
+  'coverage: 62.5% of statements'
+expect_green check_coverage_bar "a per-package coverage line does not displace the aggregate one" "$m"
 
 echo
 
@@ -1559,35 +1586,60 @@ if ((TEXT_ONLY == 0)); then
   expect_green check_schema_freeze "schemas/**/*.json are byte-frozen against $SCHEMA_BASE except the D-120 line" \
     "$ROOT" "$SCHEMA_BASE" "$SCHEMA_JSON_MIN"
 
-  # THE control for the defect this check exists to fix: a COMMITTED schema
-  # change. A working-tree-relative guard is silent on exactly this.
-  echo "-- building a throwaway clone and COMMITTING a schema change in it"
-  CLONE="$WORK/clone"
-  git clone --quiet --shared --no-checkout "$ROOT" "$CLONE" 2>/dev/null ||
-    git clone --quiet --shared --no-checkout "$(git -C "$ROOT" rev-parse --git-common-dir)" "$CLONE"
-  git -C "$CLONE" checkout --quiet -b audit-schema-probe "$(git -C "$ROOT" rev-parse HEAD)"
-  git -C "$CLONE" config user.email audit-gate@localhost
-  git -C "$CLONE" config user.name "AUD-S18 exit gate"
+  # THE controls for the defect this check exists to fix: a COMMITTED schema
+  # change. A working-tree-relative guard is silent on exactly this, which is
+  # why each probe below asserts BOTH that the change is committed AND that
+  # `git diff schemas/` in the probe tree is empty.
+  schema_probe_clone() { # <name> -> a fresh clone on a throwaway branch
+    local dir="$WORK/clone-$1"
+    rm -rf "$dir"
+    git clone --quiet --shared --no-checkout "$ROOT" "$dir" 2>/dev/null ||
+      git clone --quiet --shared --no-checkout "$(git -C "$ROOT" rev-parse --git-common-dir)" "$dir"
+    git -C "$dir" checkout --quiet -b "audit-schema-probe-$1" "$(git -C "$ROOT" rev-parse HEAD)"
+    git -C "$dir" config user.email audit-gate@localhost
+    git -C "$dir" config user.name "AUD-S18 exit gate"
+    printf '%s\n' "$dir"
+  }
 
+  assert_committed_only() { # <clone>
+    [[ -z "$(git -C "$1" status --porcelain -- schemas)" ]] ||
+      fail "mutation harness: the probe schema change is still uncommitted in $1 — the control would prove nothing about COMMITTED changes"
+    [[ -z "$(git -C "$1" diff -- schemas)" ]] ||
+      fail "mutation harness: 'git diff schemas/' is non-empty in $1, so this control does not isolate the committed-change class"
+  }
+
+  echo "-- probe A: a validation keyword changed in a COMMITTED schema edit"
+  CLONE="$(schema_probe_clone keyword)"
   probe="$CLONE/schemas/decision/v1alpha1/decision-record.schema.json"
   [[ -f "$probe" ]] || fail "mutation harness: $probe missing in the throwaway clone"
   mutate "$probe" 's|"policySha": { "type": "string", "minLength": 1 }|"policySha": { "type": "string", "minLength": 2 }|' \
     '"minLength": 2'
-  git -C "$CLONE" add schemas/decision/v1alpha1/decision-record.schema.json
-  git -C "$CLONE" commit --quiet -m "probe: committed schema change"
-  [[ -z "$(git -C "$CLONE" status --porcelain -- schemas)" ]] ||
-    fail "mutation harness: the probe schema change is still uncommitted in the clone — the control would prove nothing about COMMITTED changes"
-  # Belt and braces: the working-tree diff the old guard used is EMPTY here.
-  [[ -z "$(git -C "$CLONE" diff -- schemas)" ]] ||
-    fail "mutation harness: 'git diff schemas/' is non-empty in the probe clone, so this control does not isolate the committed-change class"
+  git -C "$CLONE" commit --quiet -a -m "probe: committed validation-keyword change"
+  assert_committed_only "$CLONE"
   expect_red check_schema_freeze "a validation keyword changed in a COMMITTED schema edit (the class 'git diff schemas/' is blind to)" \
+    'changed line(s) since' "$CLONE" "$SCHEMA_BASE" "$SCHEMA_JSON_MIN"
+
+  # Probe B keeps the diff at exactly TWO lines, so the line-count guard cannot
+  # be what fires: only the CONTENT check can distinguish the sanctioned D-120
+  # replacement from an arbitrary rewrite of the same line.
+  echo "-- probe B: the permitted line rewritten to something other than the D-120 text"
+  CLONE="$(schema_probe_clone description)"
+  probe="$CLONE/schemas/decision/v1alpha1/decision-record.schema.json"
+  mutate "$probe" 's|"description": "Deterministic build-content proxy for the evaluating tool|"description": "Whatever the tool feels like today|' \
+    '"description": "Whatever the tool feels like today'
+  git -C "$CLONE" commit --quiet -a -m "probe: committed description rewrite"
+  assert_committed_only "$CLONE"
+  expect_red check_schema_freeze "the one permitted line was rewritten to text other than D-120's (still exactly 2 changed lines)" \
     'are not the sanctioned toolDigest description replacement' \
     "$CLONE" "$SCHEMA_BASE" "$SCHEMA_JSON_MIN"
 
+  echo "-- probe C: a frozen schema deleted in a COMMITTED change"
+  CLONE="$(schema_probe_clone delete)"
   victim="$(git -C "$CLONE" ls-files -- schemas | grep -E '\.json$' | grep -Fv decision-record | head -1)"
   [[ -n "$victim" ]] || fail "mutation harness: no second JSON schema to delete in the probe clone"
   git -C "$CLONE" rm --quiet -- "$victim"
   git -C "$CLONE" commit --quiet -m "probe: delete a frozen schema"
+  assert_committed_only "$CLONE"
   expect_red check_schema_freeze "a frozen JSON schema was deleted" \
     'added, deleted or renamed since' "$CLONE" "$SCHEMA_BASE" "$SCHEMA_JSON_MIN"
 
@@ -1718,6 +1770,17 @@ expect_red check_ci_wiring "the gate step was neutered with if: false AFTER run:
 
 echo
 echo "============================================================================"
+if ((TEXT_ONLY == 1)); then
+  echo "AUD-S18 exit gate: TEXT LAYER + MUTATION HARNESS PASS (--text-only)"
+  echo
+  echo "  This run proved the PARSERS and STRUCTURAL PINS, and that every one of"
+  echo "  them goes red for its own stated reason. It did NOT run the cassettes,"
+  echo "  'task check', the determinism gate, or the ref-relative schema freeze."
+  echo "  It therefore certifies NOTHING about the tree's actual state — run the"
+  echo "  gate with no arguments for that."
+  echo "============================================================================"
+  exit 0
+fi
 echo "AUD-S18 exit gate: PASS"
 echo
 echo "  Certified: the 2026-08-06 audit's conditions are closed and the epic's bar"
