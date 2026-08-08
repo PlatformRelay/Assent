@@ -66,6 +66,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :memo: docs(changelog): name the second toolDigest fallback branch
 - :memo: docs(architecture): redraw the C4 diagrams from the real go list graph (AUD-S17)
 - :memo: docs: mark the rego backend and GitHub adapter as planned outside the C4 pages
+- :memo: docs: narrow the composition-root claim and hedge the planned modes in vision.md
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
