@@ -31,10 +31,10 @@ func TestIsolation(t *testing.T) {
 	}
 	dump := string(raw)
 	if !strings.Contains(dump, "PROVIDER_MODE=spike") {
-		t.Fatalf("sanity: declared non-secret env did not reach the provider; dump:\n%s", dump)
+		t.Fatalf("sanity: declared non-secret env did not reach the provider; dump:\n%s", redactDumpValues(dump))
 	}
 	if !strings.Contains(dump, q.QueryID) {
-		t.Fatalf("sanity: stdin did not reach the provider; dump:\n%s", dump)
+		t.Fatalf("sanity: stdin did not reach the provider; dump:\n%s", redactDumpValues(dump))
 	}
 
 	for _, leaked := range []string{
@@ -55,7 +55,30 @@ func TestIsolation(t *testing.T) {
 		upper := strings.ToUpper(line)
 		if name, _, ok := strings.Cut(upper, "="); ok &&
 			(strings.Contains(name, "TOKEN") || strings.Contains(name, "SECRET")) {
-			t.Errorf("credential-looking variable reached the provider: %s", line)
+			// Name only, never the value: this branch fires exactly when the
+			// scrubber has regressed, i.e. exactly when `line` holds a real host
+			// credential. Reporting the value would copy it into the CI log.
+			shown, _, _ := strings.Cut(line, "=")
+			t.Errorf("credential-looking variable reached the provider: %s", shown)
 		}
 	}
+}
+
+// redactDumpValues masks the value half of every NAME=VALUE line in a child
+// process dump so a failure message can never carry credential material into a
+// CI log. Assertions always run against the raw dump — only the printed form
+// changes — so this cannot weaken a check. It matters because the dump is
+// printed precisely when the child received something unexpected, which is also
+// the scenario in which a regressed scrubber would have handed it the host
+// environment.
+func redactDumpValues(dump string) string {
+	lines := strings.Split(dump, "\n")
+	for i, line := range lines {
+		// name == "" is the dump's own `=== SECTION ===` banner, not an
+		// assignment — keep those so the redacted dump is still readable.
+		if name, _, ok := strings.Cut(line, "="); ok && name != "" {
+			lines[i] = name + "=<redacted>"
+		}
+	}
+	return strings.Join(lines, "\n")
 }
