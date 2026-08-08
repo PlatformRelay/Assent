@@ -22,16 +22,20 @@
 package gitlab
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
@@ -46,6 +50,138 @@ type Client struct {
 	botAuthor  string           // username whose notes count as bot-authored (ADR-0019 filter).
 	http       *http.Client     // injected transport; tests point it at an httptest.Server.
 	observedAt func() time.Time // optional clock hook (tests); nil → time.Now().UTC in Resolve.
+
+	// ctx is the parent context every request derives from (AUD-S11 / REL-04).
+	// It lives on the struct rather than on each method because forge.Forge is
+	// a frozen port with no context parameters (ADR-0011/ADR-0017); the CLI owns
+	// one client per run, so one parent context per client is the right grain.
+	ctx   context.Context
+	retry RetryPolicy
+
+	// warnings is the AUD-S12 (REL-06) non-fatal anomaly channel: a SET, so the
+	// step-9 rescan seeing the same corrupt artifact twice does not grow the
+	// receipt, and so a double run stays byte-identical. Guarded because one
+	// client may be shared across goroutines.
+	warnMu   sync.Mutex
+	warnings map[string]struct{}
+}
+
+// warn records a non-fatal anomaly (AUD-S12 / REL-06). Duplicates collapse.
+func (c *Client) warn(msg string) {
+	c.warnMu.Lock()
+	defer c.warnMu.Unlock()
+	if c.warnings == nil {
+		c.warnings = map[string]struct{}{}
+	}
+	c.warnings[msg] = struct{}{}
+}
+
+// Warnings implements forge.Warner: the anomalies observed so far, deduplicated
+// and SORTED so the PublicationReceipt is deterministic regardless of the order
+// the forge returned its pages in.
+func (c *Client) Warnings() []string {
+	c.warnMu.Lock()
+	defer c.warnMu.Unlock()
+	if len(c.warnings) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(c.warnings))
+	for msg := range c.warnings {
+		out = append(out, msg)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Retry defaults (AUD-S11 / REL-04). A run that would have decided correctly
+// must not be lost to one transient 5xx, but the budget is BOUNDED: retries buy
+// availability, never a different decision. Exhausting the budget is still the
+// same hard error an un-retried failure produces today.
+const (
+	// defaultMaxAttempts is the TOTAL attempt budget for one idempotent read
+	// (1 initial + 2 retries), not the number of retries.
+	defaultMaxAttempts = 3
+
+	// defaultBaseBackoff is the first backoff window. Doubling per attempt, the
+	// worst-case added latency for one read is well under a second.
+	defaultBaseBackoff = 200 * time.Millisecond
+
+	// defaultMaxBackoff clamps the exponential so a longer budget can never
+	// stall a CI job.
+	defaultMaxBackoff = 2 * time.Second
+
+	// defaultRequestTimeout is the per-request context deadline. A hung
+	// connection consumes one attempt, not the whole run.
+	defaultRequestTimeout = 30 * time.Second
+)
+
+// RetryPolicy is the bounded retry/backoff configuration for idempotent reads.
+// Sleep and Jitter are injected seams: tests supply a recording sleeper and a
+// fixed jitter source so the backoff SCHEDULE is asserted deterministically,
+// with no wall-clock or math/rand dependence in any assertion.
+type RetryPolicy struct {
+	MaxAttempts    int
+	BaseBackoff    time.Duration
+	MaxBackoff     time.Duration
+	RequestTimeout time.Duration
+	Sleep          func(time.Duration)
+	Jitter         func() float64 // returns [0,1)
+}
+
+// Option customises a Client at construction.
+type Option func(*Client)
+
+// WithRetry replaces the whole retry policy. Zero-valued fields keep their
+// default, so a caller can tune one axis without restating the rest.
+func WithRetry(p RetryPolicy) Option {
+	return func(c *Client) {
+		if p.MaxAttempts > 0 {
+			c.retry.MaxAttempts = p.MaxAttempts
+		}
+		if p.BaseBackoff > 0 {
+			c.retry.BaseBackoff = p.BaseBackoff
+		}
+		if p.MaxBackoff > 0 {
+			c.retry.MaxBackoff = p.MaxBackoff
+		}
+		if p.RequestTimeout > 0 {
+			c.retry.RequestTimeout = p.RequestTimeout
+		}
+		if p.Sleep != nil {
+			c.retry.Sleep = p.Sleep
+		}
+		if p.Jitter != nil {
+			c.retry.Jitter = p.Jitter
+		}
+	}
+}
+
+// WithSleeper injects the backoff sleeper.
+func WithSleeper(sleep func(time.Duration)) Option {
+	return func(c *Client) {
+		if sleep != nil {
+			c.retry.Sleep = sleep
+		}
+	}
+}
+
+// WithJitter injects the [0,1) jitter source used to spread the backoff window.
+func WithJitter(j func() float64) Option {
+	return func(c *Client) {
+		if j != nil {
+			c.retry.Jitter = j
+		}
+	}
+}
+
+// WithContext sets the parent context every request derives from. Cancelling it
+// stops the client between attempts and fails the call closed.
+func WithContext(ctx context.Context) Option {
+	return func(c *Client) {
+		if ctx != nil {
+			c.ctx = ctx
+		}
+	}
 }
 
 // New builds a GitLab adapter. endpoint is the instance base URL
@@ -53,13 +189,34 @@ type Client struct {
 // botAuthor is the username whose discussion first-notes count as bot-authored
 // for the ADR-0019 author-identity filter. A trailing slash on endpoint is
 // trimmed so path joins are unambiguous.
-func New(endpoint, token, botAuthor string) *Client {
-	return &Client{
+//
+// Without options the client ships the default bounded-retry policy (AUD-S11):
+// idempotent GET/HEAD reads retry up to defaultMaxAttempts times on a transport
+// error, a 429 or a 5xx, with jittered exponential backoff under a per-request
+// deadline. Writes are NEVER auto-retried.
+func New(endpoint, token, botAuthor string, opts ...Option) *Client {
+	c := &Client{
 		endpoint:  strings.TrimRight(endpoint, "/"),
 		token:     token,
 		botAuthor: botAuthor,
 		http:      &http.Client{Timeout: 30 * time.Second},
+		ctx:       context.Background(),
+		retry: RetryPolicy{
+			MaxAttempts:    defaultMaxAttempts,
+			BaseBackoff:    defaultBaseBackoff,
+			MaxBackoff:     defaultMaxBackoff,
+			RequestTimeout: defaultRequestTimeout,
+			Sleep:          time.Sleep,
+			// #nosec G404 -- backoff jitter spreads retry storms; it is not a
+			// security or decision input, and the decision path (internal/core)
+			// remains free of randomness by construction.
+			Jitter: rand.Float64,
+		},
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // ErrNotFound is the typed error FileAtRef returns for a 404 (file absent at the
@@ -88,11 +245,138 @@ type MRInfo struct {
 	ForkMR bool
 }
 
+// Bounds on what a single forge interaction may consume (AUD-S10, audit
+// findings REL-03 / SEC-08). The GitLab instance sits across a network the
+// runner does not control: a hostile or broken endpoint must not be able to
+// exhaust the runner's memory with one response, nor spin a pagination loop
+// forever. Both bounds are FAIL-CLOSED — see readBounded and the list loops.
+const (
+	// maxResponseBytes caps a single response body. 8 MiB is MB-order and
+	// generously above legitimate traffic: a 100-item discussions page is
+	// KB-order, and the largest read (a governed file at a ref) is a policy or
+	// registry document, not a binary blob.
+	maxResponseBytes = 8 << 20
+
+	// listPerPage is the page size requested for the discussion/note/approval-rule
+	// listings. It is also the short-page test: a page with FEWER entries is the
+	// last one.
+	listPerPage = 100
+
+	// maxListPages caps those pagination loops. 100 pages × listPerPage = 10 000
+	// artifacts on a single MR — orders of magnitude above anything
+	// reconciliation legitimately produces (one summary note plus one thread per
+	// open finding). Reaching it means the forge is not shortening its pages,
+	// i.e. the listing cannot be proven complete.
+	maxListPages = 100
+)
+
+// readBounded reads at most limit bytes from r and errors when the source has
+// MORE than limit bytes to give. It reads limit+1 bytes precisely so a body of
+// exactly limit stays legitimate traffic while limit+1 is refused.
+//
+// FAIL-CLOSED: the partially-read prefix is DISCARDED (nil is returned with the
+// error). A truncated JSON array that happened to parse would silently shrink
+// the bot-artifact list and make reconcile create duplicates; truncated bytes
+// must therefore never reach a decoder.
+func readBounded(r io.Reader, limit int64) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, fmt.Errorf("%w: response body exceeds the %d-byte limit — refusing to parse a truncated response",
+			errBodyTooLarge, limit)
+	}
+	return raw, nil
+}
+
+// errBodyTooLarge marks the AUD-S10 bound as a DETERMINISTIC failure so the
+// AUD-S11 retry budget is not spent on it: the same endpoint will send the same
+// oversized document again. It is classified like a 4xx, not like a 5xx.
+var errBodyTooLarge = errors.New("gitlab: response body over limit")
+
+// retryableMethod reports whether an HTTP method is safe to replay
+// automatically (AUD-S11 / REL-04). ONLY the idempotent reads are: replaying a
+// POST duplicates a thread, a summary note or an approval, and replaying the
+// merge PUT re-runs a compare-and-swap the caller believed it had lost.
+// Idempotence discipline for writes stays the caller's (ADR-0019).
+func retryableMethod(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead
+}
+
+// transient reports whether an attempt's outcome is worth another try: a
+// transport-level failure (connection refused, reset, deadline), a 429, or any
+// 5xx. Every deterministic 4xx — 401/403/404 included — is surfaced at once;
+// retrying it would only burn the budget and delay the real error.
+// An over-limit body (AUD-S10) is explicitly EXCLUDED: it is deterministic, so
+// retrying only delays the same error.
+func transient(status int, err error) bool {
+	if errors.Is(err, errBodyTooLarge) {
+		return false
+	}
+	if err != nil {
+		return true
+	}
+	return status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+}
+
+// backoff returns the wait before the attempt AFTER the given 1-based attempt
+// number: an exponential window (base << (attempt-1)), clamped at MaxBackoff,
+// then spread over its lower half by the injected jitter source. Jitter is what
+// keeps many concurrent runners from re-hitting a recovering instance in
+// lockstep; it is injected, so the schedule is deterministic under test.
+func (c *Client) backoff(attempt int) time.Duration {
+	window := c.retry.BaseBackoff << (attempt - 1)
+	if window <= 0 || window > c.retry.MaxBackoff {
+		window = c.retry.MaxBackoff
+	}
+	half := window / 2
+	return half + time.Duration(c.retry.Jitter()*float64(half))
+}
+
 // do issues an authenticated request and returns the status code + body bytes.
 // The PAT travels ONLY in the PRIVATE-TOKEN header (never the URL/body), so it
 // cannot leak into a log line that prints the request path or an error.
+//
+// The response read is BOUNDED at maxResponseBytes (AUD-S10 / REL-03 / SEC-08):
+// an over-limit body is an error, never a truncated parse.
+//
+// IDEMPOTENT reads are retried within a bounded, jittered budget (AUD-S11 /
+// REL-04); writes get exactly one attempt. Exhausting the budget returns the
+// LAST failure unchanged, so every caller's existing fail-closed handling of a
+// non-200 (or of a transport error) applies verbatim — retries move
+// availability only, never a decision.
 func (c *Client) do(method, path string, body io.Reader, contentType string) (int, []byte, error) {
-	req, err := http.NewRequest(method, c.endpoint+path, body)
+	// `body` is an io.Reader, so it can only be consumed ONCE — a second attempt
+	// would replay an already-drained stream as an empty request. Today that is
+	// safe by convention (every retryable call site passes nil), which is a
+	// property a future edit could quietly break. Requiring body == nil makes it
+	// STRUCTURAL, and fails in the safe direction: a retryable request that
+	// somehow carries a body gets one attempt, never a corrupted replay.
+	attempts := 1
+	if retryableMethod(method) && body == nil {
+		attempts = c.retry.MaxAttempts
+	}
+	for attempt := 1; ; attempt++ {
+		// The parent deadline is checked BEFORE every attempt, so a context that
+		// expired during a backoff fails closed instead of issuing a doomed
+		// request.
+		if err := c.ctx.Err(); err != nil {
+			return 0, nil, fmt.Errorf("gitlab: %s %s: %w", method, path, err)
+		}
+		status, raw, err := c.doOnce(method, path, body, contentType)
+		if attempt >= attempts || !transient(status, err) {
+			return status, raw, err
+		}
+		c.retry.Sleep(c.backoff(attempt))
+	}
+}
+
+// doOnce performs exactly one attempt under a per-request context deadline.
+func (c *Client) doOnce(method, path string, body io.Reader, contentType string) (int, []byte, error) {
+	ctx, cancel := context.WithTimeout(c.ctx, c.retry.RequestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, c.endpoint+path, body)
 	if err != nil {
 		return 0, nil, fmt.Errorf("gitlab: build request %s %s: %w", method, path, err)
 	}
@@ -105,7 +389,7 @@ func (c *Client) do(method, path string, body io.Reader, contentType string) (in
 		return 0, nil, fmt.Errorf("gitlab: %s %s: %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := readBounded(resp.Body, maxResponseBytes)
 	if err != nil {
 		return resp.StatusCode, nil, fmt.Errorf("gitlab: read body %s %s: %w", method, path, err)
 	}
@@ -217,12 +501,21 @@ type discussion struct {
 // A contributor note carrying a well-formed marker is EXCLUDED. It paginates the
 // discussions endpoint until the last page. A discussion whose first note has no
 // marker is skipped (not a finding thread in this slice).
+//
+// The loop is CAPPED at maxListPages (AUD-S10 / REL-03) and the cap is
+// FAIL-CLOSED: a paginator that never returns a short page yields an error, not
+// a silent partial. An incomplete bot-thread list is the dangerous outcome —
+// reconcile would read it as "that finding has no thread yet" and duplicate it.
 func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 	var out []forge.Thread
-	page := 1
-	for {
-		path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/discussions?per_page=100&page=%d",
-			url.PathEscape(project), url.PathEscape(mr), page)
+	for page := 1; ; page++ {
+		if page > maxListPages {
+			return nil, fmt.Errorf(
+				"gitlab: list discussions %s!%s: pagination cap of %d pages reached without a short page — refusing to reconcile against a partial thread list",
+				project, mr, maxListPages)
+		}
+		path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/discussions?per_page=%d&page=%d",
+			url.PathEscape(project), url.PathEscape(mr), listPerPage, page)
 		status, raw, err := c.do(http.MethodGet, path, nil, "")
 		if err != nil {
 			return nil, err
@@ -249,7 +542,15 @@ func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 			}
 			marker, ok, err := parseMarker(first.Body)
 			if err != nil {
-				return nil, err
+				// AUD-S12 / REL-06: SKIP-WITH-WARNING. One corrupted marker used
+				// to error every reconcile on this MR until a human deleted the
+				// note. It is now treated as not-a-slot-note; worst case the slot
+				// is re-posted once, and every later run REUSES that healthy
+				// thread (step 4). Step-8 repair never fires here: the skipped
+				// artifact is absent from this listing, so it is never a VISIBLE
+				// duplicate for repair to act on.
+				c.warn(markerSkipWarning("discussion", d.ID, err))
+				continue
 			}
 			if !ok {
 				// A bot note without a marker is not a finding thread in this slice.
@@ -263,10 +564,9 @@ func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 			})
 		}
 		// A short page (< per_page) is the last page.
-		if len(discs) < 100 {
+		if len(discs) < listPerPage {
 			break
 		}
-		page++
 	}
 	return out, nil
 }
@@ -283,12 +583,20 @@ type mrNote struct {
 // ListBotNotes returns bot-authored MR notes filtered by AUTHOR IDENTITY
 // (ADR-0019): a note counts iff its author username equals the configured
 // botAuthor. It paginates the notes endpoint until the last page.
+//
+// The loop is CAPPED at maxListPages (AUD-S10 / REL-03), FAIL-CLOSED for the
+// same reason as ListBotThreads: UpsertComment reads this list to decide
+// edit-in-place vs. create, so a silent partial would post a duplicate summary.
 func (c *Client) ListBotNotes(project, mr string) ([]forge.Note, error) {
 	var out []forge.Note
-	page := 1
-	for {
-		path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/notes?per_page=100&page=%d",
-			url.PathEscape(project), url.PathEscape(mr), page)
+	for page := 1; ; page++ {
+		if page > maxListPages {
+			return nil, fmt.Errorf(
+				"gitlab: list notes %s!%s: pagination cap of %d pages reached without a short page — refusing to reconcile against a partial note list",
+				project, mr, maxListPages)
+		}
+		path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%s/notes?per_page=%d&page=%d",
+			url.PathEscape(project), url.PathEscape(mr), listPerPage, page)
 		status, raw, err := c.do(http.MethodGet, path, nil, "")
 		if err != nil {
 			return nil, err
@@ -309,7 +617,12 @@ func (c *Client) ListBotNotes(project, mr string) ([]forge.Note, error) {
 			}
 			marker, ok, err := parseMarker(n.Body)
 			if err != nil {
-				return nil, err
+				// AUD-S12 / REL-06: SKIP-WITH-WARNING, as in ListBotThreads. A
+				// corrupted summary note is invisible to UpsertComment, which
+				// posts one healthy replacement; the next run edits THAT in place
+				// (write minimisation — the corrupt note is never auto-deleted).
+				c.warn(markerSkipWarning("note", fmt.Sprintf("note/%d", n.ID), err))
+				continue
 			}
 			if !ok {
 				continue
@@ -321,10 +634,9 @@ func (c *Client) ListBotNotes(project, mr string) ([]forge.Note, error) {
 				Body:   n.Body,
 			})
 		}
-		if len(notes) < 100 {
+		if len(notes) < listPerPage {
 			break
 		}
-		page++
 	}
 	return out, nil
 }
