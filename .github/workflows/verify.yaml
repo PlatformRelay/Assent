@@ -57,16 +57,17 @@ jobs:
           go test -count=2 ./internal/forge/conformance/... -run 'TestConformanceTargetAdvancedRejected|TestConformanceRerunIdempotence|TestConformanceDuplicateRepair'
           go test -count=2 ./internal/forge/... -run TestMergeFailsClosedDoubleRun
           go test -count=2 ./internal/render/... -run 'TestRenderGoldens|TestRenderSummaryGolden'
-      - name: coverage gate (>=90% on internal/, D-010)
-        run: |
-          if ls internal/*/*.go >/dev/null 2>&1; then
-            go test -coverprofile=cov.out ./internal/...
-            pct=$(go tool cover -func=cov.out | awk '/^total:/ {gsub("%","",$3); print $3}')
-            echo "coverage: ${pct}% (required: 90%)"
-            awk -v p="$pct" 'BEGIN { exit (p+0 >= 90 ? 0 : 1) }'
-          else
-            echo "no internal packages yet — gate armed, not applicable"
-          fi
+      - name: install Task (coverage + exit gate scripts)
+        run: go install github.com/go-task/task/v3/cmd/task@"${TASK_VERSION}"
+      # AUD-S13 / D-128 — the coverage floor is SINGLE-SOURCED in Taskfile.yml's
+      # `coverage:` task (var COVERAGE_MIN). This step used to re-implement the gate
+      # inline with its own copy of the threshold, so raising the local floor left CI
+      # silently enforcing the previous one — the skew that actually shipped.
+      # Delegating to `task coverage` means the threshold exists in exactly ONE place
+      # and the two halves cannot drift again. Do not re-inline the shell here;
+      # change COVERAGE_MIN in Taskfile.yml instead.
+      - name: coverage gate (D-010 — threshold single-sourced from Taskfile.yml)
+        run: task coverage
       - run: CGO_ENABLED=0 go build ./...
       - name: dogfood examples (P5-E6-S08 — every non-locked pack gates itself green under the real `assent test` CLI)
         run: |
@@ -77,8 +78,6 @@ jobs:
           done
       - name: comparison corpus dogfood (PCS-S08 — examples/comparison validates and runs green)
         run: go test ./examples/comparison/...
-      - name: install Task (exit gate scripts)
-        run: go install github.com/go-task/task/v3/cmd/task@"${TASK_VERSION}"
       - name: PCS compare exit gate (RELSE-03 — REQ-PCS-S09)
         run: bash hack/compare/exitgate_test.sh
       # AUD-S02 (REQ-AUD-S02-02) — CHANGELOG.md drift gate, main + schedule only.
