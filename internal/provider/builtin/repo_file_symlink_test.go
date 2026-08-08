@@ -188,13 +188,22 @@ func TestRepoFileSymlinkContainment(t *testing.T) {
 					if fact.Value != nil {
 						t.Fatalf("non-resolved fact must drop its value; got %#v", fact.Value)
 					}
-					for _, leaked := range []string{"31337", "999", "4242", "12"} {
-						if strings.Contains(strings.TrimSpace(scalar(fact.Value)), leaked) {
-							t.Fatalf("value %q leaked through a refused candidate", leaked)
-						}
-					}
 					if fact.Reason == "" {
 						t.Fatal("a refusal must state a reason the operator can act on")
+					}
+					// With Value dropped, the REASON is the remaining exfiltration
+					// seam: it is rendered into the posted MR thread, so it may name
+					// the refused candidate PATH but must never carry the refused
+					// file's CONTENT (ADR-0012 / the render.displayFactValue seam
+					// D-129 names). Scanning scalar(fact.Value) here would be dead —
+					// the fatal above already pinned Value to nil, and scalar(nil)
+					// is "null".
+					for _, leaked := range []string{"31337", "999", "4242", "12"} {
+						if strings.Contains(fact.Reason, leaked) {
+							t.Fatalf("refusal reason %q leaks the refused file's value %q — "+
+								"a contained read that reports the bytes it refused is not contained",
+								fact.Reason, leaked)
+						}
 					}
 					return
 				}
