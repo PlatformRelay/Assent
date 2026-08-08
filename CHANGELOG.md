@@ -85,6 +85,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(adr): record the AUD-S12 malformed-marker behaviour change in ADR-0019 (review F3)
 - :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
+- :memo: docs: renumber this lane's decision row D-129 -> D-131 (D-129/D-130 claimed by the containment lane)
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
