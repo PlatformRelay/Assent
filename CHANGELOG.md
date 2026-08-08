@@ -79,6 +79,9 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(release): the changelog drift gate is in task check now, not outside it
 - :memo: docs(changelog): name the second toolDigest fallback branch
 - :memo: docs(compare): state the D-121 digest change where consumers will read it
+- :memo: docs(architecture): redraw the C4 diagrams from the real go list graph (AUD-S17)
+- :memo: docs: mark the rego backend and GitHub adapter as planned outside the C4 pages
+- :memo: docs: narrow the composition-root claim and hedge the planned modes in vision.md
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
