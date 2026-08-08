@@ -981,12 +981,12 @@ it does **not** mean "all known fail-opens are closed" and it is **not** a relea
 | SEC-06 | P3 | Operator | AUD-OPS | tag ruleset on `v*.*.*` (live GitHub ruleset) |
 | RELSE-07 | P3 | Operator | AUD-OPS | branch protection `enforce_admins` on `main` (live GitHub setting) |
 | RELSE-08 | P3 | Operator | AUD-RELSE-08 | make `release-exitgate` a required PR check (live branch protection) |
-| SEC-02 | P3 | Accepted | D-131 | check-gap compensated by the four required CI contexts |
-| SEC-07 | P3 | Accepted | D-131 | in-place asset replacement; patch-tag runbook line landed in AUD-S06 |
-| TEST-04 | P3 | Accepted | D-131 | `cmd/assent` outside the D-010 denominator; compensated by binary dogfood gates |
-| DOC-03 | P3 | Accepted | D-131 | globally-gitignored operator-local `AGENTS.md`; not in the tree |
-| DOC-04 | P3 | Accepted | D-131 | planning docs out of the public nav by design |
-| A-01 | P3 | Accepted | D-131 | glob recompile; no hot-path evidence (E3) |
+| SEC-02 | P3 | Accepted | D-132 | check-gap compensated by the four required CI contexts |
+| SEC-07 | P3 | Accepted | D-132 | in-place asset replacement; patch-tag runbook line landed in AUD-S06 |
+| TEST-04 | P3 | Accepted | D-132 | `cmd/assent` outside the D-010 denominator; compensated by binary dogfood gates |
+| DOC-03 | P3 | Accepted | D-132 | globally-gitignored operator-local `AGENTS.md`; not in the tree |
+| DOC-04 | P3 | Accepted | D-132 | planning docs out of the public nav by design |
+| A-01 | P3 | Accepted | D-132 | glob recompile; no hot-path evidence (E3) |
 
 ### Post-audit release blockers (NOT 2026-08-06 findings — outside this table's disposition)
 

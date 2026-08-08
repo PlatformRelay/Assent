@@ -113,7 +113,7 @@ jobs:
         with:
           # AUD-S18: the audit exit gate's schema-freeze check is REF-RELATIVE —
           # it diffs schemas/**/*.json against the immutable v0.1.0 tag, because
-          # a working-tree diff is silent on committed schema changes (D-131).
+          # a working-tree diff is silent on committed schema changes (D-132).
           # A shallow checkout has no tags, so the gate would be unable to
           # resolve its baseline and would fail closed.
           fetch-depth: 0
