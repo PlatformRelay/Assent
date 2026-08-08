@@ -113,6 +113,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :white_check_mark: test(run): pin the emit-before-reconcile invariant on stdout too (D-122)
 - :white_check_mark: test(docs): pin the retired truth-lag claims so they cannot come back (DOC-05/06/09/10/11)
 - :white_check_mark: test(release): pin the CHANGELOG drift gate content, wiring and polarity
+- :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
 ## [0.1.0] - 2026-08-05
 
 ### Chores
