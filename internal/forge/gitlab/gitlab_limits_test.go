@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -59,6 +60,57 @@ func TestBoundedReadOverLimitFailsClosed(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "decode") {
 		t.Fatalf("truncated bytes must never reach the decoder, got %v", err)
+	}
+}
+
+// TestBoundedReadOverLimitIsNotRetried pins the S10 × S11 interaction. An
+// over-limit body is a DETERMINISTIC failure, like a 4xx: the same endpoint
+// will send the same oversized document again, so spending the retry budget on
+// it only delays the error. Only genuinely transient outcomes (transport error,
+// 429, 5xx) are worth another attempt.
+func TestBoundedReadOverLimitIsNotRetried(t *testing.T) {
+	attempts := 0
+	rec := &recorder{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		writeFiller(w, maxResponseBytes+1)
+	}))
+	t.Cleanup(srv.Close)
+	c := New(srv.URL, "test-token", botUser, WithSleeper(rec.sleep), WithJitter(rec.jit))
+
+	if _, err := c.ListBotThreads("42", "7"); err == nil {
+		t.Fatal("an over-limit body must still fail closed")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1 — an over-limit body is deterministic, not transient", attempts)
+	}
+	if got := rec.durations(); len(got) != 0 {
+		t.Fatalf("no backoff may be spent on an over-limit body, slept %v", got)
+	}
+}
+
+// TestTransientFailuresAreStillRetriedAfterTheBound is the POSITIVE CONTROL for
+// the exclusion above: making the body-limit error non-transient must not make
+// every read error non-transient.
+func TestTransientFailuresAreStillRetriedAfterTheBound(t *testing.T) {
+	attempts := 0
+	rec := &recorder{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		if attempts < 2 {
+			http.Error(w, "wobble", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	t.Cleanup(srv.Close)
+	c := New(srv.URL, "test-token", botUser, WithSleeper(rec.sleep), WithJitter(rec.jit))
+
+	if _, err := c.ListBotThreads("42", "7"); err != nil {
+		t.Fatalf("a 5xx must still be retried: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
 	}
 }
 

@@ -284,10 +284,16 @@ func readBounded(r io.Reader, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(raw)) > limit {
-		return nil, fmt.Errorf("response body exceeds the %d-byte limit — refusing to parse a truncated response", limit)
+		return nil, fmt.Errorf("%w: response body exceeds the %d-byte limit — refusing to parse a truncated response",
+			errBodyTooLarge, limit)
 	}
 	return raw, nil
 }
+
+// errBodyTooLarge marks the AUD-S10 bound as a DETERMINISTIC failure so the
+// AUD-S11 retry budget is not spent on it: the same endpoint will send the same
+// oversized document again. It is classified like a 4xx, not like a 5xx.
+var errBodyTooLarge = errors.New("gitlab: response body over limit")
 
 // retryableMethod reports whether an HTTP method is safe to replay
 // automatically (AUD-S11 / REL-04). ONLY the idempotent reads are: replaying a
@@ -302,7 +308,12 @@ func retryableMethod(method string) bool {
 // transport-level failure (connection refused, reset, deadline), a 429, or any
 // 5xx. Every deterministic 4xx — 401/403/404 included — is surfaced at once;
 // retrying it would only burn the budget and delay the real error.
+// An over-limit body (AUD-S10) is explicitly EXCLUDED: it is deterministic, so
+// retrying only delays the same error.
 func transient(status int, err error) bool {
+	if errors.Is(err, errBodyTooLarge) {
+		return false
+	}
 	if err != nil {
 		return true
 	}
