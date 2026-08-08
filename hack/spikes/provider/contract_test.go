@@ -49,13 +49,14 @@ func TestContract(t *testing.T) {
 	srv := httptest.NewServer(ToyHTTPHandler())
 	defer srv.Close()
 
-	httpRaw, err := CallHTTP(t.Context(), srv.URL, q, 5*time.Second)
+	httpRaw, err := CallHTTP(t.Context(), srv.URL, q, execTestTimeout)
 	if err != nil {
-		t.Fatalf("HTTP call: %v", err)
+		t.Fatalf("HTTP call (timeout %s): %v", execTestTimeout, err)
 	}
-	execRaw, err := CallExec(t.Context(), toyExecBin, nil, q, 5*time.Second)
+	execRaw, err := CallExec(t.Context(), toyExecBin, nil, q, execTestTimeout)
 	if err != nil {
-		t.Fatalf("exec call: %v", err)
+		// Name the deadline: `signal: killed` on its own reads like a crash.
+		t.Fatalf("exec call (timeout %s): %v", execTestTimeout, err)
 	}
 
 	for name, raw := range map[string][]byte{"http": httpRaw, "exec": execRaw} {
