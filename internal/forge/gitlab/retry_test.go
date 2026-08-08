@@ -376,6 +376,42 @@ func TestWritesNeverRetried(t *testing.T) {
 	}
 }
 
+// TestRetryableRequestWithBodyIsNotReplayed — review finding F5. An io.Reader
+// body can be consumed only once, so replaying it would send an empty second
+// request. Every retryable call site passes nil today; this pins that the
+// safety is STRUCTURAL rather than conventional, and fails in the safe
+// direction (one attempt, never a corrupted replay).
+//
+// It calls the `do` seam directly because no production call site can construct
+// this shape — that is exactly the invariant under test.
+func TestRetryableRequestWithBodyIsNotReplayed(t *testing.T) {
+	attempts := 0
+	rec := &recorder{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		http.Error(w, "wobble", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	c := New(srv.URL, "test-token", botUser, WithSleeper(rec.sleep), WithJitter(rec.jit))
+
+	if _, _, err := c.do(http.MethodGet, "/api/v4/x", strings.NewReader("payload"), "text/plain"); err != nil {
+		t.Fatalf("the request itself must still round-trip: %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("a GET carrying a body must not be replayed: attempts = %d, want 1", attempts)
+	}
+
+	// POSITIVE CONTROL: the identical GET with a nil body DOES retry, so the
+	// guard above is the body check and not a disabled retry path.
+	attempts = 0
+	if _, _, err := c.do(http.MethodGet, "/api/v4/x", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != defaultMaxAttempts {
+		t.Fatalf("a nil-body GET must still retry: attempts = %d, want %d", attempts, defaultMaxAttempts)
+	}
+}
+
 // TestWriteMethodsAreNotRetryable is the table half of REQ-AUD-S11-02: the
 // method predicate itself, pinned in BOTH polarities so neither "retry
 // everything" nor "retry nothing" passes.

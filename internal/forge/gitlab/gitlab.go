@@ -347,8 +347,14 @@ func (c *Client) backoff(attempt int) time.Duration {
 // non-200 (or of a transport error) applies verbatim — retries move
 // availability only, never a decision.
 func (c *Client) do(method, path string, body io.Reader, contentType string) (int, []byte, error) {
+	// `body` is an io.Reader, so it can only be consumed ONCE — a second attempt
+	// would replay an already-drained stream as an empty request. Today that is
+	// safe by convention (every retryable call site passes nil), which is a
+	// property a future edit could quietly break. Requiring body == nil makes it
+	// STRUCTURAL, and fails in the safe direction: a retryable request that
+	// somehow carries a body gets one attempt, never a corrupted replay.
 	attempts := 1
-	if retryableMethod(method) {
+	if retryableMethod(method) && body == nil {
 		attempts = c.retry.MaxAttempts
 	}
 	for attempt := 1; ; attempt++ {
