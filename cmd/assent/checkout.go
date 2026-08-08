@@ -94,8 +94,26 @@ func (d dirCheckout) FileContents(path string) ([]byte, []byte, error) {
 // collectTree reads every regular file under root into a map keyed by the
 // slash-normalised path relative to root. A missing root is an EMPTY tree (an
 // all-adds or all-deletes checkout), not an error.
+//
+// The missing-root tolerance is scoped to THE ROOT ALONE, by stating it once up
+// front instead of as a predicate on the walk's error. Tolerating fs.ErrNotExist
+// over the whole walk returned a SILENTLY TRUNCATED map with a nil error: any
+// mid-walk ENOENT (a dangling symlink is the cheap one to commit) aborted
+// WalkDir on its first entry, and every path the walk had not reached yet
+// simply vanished from the changed-file set. Sorted lexically, an entry named
+// `.aaa` therefore erased `.assent/**` dominance and starved the D-042
+// self-vouch guard — BLOCK became APPROVE. A truncated tree must never be
+// returned with a nil error; below the root, every failure propagates.
 func collectTree(root string) (map[string][]byte, error) {
 	out := map[string][]byte{}
+	// Lstat, not Stat: a root that is itself a DANGLING symlink is a broken
+	// checkout, not an empty side.
+	if _, err := os.Lstat(root); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return out, nil
+		}
+		return nil, err
+	}
 	err := filepath.WalkDir(root, func(p string, dirent fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -118,7 +136,7 @@ func collectTree(root string) (map[string][]byte, error) {
 		out[filepath.ToSlash(rel)] = data
 		return nil
 	})
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err != nil {
 		return nil, err
 	}
 	return out, nil
