@@ -132,6 +132,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(run): pin the emit-before-reconcile invariant on stdout too (D-122)
 - :white_check_mark: test(docs): pin the retired truth-lag claims so they cannot come back (DOC-05/06/09/10/11)
 - :white_check_mark: test(release): pin the CHANGELOG drift gate content, wiring and polarity
+- :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
 - :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
 ## [0.1.0] - 2026-08-05
 
