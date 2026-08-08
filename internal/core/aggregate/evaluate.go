@@ -228,12 +228,16 @@ func (w *textOrderWatch) Eval(activation interpreter.Activation) ref.Val {
 	case types.Bytes:
 		// bytes is the same text ordering wearing a different type: CEL compares
 		// bytes byte-by-byte, so `bytes(new) >= bytes(old)` over the quoted shrink
-		// 12 -> 6 answers TRUE for exactly the reason `new >= old` did. Nothing in
-		// the frozen predicate scope BINDS bytes (toCEL emits only numbers,
-		// strings, bools, lists and maps), so every bytes value here came from an
-		// explicit bytes(...) call or a b"..." literal — i.e. from text. Exempting
-		// it would leave a tier-1 form that orders text, which is precisely what
-		// ADR-0013 Amendment 1 says is no longer expressible.
+		// 12 -> 6 answers TRUE for exactly the reason `new >= old` did. In practice
+		// a bytes value here came from an explicit bytes(...) call or a b"..."
+		// literal — i.e. from text: the decoder feeding old/new emits only strings,
+		// bools, nil and json.Number, and no policy in the corpus or either dogfood
+		// pack binds bytes. That is an observation, not a guarantee — toCEL passes
+		// an unrecognized Go value through untouched, so a provider-supplied
+		// Fact.Value could in principle arrive as []byte. Refusing to ORDER it
+		// either way is the fail-safe direction, and exempting bytes would leave a
+		// tier-1 form that orders text, which is precisely what ADR-0013
+		// Amendment 1 says is no longer expressible.
 		w.guard.record(w.op, string(t))
 	}
 	return v

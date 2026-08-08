@@ -176,8 +176,8 @@ var tmplPlaceholder = regexp.MustCompile(`\{\{[^{}]*\}\}`)
 //
 // One binding is neither a scalar nor a container: since D-131 toCEL binds a numeric literal
 // beyond the representable range as a CEL error VALUE, and being printable it substitutes as
-// its own sentence ("the number 1e400 is too large for assent to compare…") where the number
-// would have gone. Deliberate, and pinned by test: the leaf already errored, so the finding is
+// its own refusal sentence (toCEL owns the wording) where the number would have gone.
+// Deliberate, and pinned by test: the leaf already errored, so the finding is
 // a predicate.error REVIEW either way, and the sentence at least says why the rule could not
 // decide — more than a bare `{{ old }}` left literal would. internal/render's separate
 // EvalScalar-based interpolator diverges here and rejects the error value instead.
