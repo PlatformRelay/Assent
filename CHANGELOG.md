@@ -80,6 +80,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :bug: docs(readme): point the ADR-0014 link at the file that exists (DOC-05)
 - :bug: fix(docs-gates): the scripts claimed a wiring that does not exist
 - :bug: docs(examples): starter packs advertised a subcommand that does not exist
+- :bug: fix(release): stop stripping the changelog header from the GitHub Release body
 
 ### Other
 - :construction_worker: ci(lint): depguard deny-rules for the D-123 pure tree (REQ-AUD-S07-01)
@@ -98,6 +99,8 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :lock: fix(release): reject a tag whose only verify run is a pull_request run
 - :lock: fix(run): derive pins.toolDigest from Go build info (D-120)
 - :lock: fix(run): emit the DecisionRecord before forge reconcile (D-122)
+- :lock: security(ci): pin the Task version in verify.yaml via a single workflow env (AUD-S09 / SEC-04)
+- :lock: security(ci): lockfile-pin the ajv validator and scrub checkout credentials (AUD-S14 / SEC-01 + SEC-03)
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
