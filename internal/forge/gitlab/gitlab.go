@@ -22,12 +22,14 @@
 package gitlab
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -46,6 +48,104 @@ type Client struct {
 	botAuthor  string           // username whose notes count as bot-authored (ADR-0019 filter).
 	http       *http.Client     // injected transport; tests point it at an httptest.Server.
 	observedAt func() time.Time // optional clock hook (tests); nil → time.Now().UTC in Resolve.
+
+	// ctx is the parent context every request derives from (AUD-S11 / REL-04).
+	// It lives on the struct rather than on each method because forge.Forge is
+	// a frozen port with no context parameters (ADR-0011/ADR-0017); the CLI owns
+	// one client per run, so one parent context per client is the right grain.
+	ctx   context.Context
+	retry RetryPolicy
+}
+
+// Retry defaults (AUD-S11 / REL-04). A run that would have decided correctly
+// must not be lost to one transient 5xx, but the budget is BOUNDED: retries buy
+// availability, never a different decision. Exhausting the budget is still the
+// same hard error an un-retried failure produces today.
+const (
+	// defaultMaxAttempts is the TOTAL attempt budget for one idempotent read
+	// (1 initial + 2 retries), not the number of retries.
+	defaultMaxAttempts = 3
+
+	// defaultBaseBackoff is the first backoff window. Doubling per attempt, the
+	// worst-case added latency for one read is well under a second.
+	defaultBaseBackoff = 200 * time.Millisecond
+
+	// defaultMaxBackoff clamps the exponential so a longer budget can never
+	// stall a CI job.
+	defaultMaxBackoff = 2 * time.Second
+
+	// defaultRequestTimeout is the per-request context deadline. A hung
+	// connection consumes one attempt, not the whole run.
+	defaultRequestTimeout = 30 * time.Second
+)
+
+// RetryPolicy is the bounded retry/backoff configuration for idempotent reads.
+// Sleep and Jitter are injected seams: tests supply a recording sleeper and a
+// fixed jitter source so the backoff SCHEDULE is asserted deterministically,
+// with no wall-clock or math/rand dependence in any assertion.
+type RetryPolicy struct {
+	MaxAttempts    int
+	BaseBackoff    time.Duration
+	MaxBackoff     time.Duration
+	RequestTimeout time.Duration
+	Sleep          func(time.Duration)
+	Jitter         func() float64 // returns [0,1)
+}
+
+// Option customises a Client at construction.
+type Option func(*Client)
+
+// WithRetry replaces the whole retry policy. Zero-valued fields keep their
+// default, so a caller can tune one axis without restating the rest.
+func WithRetry(p RetryPolicy) Option {
+	return func(c *Client) {
+		if p.MaxAttempts > 0 {
+			c.retry.MaxAttempts = p.MaxAttempts
+		}
+		if p.BaseBackoff > 0 {
+			c.retry.BaseBackoff = p.BaseBackoff
+		}
+		if p.MaxBackoff > 0 {
+			c.retry.MaxBackoff = p.MaxBackoff
+		}
+		if p.RequestTimeout > 0 {
+			c.retry.RequestTimeout = p.RequestTimeout
+		}
+		if p.Sleep != nil {
+			c.retry.Sleep = p.Sleep
+		}
+		if p.Jitter != nil {
+			c.retry.Jitter = p.Jitter
+		}
+	}
+}
+
+// WithSleeper injects the backoff sleeper.
+func WithSleeper(sleep func(time.Duration)) Option {
+	return func(c *Client) {
+		if sleep != nil {
+			c.retry.Sleep = sleep
+		}
+	}
+}
+
+// WithJitter injects the [0,1) jitter source used to spread the backoff window.
+func WithJitter(j func() float64) Option {
+	return func(c *Client) {
+		if j != nil {
+			c.retry.Jitter = j
+		}
+	}
+}
+
+// WithContext sets the parent context every request derives from. Cancelling it
+// stops the client between attempts and fails the call closed.
+func WithContext(ctx context.Context) Option {
+	return func(c *Client) {
+		if ctx != nil {
+			c.ctx = ctx
+		}
+	}
 }
 
 // New builds a GitLab adapter. endpoint is the instance base URL
@@ -53,13 +153,34 @@ type Client struct {
 // botAuthor is the username whose discussion first-notes count as bot-authored
 // for the ADR-0019 author-identity filter. A trailing slash on endpoint is
 // trimmed so path joins are unambiguous.
-func New(endpoint, token, botAuthor string) *Client {
-	return &Client{
+//
+// Without options the client ships the default bounded-retry policy (AUD-S11):
+// idempotent GET/HEAD reads retry up to defaultMaxAttempts times on a transport
+// error, a 429 or a 5xx, with jittered exponential backoff under a per-request
+// deadline. Writes are NEVER auto-retried.
+func New(endpoint, token, botAuthor string, opts ...Option) *Client {
+	c := &Client{
 		endpoint:  strings.TrimRight(endpoint, "/"),
 		token:     token,
 		botAuthor: botAuthor,
 		http:      &http.Client{Timeout: 30 * time.Second},
+		ctx:       context.Background(),
+		retry: RetryPolicy{
+			MaxAttempts:    defaultMaxAttempts,
+			BaseBackoff:    defaultBaseBackoff,
+			MaxBackoff:     defaultMaxBackoff,
+			RequestTimeout: defaultRequestTimeout,
+			Sleep:          time.Sleep,
+			// #nosec G404 -- backoff jitter spreads retry storms; it is not a
+			// security or decision input, and the decision path (internal/core)
+			// remains free of randomness by construction.
+			Jitter: rand.Float64,
+		},
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // ErrNotFound is the typed error FileAtRef returns for a 404 (file absent at the
@@ -132,14 +253,77 @@ func readBounded(r io.Reader, limit int64) ([]byte, error) {
 	return raw, nil
 }
 
+// retryableMethod reports whether an HTTP method is safe to replay
+// automatically (AUD-S11 / REL-04). ONLY the idempotent reads are: replaying a
+// POST duplicates a thread, a summary note or an approval, and replaying the
+// merge PUT re-runs a compare-and-swap the caller believed it had lost.
+// Idempotence discipline for writes stays the caller's (ADR-0019).
+func retryableMethod(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead
+}
+
+// transient reports whether an attempt's outcome is worth another try: a
+// transport-level failure (connection refused, reset, deadline), a 429, or any
+// 5xx. Every deterministic 4xx — 401/403/404 included — is surfaced at once;
+// retrying it would only burn the budget and delay the real error.
+func transient(status int, err error) bool {
+	if err != nil {
+		return true
+	}
+	return status == http.StatusTooManyRequests || status >= http.StatusInternalServerError
+}
+
+// backoff returns the wait before the attempt AFTER the given 1-based attempt
+// number: an exponential window (base << (attempt-1)), clamped at MaxBackoff,
+// then spread over its lower half by the injected jitter source. Jitter is what
+// keeps many concurrent runners from re-hitting a recovering instance in
+// lockstep; it is injected, so the schedule is deterministic under test.
+func (c *Client) backoff(attempt int) time.Duration {
+	window := c.retry.BaseBackoff << (attempt - 1)
+	if window <= 0 || window > c.retry.MaxBackoff {
+		window = c.retry.MaxBackoff
+	}
+	half := window / 2
+	return half + time.Duration(c.retry.Jitter()*float64(half))
+}
+
 // do issues an authenticated request and returns the status code + body bytes.
 // The PAT travels ONLY in the PRIVATE-TOKEN header (never the URL/body), so it
 // cannot leak into a log line that prints the request path or an error.
 //
 // The response read is BOUNDED at maxResponseBytes (AUD-S10 / REL-03 / SEC-08):
 // an over-limit body is an error, never a truncated parse.
+//
+// IDEMPOTENT reads are retried within a bounded, jittered budget (AUD-S11 /
+// REL-04); writes get exactly one attempt. Exhausting the budget returns the
+// LAST failure unchanged, so every caller's existing fail-closed handling of a
+// non-200 (or of a transport error) applies verbatim — retries move
+// availability only, never a decision.
 func (c *Client) do(method, path string, body io.Reader, contentType string) (int, []byte, error) {
-	req, err := http.NewRequest(method, c.endpoint+path, body)
+	attempts := 1
+	if retryableMethod(method) {
+		attempts = c.retry.MaxAttempts
+	}
+	for attempt := 1; ; attempt++ {
+		// The parent deadline is checked BEFORE every attempt, so a context that
+		// expired during a backoff fails closed instead of issuing a doomed
+		// request.
+		if err := c.ctx.Err(); err != nil {
+			return 0, nil, fmt.Errorf("gitlab: %s %s: %w", method, path, err)
+		}
+		status, raw, err := c.doOnce(method, path, body, contentType)
+		if attempt >= attempts || !transient(status, err) {
+			return status, raw, err
+		}
+		c.retry.Sleep(c.backoff(attempt))
+	}
+}
+
+// doOnce performs exactly one attempt under a per-request context deadline.
+func (c *Client) doOnce(method, path string, body io.Reader, contentType string) (int, []byte, error) {
+	ctx, cancel := context.WithTimeout(c.ctx, c.retry.RequestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, c.endpoint+path, body)
 	if err != nil {
 		return 0, nil, fmt.Errorf("gitlab: build request %s %s: %w", method, path, err)
 	}

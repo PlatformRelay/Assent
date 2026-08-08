@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/PlatformRelay/assent/internal/core/decision"
 	"github.com/PlatformRelay/assent/internal/forge"
@@ -365,7 +366,8 @@ func (h *gitlabHarness) client(t interface {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(h.handle))
 	t.Cleanup(srv.Close)
-	return gitlab.New(srv.URL, "test-token", h.botAuthor)
+	return gitlab.New(srv.URL, "test-token", h.botAuthor,
+		gitlab.WithSleeper(func(time.Duration) {}))
 }
 
 func (h *gitlabHarness) handle(w http.ResponseWriter, r *http.Request) {

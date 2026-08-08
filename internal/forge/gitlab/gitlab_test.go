@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/render"
@@ -22,7 +23,9 @@ func newServer(t *testing.T, h http.HandlerFunc) (*Client, *httptest.Server) {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	c := New(srv.URL, "test-token", botUser)
+	// AUD-S11: keep the SHIPPED retry budget (a 5xx here is still attempted
+	// defaultMaxAttempts times) but spend no wall-clock on the backoff.
+	c := New(srv.URL, "test-token", botUser, WithSleeper(func(time.Duration) {}))
 	return c, srv
 }
 
