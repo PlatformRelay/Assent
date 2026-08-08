@@ -88,6 +88,10 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :construction_worker: ci(docs): wire the AUD-S06 docs truth-lag gates into task check (D-124)
 - :construction_worker: ci(lint): wire the depguard polarity proof into task check (AUD-S07)
 - :construction_worker: ci(release): wire the changelog gate test itself into task check
+- :ambulance: fix(forge): skip malformed bot markers with a warning instead of bricking reconcile (AUD-S12, REL-06)
+
+### Refactoring
+- :recycle: fix(forge): retry idempotent GitLab reads with bounded jittered backoff (AUD-S11, REL-04)
 
 ### Security
 - :lock: fix(forge): prove changed-file enumeration completeness or declare a gap
@@ -95,6 +99,7 @@ comparable across the boundary: a mismatch between a pre-D-120 and a post-D-120 
 - :lock: fix(release): reject a tag whose only verify run is a pull_request run
 - :lock: fix(run): derive pins.toolDigest from Go build info (D-120)
 - :lock: fix(run): emit the DecisionRecord before forge reconcile (D-122)
+- :lock: fix(forge): bound response reads and cap pagination loops (AUD-S10, REL-03/SEC-08)
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
