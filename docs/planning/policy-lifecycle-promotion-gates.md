@@ -86,5 +86,11 @@ gate unless individually present in `acceptedDeltas`.
 
 - Comparison deltas: `schemas/comparison/v1alpha1/comparison-record.schema.json`
 - Suite + gates + `acceptedDeltas`: `schemas/comparison/v1alpha1/comparison-suite.schema.json`
-- Immutable corpus: under a fixed `caseId`, `replayBundleDigest` must not change;
-  revise by minting a new `caseId`
+- Immutable corpus: a `caseId` is never reused for different bundle bytes — revise by
+  minting a new `caseId`, never by re-pointing an existing one. The `replayBundleDigest`
+  *value* is algorithm-dependent and changes if the digest algorithm is revised under a
+  logged decision: **D-121** did so once pre-v1, switching to the domain-separated
+  `assent-jcs-v1` digest (canonical JSON under the replay-bundle schema `$id`, bare hex,
+  no `sha256:` tag) and regenerating every pin in the same commit with all `caseId`s and
+  bundle bytes unchanged. Pins from an earlier algorithm fail closed with a digest
+  mismatch — they never silently pass.

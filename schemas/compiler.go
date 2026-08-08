@@ -104,6 +104,12 @@ const (
 	comparisonSuiteSchemaID    = "https://assent.dev/schemas/comparison/v1alpha1/comparison-suite.schema.json"
 )
 
+// ReplayBundleSchemaID is the `$id` of the ReplayBundle schema. It is exported
+// because it is not only a compiler resource key: per D-121 it is also the hash
+// DOMAIN for `compare.ReplayBundleDigest` (ADR-0017 §9 domain separation), and
+// that domain must be the schema `$id` itself rather than a hand-copied literal.
+const ReplayBundleSchemaID = replayBundleSchemaID
+
 var decisionSchemas = mustCompileCrossReferenced(map[string][]byte{
 	evaluationInputSchemaID:    evaluationInputSchemaJSON,
 	decisionRecordSchemaID:     decisionRecordSchemaJSON,
