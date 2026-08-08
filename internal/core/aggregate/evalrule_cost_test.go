@@ -13,6 +13,11 @@ const costBombWhen = `[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,
 
 // TestEvalRuleEnforcesCostBudget — REL-02 / AUD-02: production evalRule must apply
 // the same celCostBudget as evalLeaf/evalscalar/message-template paths.
+//
+// It doubles as the D-131 interaction proof: costBombWhen's expensive node is the
+// LEFT OPERAND of `> 0`, so it is exactly the kind of node textOrderGuard wraps
+// (cel.CustomDecorator). This asserts the cost observer still charges a wrapped
+// operand — keep the `> 0` shape if this expression is ever rewritten.
 func TestEvalRuleEnforcesCostBudget(t *testing.T) {
 	env, err := newEvalEnv()
 	if err != nil {

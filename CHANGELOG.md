@@ -85,6 +85,10 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(adr): record the AUD-S12 malformed-marker behaviour change in ADR-0019 (review F3)
 - :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
+- :memo: docs: renumber this lane's decision row D-129 -> D-131 (D-129/D-130 claimed by the containment lane)
+- :memo: docs(engine): the text-order refusal sentence reaches no adopter surface
+- :memo: docs: record the review close-out for the three non-blocking notes in D-131
+- :memo: docs(engine): narrow the bytes-binding claim to what was verified
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -101,6 +105,8 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :bug: fix(release): stop stripping the changelog header from the GitHub Release body
 - :bug: fix(forge): treat an over-limit body as deterministic, not retryable (AUD-S10 x S11)
 - :bug: fix(forge): carry reconcile warnings on refusal paths too (review F1)
+- :bug: fix(engine): relational compare over string-bound operands must fail safe, not lexically
+- :bug: fix(engine): ordering a bytes operand is text ordering too — refuse it (D-131)
 
 ### Other
 - :construction_worker: ci(lint): depguard deny-rules for the D-123 pure tree (REQ-AUD-S07-01)
@@ -157,6 +163,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
 - :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
 - :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
+- :white_check_mark: test(engine): pin how an unrepresentable numeric renders in {{ }}
 ## [0.1.0] - 2026-08-05
 
 ### Chores
