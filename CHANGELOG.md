@@ -106,6 +106,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :bug: fix(release): stop stripping the changelog header from the GitHub Release body
 - :bug: fix(forge): treat an over-limit body as deterministic, not retryable (AUD-S10 x S11)
 - :bug: fix(forge): carry reconcile warnings on refusal paths too (review F1)
+- :bug: test(aud-s18): remove the three banned pipe shapes from the audit exit gate
 
 ### Other
 - :construction_worker: ci(lint): depguard deny-rules for the D-123 pure tree (REQ-AUD-S07-01)
@@ -143,6 +144,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :lock: fix(lint): isolate the real CI step, and enforce command_view's scalar precondition (review N5/N6)
 - :lock: fix(test): report leaked credential names, never their values (review F1/F2)
 - :lock: test(aud-s18): close the schema-freeze baseline disarm the gate left open
+- :lock: test(aud-s18): close the five step-isolation and baseline-override disarms
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
