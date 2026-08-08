@@ -10,6 +10,29 @@ import (
 	"github.com/PlatformRelay/assent/internal/provider"
 )
 
+// execTestTimeout is the ExecOpts.Timeout every test in this package uses when
+// it spawns the real child provider binary.
+//
+// It is deliberately generous, and it must stay that way. Nothing in
+// TestExecDigestPin, TestIsolationNoWriteToken or TestIsolationNoCredentialInArgv
+// asserts timeout behaviour — they pin digest verification and argv/env
+// scrubbing, for which the deadline is pure incidental plumbing. The dedicated
+// timeout assertion lives in TestTransportTimeoutUnavailable, which blocks its
+// server until released and so cannot be made wrong by a slow machine.
+//
+// The old value was 1s (5s in the isolation tests). Measured under
+// `go test -race ./...` with 36 competing CPU burners, one spawn of a
+// freshly-built child binary takes 1.3s-5.3s wall clock (~200ms unloaded): the
+// first exec of a just-written file pays page-in plus macOS code-signature
+// validation while 18 sibling package binaries compile and run. Those deadlines
+// therefore fired on a healthy child and surfaced as `signal: killed` — a flake
+// that reproduced 6/6 under load and cost four agents a session to diagnose.
+//
+// 60s is ~11x the worst measured spawn and costs nothing when things are
+// healthy (the call returns in milliseconds). Do not "optimise" it back down:
+// a short deadline here buys no coverage and only re-arms the flake.
+const execTestTimeout = 60 * time.Second
+
 // TestExecDigestPin — REQ-E5-S03-02: missing pin or digest mismatch refuses
 // exec; facts land unavailable (never resolved). Matching pin allows the call.
 func TestExecDigestPin(t *testing.T) {
@@ -20,7 +43,7 @@ func TestExecDigestPin(t *testing.T) {
 		_, err := provider.CallExec(t.Context(), provider.ExecOpts{
 			Binary:  maliciousExecBin,
 			Digest:  "",
-			Timeout: time.Second,
+			Timeout: execTestTimeout,
 		}, q)
 		if err == nil {
 			t.Fatal("CallExec with missing digest pin must refuse")
@@ -33,7 +56,7 @@ func TestExecDigestPin(t *testing.T) {
 			return provider.CallExec(ctx, provider.ExecOpts{
 				Binary:  maliciousExecBin,
 				Digest:  "",
-				Timeout: time.Second,
+				Timeout: execTestTimeout,
 			}, q)
 		}
 		got := provider.ResolveFacts(t.Context(), call, q, fixedAsOf)
@@ -50,7 +73,7 @@ func TestExecDigestPin(t *testing.T) {
 		_, err := provider.CallExec(t.Context(), provider.ExecOpts{
 			Binary:  maliciousExecBin,
 			Digest:  "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-			Timeout: time.Second,
+			Timeout: execTestTimeout,
 		}, q)
 		if err == nil {
 			t.Fatal("CallExec with mismatched digest pin must refuse")
@@ -63,7 +86,7 @@ func TestExecDigestPin(t *testing.T) {
 			return provider.CallExec(ctx, provider.ExecOpts{
 				Binary:  maliciousExecBin,
 				Digest:  "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-				Timeout: time.Second,
+				Timeout: execTestTimeout,
 			}, q)
 		}
 		got := provider.ResolveFacts(t.Context(), call, q, fixedAsOf)
@@ -77,10 +100,11 @@ func TestExecDigestPin(t *testing.T) {
 		raw, err := provider.CallExec(t.Context(), provider.ExecOpts{
 			Binary:  maliciousExecBin,
 			Digest:  pin,
-			Timeout: time.Second,
+			Timeout: execTestTimeout,
 		}, q)
 		if err != nil {
-			t.Fatalf("matching pin must allow exec: %v", err)
+			// Name the deadline: `signal: killed` on its own reads like a crash.
+			t.Fatalf("matching pin must allow exec (timeout %s): %v", execTestTimeout, err)
 		}
 		if !strings.Contains(string(raw), "=== ARGV DUMP ===") {
 			t.Fatalf("expected maliciousexec dump; got: %s", raw)
@@ -119,7 +143,7 @@ func TestExecDigestPin(t *testing.T) {
 		_, err := provider.CallExec(t.Context(), provider.ExecOpts{
 			Binary:  missing,
 			Digest:  pin,
-			Timeout: time.Second,
+			Timeout: execTestTimeout,
 		}, q)
 		if err == nil {
 			t.Fatal("missing binary must refuse")

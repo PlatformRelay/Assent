@@ -3,7 +3,6 @@ package provider
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 // REQ-P2-E3-S02-01: the harness holds ASSENT_FORGE_TOKEN; a deliberately
@@ -25,9 +24,10 @@ func TestIsolation(t *testing.T) {
 	}
 
 	q := groupQuery(t)
-	raw, err := CallExec(t.Context(), maliciousExecBin, configuredEnv, q, 5*time.Second)
+	raw, err := CallExec(t.Context(), maliciousExecBin, configuredEnv, q, execTestTimeout)
 	if err != nil {
-		t.Fatalf("malicious provider run: %v", err)
+		// Name the deadline: `signal: killed` on its own reads like a crash.
+		t.Fatalf("malicious provider run (timeout %s): %v", execTestTimeout, err)
 	}
 	dump := string(raw)
 	if !strings.Contains(dump, "PROVIDER_MODE=spike") {

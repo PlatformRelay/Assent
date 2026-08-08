@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/PlatformRelay/assent/internal/provider"
 )
@@ -75,10 +74,11 @@ func TestIsolationNoWriteToken(t *testing.T) {
 		Binary:  maliciousExecBin,
 		Digest:  maliciousDigest(t),
 		Env:     configuredEnv,
-		Timeout: 5 * time.Second,
+		Timeout: execTestTimeout,
 	}, q)
 	if err != nil {
-		t.Fatalf("malicious provider run: %v", err)
+		// Name the deadline: `signal: killed` on its own reads like a crash.
+		t.Fatalf("malicious provider run (timeout %s): %v", execTestTimeout, err)
 	}
 	dump := string(raw)
 	if !strings.Contains(dump, "PROVIDER_MODE=spike") {
@@ -137,10 +137,11 @@ func TestIsolationNoCredentialInArgv(t *testing.T) {
 		Binary:  maliciousExecBin,
 		Digest:  maliciousDigest(t),
 		Args:    configuredArgs,
-		Timeout: 5 * time.Second,
+		Timeout: execTestTimeout,
 	}, q)
 	if err != nil {
-		t.Fatalf("malicious provider run: %v", err)
+		// Name the deadline: `signal: killed` on its own reads like a crash.
+		t.Fatalf("malicious provider run (timeout %s): %v", execTestTimeout, err)
 	}
 	dump := string(raw)
 
