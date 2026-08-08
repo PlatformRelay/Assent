@@ -316,6 +316,30 @@ gitlab_symbol_violations() {
   done
 }
 
+# aliased_gitlab_imports <dir> prints "<relpath>:<line>:<text>" for every ALIASED
+# import of the adapter (`gl "…/gitlab"`, `_ "…/gitlab"`, `. "…/gitlab"`).
+#
+# This closes the one way to make scan_gitlab_symbols sweep an empty set: under
+# an alias, every reference reads `gl.MRInfo`, the `gitlab\.` pattern matches
+# nothing, and the allowlist above would pass OPEN. Requiring the bare import
+# path is what makes the symbol scan complete rather than merely true.
+aliased_gitlab_imports() {
+  local dir="$1" f rel hit
+  while IFS= read -r f; do
+    rel="${f#"$dir"/}"
+    # Strip a leading `import` keyword first (sed preserves the line count, so
+    # grep -n still reports true line numbers). That reduces the single-line
+    # form `import gl "…"` to the grouped form `gl "…"`, so ONE rule covers
+    # both: after the strip, any token before the quoted path is an alias, and
+    # a plain `import "…"` has none.
+    sed -E 's|^([[:space:]]*)import[[:space:]]+|\1|' "$f" |
+      { grep -nE '^[[:space:]]*[A-Za-z_.][A-Za-z0-9_]*[[:space:]]+"'"$MODULE"'/internal/forge/gitlab"' || true; } |
+      while IFS= read -r hit; do
+        printf '%s:%s\n' "$rel" "$hit"
+      done
+  done < <(find "$dir" -name '*.go' | sort)
+}
+
 CMD_DIR="$ROOT/cmd/assent"
 [[ -d "$CMD_DIR" ]] || fail "missing $CMD_DIR"
 
@@ -351,6 +375,16 @@ import "github.com/PlatformRelay/assent/internal/forge/gitlab"
 func arch02Probe() (gitlab.MRInfo, error) { return gitlab.MRInfo{}, gitlab.ErrNotFound }
 PROBEEOF
 
+# A second probe file for the alias evasion: under `gl`, the symbol scanner is
+# blind by construction, so only the import-form check can catch this one.
+cat >"$PROBE/arch02_probe_alias.go" <<'PROBEEOF'
+package main
+
+import gl "github.com/PlatformRelay/assent/internal/forge/gitlab"
+
+func arch02ProbeAliased() gl.MRInfo { return gl.MRInfo{} }
+PROBEEOF
+
 PROBE_VIOL="$WORK/arch02-probe-violations.txt"
 scan_gitlab_symbols "$PROBE" | gitlab_symbol_violations >"$PROBE_VIOL"
 for expected in MRInfo ErrNotFound; do
@@ -361,6 +395,18 @@ grep -Fq 'arch02_probe.go' "$PROBE_VIOL" ||
   fail "the ARCH-02 scanner reported violations but never named the violating file"
 echo "OK: violating copy reported $(wc -l <"$PROBE_VIOL" | tr -d ' ') disallowed gitlab.<Exported> references"
 
+PROBE_ALIAS="$WORK/arch02-probe-alias.txt"
+aliased_gitlab_imports "$PROBE" >"$PROBE_ALIAS"
+grep -Fq 'arch02_probe_alias.go' "$PROBE_ALIAS" ||
+  fail "the ARCH-02 alias check did NOT report an aliased gitlab import in a deliberately violating tree — an alias would make the symbol scan sweep an empty set and pass open"
+# The unaliased probe must NOT be reported: otherwise the check flags every
+# import and its silence on the real tree would mean nothing.
+if grep -Fq 'arch02_probe.go:' "$PROBE_ALIAS"; then
+  cat "$PROBE_ALIAS" >&2
+  fail "the ARCH-02 alias check reported an UNALIASED import — it cannot distinguish the two forms"
+fi
+echo "OK: violating copy's aliased gitlab import reported; its unaliased import not reported"
+
 # --- polarity B: the real cmd/assent must be clean ----------------------------
 REAL_VIOL="$WORK/arch02-real-violations.txt"
 gitlab_symbol_violations <"$REAL_SCAN" >"$REAL_VIOL"
@@ -368,7 +414,14 @@ if [[ -s "$REAL_VIOL" ]]; then
   cat "$REAL_VIOL" >&2
   fail "cmd/assent names gitlab adapter symbols outside the construction allowlist (${ALLOWED_GITLAB_SYMBOLS[*]}) — ARCH-02: the orchestration read port must speak forge.* types"
 fi
-echo "OK: cmd/assent names only ${ALLOWED_GITLAB_SYMBOLS[*]} from the gitlab adapter"
+
+REAL_ALIAS="$WORK/arch02-real-alias.txt"
+aliased_gitlab_imports "$CMD_DIR" >"$REAL_ALIAS"
+if [[ -s "$REAL_ALIAS" ]]; then
+  cat "$REAL_ALIAS" >&2
+  fail "cmd/assent imports the gitlab adapter under an ALIAS — the symbol allowlist above cannot see through it. Import the bare path."
+fi
+echo "OK: cmd/assent names only ${ALLOWED_GITLAB_SYMBOLS[*]} from the gitlab adapter, and imports it unaliased"
 
 echo
 echo "PASS: D-123 depguard boundary rules proven at both polarities (REQ-AUD-S07-01)"
