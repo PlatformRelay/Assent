@@ -204,6 +204,174 @@ func TestCollectTreeMissingRootIsStillAnEmptyTree(t *testing.T) {
 	}
 }
 
+// TestCollectFSGuardsAreIndependentlyFalsifiable separates collectFS's two
+// refusals, which otherwise MASK each other.
+//
+// Every symlink is also a non-regular entry — `fs.WalkDir`'s DirEntry comes from
+// the Lstat-based ReadDir, on `(*os.Root).FS()` and on fstest.MapFS alike, so a
+// symlink never reads back as dir or regular. The non-regular refusal is
+// therefore a strict BEHAVIOURAL SUPERSET of the symlink refusal: delete the
+// symlink arm and the tree is still refused, still exit 1, still zero forge
+// writes. Only the WORDING changes, and nothing in the suite read the wording —
+// so the pair was a conjunction gate, green unless BOTH arms were deleted.
+//
+// The honest fix is to pin what actually differs, and to be clear about what
+// kind of pin it is:
+//
+//   - the symlink arm is pinned as a MESSAGE CONTRACT, not as behaviour. Its
+//     wording is a documented promise (docs/usage/cli.md tells adopters the run
+//     fails with an error naming the path and the side, and says the cause is a
+//     symlink) and a contributor-facing one (GUIDELINES: error text that can
+//     reach an MR must be understandable). "refusing non-regular file" does not
+//     tell an adopter their repository contains a symlink.
+//   - the non-regular arm is pinned BEHAVIOURALLY: a named pipe is not a
+//     symlink, so with that arm deleted it is simply collected and the walk
+//     succeeds.
+//
+// Mutation-proven both ways: deleting only the symlink arm reds the first
+// subtest; deleting only the non-regular arm reds the second.
+func TestCollectFSGuardsAreIndependentlyFalsifiable(t *testing.T) {
+	t.Run("a symlink is refused AS A SYMLINK, not as a generic non-regular entry", func(t *testing.T) {
+		// The target exists, so with both arms gone the link would be silently
+		// FOLLOWED — the fixture models substitution, not a dangling stub.
+		fsys := fstest.MapFS{
+			"topics/orders.yaml":      {Data: []byte("partitions: 24\n")},
+			"LICENSES/Apache-2.0.txt": {Data: []byte("Apache License\n")},
+			"LICENSE":                 {Data: []byte("LICENSES/Apache-2.0.txt"), Mode: fs.ModeSymlink},
+		}
+
+		got, err := collectFS(fsys, "head")
+		if err == nil {
+			t.Fatalf("a symlink in the tree must be refused; got %d entries %v", len(got), keysOf(got))
+		}
+		if got != nil {
+			t.Fatalf("a refused walk must not hand back a partial tree: %v", keysOf(got))
+		}
+		if !strings.Contains(err.Error(), "reached through a symlink") {
+			t.Fatalf("the refusal must say the entry is a SYMLINK — an adopter reads this to learn why\ntheir repository cannot be judged with --checkout; got: %v", err)
+		}
+		if !strings.Contains(err.Error(), `"LICENSE"`) {
+			t.Fatalf("the refusal must name the offending path: %v", err)
+		}
+		if strings.Contains(err.Error(), "non-regular") {
+			t.Fatalf("the non-regular guard answered for the symlink guard — the two are masking each other again: %v", err)
+		}
+	})
+
+	t.Run("a non-regular, non-symlink entry is refused", func(t *testing.T) {
+		// A named pipe carries no symlink bit, so ONLY the non-regular arm can
+		// refuse it. Reading it on a real filesystem would block the run forever.
+		fsys := fstest.MapFS{
+			"topics/orders.yaml": {Data: []byte("partitions: 24\n")},
+			"run/queue.pipe":     {Data: []byte("not repository content\n"), Mode: fs.ModeNamedPipe},
+		}
+
+		got, err := collectFS(fsys, "head")
+		if err == nil {
+			t.Fatalf("a non-regular entry must be refused, not collected; got %d entries %v", len(got), keysOf(got))
+		}
+		if got != nil {
+			t.Fatalf("a refused walk must not hand back a partial tree: %v", keysOf(got))
+		}
+		if !strings.Contains(err.Error(), "non-regular") {
+			t.Fatalf("the refusal must name the reason: %v", err)
+		}
+		if !strings.Contains(err.Error(), `"run/queue.pipe"`) {
+			t.Fatalf("the refusal must name the offending path: %v", err)
+		}
+	})
+
+	t.Run("control: the same tree without either entry collects cleanly", func(t *testing.T) {
+		fsys := fstest.MapFS{"topics/orders.yaml": {Data: []byte("partitions: 24\n")}}
+		got, err := collectFS(fsys, "head")
+		if err != nil {
+			t.Fatalf("clean walk: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("clean walk must collect the regular file, got %v", keysOf(got))
+		}
+	})
+}
+
+// TestCheckoutSideSymlinkIsLstatted pins openCheckoutSide's DELIBERATE choice of
+// `os.Lstat` over `os.Stat` (checkout.go), which had no test.
+//
+// `os.Stat` follows the link, so a side that is a DANGLING symlink stats as
+// ErrNotExist — indistinguishable from "this side does not exist", which is the
+// one absence this package tolerates (an all-adds/all-deletes checkout). A broken
+// checkout would then read as an EMPTY head, and every file in base/ would be
+// enumerated as a whole-file DELETE: a silent mass delete offered for judgment.
+// Measured with the mutation in place: `files=[.assent/p.yaml] err=<nil>`.
+//
+// `os.Lstat` sees the link itself, so the side is "present" and `os.OpenRoot`
+// — which does follow it — turns the broken target into a hard error.
+//
+// The legitimate-polarity subtest is required, not decorative: ADR-0008
+// Amendment 2 promises the side directories may THEMSELVES be symlinks (they are
+// operator-provisioned; only what is beneath them is contributor content).
+// Without it the first subtest would pass just as well for an implementation
+// that rejected every symlinked side.
+func TestCheckoutSideSymlinkIsLstatted(t *testing.T) {
+	requireSymlinks(t)
+
+	t.Run("a DANGLING side symlink is a broken checkout, not an empty side", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "base", ".assent"), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "base", ".assent", "p.yaml"), []byte("threshold: 1\n"), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if err := os.Symlink(filepath.Join(t.TempDir(), "never-created"), filepath.Join(root, "head")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+
+		files, err := dirCheckout{root: root}.ChangedFiles()
+		if err == nil {
+			t.Fatalf("a dangling head/ must be a hard error, not an empty side minting deletes; got files=%v", files)
+		}
+		if files != nil {
+			t.Fatalf("an errored enumeration must not hand back a partial set: %v", files)
+		}
+	})
+
+	t.Run("legitimate polarity: a side symlinked to a REAL directory still reads", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "base", "topics"), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "base", "topics", "orders.yaml"), []byte("partitions: 12\n"), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		realHead := filepath.Join(t.TempDir(), "materialised-head")
+		if err := os.MkdirAll(filepath.Join(realHead, "topics"), 0o750); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(realHead, "topics", "orders.yaml"), []byte("partitions: 24\n"), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if err := os.Symlink(realHead, filepath.Join(root, "head")); err != nil {
+			t.Fatalf("symlink: %v", err)
+		}
+
+		co := dirCheckout{root: root}
+		files, err := co.ChangedFiles()
+		if err != nil {
+			t.Fatalf("an operator-provisioned symlinked SIDE must still be read: %v", err)
+		}
+		if len(files) != 1 || files[0] != "topics/orders.yaml" {
+			t.Fatalf("changed set = %v, want [topics/orders.yaml]", files)
+		}
+		base, head, err := co.FileContents("topics/orders.yaml")
+		if err != nil {
+			t.Fatalf("FileContents through a symlinked side: %v", err)
+		}
+		if string(base) != "partitions: 12\n" || string(head) != "partitions: 24\n" {
+			t.Fatalf("read base=%q head=%q through the symlinked side", base, head)
+		}
+	})
+}
+
 func keysOf(m map[string][]byte) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
