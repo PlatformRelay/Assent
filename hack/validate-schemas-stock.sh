@@ -49,10 +49,23 @@ repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
 }
 cd "$repo_root" || exit 2
 
-if ! command -v ajv >/dev/null 2>&1; then
+# AUD-S14 / SEC-01: prefer the lockfile-pinned validator in
+# hack/schemas-validator/ over any globally installed ajv. A global install
+# resolves its dependency tree at install time from version RANGES, so what CI
+# validated with and what a maintainer validates with could differ silently;
+# the committed package-lock.json hash-pins the whole transitive tree.
+local_ajv="$repo_root/hack/schemas-validator/node_modules/.bin/ajv"
+if [[ -x "$local_ajv" ]]; then
+  AJV="$local_ajv"
+elif command -v ajv >/dev/null 2>&1; then
+  AJV=ajv
+  echo "warning: using the ajv on PATH; the pinned validator is not installed." >&2
+  echo "  Run:  npm ci --ignore-scripts --prefix hack/schemas-validator" >&2
+else
   cat >&2 <<'MSG'
-error: ajv (ajv-cli) not found on PATH.
-  Install with:  npm install -g ajv-cli ajv-formats
+error: ajv (ajv-cli) not found.
+  Install the lockfile-pinned validator with:
+      npm ci --ignore-scripts --prefix hack/schemas-validator
   ajv-cli is the off-the-shelf Draft 2020-12 validator this check uses; it
   registers every schema by its $id so cross-file $refs resolve offline.
 MSG
@@ -113,7 +126,7 @@ ref_args_excluding() {
 echo "== schema validity (Draft 2020-12 compile + offline \$ref resolution) =="
 for schema in "${all_schemas[@]}"; do
   mapfile -d '' -t refs < <(ref_args_excluding "$schema")
-  if ajv compile "${AJV_FLAGS[@]}" -s "$schema" "${refs[@]}" >/dev/null 2>compile.err; then
+  if "$AJV" compile "${AJV_FLAGS[@]}" -s "$schema" "${refs[@]}" >/dev/null 2>compile.err; then
     printf 'ok  %s\n' "$schema"
   else
     report_fail "schema-invalid" "$schema"
@@ -169,7 +182,7 @@ PY
   fi
   mapfile -d '' -t refs < <(ref_args_excluding "$schema")
   local observed
-  if ajv validate "${AJV_FLAGS[@]}" -s "$schema" "${refs[@]}" -d "$fixture" >/dev/null 2>val.err; then
+  if "$AJV" validate "${AJV_FLAGS[@]}" -s "$schema" "${refs[@]}" -d "$fixture" >/dev/null 2>val.err; then
     observed=pass
   else
     observed=reject

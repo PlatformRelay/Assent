@@ -8,6 +8,9 @@ cov.out
 # Go
 vendor/
 
+# Node (hack/schemas-validator: only package.json + package-lock.json are committed)
+node_modules/
+
 # Docs site
 site/
 .venv*/

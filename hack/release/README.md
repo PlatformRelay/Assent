@@ -52,7 +52,14 @@ notes — same pattern as mkurator:
    push still runs when `HOMEBREW_TAP_GITHUB_TOKEN` is set — do **not** pass `--skip=publish`,
    which skips the brew publisher). Softprops uploads archives below.
 4. Run **`orhun/git-cliff-action`** (SHA-pinned) with `config: cliff.toml` and
-   `args: --latest --strip header` so the action emits the latest tagged section body.
+   `args: --latest` so the action emits the changelog header followed by the latest tagged
+   section. **Do not add `--strip header`.** `cliff.toml`'s header is where the long-lived
+   **Compatibility notes** live (D-120: `pins.toolDigest` changes value after `v0.1.0`), and
+   it is their only possible home — `CHANGELOG.md` is regenerated in full from commit history,
+   so a hand-edit there is wiped by the next `task changelog-write`. Stripping the header put
+   those notes in `CHANGELOG.md` and nowhere near the Release page, which is the only thing
+   many consumers read. `hack/release/changelog_gate_test.sh` §6 renders the body with the
+   workflow's own `args:` and fails if the note is missing.
 5. **`softprops/action-gh-release`** uploads `dist/` archives + `checksums.txt` with cliff body.
 
 **Triggers:** `push.tags: v*.*.*`, `workflow_dispatch` (rebuild an existing tag), and PR

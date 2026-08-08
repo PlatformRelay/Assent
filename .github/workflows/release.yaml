@@ -137,7 +137,15 @@ jobs:
         with:
           version: v2.13.1
           config: cliff.toml
-          args: --latest --strip header
+          # NOT `--strip header`. The changelog header is where cliff.toml keeps
+          # the long-lived "Compatibility notes" (D-120: `pins.toolDigest`
+          # changes value after v0.1.0). Stripping it put those notes in
+          # CHANGELOG.md but not in the Release body, so a consumer reading only
+          # the Release page got no warning that a published record field
+          # changed derivation. The header is the ONLY carrier for such notes —
+          # CHANGELOG.md is regenerated in full from commit history, so a
+          # hand-edit cannot hold them.
+          args: --latest
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish GitHub Release

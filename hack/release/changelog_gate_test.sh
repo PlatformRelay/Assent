@@ -140,7 +140,12 @@ echo "OK: D-120 toolDigest note present in CHANGELOG.md and sourced from cliff.t
 echo "== 2. REQ-AUD-S02-02: gates wired into 'task check' =="
 # changelog-verify is this story's gate; the other two are the gates that AUD-S06
 # (D-124) and AUD-S07 shipped green but unwired — this lane owns Taskfile.yml.
-WIRED_TASKS=(changelog-verify docs-gates lint-depguard-test)
+# AUD-S09/S14 adds lint-workflow-pins-test here rather than letting
+# workflow_pins_test.sh assert its own wiring: a gate that checks whether
+# `task check` invokes it is unreachable precisely when the answer is "no".
+# This file is reached through a DIFFERENT check: entry, so it is the only
+# non-self-referential proof available.
+WIRED_TASKS=(changelog-verify docs-gates lint-depguard-test lint-workflow-pins-test)
 for t in "${WIRED_TASKS[@]}"; do
   check_lists_task "$TASKFILE" "$t" \
     || fail "'task check' does not run '$t' — the gate is defined but invoked by nothing"
@@ -233,4 +238,67 @@ if grep -q 'AUD-S02 drift probe' "$ROOT/CHANGELOG.md"; then
 fi
 echo "OK: stale CHANGELOG.md is caught, probe restored"
 
-echo "PASS: changelog drift gate regenerated, wired into task check + verify.yaml, and proven at both polarities (REQ-AUD-S02-01/02)"
+# ------------------------------ 6. the GitHub Release body carries the notes --
+#
+# Sections 1-5 prove the D-120 compatibility note reaches CHANGELOG.md. It did —
+# and still never reached the GitHub Release body, because release.yaml ran
+# git-cliff with `--strip header` and the notes live in the changelog HEADER.
+# Consumers reading only the Release page got no warning that `pins.toolDigest`
+# changed derivation. Flagged as a pre-tag blocker in the session INBOX.
+#
+# This is a BEHAVIOURAL check, not a text assertion about release.yaml: the
+# git-cliff arguments are extracted FROM the workflow and the release body is
+# actually rendered with them, so the gate cannot drift away from what CI runs.
+
+echo "== 6. the rendered GitHub Release body carries the compatibility notes =="
+
+RELEASE_WF="$ROOT/.github/workflows/release.yaml"
+[[ -f "$RELEASE_WF" ]] || fail "missing $RELEASE_WF"
+
+CLIFF="${GIT_CLIFF_BIN:-$ROOT/bin/git-cliff}"
+if [[ ! -x "$CLIFF" ]]; then
+  bash "$ROOT/hack/install-git-cliff.sh" v2.13.1 bin/git-cliff >&2
+  CLIFF="$ROOT/bin/git-cliff"
+fi
+
+# The `args:` of the git-cliff step, scoped to that step: `args:` also appears in
+# both goreleaser steps, so a file-wide grep would pick the wrong one.
+cliff_args="$(awk '
+  /^      - / { inblock = 0 }
+  /orhun\/git-cliff-action@/ { inblock = 1 }
+  inblock && /^          args: / { sub(/^          args: /, ""); print; exit }
+' "$RELEASE_WF")"
+[[ -n "$cliff_args" ]] \
+  || fail "could not extract the git-cliff step's args: from release.yaml — the extraction broke, so rendering below would prove nothing"
+echo "OK: release.yaml renders the body with: git-cliff $cliff_args"
+
+read -r -a cliff_argv <<<"$cliff_args"
+"$CLIFF" --config "$ROOT/cliff.toml" "${cliff_argv[@]}" >"$WORK/release-body.md" 2>"$WORK/release-body.err" || {
+  cat "$WORK/release-body.err" >&2
+  fail "git-cliff failed with release.yaml's own arguments ($cliff_args)"
+}
+
+# Positive control on the render: an empty or headingless body would make the
+# note grep below meaningless in the wrong direction (absent == "clean").
+[[ -s "$WORK/release-body.md" ]] \
+  || fail "release body rendered EMPTY with release.yaml's arguments"
+grep -qE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$WORK/release-body.md" \
+  || fail "rendered release body carries no '## [X.Y.Z]' release section — the render did not produce real release notes"
+
+grep -q 'pins.toolDigest' "$WORK/release-body.md" \
+  || fail "the rendered GitHub Release body carries no pins.toolDigest compatibility note — the D-120 warning reaches CHANGELOG.md but NOT the Release page (drop '--strip header' from the git-cliff step in release.yaml)"
+echo "OK: rendered release body carries the D-120 compatibility note"
+
+# Polarity control: re-render WITH the bug. If the note survives `--strip
+# header` too, then the grep above passes for some unrelated reason and this
+# section is not testing what it claims.
+"$CLIFF" --config "$ROOT/cliff.toml" "${cliff_argv[@]}" --strip header \
+  >"$WORK/release-body-stripped.md" 2>/dev/null || true
+[[ -s "$WORK/release-body-stripped.md" ]] \
+  || fail "polarity control rendered empty — cannot conclude anything from its missing note"
+if grep -q 'pins.toolDigest' "$WORK/release-body-stripped.md"; then
+  fail "polarity control: the note is present even WITH '--strip header', so section 6 does not actually detect the regression it exists to catch"
+fi
+echo "OK: polarity control — re-adding '--strip header' removes the note again"
+
+echo "PASS: changelog drift gate regenerated, wired into task check + verify.yaml, and proven at both polarities (REQ-AUD-S02-01/02); release body carries the compatibility notes"
