@@ -134,6 +134,8 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :lock: security(deps): override fast-json-patch to ^3.1.1, clearing GHSA-8gh8-hqwg-xf34 (review F2)
 - :lock: fix(lint): match what EXECUTES, not what the line mentions (review N1/N2/N4)
 - :lock: fix(lint): isolate the real CI step, and enforce command_view's scalar precondition (review N5/N6)
+- :lock: fix(provider): contain repo-file reads to a symlink-safe root
+- :lock: fix(provider): load the resource-owner registry from the target ref
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
