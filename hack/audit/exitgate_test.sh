@@ -256,6 +256,22 @@ step_disarmed() { # <step-file> <out-file>
   [[ -s "$2" ]]
 }
 
+# Number of REAL `run:` keys in an isolated step (whole-line comments dropped).
+# Exactly one is the only sane answer. Two means the isolation swallowed the
+# NEIGHBOURING step — which is precisely what deleting a step's `- name:` line
+# does, and it is the disarm `workflow_pins_test.sh` carries a control for. A
+# merged region still "contains the invocation" and still "starts with a step
+# marker", so without this the `env:`/`if:`/`continue-on-error:` assertions
+# would be reading a region that is not one step.
+step_run_count() { # <step-file>
+  awk '{
+    s = $0
+    sub(/^[[:space:]]+/, "", s)
+    if (substr(s, 1, 1) == "#") next
+    if (s ~ /^run:/) n++
+  } END { printf "%d\n", n + 0 }' "$1"
+}
+
 # `cmd | head -1` closes the read end early: under `set -o pipefail` the writer
 # takes SIGPIPE and the pipeline exits 141. This file bans that shape (it is one
 # of the repo's recurring "test that cannot fail" defects), so first lines come
@@ -595,6 +611,12 @@ check_release_verify_gate() { # <workflows-dir>
     echo "  RELSE-05: the isolated step does not contain the gate invocation — the wrong step was isolated" >&2
     return 1
   }
+  local n_run
+  n_run="$(step_run_count "$step")"
+  if ((n_run != 1)); then
+    echo "  RELSE-05: the isolated region carries $n_run 'run:' key(s), not 1 — two steps were merged (deleting a step's '- name:' line does exactly that), so the disarm and ordering assertions below would be reading a region that is not one step" >&2
+    return 1
+  fi
 
   # Step-scoped, so the release job's legitimate JOB-level
   # `if: github.event_name == 'push' || …` is not mistaken for a disarm.
@@ -1208,6 +1230,12 @@ check_ci_wiring() { # <workflows-dir>
     echo "  AUD-S18: the isolated step does not contain the gate invocation — the wrong step was isolated" >&2
     return 1
   }
+  local n_run
+  n_run="$(step_run_count "$step")"
+  if ((n_run != 1)); then
+    echo "  AUD-S18: the isolated region carries $n_run 'run:' key(s), not 1 — two steps were merged (deleting this step's '- name:' line does exactly that), so the env:/if:/continue-on-error: assertions below would be reading a region that is not one step" >&2
+    return 1
+  fi
   local disabled="$WORK/hits.audit_wiring_disabled"
   if step_disarmed "$step" "$disabled"; then
     echo "  AUD-S18: the audit exit-gate step is present but DISARMED — 'continue-on-error' or 'if:' means a red exit gate does not fail the job:" >&2
@@ -1228,6 +1256,33 @@ check_ci_wiring() { # <workflows-dir>
     rc=1
   fi
 
+  # The step-level `env:` ban above is necessary but not sufficient: a JOB-level
+  # or WORKFLOW-level `env:`, or an earlier step writing `>> $GITHUB_ENV`, sets
+  # the same variable without ever touching this step. One absence assertion over
+  # the whole workflow directory closes all three at once. check_schema_freeze's
+  # vX.Y.Z-tag constraint is the primary defence; this is the one that also
+  # refuses a base that IS a tag but is not the frozen baseline.
+  local wfiles="$WORK/wiring.workflows"
+  find "$dir" -type f \( -name '*.yaml' -o -name '*.yml' \) >"$wfiles"
+  local n_wf
+  n_wf="$(wc -l <"$wfiles" | tr -d '[:space:]')"
+  if ((n_wf < 3)); then
+    echo "  AUD-S18: found only $n_wf workflow file(s) under $dir; at least 3 are expected — the inventory broke, so the baseline-override sweep below would be vacuous" >&2
+    return 1
+  fi
+  local override="$WORK/hits.audit_wiring_base"
+  : >"$override"
+  local wfile
+  while IFS= read -r wfile; do
+    [[ -n "$wfile" ]] || continue
+    grep -Fn -- 'ASSENT_AUDIT_SCHEMA_BASE' "$wfile" | sed "s|^|$wfile:|" >>"$override" || true
+  done <"$wfiles"
+  if [[ -s "$override" ]]; then
+    echo "  AUD-S18: ASSENT_AUDIT_SCHEMA_BASE is set somewhere under $dir — the schema-freeze baseline must never be steered from CI (a job-level env, a workflow-level env or a '>> \$GITHUB_ENV' write disarms check (6) without touching the gate step at all, D-131):" >&2
+    sed 's/^/    /' "$override" >&2
+    rc=1
+  fi
+
   # It must live in release-exitgate: the verify job runs on pull_request, where
   # `task check`'s changelog stage is red by construction (D-125).
   local joblines="$WORK/hits.audit_wiring_job"
@@ -1236,9 +1291,28 @@ check_ci_wiring() { # <workflows-dir>
   jobline="$(first_line "$joblines" | cut -d: -f1)"
   if [[ -z "$jobline" ]]; then
     echo "  AUD-S18: verify.yaml has no release-exitgate job — REQ-AUD-S18-01 requires the gate to be wired there" >&2
-    rc=1
-  elif ((lineno < jobline)); then
+    return 1
+  fi
+  if ((lineno < jobline)); then
     echo "  AUD-S18: the audit exit-gate step sits at line $lineno, before the release-exitgate job at line $jobline — it is wired into the wrong job (the verify job runs on pull_request, where D-125 makes the changelog stage red by construction)" >&2
+    rc=1
+  fi
+
+  # A JOB-level `continue-on-error: true` makes every step in release-exitgate
+  # advisory — the gate runs, reds, and the workflow still concludes success.
+  # Job-scoped, at the job's own indent, so a step-level key (already covered
+  # above, and legitimate on no step of this job) is not double-counted. The
+  # job's `if: github.event_name != 'pull_request'` is deliberately NOT pinned:
+  # it is load-bearing, and no rule that admits it can also refuse `if: false`
+  # without being either brittle or trivially reworded around.
+  local jobend
+  jobend="$(awk -v s="$jobline" 'NR > s && /^  [a-zA-Z0-9_-]+:$/ { print NR; exit }' "$wf")"
+  [[ -n "$jobend" ]] || jobend="$(wc -l <"$wf" | tr -d '[:space:]')"
+  local jobcoe="$WORK/hits.audit_wiring_jobcoe"
+  awk -v s="$jobline" -v e="$jobend" 'NR >= s && NR <= e && /^    continue-on-error:/ { printf "%d:%s\n", NR, $0 }' "$wf" >"$jobcoe"
+  if [[ -s "$jobcoe" ]]; then
+    echo "  AUD-S18: the release-exitgate JOB carries a job-level 'continue-on-error:' — every step in it, this gate included, becomes advisory and a red exit gate no longer fails the workflow:" >&2
+    sed 's/^/    /' "$jobcoe" >&2
     rc=1
   fi
   return "$rc"
@@ -1441,6 +1515,16 @@ mutate_awk "$wm/release.yaml" \
   'if: false'
 expect_red check_release_verify_gate "the gate step was neutered with if: false AFTER run:" \
   'present but DISARMED' "$wm"
+
+# Deleting a step's `- name:` line merges its `run:` into the PRECEDING step.
+# The merged region still contains the invocation and still starts with a step
+# marker, so every downstream assertion would be reading two steps as one.
+wm="$(workflows_mutant relse05-name-deleted)"
+mutate_awk "$wm/release.yaml" \
+  '{ if ($0 ~ /^      - name: Verify is green on the tag SHA \(release gate\)$/) { print "      - name: sanity"; print "        run: true"; next } print }' \
+  '- name: sanity'
+expect_red check_release_verify_gate "the gate's own '- name:' line is gone, so its run: merged into a neighbouring step" \
+  "'run:' key(s), not 1" "$wm"
 
 wm="$(workflows_mutant relse05-order)"
 mutate_awk "$wm/release.yaml" \
@@ -1833,6 +1917,55 @@ mutate_awk "$wm/verify.yaml" \
   'if: false'
 expect_red check_ci_wiring "the gate step was neutered with if: false AFTER run:" \
   'present but DISARMED' "$wm"
+
+# Delete the step's `- name:` line (and the comment block that would otherwise
+# make the merged region trip the size guard first). The gate's `run:` is then
+# a second key on the PRECEDING step: still invoked-looking, still argument-free,
+# still marker-led — and, before step_run_count, still green. This is the exact
+# control `hack/lint/workflow_pins_test.sh` carries and this gate lacked.
+wm="$(workflows_mutant audit-name-deleted)"
+mutate_awk "$wm/verify.yaml" \
+  '!/^      - name: AUD audit exit gate/ && !/^      # /' \
+  'run: bash hack/audit/exitgate_test.sh'
+expect_red check_ci_wiring "the gate step's '- name:' line was deleted, merging its run: into the preceding step" \
+  "'run:' key(s), not 1" "$wm"
+
+# The step-level `env:` ban is not the whole vector: a JOB-level env sets the
+# same variable without touching the step at all. v0.2.0 is the realistic edit —
+# a plausible "move the baseline forward" that silently retires the frozen one,
+# and one check_schema_freeze's vX.Y.Z-shape constraint would accept.
+wm="$(workflows_mutant audit-env-job)"
+mutate_awk "$wm/verify.yaml" \
+  '{ print } /^  release-exitgate:$/ { print "    env:"; print "      ASSENT_AUDIT_SCHEMA_BASE: v0.2.0" }' \
+  'ASSENT_AUDIT_SCHEMA_BASE: v0.2.0'
+expect_red check_ci_wiring "a JOB-level env steers the schema-freeze baseline past the step-level ban" \
+  'ASSENT_AUDIT_SCHEMA_BASE is set somewhere under' "$wm"
+
+# Same variable, same effect, no `env:` key anywhere: an earlier step writes it
+# into the job environment. The directory-wide sweep is what closes this.
+wm="$(workflows_mutant audit-env-github-env)"
+mutate_awk "$wm/verify.yaml" \
+  '{ if ($0 ~ /^      - name: AUD audit exit gate/) { print "      - name: prepare"; print "        run: echo ASSENT_AUDIT_SCHEMA_BASE=v0.2.0 >> \"$GITHUB_ENV\"" } print }' \
+  'ASSENT_AUDIT_SCHEMA_BASE=v0.2.0'
+expect_red check_ci_wiring "an earlier step writes the baseline override into \$GITHUB_ENV" \
+  'ASSENT_AUDIT_SCHEMA_BASE is set somewhere under' "$wm"
+
+# A JOB-level continue-on-error makes every step advisory: the gate runs, reds,
+# and the workflow still concludes success.
+wm="$(workflows_mutant audit-job-coe)"
+mutate_awk "$wm/verify.yaml" \
+  '{ print } /^  release-exitgate:$/ { print "    continue-on-error: true" }' \
+  'continue-on-error: true'
+expect_red check_ci_wiring "the release-exitgate JOB was made advisory with a job-level continue-on-error" \
+  'job-level' "$wm"
+
+# Positive control on the workflow inventory the baseline sweep reads: an empty
+# or broken directory listing must not read as "no override found anywhere".
+wm="$(workflows_mutant audit-no-workflows)"
+find "$wm" -type f -name '*.yml' -delete
+find "$wm" -type f -name '*.yaml' ! -name 'verify.yaml' -delete
+expect_red check_ci_wiring "the workflow inventory collapsed to one file, so the baseline sweep would be vacuous" \
+  'the inventory broke' "$wm"
 
 echo
 echo "============================================================================"
