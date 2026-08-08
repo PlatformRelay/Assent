@@ -199,7 +199,14 @@ func collectFS(fsys fs.FS, root string) (map[string][]byte, error) {
 // A symlinked candidate is therefore an ERROR, not "absent" — answering absent
 // would let a substitution attempt mint a fabricated whole-file delete.
 func readIfPresent(root, rel string) ([]byte, error) {
-	name := path.Clean(filepath.ToSlash(rel))
+	// A ROOTED subject (`--subject file:/topics/orders.yaml`) names the same
+	// repo-relative path and worked before containment landed, because
+	// filepath.Join cleaned the slash away. Normalise it the way
+	// anchorFromSubject already does, so the two subject readers agree and the
+	// containment fix changes no legitimate input. It is a normalisation, not a
+	// weakening: the name stays relative to the side root either way, and a
+	// `..` that survives Clean is refused below.
+	name := strings.TrimPrefix(path.Clean(filepath.ToSlash(rel)), "/")
 	if !fs.ValidPath(name) || name == "." {
 		return nil, fmt.Errorf("checkout path %q is not a valid repo-relative path", rel)
 	}
@@ -331,18 +338,20 @@ func foldCheckout(co localCheckout, governed string) (checkoutFold, error) {
 	}
 	fold := checkoutFold{class: classify.ClassUnclassified}
 	var reasons []string
-	for _, path := range files {
-		if classify.FileClass(path) == classify.ClassAssentPolicy {
+	// `p`, not `path`: this file imports the `path` package, and a loop variable
+	// shadowing it in security-critical code is a trap waiting for the next edit.
+	for _, p := range files {
+		if classify.FileClass(p) == classify.ClassAssentPolicy {
 			fold.class = classify.ClassAssentPolicy
 		}
-		base, head, err := co.FileContents(path)
+		base, head, err := co.FileContents(p)
 		if err != nil {
-			return checkoutFold{}, fmt.Errorf("read %q from checkout: %w", path, err)
+			return checkoutFold{}, fmt.Errorf("read %q from checkout: %w", p, err)
 		}
 		// Governed-subject one-sided presence is a CLEAN whole-file lifecycle
 		// (EFE-S03), not fold-opaque — Cover must see the minted FileEvent.
 		// Sibling one-sided presence stays opaque (fail-safe; E1-S08-03).
-		if path == governed {
+		if p == governed {
 			if _, ok := change.OneSidedLifecycle(base, head); ok {
 				continue
 			}
@@ -350,18 +359,18 @@ func foldCheckout(co localCheckout, governed string) (checkoutFold, error) {
 		// Diff each changed file to detect an opaque (undecidable) diff. Diff only
 		// ever errors via its opaque path, so an ErrOpaque is fail-safe, not a hard
 		// error. The change list itself is not carried into rule-eval (see doc).
-		cs, diffErr := change.Diff(path, base, head)
+		cs, diffErr := change.Diff(p, base, head)
 		if diffErr != nil {
 			if !errors.Is(diffErr, change.ErrOpaque) {
-				return checkoutFold{}, fmt.Errorf("diff %q from checkout: %w", path, diffErr)
+				return checkoutFold{}, fmt.Errorf("diff %q from checkout: %w", p, diffErr)
 			}
 			fold.opaque = true
-			reasons = append(reasons, path+": "+cs.OpaqueReason)
+			reasons = append(reasons, p+": "+cs.OpaqueReason)
 			continue
 		}
 		if cs.Opaque {
 			fold.opaque = true
-			reasons = append(reasons, path+": "+cs.OpaqueReason)
+			reasons = append(reasons, p+": "+cs.OpaqueReason)
 		}
 	}
 	// files is sorted, so reasons are deterministic (REQ-E1-S08-04).

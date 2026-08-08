@@ -428,6 +428,37 @@ func TestFileContentsKeepsNilAbsentDistinctFromEmpty(t *testing.T) {
 		}
 	})
 
+	// The containment fix must change no LEGITIMATE input. A rooted subject
+	// (`--subject file:/topics/orders.yaml`) names the same repo-relative path and
+	// decided fine before containment landed, because filepath.Join cleaned the
+	// slash away; `fs.ValidPath` rejects it. Measured on origin/main's reader:
+	// exit=0 APPROVE. `anchorFromSubject` normalises the same way.
+	t.Run("a rooted subject names the same file", func(t *testing.T) {
+		root := writeCheckoutPresence(t, map[string][2]*string{
+			"topics/orders.yaml": {&present, &present},
+		})
+		plain, _, err := dirCheckout{root: root}.FileContents("topics/orders.yaml")
+		if err != nil {
+			t.Fatalf("plain: %v", err)
+		}
+		rooted, _, err := dirCheckout{root: root}.FileContents("/topics/orders.yaml")
+		if err != nil {
+			t.Fatalf("a rooted subject must still resolve: %v", err)
+		}
+		if !bytes.Equal(plain, rooted) {
+			t.Fatalf("rooted subject read %q, plain read %q", rooted, plain)
+		}
+	})
+
+	t.Run("a ..-traversing subject is still refused", func(t *testing.T) {
+		root := writeCheckoutPresence(t, map[string][2]*string{
+			"topics/orders.yaml": {&present, &present},
+		})
+		if _, _, err := (dirCheckout{root: root}).FileContents("../../../etc/hosts"); err == nil {
+			t.Fatalf("a ..-traversing subject must be refused")
+		}
+	})
+
 	t.Run("a symlinked candidate is an ERROR, never silent-absent", func(t *testing.T) {
 		root := writeCheckoutPresence(t, map[string][2]*string{
 			"topics/orders.yaml": {&present, nil},
