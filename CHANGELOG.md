@@ -81,6 +81,14 @@ repository still gets a decision, never by following the link; no release carrie
 ## Unreleased
 
 ### Chores
+- build(deps): bump github/codeql-action/analyze from 4.37.4 to 4.37.6 (#33)
+- build(deps): bump raven-actions/actionlint from 2.1.2 to 2.2.0
+- build(deps): bump astral-sh/setup-uv from 6.1.0 to 9.0.0
+- build(deps): bump github/codeql-action/upload-sarif from 4.37.4 to 4.37.6
+- build(deps): bump github.com/santhosh-tekuri/jsonschema/v6 from 6.0.2 to 6.0.3
+## [0.2.0] - 2026-08-09
+
+### Chores
 - :construction_worker: ci(lint): depguard deny-rules for the D-123 pure tree (REQ-AUD-S07-01)
 - :closed_lock_with_key: ci(release): gate the release job on verify green at the tag SHA
 - :construction_worker: ci(release): enforce the verify-tag gate's own test in CI and document it
@@ -91,6 +99,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :construction_worker: ci(docs): wire the AUD-S06 docs truth-lag gates into task check (D-124)
 - :construction_worker: ci(lint): wire the depguard polarity proof into task check (AUD-S07)
 - :construction_worker: ci(release): wire the changelog gate test itself into task check
+- :wrench: chore(gate): raise the D-010 coverage floor 90% -> 91% (D-128)
+- :wrench: chore(gate): single-source the coverage floor so CI and local cannot skew (D-128)
 - :wrench: fix(release): skip merge commits in cliff.toml so they never reach the Release body
 
 ### Documentation
@@ -126,30 +136,41 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(decisions): record D-125 — CHANGELOG drift gate placement and its cost
 - :memo: docs(release): the changelog drift gate is in task check now, not outside it
 - :memo: docs(changelog): name the second toolDigest fallback branch
-- :memo: docs(compare): state the D-121 digest change where consumers will read it
 - :memo: docs(architecture): redraw the C4 diagrams from the real go list graph (AUD-S17)
 - :memo: docs: mark the rego backend and GitHub adapter as planned outside the C4 pages
 - :memo: docs: narrow the composition-root claim and hedge the planned modes in vision.md
+- :memo: docs(compare): state the D-121 digest change where consumers will read it
 - :memo: docs(adr): record the AUD-S12 malformed-marker behaviour change in ADR-0019 (review F3)
 - :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
-- :memo: docs: truth the D-129 checkout residuals, D-130's shadow claim, OQ-28
-- :memo: docs: point the OQ-28 decision-log link at docs/decisions/
-- :memo: docs: truth D-130 — a non-absence registry error aborts the run, not REVIEW
-- :memo: docs: record the sibling host-declaration skip in D-130
+- :memo: docs(decisions): correct D-128's margin arithmetic and its stale ownership line
+- :memo: docs(open-questions): widen OQ-27 to the full string-operand class, deepen OQ-28 (review F4/F5)
+- :memo: docs(aud-s18): mark AUD AUTONOMOUS COMPLETE and hand over the four operator residuals
+- :memo: docs(aud-s18): renumber this lane's decision row D-131 -> D-132 (D-131 taken by the relational-string lane)
 - :memo: docs: renumber this lane's decision row D-129 -> D-131 (D-129/D-130 claimed by the containment lane)
 - :memo: docs(engine): the text-order refusal sentence reaches no adopter surface
 - :memo: docs: record the review close-out for the three non-blocking notes in D-131
 - :memo: docs(engine): narrow the bytes-binding claim to what was verified
-- :memo: docs: correct the D-130 abort/REVIEW comparison and the resource-owner fixture
-- :memo: docs: narrow D-130's arming-posture and approval-evidence claims to what was measured
+- :memo: docs(aud-s13): retarget the TEST-02 spec arm at the D-131 refusal and close OQ-27
+- :memo: docs(aud-s18): mark the OQ-27 post-audit blocker CLOSED and unpin its mutation control
+- :memo: docs(aud-s18): stop the gate's prose from calling OQ-27 an open tag blocker
 - :memo: docs: record D-133 and ADR-0008 Amendment 2 — the checkout is content under judgment
 - :memo: docs(checkout): state the truncation mechanism precisely — WalkDir is happy, the read is not
 - :memo: docs(cli): document the --checkout symlink limitation where adopters hit it
 - :memo: docs(decisions): correct D-133's falsifiability claim, and record the doc carriers
 - :memo: docs(release): add compatibility notes for D-133 symlinks and D-131 ordering
+- :memo: docs(aud-s13): re-measure D-128 against the current denominator and de-contradict its headline
+- :memo: docs(aud-s18): flip OQ-28 to CLOSED in the post-audit blocker record
+- :memo: docs: truth the D-129 checkout residuals, D-130's shadow claim, OQ-28
+- :memo: docs: point the OQ-28 decision-log link at docs/decisions/
+- :memo: docs: truth D-130 — a non-absence registry error aborts the run, not REVIEW
+- :memo: docs: record the sibling host-declaration skip in D-130
+- :memo: docs: correct the D-130 abort/REVIEW comparison and the resource-owner fixture
+- :memo: docs: narrow D-130's arming-posture and approval-evidence claims to what was measured
 - :memo: docs(decisions): amend D-129 with the D-133 subsumption and the re-arming condition
 - :memo: docs(oq): close OQ-28's residual and relocate its proof pointer after D-133
+- :memo: docs(aud-s13): re-measure D-128 again after main moved (7513d79)
+- :memo: docs(aud-s18): retire the 'PR #36 pending' caveats now that D-129 is on main
 - :memo: docs(cli): stop claiming --arm gates approve/merge (D-134)
 - :memo: docs(usage): correct the --arm safety claim in the CLI reference (D-134)
 - :memo: docs(decisions): D-134 — --arm is advisory-only, superseding D-041
@@ -177,10 +198,11 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: docs(readme): point the ADR-0014 link at the file that exists (DOC-05)
 - :bug: fix(docs-gates): the scripts claimed a wiring that does not exist
 - :bug: docs(examples): starter packs advertised a subcommand that does not exist
+- :bug: fix(release): stop stripping the changelog header from the GitHub Release body
 - :ambulance: fix(forge): skip malformed bot markers with a warning instead of bricking reconcile (AUD-S12, REL-06)
 - :bug: fix(forge): treat an over-limit body as deterministic, not retryable (AUD-S10 x S11)
 - :bug: fix(forge): carry reconcile warnings on refusal paths too (review F1)
-- :bug: fix(release): stop stripping the changelog header from the GitHub Release body
+- :bug: test(aud-s18): remove the three banned pipe shapes from the audit exit gate
 - :bug: fix(engine): relational compare over string-bound operands must fail safe, not lexically
 - :bug: fix(engine): ordering a bytes operand is text ordering too — refuse it (D-131)
 - :bug: fix(checkout): keep a rooted --subject working, and unshadow the path package
@@ -198,21 +220,23 @@ repository still gets a decision, never by following the link; no release carrie
 - :lock: fix(release): reject a tag whose only verify run is a pull_request run
 - :lock: fix(run): derive pins.toolDigest from Go build info (D-120)
 - :lock: fix(run): emit the DecisionRecord before forge reconcile (D-122)
-- :lock: fix(compare): domain-separate the replay-bundle digest per D-121 (ARCH-04)
-- :lock: fix(test): report leaked credential names, never their values (review F1/F2)
-- :lock: fix(forge): bound response reads and cap pagination loops (AUD-S10, REL-03/SEC-08)
-- :lock: fix(forge): make retry-body safety structural, not conventional (review F5)
 - :lock: security(ci): pin the Task version in verify.yaml via a single workflow env (AUD-S09 / SEC-04)
 - :lock: security(ci): lockfile-pin the ajv validator and scrub checkout credentials (AUD-S14 / SEC-01 + SEC-03)
 - :lock: fix(lint): close the comment-blind fail-opens in the workflow-pin gate (review F1/F3/F4/F5/F6)
 - :lock: security(deps): override fast-json-patch to ^3.1.1, clearing GHSA-8gh8-hqwg-xf34 (review F2)
 - :lock: fix(lint): match what EXECUTES, not what the line mentions (review N1/N2/N4)
+- :lock: fix(compare): domain-separate the replay-bundle digest per D-121 (ARCH-04)
+- :lock: fix(forge): bound response reads and cap pagination loops (AUD-S10, REL-03/SEC-08)
+- :lock: fix(forge): make retry-body safety structural, not conventional (review F5)
 - :lock: fix(lint): isolate the real CI step, and enforce command_view's scalar precondition (review N5/N6)
+- :lock: fix(test): report leaked credential names, never their values (review F1/F2)
+- :lock: test(aud-s18): close the schema-freeze baseline disarm the gate left open
+- :lock: test(aud-s18): close the five step-isolation and baseline-override disarms
+- :lock: fix(checkout): never return a truncated tree with a nil error
+- :lock: fix(checkout): contain checkout reads to the checkout root
 - :lock: fix(provider): contain repo-file reads to a symlink-safe root
 - :lock: fix(provider): load the resource-owner registry from the target ref
 - :lock: fix(provider): fall back to the checkout registry on absence alone
-- :lock: fix(checkout): never return a truncated tree with a nil error
-- :lock: fix(checkout): contain checkout reads to the checkout root
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
@@ -231,16 +255,22 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(run): pin the emit-before-reconcile invariant on stdout too (D-122)
 - :white_check_mark: test(docs): pin the retired truth-lag claims so they cannot come back (DOC-05/06/09/10/11)
 - :white_check_mark: test(release): pin the CHANGELOG drift gate content, wiring and polarity
-- :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
 - :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
 - :test: test(provider): add the at-limit boundary control that kills the surviving mutant (review F2)
-- :white_check_mark: test(provider): pin the hard error on an unopenable --checkout
 - :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
-- :white_check_mark: test(provider): point the leak scan at the refusal reason
-- :white_check_mark: test(provider): pin the registry forge error out of resolveRunFacts
+- :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
+- :white_check_mark: test(aud-s18): audit exit gate — 2026-08-06 conditions closed, gates green at the new bar
+- :white_check_mark: test(aud-s13): TEST-02/05/06 — toCEL overflow, reconcileClearSlot branches, repo_file containment + expiry
+- :white_check_mark: test(aud-s13): drop an unreachable assertion in the containment table (review F6)
+- :white_check_mark: test(aud-s18): fix four vacuity defects the gate's own controls caught
 - :white_check_mark: test(engine): pin how an unrepresentable numeric renders in {{ }}
+- :white_check_mark: test(aud-s13): realign TEST-02 with the D-131 refusal contract
 - :white_check_mark: test(checkout): make every containment guard falsifiable
 - :white_check_mark: test(checkout): unmask the two collectFS guards and pin the Lstat side check
+- :white_check_mark: test(aud-s18): close four disarm/vacuity vectors in the exit gate itself
+- :white_check_mark: test(provider): pin the hard error on an unopenable --checkout
+- :white_check_mark: test(provider): point the leak scan at the refusal reason
+- :white_check_mark: test(provider): pin the registry forge error out of resolveRunFacts
 - :white_check_mark: test: deduplicate the requireSymlinks helper across the merged lanes
 - :white_check_mark: test(provider): reshape the D-129 live-path proof around D-133's enumeration refusal
 - :white_check_mark: test(provider): guard the containment subtests at the parent, not per case
