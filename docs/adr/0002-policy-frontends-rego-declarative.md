@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Accepted (v2 — supersedes the "two parallel frontends" draft of this ADR; P2-E5) |
+| **Status** | Accepted (v2 — supersedes the "two parallel frontends" draft of this ADR; P2-E5). **The pluggable-backend half is UNBUILT as of 2026-08-09**: the YAML envelope and the CEL/`assert` backend are Core, but the **Rego backend is deferred to E11** and nothing selects a backend today — no `opa`/`rego` module dependency, no backend field in any frozen v1alpha1 policy schema. `README.md`'s maturity table (*Rego backend — Locked, E11*) and [`docs/architecture/c4-container.md`](../architecture/c4-container.md) (*PLANNED — E11*) are the accurate surfaces; this ADR is the design, not a statement of what ships. Do **not** cite Rego as an available escape hatch — see [ADR-0013](0013-assert-syntax-and-backend.md) Amendment 1 and D-012. |
 | **Date** | 2026-07-21 (revised) |
 | **Deciders** | Konrad Heimel |
 | **Context links** | [ADR-0003 change model](0003-canonical-change-model.md) · [ADR-0007 effects](0007-rule-effects-decision-aggregation.md) · [ADR-0008 routing](0008-change-classification-routing-scope.md) · D-006 |

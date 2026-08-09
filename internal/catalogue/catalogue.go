@@ -42,7 +42,18 @@ import (
 
 // DocsBase is the docs-site root the generated docs.url is minted under (the
 // D-044 MkDocs site). A rule's docs.url is DocsBase + "/" + its stable ID.
-const DocsBase = "https://platformrelay.github.io/assent/rules"
+//
+// KNOWN DEAD SPACE (audit DOC-03, recorded not fixed): the site publishes 63
+// pages and NONE of them is under `rules/` — measured, `<site>/rules` and
+// `<site>/rules/` both 404. So every URL minted here resolves to nothing. The
+// contributor-facing surface no longer carries it: `cmd/assent/run_render.go`
+// stopped attaching this to MR-thread findings. What remains is the local
+// `assent catalogue` JSON report, whose DocsURL is part of the D-017 B10 field
+// set — narrowing that is a contract change and needs an openspec proposal, so
+// it is deferred rather than done here. The casing IS load-bearing and correct:
+// the repo is `Assent` and Pages paths are case-sensitive, so the lowercase
+// spelling would 404 on the host as well as the path.
+const DocsBase = "https://platformrelay.github.io/Assent/rules"
 
 // CapabilityApprovalEvidence is the capability a require-review rule needs: it is
 // satisfiable only by forge-proven ApprovalEvidence (ADR-0017 §3), never a bare
