@@ -16,7 +16,7 @@ SHA-pinned Actions, Dependabot, `SECURITY.md`, `CODEOWNERS`, `cliff.toml` (minim
 - **Security CI mostly done:** `.github/workflows/{verify,codeql,scorecard,vulncheck}.yaml` are
   pinned and green (D-045); S04 is an **audit + residual gap** lane, not a second CodeQL install.
 - **Docs pipeline live:** `mkdocs.yml` + `docs/requirements-docs.txt` + `task docs-build` +
-  `docs.yaml` deploy to `https://platformrelay.github.io/assent/` (D-044) — but nav still exposes
+  `docs.yaml` deploy to `https://platformrelay.github.io/Assent/` (D-044) — but nav still exposes
   `docs/planning/*` (oss-playbook anti-pattern #3); S08 fences product-only pages.
 - **Changelog seed exists:** root `cliff.toml` with gitmoji parsers; no `CHANGELOG.md` sync CI yet.
 - **Sibling patterns:** `kollect-render/.goreleaser.yaml` (CLI ldflags + cross-compile) and
@@ -459,7 +459,7 @@ that** the Phase-5 distribution gate closes.
 checksum verify in CI; docs site builds product nav; backlog marks E9 spec authoritative.
 **Infra-gated half:** tag `v0.1.0` (D-108); S05–S06 publish signed assets; S07b tap (if ready);
 install via curl script + `go install` + Homebrew; cosign/SBOM verified live;
-`https://platformrelay.github.io/assent/` live with install page. Record **D-111** (E9 exit gate
+`https://platformrelay.github.io/Assent/` live with install page. Record **D-111** (E9 exit gate
 closed) when both halves done.
 
 **Dependencies**: E9-S01..S12.

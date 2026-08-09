@@ -212,7 +212,10 @@ func usageText() string {
 		_, _ = fmt.Fprintf(&b, "  %s\n      %s\n      usage: %s\n", sc.name, sc.synopsis, sc.usage)
 	}
 	b.WriteString("\nassent run -h, assent compare -h and assent render -h list their flags.\n")
-	b.WriteString("Full command reference: https://platformrelay.github.io/assent/usage/cli/\n")
+	// The Pages path is case-sensitive and the repo is named `Assent` — the
+	// lowercase spelling 404s. Pinned against `mkdocs.yml`'s `site_url` by
+	// hack/docs/truthlag_pins_test.sh (DOC-02).
+	b.WriteString("Full command reference: https://platformrelay.github.io/Assent/usage/cli/\n")
 	return b.String()
 }
 

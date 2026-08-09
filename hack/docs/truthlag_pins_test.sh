@@ -15,6 +15,9 @@
 #   DOC-10  the meta-plan Phase-5 epic table covers E1..E9 and does not bind a
 #           deferred-tier concept (Rego, GitHub adapter) to one of those numbers.
 #   DOC-11  the `go install` caveat names the version it actually prints.
+#   DOC-02  every docs-site URL in the tree — INCLUDING .go files, since the released
+#           binary prints one — carries mkdocs.yml's `site_url` prefix. The Pages path
+#           is case-sensitive (the repo is `Assent`), so a lowercase spelling 404s.
 #   plus    docs/adr/README.md's status column agrees with each ADR's own Status row.
 #
 # Every check prints PASS or FAIL and the script exits 1 if any failed, so a
@@ -148,6 +151,44 @@ for f in README.md docs/usage/install.md; do
     fail "DOC-11: $f mentions \`go install\` without the 0.0.0-dev caveat"
   fi
 done
+
+# --- DOC-02: every docs-site URL agrees with mkdocs.yml's site_url ----------------
+# GitHub *repo* URLs are case-insensitive; **Pages paths are not**. The repo is named
+# `Assent`, so `platformrelay.github.io/assent/...` 404s — and one such URL is compiled
+# into the released binary (`assent --help`), which is why this sweep covers .go files
+# and not just markdown. `mkdocs build --strict` cannot catch it: it does not resolve
+# external URLs, and the DOC-05 pin above matches only relative links.
+#
+# SCOPE LIMIT, deliberately: this compares the PREFIX against site_url. It proves the
+# host and the case-sensitive repo segment are right; it does NOT prove the path
+# resolves. A known instance of the gap: `internal/catalogue`'s DocsBase mints
+# `<site_url>rules/<pack>/<rule>`, and no `rules/` space exists on the site (DOC-03) —
+# correct prefix, still a 404. Liveness would need network I/O in `task check`.
+SITE_URL="$(grep -m1 '^site_url:' mkdocs.yml | sed -e 's/^site_url: *//' -e 's/[[:space:]]*$//')"
+if [[ -z "$SITE_URL" ]]; then
+  fail "DOC-02: mkdocs.yml has no site_url — the docs-URL pin has no authority to compare against"
+else
+  # Strip the trailing slash so the prefix also matches `<site_url minus />rules`.
+  SITE_PREFIX="${SITE_URL%/}"
+  url_checked=0
+  url_bad=0
+  while IFS= read -r hit; do
+    [[ -z "$hit" ]] && continue
+    url_checked=$((url_checked + 1))
+    case "$hit" in
+      *"$SITE_PREFIX"*) ;;
+      *) echo "      $hit" >&2; url_bad=$((url_bad + 1)) ;;
+    esac
+  done < <(git grep -n 'platformrelay\.github\.io' -- . ':(exclude)hack/docs/truthlag_pins_test.sh' 2>/dev/null)
+
+  if [[ "$url_checked" -eq 0 ]]; then
+    fail "DOC-02: no platformrelay.github.io URLs found anywhere — the site_url pin would be vacuous"
+  elif [[ "$url_bad" -ne 0 ]]; then
+    fail "DOC-02: $url_bad docs-site URL(s) do not carry mkdocs.yml's site_url prefix '$SITE_PREFIX' (Pages paths are case-sensitive)"
+  else
+    pass "DOC-02: all $url_checked docs-site URLs carry the site_url prefix '$SITE_PREFIX'"
+  fi
+fi
 
 # --- ADR index status agrees with each ADR's own Status row ------------------------
 adr_checked=0

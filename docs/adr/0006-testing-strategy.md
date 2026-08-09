@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Accepted (CI e2e default: GitLab CE testcontainer — Spike B; P2-E5) |
+| **Status** | Accepted (Spike B chose the GitLab CE testcontainer as the *intended* CI e2e default; P2-E5). **NOT IN EFFECT as of 2026-08-09 — no CI job boots one.** `test/e2e/**` is behind `//go:build e2e`, and `verify.yaml`'s only e2e touch is `go vet -tags e2e ./...`, which compiles the wiring and runs nothing; the L3 tier is armed by `ASSENT_E2E_GITLAB` against an operator-provided instance ([`test/e2e/README.md`](https://github.com/PlatformRelay/assent/blob/main/test/e2e/README.md)). Live-forge coverage is an **open assurance gap** (D-035/D-038), not a control this project currently runs. |
 | **Date** | 2026-07-21 |
 | **Deciders** | Konrad Heimel |
 | **Context links** | [ADR-0005 forge](0005-forge-abstraction-gitlab-first.md) · [openspec/config.yaml](https://github.com/PlatformRelay/assent/blob/main/openspec/config.yaml) |
