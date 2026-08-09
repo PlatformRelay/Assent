@@ -11,7 +11,9 @@ import (
 
 // requireSymlinks skips loudly (never silently) where the runner cannot create a
 // symlink — unprivileged Windows, exotic filesystems. Everywhere else these cases
-// MUST run: they are the production-path containment proof for D-129.
+// MUST run: they are the production-path containment proof for D-129 (provider
+// reads) and D-133 (checkout reads). It is the package's single symlink guard —
+// the checkout-containment cases in run_checkout_containment_test.go call it too.
 func requireSymlinks(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
