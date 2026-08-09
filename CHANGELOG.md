@@ -81,7 +81,16 @@ repository still gets a decision, never by following the link; no release carrie
 ## Unreleased
 
 ### Chores
+- :construction_worker: ci(lint): depguard deny-rules for the D-123 pure tree (REQ-AUD-S07-01)
+- :closed_lock_with_key: ci(release): gate the release job on verify green at the tag SHA
+- :construction_worker: ci(release): enforce the verify-tag gate's own test in CI and document it
+- :construction_worker: ci(release): run the verify-tag gate's test in task check
+- :construction_worker: ci(schemadrift): fence the D-120 toolDigest annotation edit
 - :wrench: chore(changelog): render version headings in Keep-a-Changelog bracket form
+- :construction_worker: ci(release): run the CHANGELOG drift gate in task check and on main CI
+- :construction_worker: ci(docs): wire the AUD-S06 docs truth-lag gates into task check (D-124)
+- :construction_worker: ci(lint): wire the depguard polarity proof into task check (AUD-S07)
+- :construction_worker: ci(release): wire the changelog gate test itself into task check
 - :wrench: fix(release): skip merge commits in cliff.toml so they never reach the Release body
 
 ### Documentation
@@ -164,25 +173,14 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: docs(readme): point the ADR-0014 link at the file that exists (DOC-05)
 - :bug: fix(docs-gates): the scripts claimed a wiring that does not exist
 - :bug: docs(examples): starter packs advertised a subcommand that does not exist
+- :ambulance: fix(forge): skip malformed bot markers with a warning instead of bricking reconcile (AUD-S12, REL-06)
 - :bug: fix(forge): treat an over-limit body as deterministic, not retryable (AUD-S10 x S11)
 - :bug: fix(forge): carry reconcile warnings on refusal paths too (review F1)
 - :bug: fix(release): stop stripping the changelog header from the GitHub Release body
 - :bug: fix(engine): relational compare over string-bound operands must fail safe, not lexically
 - :bug: fix(engine): ordering a bytes operand is text ordering too — refuse it (D-131)
 - :bug: fix(checkout): keep a rooted --subject working, and unshadow the path package
-
-### Other
-- :construction_worker: ci(lint): depguard deny-rules for the D-123 pure tree (REQ-AUD-S07-01)
-- :closed_lock_with_key: ci(release): gate the release job on verify green at the tag SHA
-- :construction_worker: ci(release): enforce the verify-tag gate's own test in CI and document it
-- :construction_worker: ci(release): run the verify-tag gate's test in task check
-- :construction_worker: ci(schemadrift): fence the D-120 toolDigest annotation edit
-- :construction_worker: ci(release): run the CHANGELOG drift gate in task check and on main CI
-- :construction_worker: ci(docs): wire the AUD-S06 docs truth-lag gates into task check (D-124)
-- :construction_worker: ci(lint): wire the depguard polarity proof into task check (AUD-S07)
-- :construction_worker: ci(release): wire the changelog gate test itself into task check
-- :ambulance: fix(forge): skip malformed bot markers with a warning instead of bricking reconcile (AUD-S12, REL-06)
-- :test: test(provider): add the at-limit boundary control that kills the surviving mutant (review F2)
+- :bug: fix(release): file gitmoji subjects by conventional type, not by emoji (REL-14, D-137)
 
 ### Refactoring
 - :recycle: fix(forge): retry idempotent GitLab reads with bounded jittered backoff (AUD-S11, REL-04)
@@ -229,6 +227,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(release): pin the CHANGELOG drift gate content, wiring and polarity
 - :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
 - :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
+- :test: test(provider): add the at-limit boundary control that kills the surviving mutant (review F2)
 - :white_check_mark: test(provider): pin the hard error on an unopenable --checkout
 - :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
 - :white_check_mark: test(provider): point the leak scan at the refusal reason
@@ -245,34 +244,48 @@ repository still gets a decision, never by following the link; no release carrie
 
 ### Chores
 - :tada: chore: scaffold repository — vision, ADRs, C4, meta-plan, specs skeleton, Go module, examples
+- :truck: chore: rename project to assent (D-009) — folder, module path, CLI, .assent/, apiVersion
+- :construction_worker: ci: golangci-lint, govulncheck, gitleaks, coverage gate, dependabot (A-10)
+- :green_heart: ci: run on latest stable Go toolchain — govulncheck requires go>=1.25
+- :green_heart: ci: run gitleaks CLI directly — gitleaks-action needs a paid license for org repos
+- :green_heart: ci: migrate .golangci.yml to golangci-lint v2 config schema
+- :green_heart: ci: bump golangci-lint-action to v9.3.0 — v6 installs golangci-lint v1, incompatible with the v2 config
+- :green_heart: ci: scope gitleaks to current-branch history — lane branches must not red main
 - build(deps): bump actions/setup-go from 5.6.0 to 7.0.0
 - build(deps): bump actions/checkout from 4.4.0 to 7.0.1
+- :construction_worker: ci(hack): add migration-invariant guard before schema validation (P3-E3-S04)
+- :construction_worker: ci(schemas): add stock Draft 2020-12 validator over schemas + contract fixtures (P3-P1-3)
 - :wrench: chore: gitignore session .worktrees/ (agent-loop-local lanes)
 - build(deps): bump actions/setup-node from 5.0.0 to 7.0.0
 - build(deps): bump github.com/google/cel-go from 0.29.2 to 0.30.0
+- :see_no_evil: chore: gitignore references/ (third-party self-service repos, never committed)
 - build(deps): bump github/codeql-action/upload-sarif
 - build(deps): bump mkdocs-material from 9.7.6 to 9.7.7 in /docs
 - build(deps): bump github.com/zclconf/go-cty from 1.16.3 to 1.19.0
 - build(deps): bump github/codeql-action/init from 4.37.3 to 4.37.4
 - build(deps): bump github/codeql-action/analyze to 4.37.4 to match init
 - build(deps): bump golang.org/x/text from 0.39.0 to 0.40.0
+- :construction_worker: ci(verify): wire compare and release exit gates
 
 ### Documentation
 - :memo: docs: design round 2 — effects/routing/modes/config/ports ADRs, Apache-2.0, walkthrough, naming
 - :memo: docs: ADR-0014 adopter test format + D-010 TDD/90% coverage gate (Taskfile-enforced)
 - :memo: docs: architecture review cycle — ADR-0013 (CEL hybrid), ADR-0015 (trust boundaries), security amendments, GUIDELINES, OSS hygiene
 - :memo: docs(adr): onFail branches, per-firing points, content-keyed facts, finding lifecycle + stale-consent, lint hard-errors, scan confusion matrix
+- :broom: docs: fix spec drift — openspec context, examples README, C4 to envelope+CEL architecture (P2-8)
 - :memo: docs: D-012 adoption-gated scope, D-013 second-review record, new OQs, meta-plan adoption gate
 - :memo: docs: D-014 public repo created with security settings; OQ-1 residual narrowed to domain
 - :memo: docs(adr): ADR-0016 presentation theming — tiered customization, CEL messages, PresentationModel contract (D-015)
 - :memo: docs(adr): ADR-0017 contract model — obligations, merge-result pinning, require-review, EntryRef, typed facts (D-016)
 - :memo: docs: D-016, OQ-23..25, Phase-3 contract-fixture gate, README scope aligned to D-012
+- :card_index_dividers: specs: backlog index — phase/epic map, gates, reading order
 - :memo: specs: Phase-1 epics P1-E1..E4 — corpus, archetype inventory, forge dossier, prior art (full stories + REQs)
 - :memo: specs: Phase-2 epics P2-E1..E5 — CEL/e2e/provider/secure-setup spikes + ADR acceptance (full stories + REQs)
 - :memo: specs: Phase 3-5 epics — contracts, walking skeleton, E1-E9 + locked E10-E13 (D-012)
 - :memo: planning: named-consumer disposition (D-017) — compat review folded in, OQ-19/20/21/23 re-scoped
 - :memo: specs: P2-E6 Spike D — Kubernetes CRD/CR validation feasibility (D-017 B11)
 - :memo: specs: P3-E4 lifecycle + P3-E5 publication protocol; E11/E12 unlocked, E14 added (D-017)
+- :card_index_dividers: specs: backlog index — P2-E6 row, Phase 3-5 summary per D-017
 - :memo: docs: D-018 operator ratifications — reference-use-case wording, Spike D deferred to Phase-3 window, named obligations confirmed
 - :memo: planning: operator inbox round — D-018/D-019 ratifications, reference-use-case wording, Spike D deferred, P1-E1 sources provided
 - :memo: docs(planning): prior-art review — eight tools + implications table
@@ -286,9 +299,12 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(spike): Spike C report — contract, isolation evidence, maxAge defaults
 - :memo: docs(e2e): Spike B measurements — CI default is testcontainer (OQ-6)
 - :memo: docs(p2-e5): consolidate ADR acceptance evidence matrix
+- :bookmark: docs(p2-e5): accept ADR-0002..0017 (Phase-2 gate)
+- :card_index_dividers: specs: mark Phase 1–2 epics Done — both gates CLOSED
 - :memo: docs(specs): add P3-E1 schema fixture stories
 - :memo: docs(specs): add P3-E2 versioning compat stories
 - :memo: specs(p3-e5): author publication reconciliation protocol stories
+- :card_index_dividers: specs(p3-e4): author policy-lifecycle stories (phase/profiles/comparison)
 - :memo: docs(specs): add P3-E3 pack-migration stories
 - :memo: docs(provider): freeze maxAge defaults table for P2-E5
 - :memo: docs(publication): freeze marker grammar for P3-E5-S01
@@ -343,6 +359,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(decisions): close E5-S10 exit gate (D-071/D-072)
 - :memo: docs(openspec): add P5-E4 GitLab forge INVEST spec
 - :memo: docs(openspec): tighten E4-S06 arming + checkout composition
+- :docs: docs(decisions): D-079 records task check green at ≥90% coverage
 - :memo: docs(openspec): add P5-E7 E2E conformance INVEST spec
 - :memo: docs(openspec): E7-S03 catalog-index E4 pipeline arming
 - :memo: docs(openspec): mark E7 autonomous slice closed (D-087)
@@ -364,6 +381,8 @@ repository still gets a decision, never by following the link; no release carrie
 
 ### Features
 - :sparkles: examples: onFail branches — one predicate, both outcomes, quota case explained (P1-7)
+- :seedling: feat(examples): add three generic governed sample repos (P1-E1-S01)
+- :alembic: feat(cel): spike A CEL residual-risk harness
 - :sparkles: feat(spike): typed provider request/response schemas (P2-E3-S01)
 - :sparkles: feat(schemas): add policy v1alpha1 authored schemas
 - :sparkles: feat(schemas): add decision v1alpha1 runtime record schemas
@@ -465,8 +484,10 @@ repository still gets a decision, never by following the link; no release carrie
 - :sparkles: feat(run): wire buildDesired Summary and render CLI
 - :sparkles: feat(cmd): semver ldflags and version contract tests
 - :sparkles: feat(ci): E9-S04 hardening audit, actionlint, Scorecard badge
+- :package: feat(release): goreleaser v2 snapshot config and verify harness
 - :sparkles: feat(release): git-cliff tasks, verify gate, and cliff.toml polish
 - :sparkles: feat(release): checksum-verified install.sh and install docs
+- :clapper: feat(demos): add VHS tape sources for CLI demos (E9-S10)
 - :sparkles: feat(release): add artifact verify harness (E9-S12)
 - :sparkles: feat(compare): classify missed and stricter intervention deltas (PCS-S02)
 - :sparkles: feat(compare): classify obligation uncovered and score threshold
@@ -476,6 +497,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :sparkles: feat(compare): CLI suite mode and ADR-0018 exit codes (PCS-S07)
 - :sparkles: feat(compare): adversarial corpus + CI dogfood (PCS-S08)
 - :sparkles: feat(compare): PCS-S09 exit gate closes D-057 deferred scope
+- :rocket: feat(release): tag-triggered workflow with goreleaser publish
 - :sparkles: feat(release): cosign keyless + SBOM + SLSA on release (E9-S06)
 - :sparkles: feat(release): wire Homebrew tap via goreleaser brews (E9-S07b)
 
@@ -503,6 +525,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(provider): tighten golden-updater file modes for gosec (E5-S01)
 - :bug: fix(provider): reject unknown declaration types at maxAge load (E5-S02)
 - :bug: fix(provider): nosec G304 on digest-pin and maliciousexec reads (E5-S03)
+- :lipstick: fix(provider): add Package builtin comment for revive
+- :lipstick: fix(provider): add Package builtin comment for revive
 - :bug: fix(provider): drop duplicate fixedAsOf after S06 rebase
 - :bug: fix(cmd): stateful fakeGitLab discussions for post-write rescan
 - :bug: fix(schemadrift): repair D-088 test vectors post-presentation
@@ -516,75 +540,23 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(release): correct brews archive id and url_template (E9-S07b)
 
 ### Other
-- :truck: chore: rename project to assent (D-009) — folder, module path, CLI, .assent/, apiVersion
-- :broom: docs: fix spec drift — openspec context, examples README, C4 to envelope+CEL architecture (P2-8)
-- :construction_worker: ci: golangci-lint, govulncheck, gitleaks, coverage gate, dependabot (A-10)
-- :green_heart: ci: run on latest stable Go toolchain — govulncheck requires go>=1.25
-- :green_heart: ci: run gitleaks CLI directly — gitleaks-action needs a paid license for org repos
-- :card_index_dividers: specs: backlog index — phase/epic map, gates, reading order
-- :card_index_dividers: specs: backlog index — P2-E6 row, Phase 3-5 summary per D-017
-- :green_heart: ci: migrate .golangci.yml to golangci-lint v2 config schema
-- :green_heart: ci: bump golangci-lint-action to v9.3.0 — v6 installs golangci-lint v1, incompatible with the v2 config
-- :seedling: feat(examples): add three generic governed sample repos (P1-E1-S01)
-- :green_heart: ci: scope gitleaks to current-branch history — lane branches must not red main
-- :alembic: feat(cel): spike A CEL residual-risk harness
-- :test_tube: test(spike): contract parity HTTP vs exec toy provider (REQ-P2-E3-S01-01)
-- :test_tube: test(spike): fail-closed fact state classification (REQ-P2-E3-S01-02)
-- :test_tube: test(spike): token isolation vs malicious exec provider (REQ-P2-E3-S02-01)
-- :test_tube: test(spike): projection minimization + capability refusal (REQ-P2-E3-S02-02)
-- :rotating_light: style(spike): satisfy revive/errcheck/gosec in spike package
-- :test_tube: test(e2e): Spike B boot scripts + product-surface smoke (P2-E2)
-- :bookmark: docs(p2-e5): accept ADR-0002..0017 (Phase-2 gate)
-- :card_index_dividers: specs: mark Phase 1–2 epics Done — both gates CLOSED
-- :card_index_dividers: specs(p3-e4): author policy-lifecycle stories (phase/profiles/comparison)
-- :test: test(schemas): fail Config/RulesetBinding/MergePolicy schema cases
-- :truck: refactor(schemas): promote provider envelope to schemas/provider/v1alpha1
-- :test: test(schemas): fail ApprovalEvidence schema cases
-- :test: test(schemas): fail testfixture expect.yaml/cases.yaml schema cases
-- :test: test(schemas): add P3-E2-S01 strict-decode compat fixture suite
-- :test: test(schemas): add P3-E1-S07 exit-gate + named-consumer-compat fixture tests
-- :test: test(schemas): demonstrate content-derived identity across rename (F2, F5)
-- :test_tube: test(schemas): P3-E2-S02 report tolerance and collection identity
-- :construction_worker: ci(hack): add migration-invariant guard before schema validation (P3-E3-S04)
-- :construction_worker: ci(schemas): add stock Draft 2020-12 validator over schemas + contract fixtures (P3-P1-3)
 - :rewind: revert(kind): defer durable lab; authorize via D-038
-- :construction: test(e2e): wire skeleton e2e harness under e2e build tag, skip without infra (P4-E1-S09)
+- :test(release): add CI audit gate for single CodeQL workflow
+
+### Refactoring
+- :rotating_light: style(spike): satisfy revive/errcheck/gosec in spike package
+- :truck: refactor(schemas): promote provider envelope to schemas/provider/v1alpha1
+- :recycle: refactor(examples): migrate policies and archetypes to prove/onFailure
+- :recycle: refactor(change): project YAML into a format-neutral value tree (E1-S03 step 1)
 - :art: style(brand): add decision gate identity
-- :see_no_evil: chore: gitignore references/ (third-party self-service repos, never committed)
 - :art: style(hack): shell-script hygiene per SonarCloud shelldre rules
 - :art: style(go): clear SonarCloud maintainability smells (SONAR-GO-MISC)
 - :art: refactor(aggregate): group coverSubject params into coverCtx (SonarCloud go:S107)
-- :art: style(aggregate): relocate bindLeafActivation godoc off entryOr (S02-A review F1)
-- :lipstick: fix(provider): add Package builtin comment for revive
-- :lipstick: fix(provider): add Package builtin comment for revive
-- :test_tube: test(cmd): add E5 exit gate resolved-facts hermetic test
-- :test: test(forge): E4-S03 bot exclusion + gap cassettes (review fix)
-- :test: test(doctor): E4-S05 review fixes — forge wins over env
-- :test: feat(conformance): add SHA-guard rejection goldens (E4-S07)
-- :test: test(forge/conformance): P3-E5 reconciliation replay (E4-S09)
-- :test: test(cmd/assent): E4 autonomous exit gate (E4-S10)
-- :docs: docs(decisions): D-079 records task check green at ≥90% coverage
-- :test: test(conformance): E7-S08 exit gate checklist
-- :test: test(schemadrift): allow D-088 presentation-only schema drift
-- :test: test(forge): raise internal coverage after E8-S12
-- :test: render(E8-S09): add golden test and render fixture corpus
-- :test: test(cmd/assent): add render CLI tests (E8-S10)
-- :test: test(forge): P3-E5 replay asserts rendered summary bodies
-- :test: test(render): E8-S14 exit gate + safety split
-- :test(release): add CI audit gate for single CodeQL workflow
-- :package: feat(release): goreleaser v2 snapshot config and verify harness
-- :clapper: feat(demos): add VHS tape sources for CLI demos (E9-S10)
-- :test_tube: test(release): E9-S13 autonomous exit gate
-- :rocket: feat(release): tag-triggered workflow with goreleaser publish
-- :construction_worker: ci(verify): wire compare and release exit gates
-
-### Refactoring
-- :recycle: refactor(examples): migrate policies and archetypes to prove/onFailure
-- :recycle: refactor(change): project YAML into a format-neutral value tree (E1-S03 step 1)
 - :recycle: refactor(run): re-seat orchestrate onto frozen MergePolicy/RulesetBinding loader + live-diff EvaluationInput + CoverWithApproval; delete toy policy.go (P5-E2-S04 REQ-06)
 - :recycle: fix(catalogue): drop fabricated phase-off deprecation; report authored + ceiling-capped effective phase (P5-E3-S07 review)
 - :recycle: refactor(lint): reverse fact-model convention to Option B (value at .value) — D-051 supersedes D-049
 - :recycle: refactor(examples): conform pack corpus to strict loader + D-051 facts (P5-E3-C)
+- :art: style(aggregate): relocate bindLeafActivation godoc off entryOr (S02-A review F1)
 - :recycle: refactor(forge/conformance): move S09 harness into *_test.go
 - :recycle: refactor(release): keep changelog-verify out of task check
 - :recycle: refactor(pcs): extract catalogue loaders and profile activation
@@ -611,7 +583,20 @@ repository still gets a decision, never by following the link; no release carrie
 - :lock: fix(render): redact sensitive facts on .value accessors (E8-S07)
 
 ### Testing
+- :test_tube: test(spike): contract parity HTTP vs exec toy provider (REQ-P2-E3-S01-01)
+- :test_tube: test(spike): fail-closed fact state classification (REQ-P2-E3-S01-02)
+- :test_tube: test(spike): token isolation vs malicious exec provider (REQ-P2-E3-S02-01)
+- :test_tube: test(spike): projection minimization + capability refusal (REQ-P2-E3-S02-02)
+- :test_tube: test(e2e): Spike B boot scripts + product-surface smoke (P2-E2)
+- :test: test(schemas): fail Config/RulesetBinding/MergePolicy schema cases
+- :test: test(schemas): fail ApprovalEvidence schema cases
+- :test: test(schemas): fail testfixture expect.yaml/cases.yaml schema cases
+- :test: test(schemas): add P3-E2-S01 strict-decode compat fixture suite
+- :test: test(schemas): add P3-E1-S07 exit-gate + named-consumer-compat fixture tests
+- :test: test(schemas): demonstrate content-derived identity across rename (F2, F5)
+- :test_tube: test(schemas): P3-E2-S02 report tolerance and collection identity
 - :white_check_mark: test(core): trust-boundary goldens — assent-policy BLOCK + tokenless (P4-E1-S07-01/03)
+- :construction: test(e2e): wire skeleton e2e harness under e2e build tag, skip without infra (P4-E1-S09)
 - :white_check_mark: test(aggregate): reproduce frozen D-016 DecisionRecord end-to-end (P5-E2-S10)
 - :white_check_mark: test(lint): E3-S08 exit gate — hard-error corpus + archetype Cover gate + catalogue generation (P5-E3-S08)
 - :white_check_mark: test(adoptertest): drive finding-diff deltas through RenderFailure (F1, P5-E6-S04)
@@ -621,7 +606,21 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(test): fail-closed guard tests for the D-060 combine + binding-collapse (P5-E6-S08 review F1)
 - :white_check_mark: test(cmd): unpin topic-registry green corpus + reconcile D-061
 - :white_check_mark: test(cmd): EFE-S05 exit gate — create/delete fixtures + coverage + determinism
+- :test_tube: test(cmd): add E5 exit gate resolved-facts hermetic test
+- :test: test(forge): E4-S03 bot exclusion + gap cassettes (review fix)
+- :test: test(doctor): E4-S05 review fixes — forge wins over env
+- :test: feat(conformance): add SHA-guard rejection goldens (E4-S07)
+- :test: test(forge/conformance): P3-E5 reconciliation replay (E4-S09)
+- :test: test(cmd/assent): E4 autonomous exit gate (E4-S10)
+- :test: test(conformance): E7-S08 exit gate checklist
+- :test: test(schemadrift): allow D-088 presentation-only schema drift
+- :test: test(forge): raise internal coverage after E8-S12
+- :test: render(E8-S09): add golden test and render fixture corpus
+- :test: test(cmd/assent): add render CLI tests (E8-S10)
+- :test: test(forge): P3-E5 replay asserts rendered summary bodies
+- :test: test(render): E8-S14 exit gate + safety split
 - :white_check_mark: test(release): changelog_test.sh for REQ-E9-S03-01..03
+- :test_tube: test(release): E9-S13 autonomous exit gate
 ## [0.0.0] - 2026-08-04
 
 Pre-release development history before the first tagged alpha (`v0.1.0`, D-108). Milestone ADRs
