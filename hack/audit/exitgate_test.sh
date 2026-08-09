@@ -23,10 +23,13 @@
 #
 # WHAT THIS GATE DOES NOT CERTIFY. It is scoped to the 2026-08-06 audit. Two
 # decision-path fail-opens found DURING this epic (OQ-27 relational CEL compare
-# over string-bound operands; OQ-28 `repo_file` symlink escape) are not audit
-# findings and block the tag independently. Check (7b) pins the spec's
-# "Post-audit release blockers" section and requires each cited OQ to resolve,
-# so a green run here can never be read as release clearance. See D-132.
+# over string-bound operands, since CLOSED by D-131; OQ-28 `repo_file` symlink
+# escape, still OPEN) are not audit findings and block the tag independently of
+# anything graded here. Check (7b) pins the spec's "Post-audit release blockers"
+# section and requires each cited OQ to resolve and to carry a status token, so
+# a green run here can never be read as release clearance. The gate does NOT
+# grade the statuses themselves — it grades that the record exists and is
+# readable. See D-132.
 #
 # ---------------------------------------------------------------------------
 # WHY (6) IS NOT `git diff schemas/`
@@ -1123,9 +1126,11 @@ check_disposition_table() { # <spec> <backlog> <decisions>
 }
 
 # The gate must never be readable as "all known fail-opens are closed". OQ-27
-# and OQ-28 were found DURING this epic, are not audit findings, and block the
-# tag. Tolerant on the NUMBER (four lanes are numbering concurrently), strict on
-# presence and on the cited question resolving.
+# and OQ-28 were found DURING this epic, are not audit findings, and blocked the
+# tag independently (OQ-27 has since been closed by D-131; OQ-28 is still open).
+# Tolerant on the NUMBER (four lanes are numbering concurrently) and on the
+# STATUS token each row carries — a row that closes must stay in the table as
+# the record — strict on presence and on the cited question resolving.
 check_post_audit_blockers() { # <spec> <open-questions>
   local spec="$1" oq="$2" rc=0
   [[ -f "$spec" ]] || {
@@ -1150,7 +1155,7 @@ check_post_audit_blockers() { # <spec> <open-questions>
   local n
   n="$(wc -l <"$rows" | tr -d '[:space:]')"
   if ((n < 2)); then
-    echo "  AUD-S18: the Post-audit release blockers table has $n row(s); at least 2 are expected (OQ-27 relational CEL compare, OQ-28 repo_file symlink escape) — the section went empty, so the scope disclaimer is decorative" >&2
+    echo "  AUD-S18: the Post-audit release blockers table has $n row(s); at least 2 are expected (OQ-27 relational CEL compare, OQ-28 repo_file symlink escape — closed rows stay, they are the record) — the section went empty, so the scope disclaimer is decorative" >&2
     return 1
   fi
 
@@ -1995,6 +2000,6 @@ echo "  $AUDIT_FINDINGS_COUNT audit findings dispositioned."
 echo
 echo "  NOT certified: release readiness. Defects found AFTER 2026-08-06 are out"
 echo "  of scope here and are tracked in the spec's 'Post-audit release blockers'"
-echo "  section (OQ-27, OQ-28) — both OPEN decision-path fail-opens at the time"
-echo "  this gate was written. See D-132."
+echo "  section (OQ-27 — closed by D-131; OQ-28 — still open). This gate grades"
+echo "  that the record exists and resolves, never the statuses. See D-132."
 echo "============================================================================"
