@@ -127,17 +127,22 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
 - :memo: docs(decisions): correct D-128's margin arithmetic and its stale ownership line
 - :memo: docs(open-questions): widen OQ-27 to the full string-operand class, deepen OQ-28 (review F4/F5)
+- :memo: docs(aud-s18): mark AUD AUTONOMOUS COMPLETE and hand over the four operator residuals
+- :memo: docs(aud-s18): renumber this lane's decision row D-131 -> D-132 (D-131 taken by the relational-string lane)
 - :memo: docs: renumber this lane's decision row D-129 -> D-131 (D-129/D-130 claimed by the containment lane)
 - :memo: docs(engine): the text-order refusal sentence reaches no adopter surface
 - :memo: docs: record the review close-out for the three non-blocking notes in D-131
 - :memo: docs(engine): narrow the bytes-binding claim to what was verified
 - :memo: docs(aud-s13): retarget the TEST-02 spec arm at the D-131 refusal and close OQ-27
+- :memo: docs(aud-s18): mark the OQ-27 post-audit blocker CLOSED and unpin its mutation control
+- :memo: docs(aud-s18): stop the gate's prose from calling OQ-27 an open tag blocker
 - :memo: docs: record D-133 and ADR-0008 Amendment 2 — the checkout is content under judgment
 - :memo: docs(checkout): state the truncation mechanism precisely — WalkDir is happy, the read is not
 - :memo: docs(cli): document the --checkout symlink limitation where adopters hit it
 - :memo: docs(decisions): correct D-133's falsifiability claim, and record the doc carriers
 - :memo: docs(release): add compatibility notes for D-133 symlinks and D-131 ordering
 - :memo: docs(aud-s13): re-measure D-128 against the current denominator and de-contradict its headline
+- :memo: docs(aud-s18): flip OQ-28 to CLOSED in the post-audit blocker record
 - :memo: docs: truth the D-129 checkout residuals, D-130's shadow claim, OQ-28
 - :memo: docs: point the OQ-28 decision-log link at docs/decisions/
 - :memo: docs: truth D-130 — a non-absence registry error aborts the run, not REVIEW
@@ -147,6 +152,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(decisions): amend D-129 with the D-133 subsumption and the re-arming condition
 - :memo: docs(oq): close OQ-28's residual and relocate its proof pointer after D-133
 - :memo: docs(aud-s13): re-measure D-128 again after main moved (7513d79)
+- :memo: docs(aud-s18): retire the 'PR #36 pending' caveats now that D-129 is on main
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -163,6 +169,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(release): stop stripping the changelog header from the GitHub Release body
 - :bug: fix(forge): treat an over-limit body as deterministic, not retryable (AUD-S10 x S11)
 - :bug: fix(forge): carry reconcile warnings on refusal paths too (review F1)
+- :bug: test(aud-s18): remove the three banned pipe shapes from the audit exit gate
 - :bug: fix(engine): relational compare over string-bound operands must fail safe, not lexically
 - :bug: fix(engine): ordering a bytes operand is text ordering too — refuse it (D-131)
 - :bug: fix(checkout): keep a rooted --subject working, and unshadow the path package
@@ -180,6 +187,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :ambulance: fix(forge): skip malformed bot markers with a warning instead of bricking reconcile (AUD-S12, REL-06)
 - :test: test(provider): add the at-limit boundary control that kills the surviving mutant (review F2)
 - Merge remote-tracking branch 'origin/main' into lane/aud-s10-s12-forge-hardening
+- :twisted_rightwards_arrows: chore(aud-s18): merge AUD-S13 (PR #35) — the exit gate's 91% bar and the OQ-27/28 blocker rows are its dependency
 - Merge remote-tracking branch 'origin/main' into lane/fix-provider-symlink-containment
 - Merge remote-tracking branch 'origin/main' into lane/fix-provider-symlink-containment
 
@@ -203,6 +211,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :lock: fix(forge): make retry-body safety structural, not conventional (review F5)
 - :lock: fix(lint): isolate the real CI step, and enforce command_view's scalar precondition (review N5/N6)
 - :lock: fix(test): report leaked credential names, never their values (review F1/F2)
+- :lock: test(aud-s18): close the schema-freeze baseline disarm the gate left open
+- :lock: test(aud-s18): close the five step-isolation and baseline-override disarms
 - :lock: fix(checkout): never return a truncated tree with a nil error
 - :lock: fix(checkout): contain checkout reads to the checkout root
 - :lock: fix(provider): contain repo-file reads to a symlink-safe root
@@ -229,12 +239,15 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
 - :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
 - :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
+- :white_check_mark: test(aud-s18): audit exit gate — 2026-08-06 conditions closed, gates green at the new bar
 - :white_check_mark: test(aud-s13): TEST-02/05/06 — toCEL overflow, reconcileClearSlot branches, repo_file containment + expiry
 - :white_check_mark: test(aud-s13): drop an unreachable assertion in the containment table (review F6)
+- :white_check_mark: test(aud-s18): fix four vacuity defects the gate's own controls caught
 - :white_check_mark: test(engine): pin how an unrepresentable numeric renders in {{ }}
 - :white_check_mark: test(aud-s13): realign TEST-02 with the D-131 refusal contract
 - :white_check_mark: test(checkout): make every containment guard falsifiable
 - :white_check_mark: test(checkout): unmask the two collectFS guards and pin the Lstat side check
+- :white_check_mark: test(aud-s18): close four disarm/vacuity vectors in the exit gate itself
 - :white_check_mark: test(provider): pin the hard error on an unopenable --checkout
 - :white_check_mark: test(provider): point the leak scan at the refusal reason
 - :white_check_mark: test(provider): pin the registry forge error out of resolveRunFacts
