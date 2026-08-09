@@ -194,7 +194,9 @@ What to do about it:
 - **Run without `--checkout`.** The forge snapshot then enumerates the changed-file set and
   none of the above applies — symlinks in the repository become irrelevant. This is the
   supported way to evaluate a repository that legitimately contains one; the trade-off is the
-  snapshot-completeness behaviour described next.
+  snapshot-completeness behaviour described below. Note that the symlink refusal hardens what
+  the checkout may *contain*; it does not establish which *commit* the checkout is — see
+  *Known limitation: the checkout is not bound to the evaluated commit* below.
 - **Or provision a symlink-free checkout** for `base/` and `head/`.
 
 The two side directories `base/` and `head/` may themselves be symlinks — they are
@@ -204,6 +206,29 @@ Non-regular files (FIFOs, sockets, devices) under either side are refused the sa
 the same reason. Loosening the symlink refusal will mean folding it into the opaque /
 fail-safe **REVIEW** path, so such a repository gets a decision someone must look at — never
 by following the link. There is no release commitment for that today.
+
+### Known limitation: the checkout is not bound to the evaluated commit
+
+**assent judges the tree you hand it, and nothing verifies that tree is the commit the forge
+will merge.** With `--checkout` the local tree is the sole authority for the bytes under
+judgment and for the changed-file set (D-077); the SHAs that pin the approval and the
+compare-and-swap merge come from the forge's view of the merge request. The two are never
+compared — `assent run` has no step that hashes the checkout or matches it against
+`pins.sourceSha`. If they disagree, assent decides on one tree and the forge merges another.
+
+This is a property of **how the checkout is constructed**, not a fault that fires on every
+run. Two operator obligations make it a non-issue, and assent performs neither of them for
+you:
+
+- **Construct `head/` from the merge-request head commit** — the SHA the pipeline was
+  triggered for — rather than from a branch tip resolved at clone time.
+- **Cancel superseded pipelines on a new push.** A push landing between the clone and the
+  decision leaves assent judging the older tree while the forge merges the newer head.
+  This is a project setting on your forge; assent never reads it and never reports on it,
+  so do not treat a green `assent doctor` as evidence that it is set.
+
+Runs without `--checkout` are not exposed to this: the forge snapshot is then both the
+enumerator and the thing the pins describe.
 
 ### Checkout-less runs and enumeration completeness
 
