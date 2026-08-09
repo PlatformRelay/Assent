@@ -82,6 +82,7 @@ repository still gets a decision, never by following the link; no release carrie
 
 ### Chores
 - :wrench: chore(changelog): render version headings in Keep-a-Changelog bracket form
+- :wrench: fix(release): skip merge commits in cliff.toml so they never reach the Release body
 
 ### Documentation
 - :memo: docs(decisions): close D-111 E9 exit gate after v0.1.0
@@ -172,9 +173,6 @@ repository still gets a decision, never by following the link; no release carrie
 - :construction_worker: ci(release): wire the changelog gate test itself into task check
 - :ambulance: fix(forge): skip malformed bot markers with a warning instead of bricking reconcile (AUD-S12, REL-06)
 - :test: test(provider): add the at-limit boundary control that kills the surviving mutant (review F2)
-- Merge remote-tracking branch 'origin/main' into lane/aud-s10-s12-forge-hardening
-- Merge remote-tracking branch 'origin/main' into lane/fix-provider-symlink-containment
-- Merge remote-tracking branch 'origin/main' into lane/fix-provider-symlink-containment
 
 ### Refactoring
 - :recycle: fix(forge): retry idempotent GitLab reads with bounded jittered backoff (AUD-S11, REL-04)
@@ -563,10 +561,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :test: test(render): E8-S14 exit gate + safety split
 - :test(release): add CI audit gate for single CodeQL workflow
 - :package: feat(release): goreleaser v2 snapshot config and verify harness
-- Merge remote-tracking branch 'origin/main' into lane-e9-s11
 - :clapper: feat(demos): add VHS tape sources for CLI demos (E9-S10)
-- Merge remote-tracking branch 'origin/main' into lane-e9-s10
-- Merge remote-tracking branch 'origin/main' into lane-e9-s11
 - :test_tube: test(release): E9-S13 autonomous exit gate
 - :rocket: feat(release): tag-triggered workflow with goreleaser publish
 - :construction_worker: ci(verify): wire compare and release exit gates
