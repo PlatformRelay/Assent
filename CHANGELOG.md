@@ -91,6 +91,12 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(open-questions): widen OQ-27 to the full string-operand class, deepen OQ-28 (review F4/F5)
 - :memo: docs(aud-s18): mark AUD AUTONOMOUS COMPLETE and hand over the four operator residuals
 - :memo: docs(aud-s18): renumber this lane's decision row D-131 -> D-132 (D-131 taken by the relational-string lane)
+- :memo: docs: renumber this lane's decision row D-129 -> D-131 (D-129/D-130 claimed by the containment lane)
+- :memo: docs(engine): the text-order refusal sentence reaches no adopter surface
+- :memo: docs: record the review close-out for the three non-blocking notes in D-131
+- :memo: docs(engine): narrow the bytes-binding claim to what was verified
+- :memo: docs(aud-s13): retarget the TEST-02 spec arm at the D-131 refusal and close OQ-27
+- :memo: docs(aud-s18): mark the OQ-27 post-audit blocker CLOSED and unpin its mutation control
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -108,6 +114,8 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :bug: fix(forge): treat an over-limit body as deterministic, not retryable (AUD-S10 x S11)
 - :bug: fix(forge): carry reconcile warnings on refusal paths too (review F1)
 - :bug: test(aud-s18): remove the three banned pipe shapes from the audit exit gate
+- :bug: fix(engine): relational compare over string-bound operands must fail safe, not lexically
+- :bug: fix(engine): ordering a bytes operand is text ordering too — refuse it (D-131)
 
 ### Other
 - :construction_worker: ci(lint): depguard deny-rules for the D-123 pure tree (REQ-AUD-S07-01)
@@ -171,6 +179,8 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(aud-s13): TEST-02/05/06 — toCEL overflow, reconcileClearSlot branches, repo_file containment + expiry
 - :white_check_mark: test(aud-s13): drop an unreachable assertion in the containment table (review F6)
 - :white_check_mark: test(aud-s18): fix four vacuity defects the gate's own controls caught
+- :white_check_mark: test(engine): pin how an unrepresentable numeric renders in {{ }}
+- :white_check_mark: test(aud-s13): realign TEST-02 with the D-131 refusal contract
 ## [0.1.0] - 2026-08-05
 
 ### Chores
