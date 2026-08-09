@@ -40,6 +40,44 @@ occurrence/decision digests. **Action required if you pinned, cached, or recompu
 identity itself is unchanged: no `caseId` was reused or retired and no bundle byte changed, so
 D-113 immutability holds — only the algorithm computing the pin moved, versioned by D-121.
 
+- **Ordering operators refuse text operands after `v0.1.0` (D-131).** Through `v0.1.0` a
+relational operator (`<`, `<=`, `>`, `>=`) whose operands bound as CEL text compared them
+LEXICALLY and returned a boolean, so a quoted numeric in adopter YAML sorted as a string: a
+`partitions: "12"` -> `"6"` shrink evaluated `new >= old` to true, proved non-destructive and
+reached APPROVE, while the legitimate grow `"6"` -> `"12"` evaluated false and BLOCKed. Builds
+after D-131 (ADR-0013 Amendment 1) treat an ordering operator whose operand actually evaluates
+to a CEL `string` or `bytes` value as an EVALUATION ERROR. `bytes` is refused deliberately:
+`bytes(a) < bytes(b)` performs the identical byte-wise compare, so exempting it would re-admit
+the defect as a one-token workaround. Nothing else moves — `int`, `uint`, `double`, `bool`,
+`duration` and `timestamp` still order normally, and `==`, `!=`, `in`, `startsWith`, `matches`
+and `size()` are unaffected. The failure direction is safe: the affected leaf errors, the rule
+routes to `predicate.error`, and the decision degrades to REVIEW — no policy gets a wrong
+APPROVE out of this change, only a decision someone must look at. **Action required if your
+policy orders text on purpose** — ISO-8601 dates written as strings, version-ish strings,
+sorted enum tiers: those leaves now REVIEW instead of deciding, and the fix is to coerce
+first. Use `int(...)` or `double(...)` for quoted numerics, and `timestamp(a) < timestamp(b)`
+for ISO-8601 dates, which the evaluation environment supports. Ordering raw text is no longer
+expressible in tier-1 `assert`.
+
+- **`assent run --checkout` refuses any repository containing any symlink (D-133).** Builds
+after D-133 (ADR-0008 Amendment 2) contain every checkout read to the checkout root and refuse
+a path reached through a symlink instead of following it: with `--checkout` the local tree is
+the sole authority and `head/` is the merge-request head, contributor-authored content under
+judgment, so a link at a governed path could otherwise substitute an off-tree file for the
+document being judged. The scope is wider than "the merge request shipped a symlink": ANY
+symlink ANYWHERE under `base/` or `head/` stops the run — including one that predates the
+branch, lives in a directory unrelated to the governed subject and to `.assent/**`, and that
+the merge request never touches. A plain `LICENSE -> LICENSES/Apache-2.0.txt` on the BASE side
+is enough. The failure is fail-closed and loud, never a wrong verdict: exit `1`, zero forge
+writes (no thread, no approval, no merge), and an error naming the offending path, the
+checkout side, and the reason. Non-regular files (FIFOs, sockets, devices) under either side
+are refused the same way. **Action required if your repository contains a symlink and you pass
+`--checkout`: run WITHOUT the flag**, in which case the forge snapshot enumerates the
+changed-file set and none of this applies — or provision a symlink-free `base/` and `head/`.
+The two side directories may themselves be symlinks; only what lies beneath them may not.
+Loosening this will mean folding the refusal into the opaque, fail-safe REVIEW path so such a
+repository still gets a decision, never by following the link; no release carries that yet.
+
 ## Unreleased
 
 ### Chores
@@ -85,6 +123,11 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(adr): record the AUD-S12 malformed-marker behaviour change in ADR-0019 (review F3)
 - :memo: docs(adr): correct the convergence mechanism for a skipped bot marker (review F8)
 - :memo: docs(planning): mark E10 design-note steps 1-2 shipped by AUD-S15
+- :memo: docs: record D-133 and ADR-0008 Amendment 2 — the checkout is content under judgment
+- :memo: docs(checkout): state the truncation mechanism precisely — WalkDir is happy, the read is not
+- :memo: docs(cli): document the --checkout symlink limitation where adopters hit it
+- :memo: docs(decisions): correct D-133's falsifiability claim, and record the doc carriers
+- :memo: docs(release): add compatibility notes for D-133 symlinks and D-131 ordering
 - :memo: docs: renumber this lane's decision row D-129 -> D-131 (D-129/D-130 claimed by the containment lane)
 - :memo: docs(engine): the text-order refusal sentence reaches no adopter surface
 - :memo: docs: record the review close-out for the three non-blocking notes in D-131
@@ -105,6 +148,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :bug: fix(release): stop stripping the changelog header from the GitHub Release body
 - :bug: fix(forge): treat an over-limit body as deterministic, not retryable (AUD-S10 x S11)
 - :bug: fix(forge): carry reconcile warnings on refusal paths too (review F1)
+- :bug: fix(checkout): keep a rooted --subject working, and unshadow the path package
 - :bug: fix(engine): relational compare over string-bound operands must fail safe, not lexically
 - :bug: fix(engine): ordering a bytes operand is text ordering too — refuse it (D-131)
 
@@ -142,6 +186,8 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :lock: fix(forge): make retry-body safety structural, not conventional (review F5)
 - :lock: fix(lint): isolate the real CI step, and enforce command_view's scalar precondition (review N5/N6)
 - :lock: fix(test): report leaked credential names, never their values (review F1/F2)
+- :lock: fix(checkout): never return a truncated tree with a nil error
+- :lock: fix(checkout): contain checkout reads to the checkout root
 
 ### Testing
 - :white_check_mark: test(forge): model truncation and diff-endpoint failure in the fake
@@ -163,6 +209,8 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :white_check_mark: test(cmd): pin policySha to raw policy bytes (D-121 byte-vs-document split)
 - :white_check_mark: test(lint): close the aliased-import evasion in the ARCH-02 gate
 - :white_check_mark: fix(test): make the exec-timeout tests deterministic under load
+- :white_check_mark: test(checkout): make every containment guard falsifiable
+- :white_check_mark: test(checkout): unmask the two collectFS guards and pin the Lstat side check
 - :white_check_mark: test(engine): pin how an unrepresentable numeric renders in {{ }}
 ## [0.1.0] - 2026-08-05
 
