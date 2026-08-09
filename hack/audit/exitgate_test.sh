@@ -24,8 +24,8 @@
 # WHAT THIS GATE DOES NOT CERTIFY. It is scoped to the 2026-08-06 audit. Two
 # decision-path fail-opens found DURING this epic (OQ-27 relational CEL compare
 # over string-bound operands, since CLOSED by D-131; OQ-28 `repo_file` symlink
-# escape, since CLOSED — D-133 on `main` refuses checkout symlinks at
-# enumeration, and D-129 in the provider lane adds the provider-layer guard)
+# escape, since CLOSED — D-133 refuses checkout symlinks at enumeration and
+# D-129 adds the provider-layer guard, both now on `main`)
 # are not audit findings and blocked the tag independently of anything graded
 # here. Check (7b) pins the spec's "Post-audit release blockers"
 # section and requires each cited OQ to resolve and to carry a status token, so
@@ -1222,8 +1222,8 @@ check_disposition_table() { # <spec> <backlog> <decisions>
 
 # The gate must never be readable as "all known fail-opens are closed". OQ-27
 # and OQ-28 were found DURING this epic, are not audit findings, and blocked the
-# tag independently (OQ-27 has since been closed by D-131; OQ-28 by D-133 on
-# `main` plus D-129's provider-layer guard in the dedicated provider lane).
+# tag independently (OQ-27 has since been closed by D-131; OQ-28 by D-133 plus
+# D-129's provider-layer guard -- all three on `main`).
 # Tolerant on the NUMBER (four lanes are numbering concurrently) and on the
 # STATUS token each row carries — a row that closes must stay in the table as
 # the record — strict on presence and on the cited question resolving.
@@ -2292,6 +2292,6 @@ echo
 echo "  NOT certified: release readiness. Defects found AFTER 2026-08-06 are out"
 echo "  of scope here and are tracked in the spec's 'Post-audit release blockers'"
 echo "  section (OQ-27 — closed by D-131; OQ-28 — closed by D-133 plus the"
-echo "  provider lane's D-129 guard). This gate grades that the record exists"
-echo "  and resolves, never the statuses. See D-132."
+echo "  D-129 provider guard). This gate grades that the record exists and"
+echo "  resolves, never the statuses. See D-132."
 echo "============================================================================"

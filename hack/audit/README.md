@@ -45,10 +45,9 @@ and could not see a dotless name at all — and neither can the freeze guard, wh
 
 Release readiness. The gate is scoped to the **2026-08-06** audit. Defects found after it —
 `OQ-27` (relational CEL compare over string-bound operands returns a silently wrong boolean;
-**closed** by D-131 / ADR-0013 Amendment 1) and `OQ-28` (`repo_file` symlink escape; **closed**
-— D-133 on `main` refuses checkout symlinks at enumeration, and D-129 in the dedicated provider
-lane adds the provider-layer guard) — blocked the tag independently of anything graded here.
-Check 7b pins the spec's
+**closed** by D-131 / ADR-0013 Amendment 1) and `OQ-28` (`repo_file` symlink escape; **closed** —
+D-133 refuses checkout symlinks at enumeration and D-129 adds the provider-layer guard, both now
+on `main`) — blocked the tag independently of anything graded here. Check 7b pins the spec's
 *Post-audit release blockers* section and requires each cited `OQ-<n>` to resolve and to carry an
 OPEN/CLOSED token, so a green run here can never be read as clearance. It grades that the record
 exists and is readable, not the statuses — a row that closes stays in the table as the record.
