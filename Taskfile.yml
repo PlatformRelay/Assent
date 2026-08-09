@@ -32,7 +32,16 @@ tasks:
       - go test -race ./...
 
   coverage:
-    desc: "Coverage gate: >=90% on internal/ (D-010) — arms itself once internal/ has code"
+    # D-010 coverage gate. COVERAGE_MIN below is the SINGLE SOURCE of the floor:
+    # .github/workflows/verify.yaml runs this very task rather than re-implementing
+    # the threshold, so the local and CI halves cannot skew (D-128). Raise the floor
+    # by editing COVERAGE_MIN only — no other GATE may carry its own copy of the
+    # number (GUIDELINES.md quotes it as prose and names this var as the source).
+    # NOTE: the comparison is against the ONE-DECIMAL total `go tool cover -func`
+    # prints, so a floor of 91 really admits anything rounding to 91.0, i.e. ~90.95%.
+    desc: "Coverage gate on internal/ (D-010; floor = COVERAGE_MIN, raised to 91 by D-128) — arms itself once internal/ has code"
+    vars:
+      COVERAGE_MIN: 91
     cmds:
       - |
         if ! ls internal/*/*.go >/dev/null 2>&1; then
@@ -40,8 +49,8 @@ tasks:
         fi
         go test -coverprofile=cov.out ./internal/...
         pct=$(go tool cover -func=cov.out | awk '/^total:/ {gsub("%","",$3); print $3}')
-        echo "coverage: ${pct}% (required: 90%)"
-        awk -v p="$pct" 'BEGIN { exit (p+0 >= 90 ? 0 : 1) }' || { echo "FAIL: coverage below 90% (D-010)"; exit 1; }
+        echo "coverage: ${pct}% (required: {{.COVERAGE_MIN}}%)"
+        awk -v p="$pct" -v min="{{.COVERAGE_MIN}}" 'BEGIN { exit (p+0 >= min+0 ? 0 : 1) }' || { echo "FAIL: coverage below {{.COVERAGE_MIN}}% (D-010, floor raised by D-128)"; exit 1; }
 
   build:
     desc: Build the CLI
@@ -230,6 +239,11 @@ tasks:
     desc: "AUD-S03 gate: verify-green-on-tag-SHA polarity table + release.yaml step order (REQ-AUD-S03-01/02)"
     cmds:
       - bash hack/release/verify_tag_gate_test.sh
+
+  audit-exitgate-test:
+    desc: "AUD-S18 exit gate: 2026-08-06 audit conditions closed + gates green at the new bar (REQ-AUD-S18-01/02). NOT in `check` — it runs `task check` itself."
+    cmds:
+      - bash hack/audit/exitgate_test.sh
 
   release-exitgate-test:
     desc: "E9-S13 autonomous exit gate: snapshot + verify + docs-build + backlog pins (REQ-E9-S13-01..03)"

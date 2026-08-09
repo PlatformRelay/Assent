@@ -512,6 +512,36 @@ lanes} → S10 → S11 → S12 → {S13, S14, S16, S17} → S15 (last code story
 (the P1; the next tag is conditioned on it). **Release conditions: S01+S02+S03. Operator residuals
 (NOT stories): SEC-05, SEC-06, RELSE-07.**
 
+**AUD status: AUTONOMOUS COMPLETE** — S01–S18 landed; the three next-tag release conditions
+(S01 REL-07, S02 RELSE-01, S03 RELSE-05) are CLOSED; **D-119–D-125, D-128 and D-132 cited**.
+The exit gate is `hack/audit/exitgate_test.sh` (AUD-S18, wired into the `release-exitgate` job of
+`.github/workflows/verify.yaml`): one invocation over the S01 cassettes, `task check` across all 14
+stages incl. `changelog-verify`, the RELSE-05 release gate, the DOC truth pins, the determinism
+double-run, a **ref-relative** frozen-schema diff against the `v0.1.0` tag (D-132 — the old
+working-tree `git diff schemas/` was blind to committed changes), and the finding→disposition
+table. Every one of the **37** 2026-08-06 finding IDs is dispositioned in
+[Appendix B of the AUD spec](p5-aud-audit-remediation/spec.md): **27 Done**, **4 Operator**,
+**6 Accepted (D-132)**.
+
+> **⚠️ AUD AUTONOMOUS COMPLETE IS NOT RELEASE CLEARANCE.** Two decision-path fail-opens found
+> DURING this epic — **OQ-27** (a relational CEL leaf over string-bound operands returns a
+> silently wrong boolean: a verified BLOCK→APPROVE flip; **closed** by D-131) and **OQ-28**
+> (`builtin/repo-file` enforces path but not filesystem containment: a symlink yields facts from
+> outside the declared roots; **closed** by D-133 on `main` plus D-129's provider-layer guard in
+> the dedicated provider lane) — are **not** 2026-08-06 audit findings and **blocked the next tag
+> independently**. See
+> [open-questions.md](../../docs/planning/open-questions.md) and the AUD spec's
+> *Post-audit release blockers* section, which the exit gate pins.
+>
+> **Operator residuals handed over, explicitly, not dropped** (rows `AUD-OPS` and `AUD-RELSE-08`
+> above; all four are live GitHub settings/secrets no in-tree gate can reach):
+> **SEC-05** rotate `HOMEBREW_TAP_GITHUB_TOKEN` from the classic PAT to a fine-grained one
+> (Contents: write on `homebrew-tap` only) · **SEC-06** add a tag ruleset on `v*.*.*` ·
+> **RELSE-07** set branch protection `enforce_admins` on `main` (today `non_admins`, so the
+> admin/agent-loop push path is unbound) · **RELSE-08** make `release-exitgate` a required PR
+> check (it is skipped on PRs today, so a regression is detected only post-merge — which is
+> exactly what happened at `49ba1ad`).
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
