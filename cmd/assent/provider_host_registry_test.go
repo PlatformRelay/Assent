@@ -261,24 +261,37 @@ func TestResolveRunFactsFailsLoudlyOnUnopenableCheckout(t *testing.T) {
 // resourceOwnerDeclarationJSON is the host-owned declaration (D-065) that wires
 // the `builtin/resource-owner` provider to a registry path — the only shape that
 // reaches loadResourceOwnerRegistry from resolveRunFacts.
+//
+// The outputs block MIRRORS `builtin.OwnerDeclaration()` field for field, and it
+// has to: `provider.ResolveFactsChecked` compares the provider's echoed
+// declaration against the host's with `DeclarationsEqual` (type, cardinality,
+// subject, sensitive, maxAge — `internal/provider/resolve.go`) and synthesizes
+// `state:"invalid"` / "provider echoed declaration does not match host config" on
+// any difference, whatever the registry says. This fixture used to declare output
+// `team` at `maxAge 1h` while the builtin emits `owner` at 24h, so the fact was
+// PERMANENTLY invalid — copy this shape, not an invented one.
+// Pinned by TestResourceOwnerDeclarationResolvesOwnerFact.
 const resourceOwnerDeclarationJSON = `{
   "name": "owner",
   "requests": {"values": {"pointers": []}},
   "resourceOwner": {"registry": "governance/owners.yaml"},
   "outputs": {
-    "team": {
+    "owner": {
       "type": "string",
       "cardinality": "single",
       "subject": "entry",
       "sensitive": false,
-      "maxAge": "1h"
+      "maxAge": "24h"
     }
   }
 }`
 
 // configOwnerResourceOwner configures the controlling `owner` provider as the
 // resource-owner builtin. No example, exit gate or run test configured this type
-// before, which is why the wiring below was correct but unproven.
+// before, so nothing in the tree entered providerCallFor's resource-owner arm at
+// all; the tests below are the first, and they enter it on both the error path
+// (TestResourceOwnerRegistryForgeErrorAbortsResolveRunFacts) and the healthy
+// resolve (TestResourceOwnerDeclarationResolvesOwnerFact).
 const configOwnerResourceOwner = `apiVersion: assent.dev/v1alpha1
 kind: Config
 environments:
@@ -350,6 +363,72 @@ func TestResourceOwnerRegistryForgeErrorAbortsResolveRunFacts(t *testing.T) {
 	// caller can evaluate a provider-configured policy on an empty Facts map.
 	if facts != nil || resolvedAt != nil {
 		t.Fatalf("error path must return no facts; got %v / %v", facts, resolvedAt)
+	}
+}
+
+// registryServingPort is the whole forge with the ownership registry answering
+// normally from the target ref; every other read falls through to the fake.
+type registryServingPort struct {
+	forgePort
+	regPath string
+	body    string
+}
+
+func (c registryServingPort) FileAtRef(project, p, ref string) ([]byte, error) {
+	if p == c.regPath {
+		return []byte(c.body), nil
+	}
+	return c.forgePort.FileAtRef(project, p, ref)
+}
+
+// TestResourceOwnerDeclarationResolvesOwnerFact — the fixture guard.
+//
+// Every other cmd-level resource-owner test here asserts a REFUSAL, and a refusal
+// looks identical whether the wiring is healthy or the declaration is nonsense. So
+// nothing pinned the HEALTHY resolve, and the declaration fixture above was in fact
+// broken: it named output `team` at `maxAge 1h` while `builtin/resource-owner`
+// emits `owner` at 24h, so ResolveFactsChecked's DeclarationsEqual check
+// synthesized `state:"invalid"` ("provider echoed declaration does not match host
+// config") on every run — a fact that can never satisfy an ownership obligation,
+// in a fixture the next author copies. This test reds on either mutation (the
+// output name or the maxAge) and on any regression that stops the target-ref
+// registry from reaching the builtin.
+func TestResourceOwnerDeclarationResolvesOwnerFact(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.config = configOwnerResourceOwner
+	f.providerDecls = map[string]string{"owner": resourceOwnerDeclarationJSON}
+	client := registryServingPort{
+		forgePort: f.factory()("", "tok", "assent-bot"),
+		regPath:   "governance/owners.yaml",
+		body:      "owners:\n  topics/orders.yaml: team-payments\n",
+	}
+
+	conf, err := policy.LoadConfig([]byte(configOwnerResourceOwner))
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts, resolvedAt, err := resolveRunFacts(
+		context.Background(), conf, ".assent/config.yaml", client,
+		"42", "main", "", "file:topics/orders.yaml", time.Now().UTC(),
+	)
+	if err != nil {
+		t.Fatalf("resolveRunFacts: %v", err)
+	}
+	if _, ok := resolvedAt["owner"]; !ok {
+		t.Fatalf("pins.factsResolvedAt must carry the owner provider; got %v", resolvedAt)
+	}
+	fact, ok := facts["owner"][builtin.OutputOwner]
+	if !ok {
+		t.Fatalf("no facts.owner.%s bound; the declaration must name the builtin's output (got %v)",
+			builtin.OutputOwner, facts["owner"])
+	}
+	if fact.State != "resolved" {
+		t.Fatalf("facts.owner.%s state = %q (reason %q), want resolved — the host declaration must "+
+			"mirror builtin.OwnerDeclaration()", builtin.OutputOwner, fact.State, fact.Reason)
+	}
+	if fact.Value != "team-payments" {
+		t.Fatalf("facts.owner.%s value = %v, want team-payments from the target-ref registry",
+			builtin.OutputOwner, fact.Value)
 	}
 }
 
