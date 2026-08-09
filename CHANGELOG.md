@@ -229,6 +229,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test: deduplicate the requireSymlinks helper across the merged lanes
 - :white_check_mark: test(provider): reshape the D-129 live-path proof around D-133's enumeration refusal
 - :white_check_mark: test(provider): guard the containment subtests at the parent, not per case
+- :white_check_mark: test(release): contain the changelog gate's sandbox against an inherited GIT_DIR
 ## [0.1.0] - 2026-08-05
 
 ### Chores
