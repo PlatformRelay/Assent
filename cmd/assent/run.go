@@ -83,7 +83,9 @@ func (c clockAdapter) Now() time.Time { return c.now() }
 // forge. Returning a process exit code:
 //
 //	0  the run completed and produced a valid receipt (regardless of decision);
-//	   an advisory REVIEW/BLOCK, or an APPROVE without --arm, is still a clean 0.
+//	   an advisory REVIEW/BLOCK, or an APPROVE whose forge-probed arming
+//	   preconditions are unmet, is still a clean 0. (--arm does NOT decide this:
+//	   see the flag's help string and buildDesired's arming note.)
 //	non-zero  a HARD error: a missing flag, an unparseable policy, a schema
 //	   invalid record, or a forge/IO failure. No forge write happens on a hard
 //	   error before the decision.
@@ -133,7 +135,9 @@ func parseRunFlags(args []string, stderr io.Writer) (runConfig, error) {
 	fs.StringVar(&cfg.config, "config", "", "optional Config path (loaded from the TARGET ref) — when set, provider posture is validated (ADR-0017 §6)")
 	fs.StringVar(&cfg.pack, "pack", "", "optional Pack path (loaded from the TARGET ref) — when set, its spec.phase caps every rule's phase (ADR-0018 §1)")
 	fs.StringVar(&cfg.botAuthor, "bot-author", "", "bot username for the author-identity filter (required)")
-	fs.BoolVar(&cfg.arm, "arm", false, "SANDBOX arming override (see D-034 note) — approve+merge only when set AND decision APPROVE")
+	// NOTE: no backquotes in this usage string — the flag package reads `...` as the
+	// value-name placeholder and would render it as "-arm assent doctor".
+	fs.BoolVar(&cfg.arm, "arm", false, "advisory only — it gates nothing; approve/merge are gated by the forge-probed arming preconditions that 'assent doctor' reports, not by this flag")
 	fs.StringVar(&cfg.emit, "emit", "", "path to write the DecisionRecord JSON (default: stdout)")
 	fs.StringVar(&cfg.checkout, "checkout", "", "local checkout dir (base/ + head/ subtrees) to enumerate the MR's full changed-file set (E1-S08); when unset, only the governed subject is diffed")
 	if err := fs.Parse(args); err != nil {

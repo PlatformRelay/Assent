@@ -137,7 +137,11 @@ when it cannot. See [Install](install.md) for the checksum-verified archive rout
 
 ## Step 6 — the contributor experience
 
-> **Shipped**, except the `assent explain` block at the end of this section.
+> **Shipped**, with two exceptions stated where they arise below. The deferred forge
+> auto-merge that [ADR-0009](../adr/0009-execution-modes.md)'s challenge-resolution
+> amendment specifies — "approves conditionally and arms forge auto-merge pinned to the
+> evaluated SHA" — is **not implemented**: assent posts the thread and stops. And
+> `assent explain`, at the end of this section, does not exist.
 
 A dev bumps `partitions: 12 -> 24` on their own topic in dev: pipeline runs, the MR gets a
 summary comment ("APPROVE — 1 obligation proved, score 1/10"), approval, and merges. Nobody was
@@ -145,12 +149,31 @@ interrupted.
 
 The same dev shrinks retention on a prod topic: assent opens a **resolvable thread** —
 headline message, then collapsible *"Why this check exists & how to fix"* (with the rule's
-`docs.url`) and *"Evaluation details"* sections ([ADR-0012](../adr/0012-presentation-templates-debug.md)).
-They resolve the thread ("intentional, ticket TOPIC-123"). assent had already armed the
-forge's auto-merge, pinned to the evaluated commit — so the moment the last thread is
-resolved, **GitLab itself** merges (ADR-0009 amendment). Any new push cancels that and
-re-evaluates from scratch; the policies that judged this MR came from the *target* branch,
-so nobody can weaken the rules in the MR they gate (ADR-0015).
+`docs.url`) and *"Evaluation details"* sections ([ADR-0012](../adr/0012-presentation-templates-debug.md)),
+alongside the run's summary comment. On that path assent does **not** approve, does **not**
+merge, and arms **nothing** with the forge for later — there is no deferred-merge call in the
+tool at all; its only merge verb is an immediate SHA-pinned one.
+
+They resolve the thread ("intentional, ticket TOPIC-123"). **Resolving it merges nothing by
+itself.** It does matter to GitLab — with the project's *all discussions resolved* merge gate
+enabled (the C3 setting assent requires before it will arm at all), an unresolved thread
+blocks merging on GitLab's side — but assent never reads thread state as evidence, and, as
+ADR-0009's own amendment notes, forges do not start a pipeline when a discussion is resolved.
+So nothing re-runs until the next push.
+
+When a run does happen it re-evaluates from scratch, and the decision moves only if the
+*inputs* moved: an amended change, a policy edit on the target branch, fresher facts, or
+forge-proven approval evidence from the approval-rules API. Thread resolution is not one of
+them. If that run decides APPROVE and the arming preconditions hold, **assent** performs the
+merge itself, immediately, pinned to the commit it just judged — so only the evaluated commit
+can merge (ADR-0015 §2), and a push that lands mid-run makes the SHA guard refuse. The
+policies that judged the MR came from the *target* branch, so nobody can weaken the rules in
+the MR they gate (ADR-0015).
+
+> **What this means in practice:** an MR parked on a `challenge` finding does not merge when
+> the last thread is resolved. Someone has to push, or re-run the pipeline, and that run has
+> to reach APPROVE on its own inputs. If you are waiting on a merge that never arrives, this
+> is why.
 
 > **Planned — `assent explain` does not exist.** Today the same information is in the
 > `DecisionRecord` that every run emits (`assent run --emit record.json`): matched and
