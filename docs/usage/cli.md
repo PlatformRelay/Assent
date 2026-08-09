@@ -193,6 +193,12 @@ Report whether this environment can arm auto-merge, and why not when it cannot.
 assent doctor
 ```
 
+**"Armed" here means assent itself may approve and merge** — immediately and SHA-pinned, on
+a run that decides APPROVE. It does **not** mean assent hands the forge a deferred
+*merge-when-pipeline-succeeds* instruction to fire later; it never does that. See
+[What gates approve and merge](#what-gates-approve-and-merge) above, and Step 6 of the
+[walkthrough](walkthrough.md).
+
 With `GITLAB_TOKEN` set (plus `CI_PROJECT_ID` and `CI_MERGE_REQUEST_IID`) it probes the
 forge for verified capabilities. Without a token it falls back to an env-only
 diagnostic and prints an explicit `INSECURE` banner, because env self-assertions are
