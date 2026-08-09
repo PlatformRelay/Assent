@@ -31,7 +31,8 @@ const defaultProviderTimeout = 5 * time.Second
 //
 // AutoMergeEligible is negotiation-scoped only (INBOX P2 / E5-S01): it is NEVER
 // consulted for arming. Fact envelope states remain authoritative for CEL;
-// ArmEligible stays --arm ∧ APPROVE in buildDesired.
+// ArmEligible is the forge-probed PreconditionProbe value threaded into
+// buildDesired (D-134 — NOT --arm, which has gated nothing since c05cde0).
 func resolveRunFacts(
 	ctx context.Context,
 	conf *policy.Config,
@@ -98,8 +99,8 @@ func resolveRunFacts(
 		}
 
 		// INBOX P2: Result.AutoMergeEligible() is intentionally unread — negotiation
-		// accept ≠ "facts OK to arm". Bound fact states drive CEL; arming stays
-		// --arm ∧ APPROVE in buildDesired.
+		// accept ≠ "facts OK to arm". Bound fact states drive CEL; arming is the
+		// forge-probed PreconditionProbe in buildDesired (D-134).
 		result := provider.ResolveFactsChecked(ctx, call, q, asOf, hostCfg.Outputs)
 		bound := make(map[string]aggregate.Fact, len(result.Facts))
 		for outName, fact := range result.Facts {
