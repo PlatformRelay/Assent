@@ -1,6 +1,6 @@
 site_name: assent
 site_description: Deterministic, policy-driven auto-merge for self-service repositories.
-site_url: https://platformrelay.github.io/assent/
+site_url: https://platformrelay.github.io/Assent/
 repo_url: https://github.com/PlatformRelay/assent
 repo_name: PlatformRelay/assent
 copyright: Copyright &copy; 2026 Konrad Heimel

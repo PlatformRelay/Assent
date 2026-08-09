@@ -124,9 +124,17 @@ Consequences for authors:
 
 - Ordering **quoted** numerics means coercing first: `int(new) >= int(old)` (already the idiom
   in this repo's tests), or `double(...)`. Comparing ISO-8601 dates means `timestamp(a) < timestamp(b)`.
-- **Ordering raw text is no longer expressible in tier-1** and graduates to the Rego escape
-  hatch (ADR-0002) — consistent with this ADR's design taste: don't grow a programming language
-  in YAML. There is no exempt spelling: `string(a) < string(b)` and the byte-wise
+- **Ordering raw text is no longer expressible in tier-1**, and the supported answer is the
+  coercion above — `int(...)`, `double(...)`, `timestamp(...)` — which is also the honest one:
+  text that is *meant* to be ordered is almost always a number or a date wearing quotes, and
+  naming the type is what makes the comparison mean something. This is consistent with this
+  ADR's design taste: don't grow a programming language in YAML. **There is no escape hatch
+  today.** ADR-0002's pluggable Rego backend is **planned, not built** — E11 in the deferred
+  tier (D-012); there is no `opa`/`rego` module dependency, no `rego` property anywhere in the
+  frozen v1alpha1 policy schemas, and no backend selector a policy could set. A predicate that
+  genuinely needs ordering over opaque text has no in-product answer at present; express the
+  intent structurally (`match`, equality, membership) or model the field as the type it is.
+  There is no exempt spelling: `string(a) < string(b)` and the byte-wise
   `bytes(a) < bytes(b)` are the same lexical sort as `a < b` and are refused with it. No policy
   in the corpus, the comparison suite, or either dogfood pack ordered text.
 - The refusal set is exactly CEL's two text-shaped types, `string` and `bytes`. Every other
