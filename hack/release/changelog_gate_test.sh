@@ -411,9 +411,24 @@ if [[ -s "$WORK/only-in-clean" ]]; then
   cat "$WORK/only-in-clean" >&2
   fail "the merge-skip parser makes bullets APPEAR that the mutant render does not have — it cannot add content, so the comparison is wrong"
 fi
-if grep -vE '^- Merge ' "$WORK/only-in-mutant" >"$WORK/only-in-mutant.extra"; then
+# D-136's rule is keyed on commit SHAPE (`merge_commit`), never on subject text,
+# so the honest assertion is "every bullet only the mutant renders belongs to a
+# MERGE COMMIT" — not "every such bullet starts with `- Merge `". A merge whose
+# author wrote a conventional subject is skipped correctly, and that is exactly
+# the accepted cost 7b pins in the sandbox; real history now carries one
+# (`41a3072 :twisted_rightwards_arrows: chore(aud-s18): merge AUD-S13 (PR #35)`,
+# landed with PR #38), which a subject-prefix check misreads as an over-skip.
+# Keying on `git log --merges` is also STRICTLY STRONGER in the other direction:
+# an ordinary commit merely titled "Merge …" would have satisfied the old grep
+# and now fails, because it is not a merge commit.
+git -C "$ROOT" log --merges --format=%s | sort -u >"$WORK/merge-subjects"
+[[ -s "$WORK/merge-subjects" ]] \
+  || fail "git log --merges lists no merge commits — the membership check below would pass vacuously"
+sed -e 's/^- //' "$WORK/only-in-mutant" | sort -u >"$WORK/only-in-mutant.subjects"
+comm -23 "$WORK/only-in-mutant.subjects" "$WORK/merge-subjects" >"$WORK/only-in-mutant.extra"
+if [[ -s "$WORK/only-in-mutant.extra" ]]; then
   cat "$WORK/only-in-mutant.extra" >&2
-  fail "the merge-skip parser removes bullets that are not merge subjects — it is over-skipping ordinary commits"
+  fail "the merge-skip parser removes bullets that are not merge commits — it is over-skipping ordinary commits"
 fi
 echo "OK: multiset-identical apart from $(wc -l <"$WORK/only-in-mutant" | tr -d ' ') merge subject(s), which only the mutant renders"
 
