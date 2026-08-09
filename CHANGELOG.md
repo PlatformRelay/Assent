@@ -138,6 +138,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(cli): document the --checkout symlink limitation where adopters hit it
 - :memo: docs(decisions): correct D-133's falsifiability claim, and record the doc carriers
 - :memo: docs(release): add compatibility notes for D-133 symlinks and D-131 ordering
+- :memo: docs(decisions): amend D-129 with the D-133 subsumption and the re-arming condition
+- :memo: docs(oq): close OQ-28's residual and relocate its proof pointer after D-133
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -227,6 +229,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(checkout): make every containment guard falsifiable
 - :white_check_mark: test(checkout): unmask the two collectFS guards and pin the Lstat side check
 - :white_check_mark: test: deduplicate the requireSymlinks helper across the merged lanes
+- :white_check_mark: test(provider): reshape the D-129 live-path proof around D-133's enumeration refusal
 ## [0.1.0] - 2026-08-05
 
 ### Chores
