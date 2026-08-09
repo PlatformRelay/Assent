@@ -1856,7 +1856,10 @@ expect_red check_post_audit_blockers "the post-audit blocker section was deleted
 
 spec_m="$WORK/spec.blockernooq.md"
 cp "$SPEC" "$spec_m"
-mutate "$spec_m" 's@| OQ-27 | OPEN@| n/a | OPEN@' '| n/a | OPEN'
+# Status-agnostic on purpose: the row's OPEN/CLOSED token moves as the cited
+# question resolves (OQ-27 closed with D-131), and a mutation program pinned to
+# one spelling silently stops mutating and fails the harness.
+mutate "$spec_m" 's@| OQ-27 |@| n/a |@' '| n/a |'
 expect_red check_post_audit_blockers "a blocker row stopped citing an OQ" \
   'cites no OQ-' "$spec_m" "$OQ"
 

@@ -998,11 +998,11 @@ it does **not** mean "all known fail-opens are closed" and it is **not** a relea
 ### Post-audit release blockers (NOT 2026-08-06 findings — outside this table's disposition)
 
 Found during this epic's execution, after the audit anchor. They are **not** audit findings, so they
-are not rows above; they **are** tag blockers, so the exit gate names them and refuses to be read as
-release clearance. The gate asserts this section exists, that each row cites an `OQ-<n>` that
+are not rows above; while OPEN they **are** tag blockers, so the exit gate names them and refuses to
+be read as release clearance. The gate asserts this section exists, that each row cites an `OQ-<n>` that
 resolves in `docs/planning/open-questions.md`, and that each carries a status token.
 
 | Defect | Question | Status |
 | --- | --- | --- |
-| A relational CEL leaf over string-bound operands returns a silently wrong boolean instead of erroring (verified BLOCK→APPROVE flip on quoted YAML scalars) | OQ-27 | OPEN — dedicated decision-path lane |
+| A relational CEL leaf over string-bound operands returns a silently wrong boolean instead of erroring (verified BLOCK→APPROVE flip on quoted YAML scalars) | OQ-27 | CLOSED — fixed on `main` by D-131 / ADR-0013 Amendment 1, in the dedicated decision-path lane it required |
 | `builtin/repo-file` enforces path containment but not filesystem containment: a symlink under a declared root yields facts from outside the roots | OQ-28 | OPEN — dedicated provider lane |
