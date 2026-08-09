@@ -97,6 +97,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs(engine): narrow the bytes-binding claim to what was verified
 - :memo: docs(aud-s13): retarget the TEST-02 spec arm at the D-131 refusal and close OQ-27
 - :memo: docs(aud-s18): mark the OQ-27 post-audit blocker CLOSED and unpin its mutation control
+- :memo: docs(aud-s18): stop the gate's prose from calling OQ-27 an open tag blocker
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
