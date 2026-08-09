@@ -105,6 +105,46 @@ judgment (subjective); dependency scores are measured.
   spec with multiple implementations. Swapping *away from CEL* would break authored policies —
   that part of the decision is effectively one-way once packs exist.
 
+## Amendment 1 (2026-08-08, D-131): ordering operators refuse text operands
+
+Residual code risk (1) above — "numeric type coercion YAML/HCL→CEL … highest risk" — turned out
+to have a fail-open in it. CEL defines `<`, `<=`, `>`, `>=` over **strings** as a lexical
+compare, so an ordering leaf silently answers a boolean when its operands bind as text rather
+than numbers, and lexically `"6" >= "12"` is **true**: a quoted `partitions: "12"` → `"6"`
+shrink evaluated `new >= old` to true, proved `non-destructive`, and reached **APPROVE**. The
+converse is equally wrong — a legitimate grow `"6"` → `"12"` evaluated false and **BLOCKed**.
+
+**Amendment: in tier-1 `assert`, an ordering operator whose operand actually evaluates to text —
+a CEL `string` or `bytes` value — is an evaluation ERROR, not an answer** (fail-safe direction,
+GUIDELINES §2: the error routes to `predicate.error` → REVIEW). The check is on the value at
+evaluation time, not on the leaf's syntax — whether `new >= old` is sound depends on the
+adopter's data, so no static check of the policy can decide it.
+
+Consequences for authors:
+
+- Ordering **quoted** numerics means coercing first: `int(new) >= int(old)` (already the idiom
+  in this repo's tests), or `double(...)`. Comparing ISO-8601 dates means `timestamp(a) < timestamp(b)`.
+- **Ordering raw text is no longer expressible in tier-1**, and the supported answer is the
+  coercion above — `int(...)`, `double(...)`, `timestamp(...)` — which is also the honest one:
+  text that is *meant* to be ordered is almost always a number or a date wearing quotes, and
+  naming the type is what makes the comparison mean something. This is consistent with this
+  ADR's design taste: don't grow a programming language in YAML. **There is no escape hatch
+  today.** ADR-0002's pluggable Rego backend is **planned, not built** — E11 in the deferred
+  tier (D-012); there is no `opa`/`rego` module dependency, no `rego` property anywhere in the
+  frozen v1alpha1 policy schemas, and no backend selector a policy could set. A predicate that
+  genuinely needs ordering over opaque text has no in-product answer at present; express the
+  intent structurally (`match`, equality, membership) or model the field as the type it is.
+  There is no exempt spelling: `string(a) < string(b)` and the byte-wise
+  `bytes(a) < bytes(b)` are the same lexical sort as `a < b` and are refused with it. No policy
+  in the corpus, the comparison suite, or either dogfood pack ordered text.
+- The refusal set is exactly CEL's two text-shaped types, `string` and `bytes`. Every other
+  `<`-comparable type in the frozen predicate scope — `int`, `uint`, `double`, `bool`,
+  `duration`, `timestamp` — is a genuine ordering and is untouched; `list`, `map`, `type` and
+  mixed numeric pairs have no `<` overload to begin with. That census is what makes the claim
+  above true rather than merely intended, and a test pins it against env drift.
+- Equality (`==`/`!=`), membership (`in`), and the string member functions (`startsWith`,
+  `contains`, `matches`, `size`) are exact rather than ordering and are untouched.
+
 ## Counterpoints considered
 
 - *"This isn't real Kyverno syntax, so D-006 is betrayed."* — Strongest objection. Answer:

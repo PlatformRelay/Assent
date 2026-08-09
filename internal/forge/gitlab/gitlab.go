@@ -222,7 +222,14 @@ func New(endpoint, token, botAuthor string, opts ...Option) *Client {
 // ErrNotFound is the typed error FileAtRef returns for a 404 (file absent at the
 // ref). The caller decides what a missing file means (e.g. an absent governed
 // file is a fail-safe REVIEW, not a crash).
-var ErrNotFound = errors.New("gitlab: resource not found (404)")
+//
+// AUD-S15 (ARCH-02): the SENTINEL now lives on the forge port as
+// forge.ErrNotFound, so a caller can match an absent file without importing
+// this adapter. This is the adapter's transitional alias — it IS the port
+// sentinel, so errors.Is(err, forge.ErrNotFound) and
+// errors.Is(err, gitlab.ErrNotFound) are the same question. Retire it when the
+// GitHub adapter lands (E10).
+var ErrNotFound = forge.ErrNotFound
 
 // ErrUnauthorized is the typed error returned on a 401/403 — e.g. an approval
 // attempt with a token that GitLab forbids (an MR author may not approve their
@@ -230,20 +237,17 @@ var ErrNotFound = errors.New("gitlab: resource not found (404)")
 // caller does not mistake an authorization refusal for a transient error.
 var ErrUnauthorized = errors.New("gitlab: unauthorized (401/403)")
 
-// MRInfo is the merge-request metadata `assent run` pins its evaluation to. All
-// SHAs are the exact values GitLab reports at read time; TargetSHA is the target
-// BRANCH TIP (commit.id from the branches endpoint), NOT diff_refs.base_sha
-// (which is the merge-base — a different commit).
-type MRInfo struct {
-	IID          string
-	ProjectID    string
-	SourceBranch string
-	TargetBranch string
-	SourceSHA    string // the MR's current source head (`sha`).
-	TargetSHA    string // the target branch tip (commit.id).
-	// ForkMR is true when source_project_id != project_id (fork workflow).
-	ForkMR bool
-}
+// MRInfo is the merge-request metadata `assent run` pins its evaluation to.
+//
+// AUD-S15 (ARCH-02): the TYPE now lives on the forge port as forge.MRInfo so a
+// second adapter can satisfy the same read port; this is the adapter's
+// transitional alias (a true Go type alias — gitlab.MRInfo and forge.MRInfo are
+// one type, not two). For GitLab, TargetSHA is the target BRANCH TIP
+// (commit.id from the branches endpoint), NOT diff_refs.base_sha (which is the
+// merge-base — a different commit), and ForkMR means
+// source_project_id != project_id. Retire the alias when the GitHub adapter
+// lands (E10).
+type MRInfo = forge.MRInfo
 
 // Bounds on what a single forge interaction may consume (AUD-S10, audit
 // findings REL-03 / SEC-08). The GitLab instance sits across a network the
@@ -462,9 +466,11 @@ func (c *Client) branchTip(project, branch string) (string, error) {
 
 // FileAtRef returns the raw bytes of a file at a git ref via
 // GET /api/v4/projects/{project}/repository/files/{urlencoded path}/raw?ref={ref}.
-// A 404 maps to ErrNotFound (the file is absent at that ref — the caller
-// decides). The path segment is percent-encoded because a governed file path
-// contains slashes GitLab requires URL-encoded.
+// A 404 maps to forge.ErrNotFound (the file is absent at that ref — the caller
+// decides), wrapped with this adapter's own `gitlab: ` prefix so the rendered
+// message names the forge that answered while errors.Is still reaches the
+// neutral port sentinel. The path segment is percent-encoded because a governed
+// file path contains slashes GitLab requires URL-encoded.
 func (c *Client) FileAtRef(project, path, ref string) ([]byte, error) {
 	encPath := url.PathEscape(path)
 	reqPath := fmt.Sprintf("/api/v4/projects/%s/repository/files/%s/raw?ref=%s",
@@ -477,7 +483,7 @@ func (c *Client) FileAtRef(project, path, ref string) ([]byte, error) {
 	case http.StatusOK:
 		return raw, nil
 	case http.StatusNotFound:
-		return nil, fmt.Errorf("%w: file %q at ref %q", ErrNotFound, path, ref)
+		return nil, fmt.Errorf("gitlab: %w: file %q at ref %q", forge.ErrNotFound, path, ref)
 	default:
 		return nil, fmt.Errorf("gitlab: get file %q at ref %q: unexpected status %d", path, ref, status)
 	}

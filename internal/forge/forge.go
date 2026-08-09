@@ -766,8 +766,17 @@ func forgeIDNum(id string) int {
 // the TOCTOU window BETWEEN the CurrentHeads pre-check and MergeCAS, the approval
 // has already been recorded, so this path can leave a DANGLING approval with NO
 // merge. That is deliberate and matches real GitLab (approve-then-merge?sha=,
-// no rollback); the dangling approval is cleared by the forge's "remove approvals
-// on new push" setting — an S10/adapter concern, not this engine slice.
+// no rollback). This comment used to argue the dangling approval "is cleared by
+// the forge's remove-approvals-on-new-push setting — an S10/adapter concern, not
+// this engine slice". BOTH HALVES WERE FALSE and are corrected here (RELI-03,
+// audit 2026-08-09, D-138): `reset_approvals_on_push` appears in ZERO Go files —
+// nothing reads it, `probeCapabilities` does not fetch it, and `assent doctor`
+// cannot report it — so it is an ASSUMED, never-verified property of the adopter's
+// project, not a control this code relies on soundly; and the deferral pointer
+// named a slice that shipped (P4-E1-S10, D-041), so the concern was never picked
+// up. `spike-secure-setup.md` D11 specified refuse-to-arm when the setting is off
+// and C19 specified doctor verification; neither was built. Until one of them is,
+// treat the dangling approval as UNRETRACTED: `Forge` has no `Unapprove` verb.
 //
 // The P0 SAFETY invariant that ALWAYS holds is the one that matters: NO merge of
 // a moved/unevaluated SHA (MergeCAS re-checks all three pins atomically and fails

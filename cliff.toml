@@ -45,6 +45,44 @@ would be silently overwritten by the next `task changelog-write`.
   identity itself is unchanged: no `caseId` was reused or retired and no bundle byte changed, so
   D-113 immutability holds — only the algorithm computing the pin moved, versioned by D-121.
 
+- **Ordering operators refuse text operands after `v0.1.0` (D-131).** Through `v0.1.0` a
+  relational operator (`<`, `<=`, `>`, `>=`) whose operands bound as CEL text compared them
+  LEXICALLY and returned a boolean, so a quoted numeric in adopter YAML sorted as a string: a
+  `partitions: "12"` -> `"6"` shrink evaluated `new >= old` to true, proved non-destructive and
+  reached APPROVE, while the legitimate grow `"6"` -> `"12"` evaluated false and BLOCKed. Builds
+  after D-131 (ADR-0013 Amendment 1) treat an ordering operator whose operand actually evaluates
+  to a CEL `string` or `bytes` value as an EVALUATION ERROR. `bytes` is refused deliberately:
+  `bytes(a) < bytes(b)` performs the identical byte-wise compare, so exempting it would re-admit
+  the defect as a one-token workaround. Nothing else moves — `int`, `uint`, `double`, `bool`,
+  `duration` and `timestamp` still order normally, and `==`, `!=`, `in`, `startsWith`, `matches`
+  and `size()` are unaffected. The failure direction is safe: the affected leaf errors, the rule
+  routes to `predicate.error`, and the decision degrades to REVIEW — no policy gets a wrong
+  APPROVE out of this change, only a decision someone must look at. **Action required if your
+  policy orders text on purpose** — ISO-8601 dates written as strings, version-ish strings,
+  sorted enum tiers: those leaves now REVIEW instead of deciding, and the fix is to coerce
+  first. Use `int(...)` or `double(...)` for quoted numerics, and `timestamp(a) < timestamp(b)`
+  for ISO-8601 dates, which the evaluation environment supports. Ordering raw text is no longer
+  expressible in tier-1 `assert`.
+
+- **`assent run --checkout` refuses any repository containing any symlink (D-133).** Builds
+  after D-133 (ADR-0008 Amendment 2) contain every checkout read to the checkout root and refuse
+  a path reached through a symlink instead of following it: with `--checkout` the local tree is
+  the sole authority and `head/` is the merge-request head, contributor-authored content under
+  judgment, so a link at a governed path could otherwise substitute an off-tree file for the
+  document being judged. The scope is wider than "the merge request shipped a symlink": ANY
+  symlink ANYWHERE under `base/` or `head/` stops the run — including one that predates the
+  branch, lives in a directory unrelated to the governed subject and to `.assent/**`, and that
+  the merge request never touches. A plain `LICENSE -> LICENSES/Apache-2.0.txt` on the BASE side
+  is enough. The failure is fail-closed and loud, never a wrong verdict: exit `1`, zero forge
+  writes (no thread, no approval, no merge), and an error naming the offending path, the
+  checkout side, and the reason. Non-regular files (FIFOs, sockets, devices) under either side
+  are refused the same way. **Action required if your repository contains a symlink and you pass
+  `--checkout`: run WITHOUT the flag**, in which case the forge snapshot enumerates the
+  changed-file set and none of this applies — or provision a symlink-free `base/` and `head/`.
+  The two side directories may themselves be symlinks; only what lies beneath them may not.
+  Loosening this will mean folding the refusal into the opaque, fail-safe REVIEW path so such a
+  repository still gets a decision, never by following the link; no release carries that yet.
+
 """
 body = """
 {% if version %}## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}{% else %}## Unreleased{% endif %}
@@ -65,6 +103,19 @@ trim = true
 conventional_commits = false
 filter_unconventional = false
 commit_parsers = [
+  # D-136: merge commits never render. Keyed on the commit SHAPE (`merge_commit`
+  # is true iff the commit has more than one parent), not on its subject text, so
+  # it holds for git's default `Merge branch 'x'`, for the `Merge <sha> into <sha>`
+  # that actions/checkout mints on refs/pull/N/merge, and for a merge whose author
+  # wrote a conventional subject. Must stay ABOVE the `.*` catch-all below, which
+  # is load-bearing for D-125's drift gate and must not be removed. Accepted cost:
+  # a merge subject can no longer say anything the changelog will show — the merged
+  # branch's own commits still render, which is the ENTIRE safety argument for
+  # skipping on shape rather than on text, and is measured, not assumed:
+  # hack/release/changelog_gate_test.sh §7b renders a sandbox whose merges are all
+  # skipped and asserts all five ordinary commits from those same branches survive.
+  # §7/§7a prove the same over real history at both polarities.
+  { field = "merge_commit", pattern = "true", skip = true },
   { message = "^:memo: chore\\(release\\):|^:wrench: chore\\(release\\):", skip = true },
   { message = "^:sparkles:|^feat", group = "Features" },
   { message = "^:bug:|^fix", group = "Fixes" },
@@ -73,6 +124,28 @@ commit_parsers = [
   { message = "^:white_check_mark:|^test", group = "Testing" },
   { message = "^:lock:|^security", group = "Security" },
   { message = "^:wrench:|^:tada:|^chore|^build|^ci", group = "Chores" },
+  # REL-14 (D-137): the eight rules above key on the SHORTCODE, and this project
+  # always writes the shortcode first — so the `^fix` / `^ci` / `^docs` alternatives
+  # in them can never fire, and every subject whose shortcode is outside the eight
+  # fell through to the `.*` catch-all into "Other". A real hotfix
+  # (`:ambulance: fix(forge): ...`) shipped under Other on the Release page.
+  # These entries key on the CONVENTIONAL TYPE the author declared after the
+  # shortcode, never on the emoji's dictionary meaning: the emoji is the unreliable
+  # half (`:lipstick: fix(provider): ...` is a fix, not a UI change; `:art:` is used
+  # for both `style(...)` and `refactor(...)`). Derived from the full history, not
+  # from a guess: every unmapped-shortcode subject in this repo declares a type.
+  # `revert(...)` is deliberately NOT mapped — no group fits it, and inventing one
+  # is a changelog-structure change, not this fix; it stays in Other with one
+  # malformed `:test(release):` subject that declares no parseable type.
+  # The `# REL-14` tag is the mutation handle for changelog_gate_test.sh §8a.
+  { message = "^:test:", group = "Testing" },  # REL-14 — typo'd shortcode, no such gitmoji; all 19 uses are tests
+  { message = "^:[a-z0-9_]+: (feat)(\\(|:)", group = "Features" },  # REL-14
+  { message = "^:[a-z0-9_]+: (fix)(\\(|:)", group = "Fixes" },  # REL-14
+  { message = "^:[a-z0-9_]+: (docs|specs)(\\(|:)", group = "Documentation" },  # REL-14
+  { message = "^:[a-z0-9_]+: (refactor|style)(\\(|:)", group = "Refactoring" },  # REL-14
+  { message = "^:[a-z0-9_]+: (test)(\\(|:)", group = "Testing" },  # REL-14
+  { message = "^:[a-z0-9_]+: (security)(\\(|:)", group = "Security" },  # REL-14
+  { message = "^:[a-z0-9_]+: (chore|build|ci|perf)(\\(|:)", group = "Chores" },  # REL-14
   { message = ".*", group = "Other" },
 ]
 tag_pattern = "v[0-9]*"

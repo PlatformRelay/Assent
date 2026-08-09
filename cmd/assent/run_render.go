@@ -1,12 +1,13 @@
 package main
 
 import (
-	"github.com/PlatformRelay/assent/internal/catalogue"
+	"strings"
+
 	"github.com/PlatformRelay/assent/internal/change"
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/core/decision"
 	"github.com/PlatformRelay/assent/internal/core/policy"
-	"github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/render"
 )
 
@@ -17,7 +18,7 @@ func buildRenderContext(
 	bind *policy.Binding,
 	cs change.ChangeSet,
 	facts map[string]map[string]aggregate.Fact,
-	info gitlab.MRInfo,
+	info forge.MRInfo,
 	mrAuthor string,
 ) render.Context {
 	env := ""
@@ -50,14 +51,27 @@ func rulesMetaFromPolicy(mp *policy.MergePolicy) map[string]render.RuleMeta {
 	if mp == nil {
 		return nil
 	}
-	pack := mp.Metadata.Name
 	out := make(map[string]render.RuleMeta, len(mp.Spec.Rules))
 	for _, r := range mp.Spec.Rules {
-		stableID := pack + "/" + r.Name
+		// DOC-03: do NOT mint `catalogue.DocsBase + "/" + pack + "/" + r.Name`
+		// here. That URL space does not exist on the docs site — measured, both
+		// `<site>/rules` and `<site>/rules/` 404 — so every finding posted into a
+		// contributor's MR thread carried a dead "Full documentation" link, on the
+		// one affordance a blocked contributor actually clicks. The run path now
+		// carries only the rule's AUTHORED docs.url; `renderDocsSection` omits the
+		// line entirely when it is empty, so no link beats a broken one.
+		//
+		// Today that fallback is DORMANT BY SCHEMA, not merely unused: the frozen
+		// v1alpha1 merge-policy schema is `additionalProperties: false` over
+		// [effect, match, message, name, onFailure, phase, points, prove], so an
+		// authored rule-level `docs:` is REJECTED at load and `policy.Rule.Docs`
+		// can never be populated from a conformant pack (audit ARCH-08). Adopters
+		// cannot supply a URL here yet — the honest present-day behaviour is
+		// therefore "no documentation link on the run path", which is the point.
 		out[r.Name] = render.RuleMeta{
 			Message: r.Message,
 			Docs: render.RuleDocs{
-				URL: catalogue.DocsBase + "/" + stableID,
+				URL: strings.TrimSpace(r.Docs.URL),
 			},
 		}
 	}
