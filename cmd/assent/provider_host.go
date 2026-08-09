@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/core/policy"
+	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/provider"
 	"github.com/PlatformRelay/assent/internal/provider/builtin"
 )
@@ -57,7 +60,19 @@ func resolveRunFacts(
 	declDir := path.Join(path.Dir(configPath), "providers")
 	asOf := now.UTC()
 	anchor := anchorFromSubject(subject)
-	repoFS := checkoutFS(checkoutRoot)
+	repoFS, repoRoot, err := checkoutFS(checkoutRoot)
+	if err != nil {
+		// A --checkout that cannot be opened as a containment root is an operator
+		// error, and silently degrading to "no facts" would hide it. Fail loudly:
+		// no decision is emitted, so nothing can be armed off a half-read tree.
+		return nil, nil, err
+	}
+	if repoRoot != nil {
+		// Every builtin read happens inside this loop; nothing captures repoFS
+		// beyond it (providerCallFor's closures are invoked by ResolveFactsChecked
+		// in-loop, and the resource-owner registry is read eagerly).
+		defer func() { _ = repoRoot.Close() }()
+	}
 
 	for _, name := range names {
 		p := conf.Providers[name]
@@ -117,19 +132,27 @@ func anchorFromSubject(subject string) string {
 	return strings.TrimPrefix(s, "/")
 }
 
-func checkoutFS(checkoutRoot string) fs.FS {
+// checkoutFS opens the checkout tree builtins read facts from, as a SYMLINK-SAFE
+// root (D-129). The returned io.Closer is nil when there is no checkout.
+//
+// This tree is the MERGE-REQUEST HEAD — content under judgment, authored by the
+// contributor. `os.DirFS` used to be handed out here, and it is documented in Go
+// as not a security boundary: an MR could ship a symlink and read an arbitrary
+// host file into a decision fact. `(*os.Root).FS()` refuses every traversal that
+// leaves the root at the syscall level, for every consumer of this FS.
+func checkoutFS(checkoutRoot string) (fs.FS, io.Closer, error) {
 	root := strings.TrimSpace(checkoutRoot)
 	if root == "" {
-		return nil
+		return nil, nil, nil
 	}
 	// E1-S08 checkout layout: head/ is the MR source view; repo-file facts for
 	// live runs read the checkout head tree (hermetic exit-gate fixtures mirror
 	// in-repo quota/placement files beside the governed change).
 	head := filepath.Join(root, "head")
 	if st, err := os.Stat(head); err == nil && st.IsDir() {
-		return os.DirFS(head)
+		return builtin.OpenRepoRoot(head)
 	}
-	return os.DirFS(root)
+	return builtin.OpenRepoRoot(root)
 }
 
 func querySubject(p policy.Provider, hostCfg provider.Config, anchor, project string) provider.Subject {
@@ -218,25 +241,54 @@ func providerCallFor(
 	}
 }
 
+// refFilePort is the slice of the forge this function needs: one read at a ref.
+type refFilePort interface {
+	FileAtRef(project, path, ref string) ([]byte, error)
+}
+
+// loadResourceOwnerRegistry loads the resource→owner registry.
+//
+// D-130 / GUIDELINES §Safety 3: the registry decides WHO MAY APPROVE, so it is a
+// decision input and loads from the TARGET ref FIRST. It used to prefer repoFS —
+// which under `--checkout` is the merge request's own head tree — letting an MR
+// ship a registry naming its author as owner of the resource it is changing.
+// The checkout is now a FALLBACK only, for runs whose target ref carries no
+// registry (hermetic fixtures, local trees).
+//
+// The fallback is gated on ABSENCE ALONE (GUIDELINES §Safety 2). Falling back on
+// ANY FileAtRef error conflated "the file is not there" with "the forge did not
+// answer": a 503, a throttle or an expired token would silently promote the
+// merge request's own head tree to the who-may-approve authority — the same
+// shadow, reachable without touching the target ref at all, and invisible
+// because no error surfaced. `forge.ErrNotFound` is the neutral port sentinel
+// for absence (adapters wrap it with %w); every other error degrades to an
+// error here, so no client is built and the owner fact never resolves.
 func loadResourceOwnerRegistry(
 	ctx context.Context,
-	client forgePort,
+	client refFilePort,
 	project, targetRef string,
 	repoFS fs.FS,
 	regPath string,
 ) (builtin.ResourceOwnerClient, error) {
 	_ = ctx
+	raw, err := client.FileAtRef(project, regPath, targetRef)
+	if err == nil {
+		fsys := fstest.MapFS{
+			path.Base(regPath): &fstest.MapFile{Data: raw},
+		}
+		return builtin.LoadResourceOwnerMap(fsys, path.Base(regPath))
+	}
+	if !errors.Is(err, forge.ErrNotFound) {
+		// A broken forge is not an absent file. Fail here rather than reading a
+		// contributor-authored registry: no client → no owner fact → fail-safe.
+		return nil, fmt.Errorf("resource-owner registry %q at ref %q: %w", regPath, targetRef, err)
+	}
 	if repoFS != nil {
-		if _, err := fs.Stat(repoFS, regPath); err == nil {
+		if _, statErr := fs.Stat(repoFS, regPath); statErr == nil {
+			// D-129: LoadResourceOwnerMap refuses a symlinked registry; repoFS is
+			// itself a symlink-safe root (checkoutFS).
 			return builtin.LoadResourceOwnerMap(repoFS, regPath)
 		}
 	}
-	raw, err := client.FileAtRef(project, regPath, targetRef)
-	if err != nil {
-		return nil, fmt.Errorf("resource-owner registry %q: %w", regPath, err)
-	}
-	fsys := fstest.MapFS{
-		path.Base(regPath): &fstest.MapFile{Data: raw},
-	}
-	return builtin.LoadResourceOwnerMap(fsys, path.Base(regPath))
+	return nil, fmt.Errorf("resource-owner registry %q: %w", regPath, err)
 }
