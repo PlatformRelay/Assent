@@ -113,7 +113,7 @@ jobs:
         with:
           python-version: "3.12"
       # docs-install (task docs-build) requires uv; docs.yaml uses pip — this job mirrors local Task.
-      - uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb # v6.1.0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
       - name: install Task
