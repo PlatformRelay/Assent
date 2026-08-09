@@ -24,8 +24,10 @@
 # WHAT THIS GATE DOES NOT CERTIFY. It is scoped to the 2026-08-06 audit. Two
 # decision-path fail-opens found DURING this epic (OQ-27 relational CEL compare
 # over string-bound operands, since CLOSED by D-131; OQ-28 `repo_file` symlink
-# escape, still OPEN) are not audit findings and block the tag independently of
-# anything graded here. Check (7b) pins the spec's "Post-audit release blockers"
+# escape, since CLOSED — D-133 on `main` refuses checkout symlinks at
+# enumeration, and D-129 in the provider lane adds the provider-layer guard)
+# are not audit findings and blocked the tag independently of anything graded
+# here. Check (7b) pins the spec's "Post-audit release blockers"
 # section and requires each cited OQ to resolve and to carry a status token, so
 # a green run here can never be read as release clearance. The gate does NOT
 # grade the statuses themselves — it grades that the record exists and is
@@ -1127,7 +1129,8 @@ check_disposition_table() { # <spec> <backlog> <decisions>
 
 # The gate must never be readable as "all known fail-opens are closed". OQ-27
 # and OQ-28 were found DURING this epic, are not audit findings, and blocked the
-# tag independently (OQ-27 has since been closed by D-131; OQ-28 is still open).
+# tag independently (OQ-27 has since been closed by D-131; OQ-28 by D-133 on
+# `main` plus D-129's provider-layer guard in the dedicated provider lane).
 # Tolerant on the NUMBER (four lanes are numbering concurrently) and on the
 # STATUS token each row carries — a row that closes must stay in the table as
 # the record — strict on presence and on the cited question resolving.
@@ -2000,6 +2003,7 @@ echo "  $AUDIT_FINDINGS_COUNT audit findings dispositioned."
 echo
 echo "  NOT certified: release readiness. Defects found AFTER 2026-08-06 are out"
 echo "  of scope here and are tracked in the spec's 'Post-audit release blockers'"
-echo "  section (OQ-27 — closed by D-131; OQ-28 — still open). This gate grades"
+echo "  section (OQ-27 — closed by D-131; OQ-28 — closed by D-133 plus the"
+echo "  provider lane's D-129 guard). This gate grades"
 echo "  that the record exists and resolves, never the statuses. See D-132."
 echo "============================================================================"

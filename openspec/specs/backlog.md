@@ -525,9 +525,11 @@ table. Every one of the **37** 2026-08-06 finding IDs is dispositioned in
 
 > **⚠️ AUD AUTONOMOUS COMPLETE IS NOT RELEASE CLEARANCE.** Two decision-path fail-opens found
 > DURING this epic — **OQ-27** (a relational CEL leaf over string-bound operands returns a
-> silently wrong boolean: a verified BLOCK→APPROVE flip) and **OQ-28** (`builtin/repo-file`
-> enforces path but not filesystem containment: a symlink yields facts from outside the declared
-> roots) — are **not** 2026-08-06 audit findings and **block the next tag independently**. See
+> silently wrong boolean: a verified BLOCK→APPROVE flip; **closed** by D-131) and **OQ-28**
+> (`builtin/repo-file` enforces path but not filesystem containment: a symlink yields facts from
+> outside the declared roots; **closed** by D-133 on `main` plus D-129's provider-layer guard in
+> the dedicated provider lane) — are **not** 2026-08-06 audit findings and **blocked the next tag
+> independently**. See
 > [open-questions.md](../../docs/planning/open-questions.md) and the AUD spec's
 > *Post-audit release blockers* section, which the exit gate pins.
 >
