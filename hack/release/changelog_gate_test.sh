@@ -129,9 +129,20 @@ echo "OK: [0.1.0] at line $rel_line, non-empty Unreleased above it at line $unre
 
 # The D-120 record-consumer warning is generated from cliff.toml's header, so a
 # hand-edit of CHANGELOG.md cannot carry it and `changelog-write` cannot wipe it.
-grep -q 'pins.toolDigest' "$ROOT/CHANGELOG.md" \
+#
+# Anchor on the note's HEADER SENTENCE, never on the bare `pins.toolDigest`
+# token. The token is NOT header-unique: two commit subjects inside the [0.2.0]
+# section carry it verbatim ("warn record consumers that pins.toolDigest changed
+# value", "derive pins.toolDigest from Go build info"), and cliff.toml names it
+# again in the D-121 note. A bare-token grep therefore matches the rendered BODY
+# and passes whether or not the header note survives at all — which is precisely
+# the vacuity section 6's polarity control failed closed on. Keep this phrase in
+# sync with cliff.toml's `[changelog] header`; do not simplify it back.
+NOTE_ANCHOR='pins.toolDigest` changes value after'
+
+grep -qF "$NOTE_ANCHOR" "$ROOT/CHANGELOG.md" \
   || fail "CHANGELOG.md carries no pins.toolDigest compatibility note — AUD-S04 changed the value of a published record field with no warning to record consumers (D-120)"
-grep -q 'pins.toolDigest' "$ROOT/cliff.toml" \
+grep -qF "$NOTE_ANCHOR" "$ROOT/cliff.toml" \
   || fail "the pins.toolDigest note is in CHANGELOG.md but not in cliff.toml — the next 'task changelog-write' will wipe it"
 echo "OK: D-120 toolDigest note present in CHANGELOG.md and sourced from cliff.toml"
 
@@ -288,7 +299,7 @@ read -r -a cliff_argv <<<"$cliff_args"
 grep -qE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$WORK/release-body.md" \
   || fail "rendered release body carries no '## [X.Y.Z]' release section — the render did not produce real release notes"
 
-grep -q 'pins.toolDigest' "$WORK/release-body.md" \
+grep -qF "$NOTE_ANCHOR" "$WORK/release-body.md" \
   || fail "the rendered GitHub Release body carries no pins.toolDigest compatibility note — the D-120 warning reaches CHANGELOG.md but NOT the Release page (drop '--strip header' from the git-cliff step in release.yaml)"
 echo "OK: rendered release body carries the D-120 compatibility note"
 
@@ -310,7 +321,7 @@ echo "OK: rendered release body carries no merge-commit subject"
   >"$WORK/release-body-stripped.md" 2>/dev/null || true
 [[ -s "$WORK/release-body-stripped.md" ]] \
   || fail "polarity control rendered empty — cannot conclude anything from its missing note"
-if grep -q 'pins.toolDigest' "$WORK/release-body-stripped.md"; then
+if grep -qF "$NOTE_ANCHOR" "$WORK/release-body-stripped.md"; then
   fail "polarity control: the note is present even WITH '--strip header', so section 6 does not actually detect the regression it exists to catch"
 fi
 echo "OK: polarity control — re-adding '--strip header' removes the note again"
