@@ -226,6 +226,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(engine): pin how an unrepresentable numeric renders in {{ }}
 - :white_check_mark: test(checkout): make every containment guard falsifiable
 - :white_check_mark: test(checkout): unmask the two collectFS guards and pin the Lstat side check
+- :white_check_mark: test: deduplicate the requireSymlinks helper across the merged lanes
 ## [0.1.0] - 2026-08-05
 
 ### Chores
