@@ -121,8 +121,9 @@ func evalLeaf(env *cel.Env, in EvaluationInput, ch EvalChange, envLabel, expr st
 //
 // Deliberate ordering stays expressible by coercing first — `int(new) >= int(old)`
 // (already the repo's idiom), `double(...)`, or `timestamp(a) < timestamp(b)` for
-// ISO-8601 dates. Ordering raw text is NOT expressible in tier-1 `assert` and
-// graduates to Rego (ADR-0013 Amendment 1).
+// ISO-8601 dates. Ordering raw text is NOT expressible in tier-1 `assert`, and
+// coercion is the whole answer — ADR-0002's Rego backend is PLANNED (E11, D-012),
+// not built, so there is no escape hatch to graduate to (ADR-0013 Amendment 1).
 //
 // Purity/determinism: watching only reads values that were computed anyway; it
 // adds no clock, randomness or I/O, and the recorded hit is the FIRST in
