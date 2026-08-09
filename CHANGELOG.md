@@ -89,6 +89,10 @@ repository still gets a decision, never by following the link; no release carrie
 
 ### Documentation
 - :memo: docs(decisions): record D-126 (D-031 domain deferred) and D-127 (SEC-05 PAT rotation scheduled)
+
+### Testing
+- :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token
+- :white_check_mark: test(release): key the merge-skip proof on commit shape, not subject prefix
 ## [0.2.0] - 2026-08-09
 
 ### Chores

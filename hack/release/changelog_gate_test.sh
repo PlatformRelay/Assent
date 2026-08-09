@@ -129,9 +129,20 @@ echo "OK: [0.1.0] at line $rel_line, non-empty Unreleased above it at line $unre
 
 # The D-120 record-consumer warning is generated from cliff.toml's header, so a
 # hand-edit of CHANGELOG.md cannot carry it and `changelog-write` cannot wipe it.
-grep -q 'pins.toolDigest' "$ROOT/CHANGELOG.md" \
+#
+# Anchor on the note's HEADER SENTENCE, never on the bare `pins.toolDigest`
+# token. The token is NOT header-unique: two commit subjects inside the [0.2.0]
+# section carry it verbatim ("warn record consumers that pins.toolDigest changed
+# value", "derive pins.toolDigest from Go build info"), and cliff.toml names it
+# again in the D-121 note. A bare-token grep therefore matches the rendered BODY
+# and passes whether or not the header note survives at all — which is precisely
+# the vacuity section 6's polarity control failed closed on. Keep this phrase in
+# sync with cliff.toml's `[changelog] header`; do not simplify it back.
+NOTE_ANCHOR='pins.toolDigest` changes value after'
+
+grep -qF "$NOTE_ANCHOR" "$ROOT/CHANGELOG.md" \
   || fail "CHANGELOG.md carries no pins.toolDigest compatibility note — AUD-S04 changed the value of a published record field with no warning to record consumers (D-120)"
-grep -q 'pins.toolDigest' "$ROOT/cliff.toml" \
+grep -qF "$NOTE_ANCHOR" "$ROOT/cliff.toml" \
   || fail "the pins.toolDigest note is in CHANGELOG.md but not in cliff.toml — the next 'task changelog-write' will wipe it"
 echo "OK: D-120 toolDigest note present in CHANGELOG.md and sourced from cliff.toml"
 
@@ -288,7 +299,7 @@ read -r -a cliff_argv <<<"$cliff_args"
 grep -qE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$WORK/release-body.md" \
   || fail "rendered release body carries no '## [X.Y.Z]' release section — the render did not produce real release notes"
 
-grep -q 'pins.toolDigest' "$WORK/release-body.md" \
+grep -qF "$NOTE_ANCHOR" "$WORK/release-body.md" \
   || fail "the rendered GitHub Release body carries no pins.toolDigest compatibility note — the D-120 warning reaches CHANGELOG.md but NOT the Release page (drop '--strip header' from the git-cliff step in release.yaml)"
 echo "OK: rendered release body carries the D-120 compatibility note"
 
@@ -310,7 +321,7 @@ echo "OK: rendered release body carries no merge-commit subject"
   >"$WORK/release-body-stripped.md" 2>/dev/null || true
 [[ -s "$WORK/release-body-stripped.md" ]] \
   || fail "polarity control rendered empty — cannot conclude anything from its missing note"
-if grep -q 'pins.toolDigest' "$WORK/release-body-stripped.md"; then
+if grep -qF "$NOTE_ANCHOR" "$WORK/release-body-stripped.md"; then
   fail "polarity control: the note is present even WITH '--strip header', so section 6 does not actually detect the regression it exists to catch"
 fi
 echo "OK: polarity control — re-adding '--strip header' removes the note again"
@@ -400,9 +411,24 @@ if [[ -s "$WORK/only-in-clean" ]]; then
   cat "$WORK/only-in-clean" >&2
   fail "the merge-skip parser makes bullets APPEAR that the mutant render does not have — it cannot add content, so the comparison is wrong"
 fi
-if grep -vE '^- Merge ' "$WORK/only-in-mutant" >"$WORK/only-in-mutant.extra"; then
+# D-136's rule is keyed on commit SHAPE (`merge_commit`), never on subject text,
+# so the honest assertion is "every bullet only the mutant renders belongs to a
+# MERGE COMMIT" — not "every such bullet starts with `- Merge `". A merge whose
+# author wrote a conventional subject is skipped correctly, and that is exactly
+# the accepted cost 7b pins in the sandbox; real history now carries one
+# (`41a3072 :twisted_rightwards_arrows: chore(aud-s18): merge AUD-S13 (PR #35)`,
+# landed with PR #38), which a subject-prefix check misreads as an over-skip.
+# Keying on `git log --merges` is also STRICTLY STRONGER in the other direction:
+# an ordinary commit merely titled "Merge …" would have satisfied the old grep
+# and now fails, because it is not a merge commit.
+git -C "$ROOT" log --merges --format=%s | sort -u >"$WORK/merge-subjects"
+[[ -s "$WORK/merge-subjects" ]] \
+  || fail "git log --merges lists no merge commits — the membership check below would pass vacuously"
+sed -e 's/^- //' "$WORK/only-in-mutant" | sort -u >"$WORK/only-in-mutant.subjects"
+comm -23 "$WORK/only-in-mutant.subjects" "$WORK/merge-subjects" >"$WORK/only-in-mutant.extra"
+if [[ -s "$WORK/only-in-mutant.extra" ]]; then
   cat "$WORK/only-in-mutant.extra" >&2
-  fail "the merge-skip parser removes bullets that are not merge subjects — it is over-skipping ordinary commits"
+  fail "the merge-skip parser removes bullets that are not merge commits — it is over-skipping ordinary commits"
 fi
 echo "OK: multiset-identical apart from $(wc -l <"$WORK/only-in-mutant" | tr -d ' ') merge subject(s), which only the mutant renders"
 
