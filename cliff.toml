@@ -109,8 +109,12 @@ commit_parsers = [
   # that actions/checkout mints on refs/pull/N/merge, and for a merge whose author
   # wrote a conventional subject. Must stay ABOVE the `.*` catch-all below, which
   # is load-bearing for D-125's drift gate and must not be removed. Accepted cost:
-  # a merge subject can no longer say anything the changelog will show — the
-  # merged branch's own commits still render. Proof: hack/release/changelog_gate_test.sh §7.
+  # a merge subject can no longer say anything the changelog will show — the merged
+  # branch's own commits still render, which is the ENTIRE safety argument for
+  # skipping on shape rather than on text, and is measured, not assumed:
+  # hack/release/changelog_gate_test.sh §7b renders a sandbox whose merges are all
+  # skipped and asserts all five ordinary commits from those same branches survive.
+  # §7/§7a prove the same over real history at both polarities.
   { field = "merge_commit", pattern = "true", skip = true },
   { message = "^:memo: chore\\(release\\):|^:wrench: chore\\(release\\):", skip = true },
   { message = "^:sparkles:|^feat", group = "Features" },

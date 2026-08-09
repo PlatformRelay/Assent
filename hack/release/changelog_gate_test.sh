@@ -193,14 +193,15 @@ extract_step "$WORKFLOW" verify 'changelog' >"$WORK/step.changelog"
 [[ -s "$WORK/step.changelog" ]] || fail "could not extract the changelog gate step from the verify: job"
 grep -q 'task changelog-verify' "$WORK/step.changelog" \
   || fail "the extracted step does not run task changelog-verify — extraction matched the wrong step"
-# D-125: the step is deliberately NOT run on pull_request. On that event
-# actions/checkout builds refs/pull/N/merge, which also carries every commit landed
-# on main since the branch forked — the changelog generated there is a union that no
-# CHANGELOG.md committed on the branch can match. D-136 removed the synthetic merge
-# SUBJECT from that render but not the extra commits, so the guard still stands:
-# without it every PR behind main is red by construction and unfixable by the author.
+# The step is deliberately NOT run on pull_request. D-125's reason (the merge ref's
+# synthetic merge subject renders) died with D-136, and the successor reason drafted
+# with D-136 was measured and is false — see OQ-30. This assertion therefore pins the
+# guard's PRESENCE as the recorded state of the repository, not a mechanism: the guard
+# is retained pending evidence and must not be dropped as dead-premise cleanup while
+# OQ-30 is open. Enabling the PR placement is a deliberate change that closes OQ-30
+# and updates this assertion with it.
 grep -qF "github.event_name != 'pull_request'" "$WORK/step.changelog" \
-  || fail "the changelog gate step has no 'github.event_name != '\''pull_request'\''' guard — the PR merge ref carries commits landed on main since the branch forked, so the generated changelog is a union no committed CHANGELOG.md can match and the step would be red on every PR behind main (D-125, premise restated by D-136)"
+  || fail "the changelog gate step has lost its 'github.event_name != '\''pull_request'\''' guard — the guard is retained pending OQ-30 (D-125's reason is dead, its successor measured false); removing it is a CI-gating change that must close OQ-30, not a side effect"
 echo "OK: verify: job runs task changelog-verify, guarded off pull_request (D-125)"
 
 echo "== 3b. the workflow assertion itself can fail (mutation) =="

@@ -45,12 +45,15 @@ going red. Where it runs now:
   Regenerate after your last content commit and after any `git merge origin/main`: the merge
   changes which commits are in range even though the merge commit itself no longer renders.
 - **CI:** the `verify` job in `.github/workflows/verify.yaml`, guarded
-  `if: github.event_name != 'pull_request'` — push-to-main and the weekly schedule only. On
-  `pull_request`, `actions/checkout` builds `refs/pull/N/merge`, which carries not just a
-  synthetic merge commit but every commit landed on `main` since the branch forked; the
-  changelog generated there is a union that no `CHANGELOG.md` committed on the branch can
-  match, so a PR-scoped step is red by construction and unfixable by the author — rebasing
-  only holds until `main` moves again (D-125, premise restated by D-136).
+  `if: github.event_name != 'pull_request'` — push-to-main and the weekly schedule only.
+  **The guard currently has no demonstrated reason.** D-125 added it because
+  `refs/pull/N/merge`'s synthetic merge subject rendered into the changelog; D-136 skips merge
+  commits, so that reason is dead, and the successor reason drafted with D-136 was measured
+  three ways and is false (the merge ref's `CHANGELOG.md` is itself three-way merged, so base
+  movement ends in a clean match or in a conflict that leaves no merge ref). It is retained
+  pending evidence, not because the PR placement is known to be wrong — see
+  [OQ-30](../../docs/planning/open-questions.md) for the measurements and the ruling needed.
+  The placement is fail-safe either way: `task check` and push-to-main both run the gate.
 - **Release paths:** PRs touching them still run the `snapshot` job in
   `.github/workflows/release.yaml` (goreleaser `--snapshot --skip=publish`).
 
