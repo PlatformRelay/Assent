@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -13,15 +12,9 @@ import (
 
 // --- fixture helpers -------------------------------------------------------
 
-// requireSymlinks skips on platforms where an unprivileged process cannot
-// create a symlink. Everything below models a MERGE-REQUEST HEAD that ships a
+// requireSymlinks lives in run_provider_symlink_test.go — one definition serves
+// the whole package. Everything below models a MERGE-REQUEST HEAD that ships a
 // mode-120000 blob, which `git checkout` materialises as a real POSIX symlink.
-func requireSymlinks(t *testing.T) {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("symlink creation needs privileges on windows")
-	}
-}
 
 // linkIn plants a symlink at <root>/<side>/<rel> pointing at target. target may
 // be absolute (off-tree), relative, or dangling — every shape a contributor can
