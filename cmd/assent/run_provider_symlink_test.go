@@ -225,6 +225,12 @@ func TestRunCheckoutSymlinkRefusedAtEnumeration(t *testing.T) {
 //     leaves the root. The builtin's refusal is the ONLY thing standing between
 //     the run and a resolved 24. That is layer (b) in isolation.
 func TestResolveRunFactsRefusesSymlinkedQuotaCandidate(t *testing.T) {
+	// Guarded at the PARENT, not per subtest. Guarding only the two poisoned
+	// subtests would leave the control passing on a symlink-hostile runner and
+	// the function reporting PASS — a green name over a containment proof that
+	// never ran, which is exactly the silence requireSymlinks exists to prevent.
+	requireSymlinks(t)
+
 	cleanTree := func(t *testing.T) string {
 		t.Helper()
 		return writeCheckout(t, map[string][2]string{
@@ -234,7 +240,6 @@ func TestResolveRunFactsRefusesSymlinkedQuotaCandidate(t *testing.T) {
 	}
 
 	t.Run("absolute off-tree link: both layers, and nothing leaks", func(t *testing.T) {
-		requireSymlinks(t)
 		secret := hostSecretFile(t, "31337")
 		checkout := cleanTree(t)
 		symlinkBothSides(t, checkout, "topics/prod/quota.yaml", secret)
@@ -253,7 +258,6 @@ func TestResolveRunFactsRefusesSymlinkedQuotaCandidate(t *testing.T) {
 	})
 
 	t.Run("relative in-root link: the builtin guard alone", func(t *testing.T) {
-		requireSymlinks(t)
 		checkout := cleanTree(t)
 		// Resolves back INSIDE the root, so (*os.Root).FS() follows it: without the
 		// builtin refusal this reads topics/quota.yaml and resolves 24.
