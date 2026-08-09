@@ -55,7 +55,7 @@ Commands:
       usage: assent help
 
 assent run -h, assent compare -h and assent render -h list their flags.
-Full command reference: https://platformrelay.github.io/assent/usage/cli/
+Full command reference: https://platformrelay.github.io/Assent/usage/cli/
 ```
 
 ## assent run

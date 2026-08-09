@@ -42,7 +42,7 @@ import (
 
 // DocsBase is the docs-site root the generated docs.url is minted under (the
 // D-044 MkDocs site). A rule's docs.url is DocsBase + "/" + its stable ID.
-const DocsBase = "https://platformrelay.github.io/assent/rules"
+const DocsBase = "https://platformrelay.github.io/Assent/rules"
 
 // CapabilityApprovalEvidence is the capability a require-review rule needs: it is
 // satisfiable only by forge-proven ApprovalEvidence (ADR-0017 §3), never a bare
