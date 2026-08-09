@@ -94,6 +94,7 @@ D-113 immutability holds — only the algorithm computing the pin moved, version
 - :memo: docs: record the review close-out for the three non-blocking notes in D-131
 - :memo: docs(engine): narrow the bytes-binding claim to what was verified
 - :memo: docs: correct the D-130 abort/REVIEW comparison and the resource-owner fixture
+- :memo: docs: narrow D-130's arming-posture and approval-evidence claims to what was measured
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
