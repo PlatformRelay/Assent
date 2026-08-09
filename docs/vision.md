@@ -48,8 +48,10 @@ always produce the same decision. No LLM in the decision path.
 
 ### Modes
 
-The same pipeline runs as: a **CI job** (primary) and a **local dry-run** ("what would the
-gate say?"). Three further modes are *planned*, not shipped — **explain** (full per-rule
+One mode ships today: the **CI job** (primary) — `assent run`. Four further modes are
+*planned*, not shipped — a **local dry-run** ("what would the gate say?"; there is no
+`--dry-run` flag today, and passing one exits `2` — run `assent test` against
+`.assent/tests/**` for the local feedback loop instead), **explain** (full per-rule
 trace; today the emitted `DecisionRecord` carries the same information), a **historical
 scan** over past MRs feeding `stats` (backtesting a policy before trusting it — no database,
 just report artifacts; `assent compare` covers the corpus-replay case today), and a

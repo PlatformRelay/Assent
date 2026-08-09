@@ -90,11 +90,15 @@ jobs:
       - name: PCS compare exit gate (RELSE-03 — REQ-PCS-S09)
         run: bash hack/compare/exitgate_test.sh
       # AUD-S02 (REQ-AUD-S02-02) — CHANGELOG.md drift gate, main + schedule only.
-      # NOT on pull_request (D-125): there actions/checkout builds refs/pull/N/merge, a
-      # merge commit minted at CI time whose subject ("Merge <sha> into <sha>") git-cliff
-      # renders through the catch-all commit parser. That line cannot exist in any
-      # committed CHANGELOG.md, so a PR-scoped step would be red by construction and
-      # unfixable by the author. `task check` runs this gate on every local commit.
+      # NOT on pull_request. D-125's reason for that guard was the synthetic merge
+      # subject on refs/pull/N/merge; D-136 skips merge commits, so that reason is
+      # DEAD, and its proposed successor ("the merge ref is a union the branch's file
+      # cannot match") was measured and is FALSE — see OQ-30 for all three
+      # measurements. The guard is retained without a demonstrated reason on purpose:
+      # changing CI gating needs its own evidence, and it is fail-safe either way
+      # because `task check` runs this gate on every local commit and push-to-main is
+      # the backstop. Do not delete this line to "clean up a dead premise" — close
+      # OQ-30 first.
       - name: changelog drift gate (AUD-S02 — REQ-AUD-S02-02)
         if: github.event_name != 'pull_request'
         run: task changelog-verify
@@ -127,7 +131,7 @@ jobs:
         with:
           python-version: "3.12"
       # docs-install (task docs-build) requires uv; docs.yaml uses pip — this job mirrors local Task.
-      - uses: astral-sh/setup-uv@f0ec1fc3b38f5e7cd731bb6ce540c5af426746bb # v6.1.0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
       - name: install Task

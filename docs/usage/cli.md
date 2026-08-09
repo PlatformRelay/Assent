@@ -55,7 +55,7 @@ Commands:
       usage: assent help
 
 assent run -h, assent compare -h and assent render -h list their flags.
-Full command reference: https://platformrelay.github.io/assent/usage/cli/
+Full command reference: https://platformrelay.github.io/Assent/usage/cli/
 ```
 
 ## assent run
@@ -87,11 +87,84 @@ and is never a flag; without it the command exits `2` before contacting the forg
 | `-pack` | — | optional Pack path; its `spec.phase` caps every rule's phase |
 | `-checkout` | — | local checkout dir (`base/` + `head/` subtrees) used to enumerate the MR's full changed-file set. The tree must contain **no symlinks** — see *Symlinks in the checkout tree* below. When unset, the forge snapshot is the sole enumerator — see *Checkout-less runs and enumeration completeness* below |
 | `-emit` | stdout | path to write the `DecisionRecord` JSON |
-| `-arm` | off | sandbox arming override — approve and merge only when set **and** the decision is APPROVE |
+| `-arm` | off | **advisory only — it gates nothing.** Approve and merge are gated by the forge-probed arming preconditions, which [`assent doctor`](#assent-doctor) reports, not by this flag. See *What gates approve and merge* below |
 
 Exit codes: `0` the run completed and produced a valid receipt (an advisory
-REVIEW/BLOCK, or an APPROVE without `--arm`, is still a clean `0`); `1` a hard error
-during orchestration; `2` a missing flag, a missing `GITLAB_TOKEN`, or `-h`.
+REVIEW/BLOCK, or an APPROVE whose forge-probed arming preconditions are unmet, is
+still a clean `0`); `1` a hard error during orchestration; `2` a missing flag, a
+missing `GITLAB_TOKEN`, or `-h`.
+
+### What gates approve and merge
+
+**Not `--arm`.** The flag is a leftover from the walking skeleton, where it did gate the
+writes. Since the forge-probe wiring landed it has had exactly one effect: it echoes into
+the run summary's `arm=<bool>` token. Passing it, omitting it, and passing `--arm=false`
+all produce the same forge writes. Read `arm=false` in a summary as *the operator did not
+pass the flag* — never as *nothing was written*; the same line's trailing clause
+(`→ 3 forge operation(s) written`) is the one that says what happened.
+
+The real gate is the **forge-probed arming precondition**, computed from the snapshot's
+capability flags and **default-deny** — it is met only when all three hold:
+
+| Precondition | Forge dossier | Refused when |
+| --- | --- | --- |
+| CI configuration is external/protected, not author-editable in-repo | C17 | `insecure-topology` |
+| the project's *all discussions resolved* merge gate is enabled | C3 / [ADR-0009](../adr/0009-execution-modes.md) | `discussions-gate-missing` |
+| the tier exposes an enforced approval-rules API (not Free) | C6/C7 | `tier-capability-gap` |
+
+Run [`assent doctor`](#assent-doctor) to see which of the three this environment meets.
+When any is unmet the run degrades to advisory: nothing is approved or merged, the summary
+reads `advisory-only (arming precondition unmet, no approve/merge)`, and the exit code is
+still `0`. When all three are met, an `APPROVE` **approves and merges** — with or without
+`--arm`.
+
+Further guards refuse the writes even with the precondition met: a self-modifying
+`.assent/**` merge request (BLOCK, zero writes — not even a thread); a fork/untrusted MR
+context (advisory-only, [ADR-0015](../adr/0015-trust-boundaries-merge-integrity.md) §8); a
+controlling authorization fact past its `maxAge` at arming time
+([ADR-0017](../adr/0017-contract-model-obligations.md) §4); and the pre-write SHA guard, which re-reads
+the forge's current heads and refuses on drift. Each is a clean `0` with no merge.
+
+### How to keep assent advisory
+
+**There is no dry-run mode today.** `assent run` has no `--dry-run` flag — passing one exits
+`2` with `flag provided but not defined: -dry-run` before the forge is contacted.
+
+**The only reliable lever is leaving one of the three arming preconditions above unmet.**
+Then every APPROVE degrades to `advisory-only (arming precondition unmet, no approve/merge)`
+and no approve or merge is written.
+
+**"Advisory" means no approve and no merge — not no writes.** The run still posts its summary
+comment to the merge request, and on REVIEW or BLOCK one resolvable thread as well. The only
+path that writes nothing at all is a self-modifying `.assent/**` merge request, which fails
+closed for a separate reason.
+
+**Do not use a rollout phase as a safety switch.** A pack's `spec.phase`
+([ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md)) is a *rollout* control,
+not a kill switch, and using it as one can have the exact opposite effect. `observe` and `off`
+exclude the capped rules from the decision **structurally** — which removes the very findings
+that were withholding approval. Measured on an enforcing rule that produces a BLOCK:
+
+| binding | `spec.phase` ceiling | decision |
+| --- | --- | --- |
+| `require: [signal]` | `enforce` | BLOCK |
+| `require: [signal]` | `observe` | REVIEW |
+| `require: [signal]` | `off` | REVIEW |
+| *(no `require:`)* | `enforce` | BLOCK |
+| *(no `require:`)* | `observe` | **APPROVE** — approves and merges |
+| *(no `require:`)* | `off` | **APPROVE** — approves and merges |
+
+The saving grace in the top half is the binding's `require:` list: an uncovered required
+obligation is what degrades the run to REVIEW, because only an `enforce`-phase rule can mark
+one covered. `require:` is **optional** in the RulesetBinding schema — absent or empty means
+"no required obligations, vacuously covered" — so a binding that has not declared one yet gets
+the bottom half. That is the first-pack-rollout case, which is exactly when someone reaches for
+`observe`.
+
+`spec.phase` is also **inert unless you pass `--pack`**: without the flag the ceiling is
+`enforce` and the manifest is never read. Editing the manifest alone changes nothing, so an
+operator who edits it and reruns the CI snippet above — which passes no `--pack` — stays fully
+enforcing.
 
 ### Symlinks in the checkout tree
 
@@ -121,7 +194,9 @@ What to do about it:
 - **Run without `--checkout`.** The forge snapshot then enumerates the changed-file set and
   none of the above applies — symlinks in the repository become irrelevant. This is the
   supported way to evaluate a repository that legitimately contains one; the trade-off is the
-  snapshot-completeness behaviour described next.
+  snapshot-completeness behaviour described below. Note that the symlink refusal hardens what
+  the checkout may *contain*; it does not establish which *commit* the checkout is — see
+  *Known limitation: the checkout is not bound to the evaluated commit* below.
 - **Or provision a symlink-free checkout** for `base/` and `head/`.
 
 The two side directories `base/` and `head/` may themselves be symlinks — they are
@@ -131,6 +206,29 @@ Non-regular files (FIFOs, sockets, devices) under either side are refused the sa
 the same reason. Loosening the symlink refusal will mean folding it into the opaque /
 fail-safe **REVIEW** path, so such a repository gets a decision someone must look at — never
 by following the link. There is no release commitment for that today.
+
+### Known limitation: the checkout is not bound to the evaluated commit
+
+**assent judges the tree you hand it, and nothing verifies that tree is the commit the forge
+will merge.** With `--checkout` the local tree is the sole authority for the bytes under
+judgment and for the changed-file set (D-077); the SHAs that pin the approval and the
+compare-and-swap merge come from the forge's view of the merge request. The two are never
+compared — `assent run` has no step that hashes the checkout or matches it against
+`pins.sourceSha`. If they disagree, assent decides on one tree and the forge merges another.
+
+This is a property of **how the checkout is constructed**, not a fault that fires on every
+run. Two operator obligations make it a non-issue, and assent performs neither of them for
+you:
+
+- **Construct `head/` from the merge-request head commit** — the SHA the pipeline was
+  triggered for — rather than from a branch tip resolved at clone time.
+- **Cancel superseded pipelines on a new push.** A push landing between the clone and the
+  decision leaves assent judging the older tree while the forge merges the newer head.
+  This is a project setting on your forge; assent never reads it and never reports on it,
+  so do not treat a green `assent doctor` as evidence that it is set.
+
+Runs without `--checkout` are not exposed to this: the forge snapshot is then both the
+enumerator and the thing the pins describe.
 
 ### Checkout-less runs and enumeration completeness
 
@@ -155,6 +253,12 @@ Report whether this environment can arm auto-merge, and why not when it cannot.
 ```
 assent doctor
 ```
+
+**"Armed" here means assent itself may approve and merge** — immediately and SHA-pinned, on
+a run that decides APPROVE. It does **not** mean assent hands the forge a deferred
+*merge-when-pipeline-succeeds* instruction to fire later; it never does that. See
+[What gates approve and merge](#what-gates-approve-and-merge) above, and Step 6 of the
+[walkthrough](walkthrough.md).
 
 With `GITLAB_TOKEN` set (plus `CI_PROJECT_ID` and `CI_MERGE_REQUEST_IID`) it probes the
 forge for verified capabilities. Without a token it falls back to an env-only

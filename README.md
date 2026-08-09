@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://platformrelay.github.io/assent/">
+  <a href="https://platformrelay.github.io/Assent/">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/assent-logo-light.svg">
       <img src="docs/assets/brand/assent-logo.svg" alt="assent — deterministic, policy-driven auto-merge" width="420">
@@ -12,7 +12,7 @@
   <a href="https://github.com/PlatformRelay/assent/actions/workflows/schemas.yml"><img src="https://github.com/PlatformRelay/assent/actions/workflows/schemas.yml/badge.svg" alt="Schemas"></a>
   <a href="https://github.com/PlatformRelay/assent/actions/workflows/docs.yaml"><img src="https://github.com/PlatformRelay/assent/actions/workflows/docs.yaml/badge.svg" alt="Docs"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/PlatformRelay/assent"><img src="https://api.securityscorecards.dev/projects/github.com/PlatformRelay/assent/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://platformrelay.github.io/assent/"><img src="https://img.shields.io/badge/documentation-GitHub%20Pages-2ea44f?logo=materialformkdocs&logoColor=white" alt="Documentation"></a>
+  <a href="https://platformrelay.github.io/Assent/"><img src="https://img.shields.io/badge/documentation-GitHub%20Pages-2ea44f?logo=materialformkdocs&logoColor=white" alt="Documentation"></a>
   <a href="https://github.com/PlatformRelay/assent/blob/main/LICENSE"><img src="https://img.shields.io/github/license/PlatformRelay/assent" alt="License: Apache-2.0"></a>
 </p>
 
@@ -28,7 +28,7 @@ configuration repositories. Drop it into a repo's CI pipeline and it turns merge
 into decisions: **approve, comment, request changes, or block** — based on rules *you*
 write in **Kyverno-style declarative YAML** with CEL predicates.
 
-**Read the docs:** **[platformrelay.github.io/assent](https://platformrelay.github.io/assent/)**
+**Read the docs:** **[platformrelay.github.io/Assent](https://platformrelay.github.io/Assent/)**
 — vision, architecture, ADRs, install guide, and usage walkthrough. This README is the
 front door; the site is the map.
 
@@ -76,7 +76,7 @@ assent version
 `assent 0.0.0-dev` — even when you pin a tag (`@v0.1.0`). For a **version-stamped**
 binary take the Homebrew tap or a release archive: goreleaser injects the version
 (`-X main.version`) and the archives are checksum- and signature-verifiable. Both
-routes are in [docs/usage/install.md](https://platformrelay.github.io/assent/usage/install/).
+routes are in [docs/usage/install.md](https://platformrelay.github.io/Assent/usage/install/).
 
 Lint and test policies locally. Both commands take the **repository root** — `assent`
 appends `.assent` itself, so passing `.assent/` makes it look for `.assent/.assent`:
@@ -116,7 +116,7 @@ Honest tiers post-E8 (D-104). **Core** = shipped and covered by conformance test
 
 | Topic | Link |
 | --- | --- |
-| Documentation site | [platformrelay.github.io/assent](https://platformrelay.github.io/assent/) |
+| Documentation site | [platformrelay.github.io/Assent](https://platformrelay.github.io/Assent/) |
 | Install (go, curl, Homebrew) | [usage/install.md](docs/usage/install.md) |
 | API & schema stability | [API_STABILITY.md](API_STABILITY.md) |
 | Security policy & CI gates | [SECURITY.md](SECURITY.md) |
