@@ -132,6 +132,9 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(engine): the text-order refusal sentence reaches no adopter surface
 - :memo: docs: record the review close-out for the three non-blocking notes in D-131
 - :memo: docs(engine): narrow the bytes-binding claim to what was verified
+- :memo: docs(cli): stop claiming --arm gates approve/merge (D-134)
+- :memo: docs(usage): correct the --arm safety claim in the CLI reference (D-134)
+- :memo: docs(decisions): D-134 — --arm is advisory-only, superseding D-041
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -212,6 +215,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(checkout): make every containment guard falsifiable
 - :white_check_mark: test(checkout): unmask the two collectFS guards and pin the Lstat side check
 - :white_check_mark: test(engine): pin how an unrepresentable numeric renders in {{ }}
+- :white_check_mark: test(run): pin the advisory-only --arm summary token (ARM-04)
 ## [0.1.0] - 2026-08-05
 
 ### Chores
