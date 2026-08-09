@@ -150,6 +150,29 @@ CHECK_STAGES=(
 # actually measured out of the transcript.
 COVERAGE_BAR=91.0
 
+# (2) STAGE BODIES. The stage LIST, the COVERAGE_MIN floor and the `task: [x]`
+# banners are all structural: every one of them stays green if a stage keeps its
+# name, its vars and its banner while its `cmds:` are replaced. Reproduced:
+# swapping the `coverage:` body for `echo "coverage: 99.9% (required:
+# {{.COVERAGE_MIN}}%)"` left check_check_wiring, check_coverage_floor,
+# check_check_stages AND check_coverage_bar all at exit 0 — the last of those
+# grading the FABRICATED 99.9. `coverage:` is the one stage whose OUTPUT this
+# gate consumes as evidence, so its body is pinned by content.
+#
+# `<task>|<fixed string>|<why>`. Fixed strings, deliberately: the shape of the
+# `echo` line is load-bearing (check_coverage_bar anchors on `coverage: ` at
+# column 1), so a reformat SHOULD red here and be re-pinned on purpose. This is
+# the mechanism hack/release/changelog_gate_test.sh already uses for four other
+# stage bodies; `coverage:` and `lint-workflow-pins-test:` were not among them.
+STAGE_BODY_PINS=(
+  'coverage|go test -coverprofile=|without a real profile run the gate prints a number it never measured'
+  'coverage|./internal/...|the D-010 denominator is internal/; a narrower package set inflates the total'
+  'coverage|go tool cover -func=|the printed total must be DERIVED from the profile, not asserted'
+  'coverage|echo "coverage: ${pct}%|the evidence line this gate parses must interpolate the MEASURED value, not a literal'
+  'coverage|min="{{.COVERAGE_MIN}}"|an unrendered or dropped threshold makes the awk compare against 0 and admit anything (D-128)'
+  'lint-workflow-pins-test|bash hack/lint/workflow_pins_test.sh|a wired stage with a gutted body is the same defect one level down'
+)
+
 # (6) Immutable base ref for the schema freeze. Overridable only to move it
 # FORWARD to a later released tag; the default is the released v0.1.0.
 SCHEMA_BASE="${ASSENT_AUDIT_SCHEMA_BASE:-v0.1.0}"
@@ -232,6 +255,23 @@ command_view() { # <file>
     sub(/[[:space:]]+$/, "", s)
     printf "%d:%s\n", FNR, s
   }' "$1"
+}
+
+# Emits one Taskfile task's block, comment-stripped and left-trimmed: from the
+# `  <name>:` key to the next key at the same indent. Same extraction shape as
+# check_check_wiring's inline awk over `check:`, generalised so stage BODIES can
+# be pinned by content and not only by name.
+task_body() { # <taskfile> <task-name>
+  awk -v want="  $2:" '
+    index($0, want) == 1 && length($0) == length(want) { inblock = 1; next }
+    inblock && /^  [a-zA-Z0-9_:.-]+:$/ { inblock = 0 }
+    inblock {
+      s = $0
+      sub(/^[[:space:]]+/, "", s)
+      if (substr(s, 1, 1) == "#") next
+      print s
+    }
+  ' "$1"
 }
 
 # Isolate the YAML step containing <lineno>: walk BACK to the nearest step
@@ -571,6 +611,42 @@ check_coverage_floor() { # <taskfile>
   return 0
 }
 
+# The stage LIST is not the stage. check_check_wiring proves `coverage:` is
+# invoked, check_coverage_floor proves COVERAGE_MIN is still 91 (it lives in
+# `vars:`, not `cmds:`), check_check_stages proves the banner printed and
+# check_coverage_bar reads the number off the transcript — and all four stay
+# green if the body is replaced with an `echo` of a fabricated total. This pins
+# the BODY of the stages whose output the gate treats as evidence.
+check_stage_bodies() { # <taskfile>
+  local tf="$1" rc=0
+  [[ -f "$tf" ]] || {
+    echo "  AUD-S18: missing $tf" >&2
+    return 1
+  }
+  local seen="" pin task want why body n
+  for pin in "${STAGE_BODY_PINS[@]}"; do
+    task="${pin%%|*}"
+    why="${pin##*|}"
+    want="${pin#*|}"
+    want="${want%|*}"
+    body="$WORK/taskbody.$task"
+    if [[ "$seen" != *"<$task>"* ]]; then
+      seen="$seen<$task>"
+      task_body "$tf" "$task" >"$body"
+      n="$(wc -l <"$body" | tr -d '[:space:]')"
+      if ((n < 2)); then
+        echo "  AUD-S18: the '$task:' task body in $tf extracted to $n line(s) — the extraction broke (renamed task? re-indented file?), so every body pin below would pass vacuously" >&2
+        return 1
+      fi
+    fi
+    grep -Fq -- "$want" "$body" || {
+      echo "  AUD-S18: the '$task:' task body no longer contains: $want — $why. A stage can be kept in check:, keep its vars and keep printing its banner while its cmds: are replaced; the exit gate consumes this stage's OUTPUT as evidence, so a gutted body defeats every structural pin at once" >&2
+      rc=1
+    }
+  done
+  return "$rc"
+}
+
 # ============================================================================
 # (3) RELSE-05 — the release job's verify-green-on-tag-SHA gate
 # ============================================================================
@@ -850,6 +926,19 @@ SCHEMA_PERMITTED_ADDED='"description": "Deterministic build-content proxy for th
 
 # Extension pin: narrowing (6) to *.json must not become a loophole through
 # which a .yaml/.cue/.json5 schema lands outside the guard entirely.
+#
+# EXTENSION-LESS files are bucketed as the pseudo-extension `(none)` and are
+# therefore REFUSED, because `(none)` is not in SCHEMA_EXTENSIONS. The first cut
+# of this check listed `find … -name '*.*'`, which never sees a dotless name at
+# all: a committed `schemas/FROZEN` passed here AND passed check_schema_freeze
+# (whose `$NF ~ /\.json$/` filter drops it from --name-status), so the "cannot
+# become a loophole" claim in D-132 and hack/audit/README.md was false for
+# exactly one file shape. Closed here rather than by widening the freeze
+# filter: that narrowing is deliberate, so AUD-S16's legitimate schemas/*.go
+# edits do not red the freeze guard.
+#
+# The extension is taken from the BASENAME, not the path: a dot in a directory
+# component (`schemas/v1.0/x`) would otherwise be read as the file's extension.
 check_schema_extensions() { # <schemas-dir>
   local dir="$1"
   [[ -d "$dir" ]] || {
@@ -857,10 +946,14 @@ check_schema_extensions() { # <schemas-dir>
     return 1
   }
   local exts="$WORK/schemas.exts"
-  find "$dir" -type f -name '*.*' |
-    awk -F. '{ print $NF }' | sort -u >"$exts"
+  find "$dir" -type f |
+    awk '{
+      n = $0
+      sub(/.*\//, "", n)
+      if (n ~ /\./) { sub(/.*\./, "", n); print n } else { print "(none)" }
+    }' | sort -u >"$exts"
   if [[ ! -s "$exts" ]]; then
-    echo "  ARCH-03: no files with extensions found under $dir — the extension pin would be vacuous" >&2
+    echo "  ARCH-03: no files found under $dir — the extension pin would be vacuous" >&2
     return 1
   fi
   local want
@@ -868,7 +961,7 @@ check_schema_extensions() { # <schemas-dir>
   local got
   got="$(cat "$exts")"
   if [[ "$want" != "$got" ]]; then
-    echo "  ARCH-03: the extension set under $dir is [$(echo $got)], pinned is [$(echo $want)] — the freeze guard is scoped to *.json, so a schema in another format would sit entirely outside it (D-132)" >&2
+    echo "  ARCH-03: the extension set under $dir is [$(echo $got)], pinned is [$(echo $want)] — the freeze guard is scoped to *.json, so a schema in another format would sit entirely outside it ('(none)' means an extension-less file, which the freeze guard's \$NF ~ /\\.json\$/ filter also drops) (D-132)" >&2
     return 1
   fi
   return 0
@@ -1309,10 +1402,7 @@ check_ci_wiring() { # <workflows-dir>
   # A JOB-level `continue-on-error: true` makes every step in release-exitgate
   # advisory — the gate runs, reds, and the workflow still concludes success.
   # Job-scoped, at the job's own indent, so a step-level key (already covered
-  # above, and legitimate on no step of this job) is not double-counted. The
-  # job's `if: github.event_name != 'pull_request'` is deliberately NOT pinned:
-  # it is load-bearing, and no rule that admits it can also refuse `if: false`
-  # without being either brittle or trivially reworded around.
+  # above, and legitimate on no step of this job) is not double-counted.
   local jobend
   jobend="$(awk -v s="$jobline" 'NR > s && /^  [a-zA-Z0-9_-]+:$/ { print NR; exit }' "$wf")"
   [[ -n "$jobend" ]] || jobend="$(wc -l <"$wf" | tr -d '[:space:]')"
@@ -1321,6 +1411,64 @@ check_ci_wiring() { # <workflows-dir>
   if [[ -s "$jobcoe" ]]; then
     echo "  AUD-S18: the release-exitgate JOB carries a job-level 'continue-on-error:' — every step in it, this gate included, becomes advisory and a red exit gate no longer fails the workflow:" >&2
     sed 's/^/    /' "$jobcoe" >&2
+    rc=1
+  fi
+
+  # The job's `if:` is the other job-level disarm, and the one this gate first
+  # shipped unguarded. `if: false` skips release-exitgate entirely; the job then
+  # reports SUCCESS (a skipped job is not a failed one), so every step above —
+  # this gate included — silently stops running while the workflow stays green.
+  #
+  # The gate does NOT pin the expression. `github.event_name != 'pull_request'`
+  # is load-bearing (D-125: on pull_request the changelog stage is red by
+  # construction) but it is not the only legitimate spelling, and requiring the
+  # `if:` to be PRESENT would pin one wording forever. Deleting it is also
+  # self-announcing: release-exitgate would then run on pull_request and red
+  # there for the changelog stage.
+  #
+  # What IS refused is a CONSTANT: a job-level `if:` whose value is the literal
+  # `true` or `false`. That is trivial to state and impossible to argue with —
+  # a constant `if:` expresses no condition, so it is either a no-op or a
+  # disarm, and both are tells. Normalised before comparing so the refusal is
+  # not reworded around: `${{ }}` unwrapped, quotes stripped, comment tail
+  # dropped, trimmed, lowercased. `if: false`, `if: ${{ false }}`, `if: 'false'`
+  # and `if: true` are therefore all refused; `github.event_name != '…'`
+  # normalises to something that is neither literal and passes.
+  #
+  # SCOPE, stated so this does not become the next overstatement: this closes
+  # the CONSTANT case only. A semantically-never-true EXPRESSION — the
+  # reviewer's `if: github.event_name == 'deployment_status'` is the worked
+  # example — is NOT caught here and cannot be, without evaluating GitHub's
+  # expression language against a model of which events reach this workflow.
+  # That residual is real, is unchanged by this check, and stays fenced to
+  # RELSE-08 (`AUD-RELSE-08` in openspec/specs/backlog.md).
+  #
+  # Vacuity: the job region (jobline..jobend) is the same region the
+  # continue-on-error scan above reads, and both of this check's mutation
+  # controls inject their key immediately after `  release-exitgate:` — so a
+  # region extraction that collapsed would red those controls, not pass them.
+  local jobif="$WORK/hits.audit_wiring_jobif"
+  awk -v s="$jobline" -v e="$jobend" '
+    BEGIN { Q = sprintf("%c", 39) }
+    NR >= s && NR <= e && /^    if:/ {
+      v = $0
+      sub(/^[[:space:]]*if:[[:space:]]*/, "", v)
+      sub(/[[:space:]]+#.*$/, "", v)
+      sub(/[[:space:]]+$/, "", v)
+      if (v ~ /^\$\{\{.*\}\}$/) {
+        sub(/^\$\{\{[[:space:]]*/, "", v)
+        sub(/[[:space:]]*\}\}$/, "", v)
+      }
+      gsub(/"/, "", v)
+      gsub(Q, "", v)
+      sub(/^[[:space:]]+/, "", v)
+      sub(/[[:space:]]+$/, "", v)
+      if (tolower(v) == "true" || tolower(v) == "false") printf "%d:%s\n", NR, $0
+    }
+  ' "$wf" >"$jobif"
+  if [[ -s "$jobif" ]]; then
+    echo "  AUD-S18: the release-exitgate JOB carries a CONSTANT job-level 'if:' — a literal true/false expresses no condition, so the job is either unconditionally skipped (a skipped job reports SUCCESS, and this gate never runs while the workflow stays green) or unconditionally run; either way the condition has been disarmed rather than changed:" >&2
+    sed 's/^/    /' "$jobif" >&2
     rc=1
   fi
   return "$rc"
@@ -1424,6 +1572,64 @@ cp "$TASKFILE" "$tf_m"
 mutate "$tf_m" 's|^      COVERAGE_MIN: [0-9]*$|      COVERAGE_MIN: 90|' 'COVERAGE_MIN: 90'
 expect_red check_coverage_floor "the D-010 floor was lowered back to 90 (TEST-03)" \
   'below the AUD-S13 bar' "$tf_m"
+
+expect_green check_stage_bodies "the coverage: and lint-workflow-pins-test: stage BODIES still do what the gate credits them with" "$TASKFILE"
+
+# THE control for this check's reason to exist: the operator's reproduction.
+# Replace the whole `coverage:` command block with an echo of a fabricated
+# total, leaving `vars: COVERAGE_MIN: 91` and the stage's name intact. Before
+# check_stage_bodies this left check_check_wiring, check_coverage_floor,
+# check_check_stages AND check_coverage_bar all at exit 0, with the last of them
+# grading the invented 99.9.
+tf_m="$WORK/Taskfile.guttedcoverage.yml"
+cp "$TASKFILE" "$tf_m"
+mutate_awk "$tf_m" '
+  /^  coverage:$/ { inb = 1 }
+  inb && /^      - \|$/ {
+    print
+    print "        echo \"coverage: 99.9% (required: {{.COVERAGE_MIN}}%)\""
+    skip = 1
+    next
+  }
+  skip && /^  [a-zA-Z0-9_:.-]+:$/ { skip = 0; inb = 0 }
+  skip { next }
+  { print }
+' 'echo "coverage: 99.9%'
+expect_red check_stage_bodies "the coverage: stage body was replaced with an echo of a fabricated total (vars, name and banner all intact)" \
+  'no longer contains: go tool cover -func=' "$tf_m"
+
+# Narrower, and the one that proves the `${pct}` pin is not redundant with the
+# two measurement pins: keep the real `go test -coverprofile` and `go tool
+# cover` lines, and literalise ONLY the evidence line. The stage still measures;
+# it just reports something else.
+tf_m="$WORK/Taskfile.literalecho.yml"
+cp "$TASKFILE" "$tf_m"
+mutate "$tf_m" 's|echo "coverage: ${pct}%|echo "coverage: 99.9%|' 'echo "coverage: 99.9%'
+expect_red check_stage_bodies "the measurement was kept but the evidence line was literalised (the gate would grade a number the run did not produce)" \
+  'no longer contains: echo "coverage: ${pct}%' "$tf_m"
+
+# The threshold interpolation D-128 flagged: an unrendered or dropped
+# {{.COVERAGE_MIN}} makes the awk compare against min+0 == 0 and admit anything,
+# while check_coverage_floor still sees the var DEFINED and reports OK.
+tf_m="$WORK/Taskfile.unusedmin.yml"
+cp "$TASKFILE" "$tf_m"
+mutate "$tf_m" 's|min="{{.COVERAGE_MIN}}"|min=""|' 'min=""'
+expect_red check_stage_bodies "the COVERAGE_MIN interpolation was dropped from the comparison (the var stays defined, so check_coverage_floor still passes)" \
+  'no longer contains: min="{{.COVERAGE_MIN}}"' "$tf_m"
+
+tf_m="$WORK/Taskfile.guttedpins.yml"
+cp "$TASKFILE" "$tf_m"
+mutate "$tf_m" 's|      - bash hack/lint/workflow_pins_test.sh|      - echo skipped|' '      - echo skipped'
+expect_red check_stage_bodies "the lint-workflow-pins-test: stage body was gutted while the stage stayed wired" \
+  'no longer contains: bash hack/lint/workflow_pins_test.sh' "$tf_m"
+
+# Vacuity control on the extraction itself: with the task key gone there is no
+# body to read, and "no pin failed" must not be the answer.
+tf_m="$WORK/Taskfile.nocoveragekey.yml"
+cp "$TASKFILE" "$tf_m"
+mutate "$tf_m" '/^  coverage:$/d' 'COVERAGE_MIN: 91'
+expect_red check_stage_bodies "the coverage: task key was deleted, so the body extraction returns nothing" \
+  'the extraction broke' "$tf_m"
 
 CHECK_TRANSCRIPT="$WORK/check.txt"
 if ((TEXT_ONLY == 0)); then
@@ -1718,6 +1924,20 @@ printf 'package schemas\n' >"$sx/compiler.go"
 expect_red check_schema_extensions "a schema landed in a format the *.json guard does not cover" \
   'is scoped to *.json' "$sx"
 
+# The EXTENSION-LESS shape, which the first cut of this check could not see at
+# all (`find … -name '*.*'` never matches a dotless name) and which
+# check_schema_freeze cannot see either (its `$NF ~ /\.json$/` filter drops it
+# from --name-status). A committed `schemas/FROZEN` therefore passed BOTH, which
+# made D-132's and hack/audit/README.md's "cannot become a loophole" claim false.
+sxn="$WORK/schemas-noext"
+rm -rf "$sxn"
+mkdir -p "$sxn/decision/v1alpha1"
+cp "$SCHEMAS/decision/v1alpha1/decision-record.schema.json" "$sxn/decision/v1alpha1/"
+printf 'package schemas\n' >"$sxn/compiler.go"
+printf 'frozen at v0.1.0\n' >"$sxn/FROZEN"
+expect_red check_schema_extensions "an EXTENSION-LESS file landed under schemas/ (no dot in the name, so both *.json guards are blind to it)" \
+  '(none)' "$sxn"
+
 if ((TEXT_ONLY == 0)); then
   expect_green check_schema_freeze "schemas/**/*.json are byte-frozen against $SCHEMA_BASE except the D-120 line" \
     "$ROOT" "$SCHEMA_BASE" "$SCHEMA_JSON_MIN"
@@ -1871,6 +2091,29 @@ mutate "$spec_m" 's@| OQ-27 |@| n/a |@' '| n/a |'
 expect_red check_post_audit_blockers "a blocker row stopped citing an OQ" \
   'cites no OQ-' "$spec_m" "$OQ"
 
+# The status-token branch was the ONE assertion in this file with no mutation
+# control — a side effect of loosening the control above to be status-agnostic.
+# The file's header promises that every check is run against an input carrying
+# the very violation it exists to catch, so this closes the gap.
+#
+# Status-agnostic in the same way, and for the same reason: the tokens move as
+# the cited questions resolve (OQ-27 with D-131, OQ-28 with D-133 + D-129), so
+# the program REPLACES whatever token is there with a sentinel rather than
+# pinning one spelling. A program keyed to `CLOSED` would silently stop
+# mutating the day a row flipped, and the harness would say so — but only after
+# someone had shipped the rot. Scoped to the blockers section so the rest of the
+# spec is untouched; the rows keep citing their OQs, so this control isolates
+# the status branch and nothing else fires.
+spec_m="$WORK/spec.blockernostatus.md"
+cp "$SPEC" "$spec_m"
+mutate_awk "$spec_m" '
+  /^### Post-audit release blockers/ { inblock = 1 }
+  inblock && /^## / { inblock = 0 }
+  { if (inblock) gsub(/OPEN|CLOSED/, "n/s"); print }
+' '| n/s '
+expect_red check_post_audit_blockers "a blocker row lost its OPEN/CLOSED status token" \
+  'carries no OPEN/CLOSED status token' "$spec_m" "$OQ"
+
 oq_m="$WORK/open-questions.dropped.md"
 cp "$OQ" "$oq_m"
 mutate "$oq_m" '/^| OQ-28 |/d' '| OQ-27 |'
@@ -1970,6 +2213,51 @@ mutate_awk "$wm/verify.yaml" \
 expect_red check_ci_wiring "the release-exitgate JOB was made advisory with a job-level continue-on-error" \
   'job-level' "$wm"
 
+# The job-level `if:` disarm, in its four realistic spellings. Each REPLACES the
+# real condition rather than adding a second key, which is the edit a reviewer
+# reproduced: the job is then skipped, a skipped job reports SUCCESS, and this
+# gate never runs while the workflow stays green. `if: true` is refused for the
+# same reason — it is equally a tell that the condition was disarmed, not
+# changed. The awk keys on the job header so a mutation can only land INSIDE
+# release-exitgate; a control that mutated some other job's `if:` would be
+# passing for the wrong reason.
+IF_MUTANT_CONST='{ if ($0 ~ /^  release-exitgate:$/) inj = 1; if (inj && $0 ~ /^    if:/) { print "    if: " CONST; inj = 0; next } print }'
+
+wm="$(workflows_mutant audit-if-false)"
+mutate_awk "$wm/verify.yaml" "BEGIN { CONST = \"false\" } $IF_MUTANT_CONST" '    if: false'
+expect_red check_ci_wiring "the release-exitgate JOB's condition was replaced with the constant 'if: false'" \
+  'CONSTANT job-level' "$wm"
+
+wm="$(workflows_mutant audit-if-true)"
+mutate_awk "$wm/verify.yaml" "BEGIN { CONST = \"true\" } $IF_MUTANT_CONST" '    if: true'
+expect_red check_ci_wiring "the release-exitgate JOB's condition was replaced with the constant 'if: true'" \
+  'CONSTANT job-level' "$wm"
+
+# Reworded, not reworded-around: the same constant inside an expression
+# substitution, and the same constant quoted. A refusal that only knows the bare
+# spelling would be exactly the "trivially reworded around" rule this gate's
+# earlier comment claimed was unavoidable.
+wm="$(workflows_mutant audit-if-expr-false)"
+mutate_awk "$wm/verify.yaml" "BEGIN { CONST = \"\${{ false }}\" } $IF_MUTANT_CONST" '    if: ${{ false }}'
+expect_red check_ci_wiring "the constant was wrapped in an expression substitution: if: \${{ false }}" \
+  'CONSTANT job-level' "$wm"
+
+wm="$(workflows_mutant audit-if-quoted-false)"
+mutate_awk "$wm/verify.yaml" "BEGIN { Q = sprintf(\"%c\", 39); CONST = Q \"false\" Q } $IF_MUTANT_CONST" "    if: 'false'"
+expect_red check_ci_wiring "the constant was quoted: if: 'false'" \
+  'CONSTANT job-level' "$wm"
+
+# The other polarity, and the one that keeps the rule honest: a genuinely
+# REWORDED condition must stay GREEN. Without this the refusal could silently
+# harden into "the expression must be spelled exactly one way", which is the
+# brittleness the earlier comment feared — and which would pin D-125's wording
+# forever.
+wm="$(workflows_mutant audit-if-reworded)"
+mutate_awk "$wm/verify.yaml" \
+  "BEGIN { Q = sprintf(\"%c\", 39); CONST = \"github.event_name == \" Q \"push\" Q \" || github.event_name == \" Q \"schedule\" Q } $IF_MUTANT_CONST" \
+  '    if: github.event_name == '
+expect_green check_ci_wiring "a REWORDED (non-constant) job condition is still accepted — the refusal is on constants, not on one spelling" "$wm"
+
 # Positive control on the workflow inventory the baseline sweep reads: an empty
 # or broken directory listing must not read as "no override found anywhere".
 wm="$(workflows_mutant audit-no-workflows)"
@@ -2004,6 +2292,6 @@ echo
 echo "  NOT certified: release readiness. Defects found AFTER 2026-08-06 are out"
 echo "  of scope here and are tracked in the spec's 'Post-audit release blockers'"
 echo "  section (OQ-27 — closed by D-131; OQ-28 — closed by D-133 plus the"
-echo "  provider lane's D-129 guard). This gate grades"
-echo "  that the record exists and resolves, never the statuses. See D-132."
+echo "  provider lane's D-129 guard). This gate grades that the record exists"
+echo "  and resolves, never the statuses. See D-132."
 echo "============================================================================"
