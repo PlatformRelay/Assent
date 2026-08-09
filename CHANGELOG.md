@@ -148,6 +148,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs: narrow D-130's arming-posture and approval-evidence claims to what was measured
 - :memo: docs(decisions): amend D-129 with the D-133 subsumption and the re-arming condition
 - :memo: docs(oq): close OQ-28's residual and relocate its proof pointer after D-133
+- :memo: docs(usage): say that an advisory run still writes (ADV-01)
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
