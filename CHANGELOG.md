@@ -138,6 +138,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs: narrow the walkthrough claim in D-134 to what was measured
 - :memo: docs(usage): the REVIEW path arms no deferred auto-merge (D-135)
 - :memo: docs(usage): say which "arming" assent doctor reports (D-135)
+- :memo: docs(adr): record that ADR-0009's deferred auto-merge is unimplemented (D-135)
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
