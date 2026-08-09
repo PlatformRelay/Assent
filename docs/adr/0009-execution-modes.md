@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | Accepted (partial: one-shot arming restrictions per ADR-0017 §4; P2-E5) |
+| **Status** | Accepted (partial: one-shot arming restrictions per ADR-0017 §4; P2-E5). **Substantially unimplemented as of 2026-08-09** — only the `run` mode exists (no `--dry-run`/`explain`/`serve`/`scan`/`stats`), and the challenge-resolution amendment's deferred forge auto-merge was never built; see the two *Implementation status* notes below and [D-135](../decisions/decisions.md). |
 | **Date** | 2026-07-21 |
 | **Deciders** | Konrad Heimel |
 | **Context links** | [ADR-0005 forge](0005-forge-abstraction-gitlab-first.md) · [ADR-0007 effects](0007-rule-effects-decision-aggregation.md) |
@@ -35,6 +35,33 @@ byte-identical between a dry-run and a real run on the same input (determinism g
 
 Shipping order: `run`/`--dry-run`/`explain` in v1; `serve` in v1.x once the CI path is proven
 (OQ-14) — but ports and CLI structure assume it from day one.
+
+> **Implementation status (2026-08-09, [D-135](../decisions/decisions.md)) — of the six modes
+> above, only `run` exists.** A fact about the code, not a change to the decision: the table
+> and the shipping order are untouched.
+>
+> The shipped dispatch table is `run`, `doctor`, `lint`, `test`, `compare`, `catalogue`,
+> `render`, `eval-input`, `version`, `help`. **There is no `--dry-run` flag** — `assent run
+> --dry-run` exits `2` with `flag provided but not defined: -dry-run`, and a repo-wide search
+> for `dry.run` across `cmd/` and `internal/` returns nothing. `explain`, `serve`, `scan` and
+> `stats` are likewise undispatched and exit `2`. Fail-safe direction: an unknown flag or
+> command refuses before the forge is contacted, so nothing is written.
+>
+> Two claims above are therefore not true of the tool today: *"Side effects are isolated behind
+> the Publisher port; dry-run swaps in a recorder"* — there is no recorder to swap in — and, in
+> Consequences, *"Every doc example can show the dry-run first — the adoption path starts with
+> zero risk."* **There is no zero-risk adoption path via a mode switch.** The only way to run
+> `assent` without approve/merge writes is to leave one of the forge-probed arming
+> preconditions unmet; `docs/usage/cli.md` §*How to keep assent advisory* states this, and
+> explains why a pack's `spec.phase` must not be used as a substitute (with no `require:`
+> obligations declared, an `observe` or `off` ceiling turns a BLOCK into an approve+merge).
+>
+> This gap is *why* the CLI reference previously recommended `phase: observe` as the advisory
+> lever: the sanctioned mechanism was never built, so the docs invented one. Same open options
+> as the amendment below, and the same owner — build the recorder mode, or retract it from this
+> ADR and re-derive the adoption story. Tracked in [D-135](../decisions/decisions.md); this
+> note picks neither. The project already states this honestly elsewhere — see
+> [the walkthrough](../usage/walkthrough.md)'s "**Planned — `assent explain` does not exist**".
 
 ## Consequences
 
@@ -70,6 +97,37 @@ mechanism. Fixed as follows — **the forge, not assent, enforces resolution**:
 Adoption prerequisite (per ADR-0015 §4): the repo's forge settings must enable the
 all-threads-resolved merge gate; `assent doctor` verifies this and the protected-pipeline
 topology before the tool arms any auto-merge.
+
+> **Implementation status (2026-08-09, [D-135](../decisions/decisions.md)) — point 1's
+> deferred forge auto-merge is NOT implemented.** This note records a fact about the code.
+> It is not a change to the decision above: the amendment's normative text is untouched and
+> the decision remains open.
+>
+> As shipped, a `challenge` finding — like any REVIEW or BLOCK — posts the resolvable thread
+> and the run's summary comment, then stops. Nothing is approved, nothing is armed with the
+> forge for later, and resolving the thread merges nothing. Verified against the code:
+> `buildDesired`'s REVIEW/BLOCK branch returns a zero-valued `forge.Preconditions{}` (no
+> `Approve`, no `Merge`, no `ArmEligible`); the `forge.Forge` port has **no deferred-merge
+> verb at all** — `Approve` and `MergeCAS` are its only write verbs, and `MergeCAS` issues an
+> immediate SHA-pinned `PUT .../merge?sha=`; and `Thread.Resolved` is read only by assent's
+> own thread-idempotence logic, never by the decision engine, so thread resolution is not
+> evidence. Measured end-to-end: a REVIEW run, followed by resolving every thread and running
+> again, leaves the decision REVIEW with zero approvals and zero merges. An MR merges only on
+> a later run that reaches APPROVE on its own inputs, and **assent**, not the forge, performs
+> that merge.
+>
+> Consequently point 1's "the forge, not assent, enforces resolution" mechanism, and point 2's
+> compensating "any new push cancels the armed merge", describe a design with no counterpart
+> in the tool today.
+>
+> **Two honest resolutions are open and this note picks NEITHER** — choosing is an
+> architecture decision for the operator, tracked as an open item in
+> [D-135](../decisions/decisions.md): **(a)** build the deferred arming this amendment
+> specifies (GitLab C11 — `PUT .../merge` with `auto_merge=true` combined with `sha=`, per the
+> forge dossier), or **(b)** retract the amendment and re-derive the challenge-resolution
+> story around the immediate-merge behaviour that exists. Until one is chosen,
+> [the walkthrough](../usage/walkthrough.md) Step 6 is the accurate description of shipped
+> behaviour.
 
 ## Amendment 2 (2026-07-21, second review P2-12): scan honesty
 
