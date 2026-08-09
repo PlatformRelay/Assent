@@ -125,10 +125,41 @@ controlling authorization fact past its `maxAge` at arming time
 ([ADR-0017](../adr/0017-contract-model-obligations.md) §4); and the pre-write SHA guard, which re-reads
 the forge's current heads and refuses on drift. Each is a clean `0` with no merge.
 
-**If you want assent to stay advisory, do not rely on omitting `--arm`.** Either leave one
-of the three preconditions unmet, or put the pack's rollout in `phase: observe`
-([ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md)), which excludes its rules from the decision
-structurally.
+### How to keep assent advisory
+
+**There is no dry-run mode today.** `assent run` has no `--dry-run` flag — passing one exits
+`2` with `flag provided but not defined: -dry-run` before the forge is contacted.
+
+**The only reliable lever is leaving one of the three arming preconditions above unmet.**
+Then every APPROVE degrades to `advisory-only (arming precondition unmet, no approve/merge)`
+and no approve or merge is written.
+
+**Do not use a rollout phase as a safety switch.** A pack's `spec.phase`
+([ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md)) is a *rollout* control,
+not a kill switch, and using it as one can have the exact opposite effect. `observe` and `off`
+exclude the capped rules from the decision **structurally** — which removes the very findings
+that were withholding approval. Measured on an enforcing rule that produces a BLOCK:
+
+| binding | `spec.phase` ceiling | decision |
+| --- | --- | --- |
+| `require: [signal]` | `enforce` | BLOCK |
+| `require: [signal]` | `observe` | REVIEW |
+| `require: [signal]` | `off` | REVIEW |
+| *(no `require:`)* | `enforce` | BLOCK |
+| *(no `require:`)* | `observe` | **APPROVE** — approves and merges |
+| *(no `require:`)* | `off` | **APPROVE** — approves and merges |
+
+The saving grace in the top half is the binding's `require:` list: an uncovered required
+obligation is what degrades the run to REVIEW, because only an `enforce`-phase rule can mark
+one covered. `require:` is **optional** in the RulesetBinding schema — absent or empty means
+"no required obligations, vacuously covered" — so a binding that has not declared one yet gets
+the bottom half. That is the first-pack-rollout case, which is exactly when someone reaches for
+`observe`.
+
+`spec.phase` is also **inert unless you pass `--pack`**: without the flag the ceiling is
+`enforce` and the manifest is never read. Editing the manifest alone changes nothing, so an
+operator who edits it and reruns the CI snippet above — which passes no `--pack` — stays fully
+enforcing.
 
 ### Symlinks in the checkout tree
 
