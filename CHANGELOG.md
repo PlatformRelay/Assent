@@ -160,6 +160,10 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs: fix ARM-08 advisory advice, annotate the dry-run drift, log OQ-29
 - :memo: docs(usage): say that an advisory run still writes (ADV-01)
 - :memo: docs(decisions): retire D-136's PR-guard premise instead of replacing it (CL-02/CL-03)
+- :memo: docs(cli): record that --checkout is not bound to the evaluated commit (SEC-01)
+- :memo: docs(adr): correct four ADR claims the code does not support
+- :memo: docs: retract the unsafe advice at D-134's stopping point; dry-run is not shipped
+- :memo: docs: record the reliability + security deferrals (D-138, D-139, OQ-31); OQ-29 to P1
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -181,6 +185,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(engine): ordering a bytes operand is text ordering too — refuse it (D-131)
 - :bug: fix(checkout): keep a rooted --subject working, and unshadow the path package
 - :bug: fix(release): file gitmoji subjects by conventional type, not by emoji (REL-14, D-137)
+- :bug: fix(docs): point every docs-site URL at the case-sensitive Pages path (DOC-02)
+- :bug: fix(render): stop minting a 404 documentation link into every MR thread (DOC-03)
 
 ### Refactoring
 - :recycle: fix(forge): retry idempotent GitLab reads with bounded jittered backoff (AUD-S11, REL-04)
