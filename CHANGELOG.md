@@ -141,6 +141,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(cli): document the --checkout symlink limitation where adopters hit it
 - :memo: docs(decisions): correct D-133's falsifiability claim, and record the doc carriers
 - :memo: docs(release): add compatibility notes for D-133 symlinks and D-131 ordering
+- :memo: docs(aud-s13): re-measure D-128 against the current denominator and de-contradict its headline
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
