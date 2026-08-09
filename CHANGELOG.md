@@ -86,6 +86,9 @@ repository still gets a decision, never by following the link; no release carrie
 - build(deps): bump astral-sh/setup-uv from 6.1.0 to 9.0.0
 - build(deps): bump github/codeql-action/upload-sarif from 4.37.4 to 4.37.6
 - build(deps): bump github.com/santhosh-tekuri/jsonschema/v6 from 6.0.2 to 6.0.3
+
+### Documentation
+- :memo: docs(decisions): record D-126 (D-031 domain deferred) and D-127 (SEC-05 PAT rotation scheduled)
 ## [0.2.0] - 2026-08-09
 
 ### Chores
