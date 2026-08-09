@@ -134,6 +134,11 @@ the forge's current heads and refuses on drift. Each is a clean `0` with no merg
 Then every APPROVE degrades to `advisory-only (arming precondition unmet, no approve/merge)`
 and no approve or merge is written.
 
+**"Advisory" means no approve and no merge — not no writes.** The run still posts its summary
+comment to the merge request, and on REVIEW or BLOCK one resolvable thread as well. The only
+path that writes nothing at all is a self-modifying `.assent/**` merge request, which fails
+closed for a separate reason.
+
 **Do not use a rollout phase as a safety switch.** A pack's `spec.phase`
 ([ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md)) is a *rollout* control,
 not a kill switch, and using it as one can have the exact opposite effect. `observe` and `off`
