@@ -103,6 +103,15 @@ trim = true
 conventional_commits = false
 filter_unconventional = false
 commit_parsers = [
+  # D-136: merge commits never render. Keyed on the commit SHAPE (`merge_commit`
+  # is true iff the commit has more than one parent), not on its subject text, so
+  # it holds for git's default `Merge branch 'x'`, for the `Merge <sha> into <sha>`
+  # that actions/checkout mints on refs/pull/N/merge, and for a merge whose author
+  # wrote a conventional subject. Must stay ABOVE the `.*` catch-all below, which
+  # is load-bearing for D-125's drift gate and must not be removed. Accepted cost:
+  # a merge subject can no longer say anything the changelog will show — the
+  # merged branch's own commits still render. Proof: hack/release/changelog_gate_test.sh §7.
+  { field = "merge_commit", pattern = "true", skip = true },
   { message = "^:memo: chore\\(release\\):|^:wrench: chore\\(release\\):", skip = true },
   { message = "^:sparkles:|^feat", group = "Features" },
   { message = "^:bug:|^fix", group = "Fixes" },

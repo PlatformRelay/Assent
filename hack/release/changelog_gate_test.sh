@@ -194,11 +194,13 @@ extract_step "$WORKFLOW" verify 'changelog' >"$WORK/step.changelog"
 grep -q 'task changelog-verify' "$WORK/step.changelog" \
   || fail "the extracted step does not run task changelog-verify — extraction matched the wrong step"
 # D-125: the step is deliberately NOT run on pull_request. On that event
-# actions/checkout builds refs/pull/N/merge, a merge commit minted at CI time whose
-# subject git-cliff renders through the catch-all parser — a line that cannot exist
-# in any committed CHANGELOG.md. Without this guard every PR is red by construction.
+# actions/checkout builds refs/pull/N/merge, which also carries every commit landed
+# on main since the branch forked — the changelog generated there is a union that no
+# CHANGELOG.md committed on the branch can match. D-136 removed the synthetic merge
+# SUBJECT from that render but not the extra commits, so the guard still stands:
+# without it every PR behind main is red by construction and unfixable by the author.
 grep -qF "github.event_name != 'pull_request'" "$WORK/step.changelog" \
-  || fail "the changelog gate step has no 'github.event_name != '\''pull_request'\''' guard — on the PR merge ref the generated changelog always contains a synthetic merge subject, so the step would be red on every PR by construction (D-125)"
+  || fail "the changelog gate step has no 'github.event_name != '\''pull_request'\''' guard — the PR merge ref carries commits landed on main since the branch forked, so the generated changelog is a union no committed CHANGELOG.md can match and the step would be red on every PR behind main (D-125, premise restated by D-136)"
 echo "OK: verify: job runs task changelog-verify, guarded off pull_request (D-125)"
 
 echo "== 3b. the workflow assertion itself can fail (mutation) =="
@@ -289,6 +291,17 @@ grep -q 'pins.toolDigest' "$WORK/release-body.md" \
   || fail "the rendered GitHub Release body carries no pins.toolDigest compatibility note — the D-120 warning reaches CHANGELOG.md but NOT the Release page (drop '--strip header' from the git-cliff step in release.yaml)"
 echo "OK: rendered release body carries the D-120 compatibility note"
 
+# The Release body is the artifact section 7 exists to protect: `--latest` with no
+# `--strip header` publishes whatever git-cliff renders straight onto the Release
+# page, where it is read by people who never open CHANGELOG.md. Assert it here, in
+# the section that renders with release.yaml's OWN arguments, so the proof is about
+# the published artifact and not about a parallel invocation this script invented.
+if grep -nE '^- Merge ' "$WORK/release-body.md" >"$WORK/release-body.merges"; then
+  cat "$WORK/release-body.merges" >&2
+  fail "the rendered GitHub Release body contains merge-commit subjects — they would be published verbatim on the Release page (see section 7)"
+fi
+echo "OK: rendered release body carries no merge-commit subject"
+
 # Polarity control: re-render WITH the bug. If the note survives `--strip
 # header` too, then the grep above passes for some unrelated reason and this
 # section is not testing what it claims.
@@ -301,4 +314,158 @@ if grep -q 'pins.toolDigest' "$WORK/release-body-stripped.md"; then
 fi
 echo "OK: polarity control — re-adding '--strip header' removes the note again"
 
-echo "PASS: changelog drift gate regenerated, wired into task check + verify.yaml, and proven at both polarities (REQ-AUD-S02-01/02); release body carries the compatibility notes"
+# ---------------------- 7. merge commits never reach the changelog (D-136) --
+#
+# `cliff.toml` sets `conventional_commits = false` + `filter_unconventional =
+# false` and ends its parser list with a catch-all `{ message = ".*", group =
+# "Other" }` — load-bearing for D-125's drift gate, so it must NOT be removed.
+# The consequence is that any subject not explicitly skipped renders, merge
+# commits included: three `Merge remote-tracking branch …` lines sat in the
+# Unreleased section and three more inside `[0.1.0]`. The only defence was the
+# D-125 working rule ("prefix every merge subject with a cliff-skipped form"),
+# which depends on every integrator remembering and had already failed twice.
+#
+# D-136's structural fix is one parser entry keyed on the COMMIT SHAPE rather
+# than on its text — `{ field = "merge_commit", pattern = "true", skip = true }`
+# — so it holds whatever subject the integrator types and whatever synthetic
+# merge CI mints for `refs/pull/N/merge`.
+#
+# Both polarities, twice over:
+#   7a real history — the permanent `Merge …` ancestors of v0.1.0 are a durable
+#      anchor. Clean render: no `- Merge …` line. Mutant render (parser entry
+#      deleted, mutation proven to have landed): the lines come back, AND the
+#      two renders differ by NOTHING ELSE, so the rule cannot be quietly
+#      swallowing ordinary commits.
+#   7b a sandbox repo — proves the rule is structural, not text-shaped: git's
+#      default `Merge branch 'x'` subject, the CI `Merge <sha> into <sha>`
+#      shape, and a merge whose author wrote a perfectly conventional gitmoji
+#      subject are ALL skipped, while ordinary commits in the same repo render.
+#      That third case is D-136's accepted cost, pinned here so it is a decision
+#      and not a surprise.
+
+echo "== 7. merge commits never render into the changelog (D-136) =="
+
+MERGE_SKIP_RULE='field = "merge_commit"'
+
+"$CLIFF" --config "$ROOT/cliff.toml" -o "$WORK/clean-full.md" 2>"$WORK/clean-full.err" || {
+  cat "$WORK/clean-full.err" >&2
+  fail "git-cliff failed rendering the full changelog from cliff.toml"
+}
+[[ -s "$WORK/clean-full.md" ]] || fail "full changelog rendered EMPTY — every assertion below would be vacuous"
+grep -qE '^## \[0\.1\.0\] - 2026-08-05$' "$WORK/clean-full.md" \
+  || fail "full render carries no '## [0.1.0]' section — this is not real changelog output"
+
+if grep -nE '^- Merge ' "$WORK/clean-full.md" >"$WORK/clean-full.merges"; then
+  cat "$WORK/clean-full.merges" >&2
+  fail "the generated changelog renders merge-commit subjects — add '{ field = \"merge_commit\", pattern = \"true\", skip = true }' to cliff.toml's commit_parsers (D-136); do NOT remove the '.*' catch-all, it is load-bearing for D-125"
+fi
+echo "OK: no merge subject in the generated changelog"
+
+grep -qF "$MERGE_SKIP_RULE" "$ROOT/cliff.toml" \
+  || fail "cliff.toml has no '$MERGE_SKIP_RULE' commit parser — merge subjects are only absent because none happens to be in range, which is exactly the recurrence D-136 closes"
+
+echo "== 7a. the assertion can fail (mutation over real history) =="
+mutant_cfg="$WORK/cliff.no-merge-skip.toml"
+grep -vF "$MERGE_SKIP_RULE" "$ROOT/cliff.toml" >"$mutant_cfg"
+if grep -qF "$MERGE_SKIP_RULE" "$mutant_cfg"; then
+  fail "mutation did not land: '$MERGE_SKIP_RULE' is still in $mutant_cfg"
+fi
+if [[ "$(wc -l <"$mutant_cfg")" -eq "$(wc -l <"$ROOT/cliff.toml")" ]]; then
+  fail "mutation did not land: $mutant_cfg has the same line count as cliff.toml"
+fi
+"$CLIFF" --config "$mutant_cfg" -o "$WORK/mutant-full.md" 2>"$WORK/mutant-full.err" || {
+  cat "$WORK/mutant-full.err" >&2
+  fail "git-cliff failed rendering with the mutant config — the mutation broke the TOML instead of removing the rule"
+}
+mutant_merges="$(grep -cE '^- Merge ' "$WORK/mutant-full.md" || true)"
+[[ "$mutant_merges" -ge 1 ]] \
+  || fail "removing the merge-skip parser produced no merge subjects at all — history no longer contains the anchor commits, so the clean-render assertion above proves nothing"
+echo "OK: deleting the merge-skip parser puts $mutant_merges merge subject(s) back"
+
+# The rule must remove merge lines and NOTHING else. Every diff line is either a
+# hunk header or a deleted `- Merge …` line; anything else means the parser is
+# also swallowing ordinary commits.
+diff "$WORK/mutant-full.md" "$WORK/clean-full.md" >"$WORK/render.diff" || true
+[[ -s "$WORK/render.diff" ]] || fail "clean and mutant renders are identical — the merge-skip parser has no effect"
+if grep -vE '^([0-9]+(,[0-9]+)?[acd][0-9]+(,[0-9]+)?|< - Merge |---)' "$WORK/render.diff" >"$WORK/render.diff.extra"; then
+  cat "$WORK/render.diff.extra" >&2
+  fail "the merge-skip parser changes the render beyond deleting merge subjects — it is over-skipping ordinary commits"
+fi
+echo "OK: the parser deletes merge subjects and changes nothing else"
+
+echo "== 7b. the rule is structural: any merge commit, any subject =="
+SANDBOX="$WORK/sandbox"
+mkdir -p "$SANDBOX"
+# Fully self-contained git invocations: a global commit.gpgsign, a hooksPath, a
+# missing user identity or a non-`main` init default must not decide the result.
+sgit() {
+  git -C "$SANDBOX" \
+    -c user.name='changelog gate' -c user.email='gate@example.invalid' \
+    -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+    -c init.defaultBranch=main -c advice.detachedHead=false "$@"
+}
+git init -q "$SANDBOX" >/dev/null 2>&1 || fail "could not git init the sandbox repo"
+sgit symbolic-ref HEAD refs/heads/main
+printf 'a\n' >"$SANDBOX/a.txt"; sgit add -A; sgit commit -q -m ':sparkles: feat(sandbox): ordinary feature subject still renders'
+sgit checkout -q -b side
+printf 'b\n' >"$SANDBOX/b.txt"; sgit add -A; sgit commit -q -m ':bug: fix(sandbox): ordinary fix subject on a side branch'
+sgit checkout -q main
+printf 'c\n' >"$SANDBOX/c.txt"; sgit add -A; sgit commit -q -m ':memo: docs(sandbox): ordinary docs subject on main'
+# (i) git's own default merge subject — the shape that reached CHANGELOG.md twice.
+sgit merge -q --no-ff side -m "Merge branch 'side'"
+# (ii) the refs/pull/N/merge shape actions/checkout mints at CI time (D-125).
+sgit checkout -q -b side2
+printf 'd\n' >"$SANDBOX/d.txt"; sgit add -A; sgit commit -q -m ':wrench: chore(sandbox): ordinary chore subject on a second branch'
+sgit checkout -q main
+sha_head="$(sgit rev-parse --short HEAD)"; sha_side="$(sgit rev-parse --short side2)"
+sgit merge -q --no-ff side2 -m "Merge ${sha_side} into ${sha_head}"
+# (iii) a merge whose author wrote a real, conventional subject: skipped too.
+sgit checkout -q -b side3
+printf 'e\n' >"$SANDBOX/e.txt"; sgit add -A; sgit commit -q -m ':sparkles: feat(sandbox): ordinary feature subject on a third branch'
+sgit checkout -q main
+sgit merge -q --no-ff side3 -m ':sparkles: feat(sandbox): integrator wrote a real subject on a merge commit'
+
+"$CLIFF" --config "$ROOT/cliff.toml" --repository "$SANDBOX" -o "$WORK/sandbox.md" 2>"$WORK/sandbox.err" || {
+  cat "$WORK/sandbox.err" >&2
+  fail "git-cliff failed rendering the sandbox repository"
+}
+[[ -s "$WORK/sandbox.md" ]] || fail "sandbox render is EMPTY"
+
+# Positive control FIRST: the ordinary commits must be there, otherwise "no merge
+# line" would pass for an empty section.
+SANDBOX_ORDINARY=(
+  '- :sparkles: feat(sandbox): ordinary feature subject still renders'
+  '- :bug: fix(sandbox): ordinary fix subject on a side branch'
+  '- :memo: docs(sandbox): ordinary docs subject on main'
+  '- :wrench: chore(sandbox): ordinary chore subject on a second branch'
+  '- :sparkles: feat(sandbox): ordinary feature subject on a third branch'
+)
+for line in "${SANDBOX_ORDINARY[@]}"; do
+  grep -qxF -e "$line" "$WORK/sandbox.md" \
+    || fail "sandbox render is missing the ordinary commit '$line' — the merge-skip parser is eating non-merge commits"
+done
+echo "OK: all ${#SANDBOX_ORDINARY[@]} ordinary sandbox commits render"
+
+SANDBOX_MERGES=(
+  "- Merge branch 'side'"
+  "- Merge ${sha_side} into ${sha_head}"
+  '- :sparkles: feat(sandbox): integrator wrote a real subject on a merge commit'
+)
+for line in "${SANDBOX_MERGES[@]}"; do
+  if grep -qxF -e "$line" "$WORK/sandbox.md"; then
+    fail "sandbox render contains the merge subject '$line' — the merge-skip parser is not structural"
+  fi
+done
+echo "OK: none of the ${#SANDBOX_MERGES[@]} merge subjects render (default, CI merge-ref, and hand-written shapes)"
+
+# Sandbox polarity control: without the parser all three come back, so the three
+# negatives above are about the rule and not about a render that lost the commits.
+"$CLIFF" --config "$mutant_cfg" --repository "$SANDBOX" -o "$WORK/sandbox-mutant.md" 2>/dev/null \
+  || fail "git-cliff failed rendering the sandbox with the mutant config"
+for line in "${SANDBOX_MERGES[@]}"; do
+  grep -qxF -e "$line" "$WORK/sandbox-mutant.md" \
+    || fail "polarity control: '$line' is absent even WITHOUT the merge-skip parser — section 7b does not detect what it claims"
+done
+echo "OK: polarity control — removing the parser brings all three merge subjects back"
+
+echo "PASS: changelog drift gate regenerated, wired into task check + verify.yaml, and proven at both polarities (REQ-AUD-S02-01/02); release body carries the compatibility notes and no merge subject (D-136)"

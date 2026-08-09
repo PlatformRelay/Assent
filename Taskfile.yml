@@ -77,10 +77,13 @@ tasks:
       - task: dogfood-comparison
       - task: compare-exitgate-test
       # AUD-S02 (REQ-AUD-S02-02): CHANGELOG.md drift gate. It is the LOCAL half of the
-      # wiring — CI runs it only off pull_request (D-125), because on the PR merge ref
-      # the generated changelog always carries a synthetic merge subject. Consequence,
-      # stated plainly: a commit that changes history without regenerating CHANGELOG.md
-      # makes the NEXT `task check` red until `task changelog-write` is committed.
+      # wiring — CI runs it only off pull_request (D-125), because the PR merge ref also
+      # carries every commit landed on main since the branch forked, so the changelog
+      # generated there is a union no committed CHANGELOG.md can match (D-136 removed
+      # the synthetic merge SUBJECT from that render, not the extra commits).
+      # Consequence, stated plainly: a commit that changes history without regenerating
+      # CHANGELOG.md makes the NEXT `task check` red until `task changelog-write` is
+      # committed.
       - task: changelog-verify
       # AUD-S02: the drift gate's own guard, and the ONLY thing that reds when the
       # `- task: changelog-verify` line above is deleted. Runs after changelog-verify

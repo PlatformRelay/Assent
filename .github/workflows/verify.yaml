@@ -82,11 +82,13 @@ jobs:
       - name: PCS compare exit gate (RELSE-03 — REQ-PCS-S09)
         run: bash hack/compare/exitgate_test.sh
       # AUD-S02 (REQ-AUD-S02-02) — CHANGELOG.md drift gate, main + schedule only.
-      # NOT on pull_request (D-125): there actions/checkout builds refs/pull/N/merge, a
-      # merge commit minted at CI time whose subject ("Merge <sha> into <sha>") git-cliff
-      # renders through the catch-all commit parser. That line cannot exist in any
-      # committed CHANGELOG.md, so a PR-scoped step would be red by construction and
-      # unfixable by the author. `task check` runs this gate on every local commit.
+      # NOT on pull_request (D-125, premise restated by D-136): there actions/checkout
+      # builds refs/pull/N/merge. D-136 stopped the synthetic merge SUBJECT from
+      # rendering, but the merge ref still carries every commit landed on main since
+      # the branch forked, so the changelog generated there is a union no committed
+      # CHANGELOG.md on the branch can match — still red by construction, still
+      # unfixable by the author, since main can move again after any rebase.
+      # `task check` runs this gate on every local commit.
       - name: changelog drift gate (AUD-S02 — REQ-AUD-S02-02)
         if: github.event_name != 'pull_request'
         run: task changelog-verify
