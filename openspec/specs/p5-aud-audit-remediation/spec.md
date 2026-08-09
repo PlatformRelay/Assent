@@ -657,9 +657,15 @@ Requirements:
 **so that** the D-010 gate stops sitting at exactly 90.0% (steering, not measuring) and the
 operator's "bump coverage a bit" lands as verified behavior, not filler.
 
-**Goal**: (1) **TEST-02** — `toCEL` overflow semantics (`evaluate.go:191`): a `json.Number` that
-fits neither int64 nor float64 falls back to its string form; pin what a predicate comparing it
-does (errors → fail-safe, never a silent numeric coercion). (2) **TEST-05** —
+**Goal**: (1) **TEST-02** — `toCEL` overflow semantics: a `json.Number` that fits neither int64
+nor float64 is **refused** — it binds a CEL error value; pin what a predicate over it does
+(errors → fail-safe, never a silent coercion, and never the lexical string form). *Amended after
+**D-131** / ADR-0013 Amendment 1 landed on `main`: as specified, this arm pinned the old
+**string-fallback** contract, which the D-131 lane replaced precisely because the fallback was a
+silent demotion to text. TEST-02 was written to red if that branch ever changed, and it did; the
+requirement now pins the refusal with the same rigour (the branch really is reached, the refusal
+names the number, and non-relational operators — `type()`, `int()`, `string()`, arithmetic —
+cannot launder it).* (2) **TEST-05** —
 `reconcileClearSlot` (`internal/forge/forge.go:568-…`, 56.5%): table over its fail-closed branches
 (resolve failure, partial clear, already-clear idempotence) — each error branch both-polarity.
 (3) **TEST-06** — `repo_file` builtin (`internal/provider/builtin/repo_file.go`): path-containment
@@ -673,9 +679,10 @@ floor stays 90% per judgment call (e) unless the operator raises it).
 **Dependencies**: sequence AFTER Lane A lands S10–S12 (shared `internal/forge` test dirs). Lane E.
 
 **Acceptance criteria (G-W-T)**:
-- Given an over-range `json.Number`, when bound through `toCEL` into a comparison predicate, then
-  the evaluation errors → fail-safe (never APPROVE via string/number confusion); the string
-  fallback line's hit count is non-zero in the profile.
+- Given an over-range `json.Number`, when bound through `toCEL` into any predicate — relational,
+  equality, explicit `int()`/`string()` coercion, or arithmetic — then the evaluation errors →
+  fail-safe (never APPROVE, and never the lexical string form); the refusing branch's hit count is
+  non-zero in the profile.
 - Given each `reconcileClearSlot` error branch, when driven by a fake forge, then the fail-closed
   outcome is asserted (and the happy idempotent clear too).
 - Given traversal/absolute/escape paths and expired/undeclared maxAge, when `repo_file` answers,
@@ -689,7 +696,7 @@ production-code changes.
 **Not in scope**: TEST-04 (`cmd/assent` gate widening — fenced); raising the D-010 floor.
 
 Requirements:
-- **REQ-AUD-S13-01** *(TEST-02)* — toCEL overflow string-fallback covered incl. predicate fail-safe polarity. Test: `internal/core/aggregate/evaluate_tocel_test.go` (new); Verify: `go test ./internal/core/aggregate/... -run TestToCELOverflowFailsSafe`; Level: L0
+- **REQ-AUD-S13-01** *(TEST-02)* — toCEL overflow refusal (D-131) covered incl. predicate fail-safe polarity, the non-exponent literal, and the non-relational operators. Test: `internal/core/aggregate/evaluate_tocel_test.go` (new); Verify: `go test ./internal/core/aggregate/... -run TestToCELOverflowFailsSafe`; Level: L0
 - **REQ-AUD-S13-02** *(TEST-05)* — reconcileClearSlot branch table, error branches both-polarity. Test: `internal/forge/clearslot_test.go` (new); Verify: `go test ./internal/forge/... -run TestReconcileClearSlotBranches`; Level: L0
 - **REQ-AUD-S13-03** *(TEST-06)* — repo_file containment + expiry tables (security-adjacent). Test: `internal/provider/builtin/repo_file_test.go` (extend); Verify: `go test ./internal/provider/builtin/... -run 'TestRepoFileContainment|TestRepoFileExpiry'`; Level: L0
 - **REQ-AUD-S13-04** *(headroom)* — aggregate `./internal/...` coverage ≥ 91.0% via the D-010 recipe. Test: the coverage gate itself; Verify: `task coverage` (printed pct ≥ 91.0); Level: L1

@@ -173,6 +173,14 @@ var tmplPlaceholder = regexp.MustCompile(`\{\{[^{}]*\}\}`)
 // that does not resolve to a scalar is left LITERAL (never a panic, never a silent
 // blank) — the authoring-time in-scope check is E3's lint, not this expander's job.
 // A message with no placeholder is returned unchanged (fast path).
+//
+// One binding is neither a scalar nor a container: since D-131 toCEL binds a numeric literal
+// beyond the representable range as a CEL error VALUE, and being printable it substitutes as
+// its own refusal sentence (toCEL owns the wording) where the number would have gone.
+// Deliberate, and pinned by test: the leaf already errored, so the finding is
+// a predicate.error REVIEW either way, and the sentence at least says why the rule could not
+// decide — more than a bare `{{ old }}` left literal would. internal/render's separate
+// EvalScalar-based interpolator diverges here and rejects the error value instead.
 func expandMessage(msg string, in EvaluationInput, ch EvalChange, envLabel string) string {
 	if !strings.Contains(msg, "{{") {
 		return msg
