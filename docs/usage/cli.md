@@ -87,11 +87,48 @@ and is never a flag; without it the command exits `2` before contacting the forg
 | `-pack` | — | optional Pack path; its `spec.phase` caps every rule's phase |
 | `-checkout` | — | local checkout dir (`base/` + `head/` subtrees) used to enumerate the MR's full changed-file set. The tree must contain **no symlinks** — see *Symlinks in the checkout tree* below. When unset, the forge snapshot is the sole enumerator — see *Checkout-less runs and enumeration completeness* below |
 | `-emit` | stdout | path to write the `DecisionRecord` JSON |
-| `-arm` | off | sandbox arming override — approve and merge only when set **and** the decision is APPROVE |
+| `-arm` | off | **advisory only — it gates nothing.** Approve and merge are gated by the forge-probed arming preconditions, which [`assent doctor`](#assent-doctor) reports, not by this flag. See *What gates approve and merge* below |
 
 Exit codes: `0` the run completed and produced a valid receipt (an advisory
-REVIEW/BLOCK, or an APPROVE without `--arm`, is still a clean `0`); `1` a hard error
-during orchestration; `2` a missing flag, a missing `GITLAB_TOKEN`, or `-h`.
+REVIEW/BLOCK, or an APPROVE whose forge-probed arming preconditions are unmet, is
+still a clean `0`); `1` a hard error during orchestration; `2` a missing flag, a
+missing `GITLAB_TOKEN`, or `-h`.
+
+### What gates approve and merge
+
+**Not `--arm`.** The flag is a leftover from the walking skeleton, where it did gate the
+writes. Since the forge-probe wiring landed it has had exactly one effect: it echoes into
+the run summary's `arm=<bool>` token. Passing it, omitting it, and passing `--arm=false`
+all produce the same forge writes. Read `arm=false` in a summary as *the operator did not
+pass the flag* — never as *nothing was written*; the same line's trailing clause
+(`→ 3 forge operation(s) written`) is the one that says what happened.
+
+The real gate is the **forge-probed arming precondition**, computed from the snapshot's
+capability flags and **default-deny** — it is met only when all three hold:
+
+| Precondition | Forge dossier | Refused when |
+| --- | --- | --- |
+| CI configuration is external/protected, not author-editable in-repo | C17 | `insecure-topology` |
+| the project's *all discussions resolved* merge gate is enabled | C3 / [ADR-0009](../adr/0009-execution-modes.md) | `discussions-gate-missing` |
+| the tier exposes an enforced approval-rules API (not Free) | C6/C7 | `tier-capability-gap` |
+
+Run [`assent doctor`](#assent-doctor) to see which of the three this environment meets.
+When any is unmet the run degrades to advisory: nothing is approved or merged, the summary
+reads `advisory-only (arming precondition unmet, no approve/merge)`, and the exit code is
+still `0`. When all three are met, an `APPROVE` **approves and merges** — with or without
+`--arm`.
+
+Four further guards refuse the writes even with the precondition met: a self-modifying
+`.assent/**` merge request (BLOCK, zero writes — not even a thread); a fork/untrusted MR
+context (advisory-only, [ADR-0015](../adr/0015-trust-boundaries-merge-integrity.md) §8); a
+controlling authorization fact past its `maxAge` at arming time
+([ADR-0017](../adr/0017-contract-model-obligations.md) §4); and the pre-write SHA guard, which re-reads
+the forge's current heads and refuses on drift. Each is a clean `0` with no merge.
+
+**If you want assent to stay advisory, do not rely on omitting `--arm`.** Either leave one
+of the three preconditions unmet, or put the pack's rollout in `phase: observe`
+([ADR-0018](../adr/0018-policy-lifecycle-phase-profile-comparison.md)), which excludes its rules from the decision
+structurally.
 
 ### Symlinks in the checkout tree
 
