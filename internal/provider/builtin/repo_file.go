@@ -8,7 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -20,11 +22,43 @@ import (
 // TypeRepoFile is the Config.providers[].type string for this builtin.
 const TypeRepoFile = "builtin/repo-file"
 
+// OpenRepoRoot opens dir as a SYMLINK-SAFE root for RepoFileOpts.FS and for the
+// resource-owner registry read (D-129).
+//
+// `os.DirFS` is not a security boundary: it resolves symlinks through the host
+// filesystem, so a merge request that ships `topics/prod/quota.yaml -> /etc/x`
+// (or a directory symlink `topics/evil -> /outside`) would turn an arbitrary host
+// file into a decision fact. `(*os.Root).FS()` refuses any traversal that leaves
+// the root, at the syscall level.
+//
+// The caller MUST close the returned io.Closer when the FS is no longer read; the
+// root holds an open directory handle.
+func OpenRepoRoot(dir string) (fs.FS, io.Closer, error) {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open checkout root %s: %w", dir, err)
+	}
+	return root.FS(), root, nil
+}
+
 // RepoFileOpts configures most-specific-first resolution over a checkout or
 // fixture filesystem (REQ-E5-S07-01). Absent files yield unavailable — never
 // resolved with a nil/empty value pretending presence (REQ-E5-S07-02).
 type RepoFileOpts struct {
 	// FS is the checkout / fixture root. Required.
+	//
+	// CONTRACT (D-129): FS MUST be a symlink-safe root — `(*os.Root).FS()` via
+	// OpenRepoRoot, or an in-memory fixture FS. A bare `os.DirFS` is NOT a
+	// security boundary (Go documents this explicitly) and its `fs.Stat`
+	// follows links out of the tree, so an MR that ships
+	// `topics/prod/quota.yaml -> /etc/anything` would otherwise feed the
+	// decision engine a fact from outside the checkout.
+	//
+	// This builtin additionally refuses any candidate whose path traverses a
+	// symlink (see findMostSpecific) — defence in depth, and the only layer
+	// that can protect the declared Roots clip, which a root FS cannot see.
+	// That refusal is NOT a substitute for injecting a safe root: it can only
+	// observe what the injected FS chooses to report.
 	FS fs.FS
 	// File is the basename sought while walking up from Anchor (e.g. "quota.yaml").
 	File string
@@ -88,8 +122,17 @@ func answerRepoFile(opts RepoFileOpts, q provider.FactQuery) provider.FactRespon
 		return resp
 	}
 
-	matched, ok := findMostSpecific(opts.FS, anchor, fileName, roots)
-	if !ok {
+	matched, status := findMostSpecific(opts.FS, anchor, fileName, roots)
+	switch status {
+	case candidateSymlink:
+		// Containment refusal, not malformed input: same fail direction as
+		// "anchor outside declared roots" (unavailable). The operator's config is
+		// well-formed; the repo content is trying to leave the declared roots.
+		resp.Facts = synthesizeAll(q, provider.StateUnavailable,
+			"builtin/repo-file: refusing candidate reached through a symlink: "+matched, asOf, opts.Declarations)
+		return resp
+	case candidateFile:
+	default:
 		resp.Facts = synthesizeAll(q, provider.StateUnavailable, "builtin/repo-file: no matching file", asOf, opts.Declarations)
 		return resp
 	}
@@ -129,18 +172,93 @@ func answerRepoFile(opts RepoFileOpts, q provider.FactQuery) provider.FactRespon
 	return resp
 }
 
+// candidateStatus is the verdict on one walk-up candidate path.
+type candidateStatus int
+
+const (
+	// candidateMiss: absent, a directory, or otherwise not a usable regular file.
+	candidateMiss candidateStatus = iota
+	// candidateFile: a real regular file, reachable without traversing a symlink.
+	candidateFile
+	// candidateSymlink: the path traverses a symlink → containment refusal (D-129).
+	candidateSymlink
+)
+
 // findMostSpecific walks from the anchor directory up to the FS root, returning
 // the first existing regular file named fileName (most-specific-first).
-func findMostSpecific(fsys fs.FS, anchor, fileName string, roots []string) (string, bool) {
+//
+// D-129: a candidate reached through a symlink STOPS the walk with
+// candidateSymlink — it is never skipped over. Skipping would silently fall back
+// to a less-specific legitimate file and hide an MR trying to read outside the
+// declared roots; the fact would then look like an ordinary resolution.
+func findMostSpecific(fsys fs.FS, anchor, fileName string, roots []string) (string, candidateStatus) {
 	for _, cand := range candidates(anchor, fileName) {
 		if len(roots) > 0 && !underAnyRoot(cand, roots) {
 			continue
 		}
-		if isRegular(fsys, cand) {
-			return cand, true
+		switch classifyCandidate(fsys, cand) {
+		case candidateSymlink:
+			return cand, candidateSymlink
+		case candidateFile:
+			return cand, candidateFile
+		case candidateMiss:
 		}
 	}
-	return "", false
+	return "", candidateMiss
+}
+
+// classifyCandidate decides whether name is a usable regular file, refusing any
+// path that traverses a symlink at ANY component (D-129).
+//
+// Why every component and not just the leaf: a directory symlink
+// (`topics/evil -> /outside`) leaves the leaf looking like a plain regular file
+// to both fs.Stat and fs.Lstat on a bare os.DirFS — that is reproduction form #1.
+//
+// Why refuse in-root symlinks too: a link that never leaves the FS root can still
+// leave the declared Roots clip (`topics/prod/quota.yaml -> ../../secrets/…`). A
+// symlink-safe root cannot defend that — it does not know about Roots — so the
+// only safe rule this layer can state is "no symlinks on the candidate path".
+// One rule, no per-link reachability reasoning. No repo fixture uses symlinks.
+//
+// fs.Lstat falls back to fs.Stat for a filesystem that does not implement
+// fs.ReadLinkFS; such a filesystem cannot report links at all, which is exactly
+// why RepoFileOpts.FS must be a symlink-safe root.
+func classifyCandidate(fsys fs.FS, name string) candidateStatus {
+	for _, prefix := range pathPrefixes(name) {
+		st, err := fs.Lstat(fsys, prefix)
+		if err != nil {
+			// Absent, or refused by a symlink-safe root (an escaping traversal).
+			// Either way: not a usable candidate.
+			return candidateMiss
+		}
+		if st.Mode()&fs.ModeSymlink != 0 {
+			return candidateSymlink
+		}
+	}
+	if !isRegular(fsys, name) {
+		return candidateMiss
+	}
+	return candidateFile
+}
+
+// pathPrefixes lists every path component prefix of a slash path, outermost
+// first: "topics/prod/quota.yaml" → topics, topics/prod, topics/prod/quota.yaml.
+func pathPrefixes(name string) []string {
+	if name == "." || name == "" {
+		return nil
+	}
+	parts := strings.Split(name, "/")
+	out := make([]string, 0, len(parts))
+	acc := ""
+	for _, part := range parts {
+		if acc == "" {
+			acc = part
+		} else {
+			acc += "/" + part
+		}
+		out = append(out, acc)
+	}
+	return out
 }
 
 // candidates lists walk-up paths most-specific first.
