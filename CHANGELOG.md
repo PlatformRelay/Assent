@@ -136,6 +136,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(usage): correct the --arm safety claim in the CLI reference (D-134)
 - :memo: docs(decisions): D-134 — --arm is advisory-only, superseding D-041
 - :memo: docs: narrow the walkthrough claim in D-134 to what was measured
+- :memo: docs(usage): the REVIEW path arms no deferred auto-merge (D-135)
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
