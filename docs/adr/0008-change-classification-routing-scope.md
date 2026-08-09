@@ -73,3 +73,32 @@ engine-reserved — a vouch rule matching them is rejected at load, not merely d
 (c) environment matchers declare explicit `priority` (or must be provably non-overlapping) —
 silent order-dependence of "last match wins" is removed, and reordering the list cannot
 silently re-route prod to dev thresholds.
+
+## Amendment 2 (2026-08-09, D-133): the checkout is content under judgment
+
+§4 mandates a local checkout but says nothing about who authored it. Two fail-open defects
+in the checkout reader were argued away on the assumption that a `--checkout` tree is trusted
+operator input. It is not. With `--checkout` the local tree is the **sole** authority (D-077),
+and `head/` is the **merge-request head**: content the contributor wrote. Git stores a symlink
+as a mode-120000 blob, and `git clone` / `git worktree` / `git checkout` materialise it as a
+real, possibly dangling, POSIX symlink — so a contributor can ship one.
+
+The boundary is therefore:
+
+1. **Contained reads.** Every read of a checkout side goes through `os.OpenRoot` +
+   `(*os.Root).FS()` — the same containment idiom the provider builtins use (D-129), so the
+   codebase has one, not two.
+2. **Symlinks are refused, never followed.** A root FS blocks escapes at the syscall level but
+   still follows a *relative* link that resolves back inside the root, so the refusal is
+   explicit and covers every component of the path, not just the last. Containment is anchored
+   at `base/` and `head/`: those are operator-provisioned and may themselves be symlinks;
+   nothing beneath them may be.
+3. **Refusal is an error, and a partial enumeration is an error.** Neither may be answered as
+   "absent" or quietly skipped: absence is the EFE-S03 presence signal (`nil` = absent,
+   non-nil zero-length = present-but-empty), and a dropped path is a path the changed-file set
+   never sees — which is how a `.assent/**` edit escapes the D-042 self-vouch guard.
+
+Consequence, stated plainly: a repository that legitimately contains a symlink cannot be
+judged via `--checkout` today; the run fails closed with a named refusal and writes nothing to
+the forge. Loosening this means folding the refusal opaque (fail-safe REVIEW), never
+following the link.
