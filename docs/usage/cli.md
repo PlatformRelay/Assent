@@ -118,7 +118,7 @@ reads `advisory-only (arming precondition unmet, no approve/merge)`, and the exi
 still `0`. When all three are met, an `APPROVE` **approves and merges** — with or without
 `--arm`.
 
-Four further guards refuse the writes even with the precondition met: a self-modifying
+Further guards refuse the writes even with the precondition met: a self-modifying
 `.assent/**` merge request (BLOCK, zero writes — not even a thread); a fork/untrusted MR
 context (advisory-only, [ADR-0015](../adr/0015-trust-boundaries-merge-integrity.md) §8); a
 controlling authorization fact past its `maxAge` at arming time
