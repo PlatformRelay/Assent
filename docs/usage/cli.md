@@ -85,13 +85,52 @@ and is never a flag; without it the command exits `2` before contacting the forg
 | `-binding` | `.assent/ruleset-binding.yaml` | RulesetBinding path, loaded from the target ref |
 | `-config` | — | optional Config path; when set, provider posture is validated |
 | `-pack` | — | optional Pack path; its `spec.phase` caps every rule's phase |
-| `-checkout` | — | local checkout dir (`base/` + `head/` subtrees) used to enumerate the MR's full changed-file set; when unset, the forge snapshot is the sole enumerator (see below) |
+| `-checkout` | — | local checkout dir (`base/` + `head/` subtrees) used to enumerate the MR's full changed-file set. The tree must contain **no symlinks** — see *Symlinks in the checkout tree* below. When unset, the forge snapshot is the sole enumerator — see *Checkout-less runs and enumeration completeness* below |
 | `-emit` | stdout | path to write the `DecisionRecord` JSON |
 | `-arm` | off | sandbox arming override — approve and merge only when set **and** the decision is APPROVE |
 
 Exit codes: `0` the run completed and produced a valid receipt (an advisory
 REVIEW/BLOCK, or an APPROVE without `--arm`, is still a clean `0`); `1` a hard error
 during orchestration; `2` a missing flag, a missing `GITLAB_TOKEN`, or `-h`.
+
+### Symlinks in the checkout tree
+
+**`--checkout` cannot judge a repository that contains a symlink — any symlink, anywhere
+under `base/` or `head/`.** The restriction is not limited to symlinks the merge request adds
+or touches. A link that predates the branch, lives in a directory unrelated to the governed
+subject and to `.assent/**`, and that nobody has modified still stops the run: a plain
+`LICENSE -> LICENSES/Apache-2.0.txt` present on the **base** side is enough.
+
+The failure is loud and fail-closed — never a wrong verdict. `assent run` exits `1`, writes
+**nothing** to the forge (no thread, no approval, no merge), and prints an error on stderr
+naming the offending path, the checkout side it was found on, and the reason:
+
+```text
+assent run: enumerate changed-file set: list changed files: refusing "LICENSE" in checkout tree /tmp/co/base: reached through a symlink at "LICENSE" — the checkout is the content under judgment, so symlinks are refused, never followed
+```
+
+This is a trust boundary, not an oversight. With `--checkout` the local tree is the sole
+authority (D-077) and `head/` is the merge-request head — contributor-authored content under
+judgment — so a symlink is refused rather than followed. Following one would let a link at a
+governed path substitute an off-tree file for the document being judged, or drop a path from
+the changed-file set and hide an `.assent/**` edit from the self-edit guard. See
+[ADR-0008](../adr/0008-change-classification-routing-scope.md) Amendment 2.
+
+What to do about it:
+
+- **Run without `--checkout`.** The forge snapshot then enumerates the changed-file set and
+  none of the above applies — symlinks in the repository become irrelevant. This is the
+  supported way to evaluate a repository that legitimately contains one; the trade-off is the
+  snapshot-completeness behaviour described next.
+- **Or provision a symlink-free checkout** for `base/` and `head/`.
+
+The two side directories `base/` and `head/` may themselves be symlinks — they are
+operator-provisioned, and only what lies beneath them is contributor content.
+
+Non-regular files (FIFOs, sockets, devices) under either side are refused the same way, for
+the same reason. Loosening the symlink refusal will mean folding it into the opaque /
+fail-safe **REVIEW** path, so such a repository gets a decision someone must look at — never
+by following the link. There is no release commitment for that today.
 
 ### Checkout-less runs and enumeration completeness
 
