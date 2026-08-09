@@ -103,6 +103,19 @@ trim = true
 conventional_commits = false
 filter_unconventional = false
 commit_parsers = [
+  # D-136: merge commits never render. Keyed on the commit SHAPE (`merge_commit`
+  # is true iff the commit has more than one parent), not on its subject text, so
+  # it holds for git's default `Merge branch 'x'`, for the `Merge <sha> into <sha>`
+  # that actions/checkout mints on refs/pull/N/merge, and for a merge whose author
+  # wrote a conventional subject. Must stay ABOVE the `.*` catch-all below, which
+  # is load-bearing for D-125's drift gate and must not be removed. Accepted cost:
+  # a merge subject can no longer say anything the changelog will show — the merged
+  # branch's own commits still render, which is the ENTIRE safety argument for
+  # skipping on shape rather than on text, and is measured, not assumed:
+  # hack/release/changelog_gate_test.sh §7b renders a sandbox whose merges are all
+  # skipped and asserts all five ordinary commits from those same branches survive.
+  # §7/§7a prove the same over real history at both polarities.
+  { field = "merge_commit", pattern = "true", skip = true },
   { message = "^:memo: chore\\(release\\):|^:wrench: chore\\(release\\):", skip = true },
   { message = "^:sparkles:|^feat", group = "Features" },
   { message = "^:bug:|^fix", group = "Fixes" },
@@ -111,6 +124,28 @@ commit_parsers = [
   { message = "^:white_check_mark:|^test", group = "Testing" },
   { message = "^:lock:|^security", group = "Security" },
   { message = "^:wrench:|^:tada:|^chore|^build|^ci", group = "Chores" },
+  # REL-14 (D-137): the eight rules above key on the SHORTCODE, and this project
+  # always writes the shortcode first — so the `^fix` / `^ci` / `^docs` alternatives
+  # in them can never fire, and every subject whose shortcode is outside the eight
+  # fell through to the `.*` catch-all into "Other". A real hotfix
+  # (`:ambulance: fix(forge): ...`) shipped under Other on the Release page.
+  # These entries key on the CONVENTIONAL TYPE the author declared after the
+  # shortcode, never on the emoji's dictionary meaning: the emoji is the unreliable
+  # half (`:lipstick: fix(provider): ...` is a fix, not a UI change; `:art:` is used
+  # for both `style(...)` and `refactor(...)`). Derived from the full history, not
+  # from a guess: every unmapped-shortcode subject in this repo declares a type.
+  # `revert(...)` is deliberately NOT mapped — no group fits it, and inventing one
+  # is a changelog-structure change, not this fix; it stays in Other with one
+  # malformed `:test(release):` subject that declares no parseable type.
+  # The `# REL-14` tag is the mutation handle for changelog_gate_test.sh §8a.
+  { message = "^:test:", group = "Testing" },  # REL-14 — typo'd shortcode, no such gitmoji; all 19 uses are tests
+  { message = "^:[a-z0-9_]+: (feat)(\\(|:)", group = "Features" },  # REL-14
+  { message = "^:[a-z0-9_]+: (fix)(\\(|:)", group = "Fixes" },  # REL-14
+  { message = "^:[a-z0-9_]+: (docs|specs)(\\(|:)", group = "Documentation" },  # REL-14
+  { message = "^:[a-z0-9_]+: (refactor|style)(\\(|:)", group = "Refactoring" },  # REL-14
+  { message = "^:[a-z0-9_]+: (test)(\\(|:)", group = "Testing" },  # REL-14
+  { message = "^:[a-z0-9_]+: (security)(\\(|:)", group = "Security" },  # REL-14
+  { message = "^:[a-z0-9_]+: (chore|build|ci|perf)(\\(|:)", group = "Chores" },  # REL-14
   { message = ".*", group = "Other" },
 ]
 tag_pattern = "v[0-9]*"

@@ -22,6 +22,25 @@ warning) live in `cliff.toml`'s `[changelog] header`, not in `CHANGELOG.md`: the
 regenerated in full, so a hand-edit is wiped by the next `changelog-write` while the drift gate
 stays green.
 
+**Grouping keys on the conventional type, not the gitmoji (D-137).** The shortcode comes first in
+this project's subject format, so `cliff.toml`'s original `^fix` / `^ci` / `^docs` alternatives
+could never fire and any subject using a shortcode outside the mapped eight landed in **Other** —
+including a real `:ambulance: fix(forge): …` hotfix on the published Release page. A tier of
+`^:[a-z0-9_]+: <type>[(:]` parsers now files by the type the author declared. Practical
+consequence for authors: **your `type(scope):` decides the group; the emoji is decoration.** Two
+things stay in Other by design — `revert(…)`, which has no group, and one malformed historical
+subject. Both polarities are pinned in `hack/release/changelog_gate_test.sh` §8/§8a.
+
+**Merge commits never render (D-136).** `cliff.toml`'s parser list starts with
+`{ field = "merge_commit", pattern = "true", skip = true }`, which keys on the commit having
+more than one parent rather than on its subject text, so no merge subject reaches `CHANGELOG.md`
+or the GitHub Release body whatever the integrator types. Integrators no longer have to remember
+to prefix a merge subject — keep doing it if you like, it is now belt-and-braces. The accepted
+cost is that a merge subject cannot carry changelog content: write it on a real commit instead,
+the merged branch's own commits still render. Both polarities are pinned in
+`hack/release/changelog_gate_test.sh` §7; the `{ message = ".*", group = "Other" }` catch-all at
+the end of the parser list stays, it is load-bearing for the D-125 drift gate.
+
 **In `task check` since AUD-S02 (D-125).** `verify-changelog.sh` shipped in E9-S03 wired to
 nothing, and `CHANGELOG.md` lost its released section entirely after the v0.1.0 tag with nothing
 going red. Where it runs now:
@@ -30,13 +49,20 @@ going red. Where it runs now:
   deliberately one commit behind — `check` is green at HEAD, the next commit makes the changelog
   stale, and the following `check` is red until `task changelog-write` is committed. Prefix the
   regeneration commit `:memo: chore(release):` or `:wrench: chore(release):` (the two subjects
-  `cliff.toml` skips), or the regeneration itself creates fresh drift. Regenerate after your last
-  content commit and after any `git merge origin/main`.
+  `cliff.toml` skips), or the regeneration itself creates fresh drift — this half of the D-125
+  working rule is still load-bearing, because a regeneration commit is an ordinary commit.
+  Regenerate after your last content commit and after any `git merge origin/main`: the merge
+  changes which commits are in range even though the merge commit itself no longer renders.
 - **CI:** the `verify` job in `.github/workflows/verify.yaml`, guarded
-  `if: github.event_name != 'pull_request'` — push-to-main and the weekly schedule only. On
-  `pull_request`, `actions/checkout` builds `refs/pull/N/merge`, a merge commit minted at CI time
-  whose subject git-cliff renders through the catch-all parser; that line cannot exist in any
-  committed `CHANGELOG.md`, so a PR-scoped step is red by construction (D-125).
+  `if: github.event_name != 'pull_request'` — push-to-main and the weekly schedule only.
+  **The guard currently has no demonstrated reason.** D-125 added it because
+  `refs/pull/N/merge`'s synthetic merge subject rendered into the changelog; D-136 skips merge
+  commits, so that reason is dead, and the successor reason drafted with D-136 was measured
+  three ways and is false (the merge ref's `CHANGELOG.md` is itself three-way merged, so base
+  movement ends in a clean match or in a conflict that leaves no merge ref). It is retained
+  pending evidence, not because the PR placement is known to be wrong — see
+  [OQ-30](../../docs/planning/open-questions.md) for the measurements and the ruling needed.
+  The placement is fail-safe either way: `task check` and push-to-main both run the gate.
 - **Release paths:** PRs touching them still run the `snapshot` job in
   `.github/workflows/release.yaml` (goreleaser `--snapshot --skip=publish`).
 
