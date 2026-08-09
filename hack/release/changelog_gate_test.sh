@@ -398,13 +398,30 @@ SANDBOX="$WORK/sandbox"
 mkdir -p "$SANDBOX"
 # Fully self-contained git invocations: a global commit.gpgsign, a hooksPath, a
 # missing user identity or a non-`main` init default must not decide the result.
+# The `env -u` prefix is not decoration: `-c` overrides CONFIG, but GIT_DIR /
+# GIT_WORK_TREE / GIT_INDEX_FILE / GIT_OBJECT_DIRECTORY come from the ENVIRONMENT
+# and beat `-C`. `task check` can be reached from a git hook or a CI wrapper that
+# exports them, and there this sandbox would silently operate on the REAL
+# repository — turning section 7b from a proof into a repo-corrupting no-op.
 sgit() {
-  git -C "$SANDBOX" \
+  env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
+    -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
+    git -C "$SANDBOX" \
     -c user.name='changelog gate' -c user.email='gate@example.invalid' \
     -c commit.gpgsign=false -c core.hooksPath=/dev/null \
     -c init.defaultBranch=main -c advice.detachedHead=false "$@"
 }
-git init -q "$SANDBOX" >/dev/null 2>&1 || fail "could not git init the sandbox repo"
+env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
+  -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
+  git init -q "$SANDBOX" >/dev/null 2>&1 || fail "could not git init the sandbox repo"
+# The sandbox must be its OWN repository, never the one under test.
+[[ -d "$SANDBOX/.git" ]] || fail "sandbox has no .git — git init landed somewhere else (a GIT_DIR in the environment?)"
+# Compare physical paths: on macOS $TMPDIR is under /var, a symlink to /private/var,
+# and `rev-parse --show-toplevel` reports the resolved form.
+sandbox_expected="$(cd "$SANDBOX" && pwd -P)"
+sandbox_root="$(cd "$(sgit rev-parse --show-toplevel)" && pwd -P)"
+[[ "$sandbox_root" == "$sandbox_expected" ]] \
+  || fail "sandbox git commands resolve to '$sandbox_root', not '$sandbox_expected' — the environment is redirecting them at another repository"
 sgit symbolic-ref HEAD refs/heads/main
 printf 'a\n' >"$SANDBOX/a.txt"; sgit add -A; sgit commit -q -m ':sparkles: feat(sandbox): ordinary feature subject still renders'
 sgit checkout -q -b side
