@@ -71,6 +71,37 @@ Adoption prerequisite (per ADR-0015 §4): the repo's forge settings must enable 
 all-threads-resolved merge gate; `assent doctor` verifies this and the protected-pipeline
 topology before the tool arms any auto-merge.
 
+> **Implementation status (2026-08-09, [D-135](../decisions/decisions.md)) — point 1's
+> deferred forge auto-merge is NOT implemented.** This note records a fact about the code.
+> It is not a change to the decision above: the amendment's normative text is untouched and
+> the decision remains open.
+>
+> As shipped, a `challenge` finding — like any REVIEW or BLOCK — posts the resolvable thread
+> and the run's summary comment, then stops. Nothing is approved, nothing is armed with the
+> forge for later, and resolving the thread merges nothing. Verified against the code:
+> `buildDesired`'s REVIEW/BLOCK branch returns a zero-valued `forge.Preconditions{}` (no
+> `Approve`, no `Merge`, no `ArmEligible`); the `forge.Forge` port has **no deferred-merge
+> verb at all** — `Approve` and `MergeCAS` are its only write verbs, and `MergeCAS` issues an
+> immediate SHA-pinned `PUT .../merge?sha=`; and `Thread.Resolved` is read only by assent's
+> own thread-idempotence logic, never by the decision engine, so thread resolution is not
+> evidence. Measured end-to-end: a REVIEW run, followed by resolving every thread and running
+> again, leaves the decision REVIEW with zero approvals and zero merges. An MR merges only on
+> a later run that reaches APPROVE on its own inputs, and **assent**, not the forge, performs
+> that merge.
+>
+> Consequently point 1's "the forge, not assent, enforces resolution" mechanism, and point 2's
+> compensating "any new push cancels the armed merge", describe a design with no counterpart
+> in the tool today.
+>
+> **Two honest resolutions are open and this note picks NEITHER** — choosing is an
+> architecture decision for the operator, tracked as an open item in
+> [D-135](../decisions/decisions.md): **(a)** build the deferred arming this amendment
+> specifies (GitLab C11 — `PUT .../merge` with `auto_merge=true` combined with `sha=`, per the
+> forge dossier), or **(b)** retract the amendment and re-derive the challenge-resolution
+> story around the immediate-merge behaviour that exists. Until one is chosen,
+> [the walkthrough](../usage/walkthrough.md) Step 6 is the accurate description of shipped
+> behaviour.
+
 ## Amendment 2 (2026-07-21, second review P2-12): scan honesty
 
 `scan` also records each historical MR's **actual outcome** (merged / closed / reverted) and
