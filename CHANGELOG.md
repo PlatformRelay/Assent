@@ -142,6 +142,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(decisions): correct D-133's falsifiability claim, and record the doc carriers
 - :memo: docs(release): add compatibility notes for D-133 symlinks and D-131 ordering
 - :memo: docs(aud-s13): re-measure D-128 against the current denominator and de-contradict its headline
+- :memo: docs(aud-s18): flip OQ-28 to CLOSED in the post-audit blocker record
 
 ### Features
 - :sparkles: feat(cli): dispatch-table help listing the real subcommands (REQ-AUD-S05-01)
@@ -231,6 +232,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(aud-s13): realign TEST-02 with the D-131 refusal contract
 - :white_check_mark: test(checkout): make every containment guard falsifiable
 - :white_check_mark: test(checkout): unmask the two collectFS guards and pin the Lstat side check
+- :white_check_mark: test(aud-s18): close four disarm/vacuity vectors in the exit gate itself
 ## [0.1.0] - 2026-08-05
 
 ### Chores
