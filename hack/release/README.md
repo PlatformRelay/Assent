@@ -22,6 +22,15 @@ warning) live in `cliff.toml`'s `[changelog] header`, not in `CHANGELOG.md`: the
 regenerated in full, so a hand-edit is wiped by the next `changelog-write` while the drift gate
 stays green.
 
+**Grouping keys on the conventional type, not the gitmoji (D-137).** The shortcode comes first in
+this project's subject format, so `cliff.toml`'s original `^fix` / `^ci` / `^docs` alternatives
+could never fire and any subject using a shortcode outside the mapped eight landed in **Other** —
+including a real `:ambulance: fix(forge): …` hotfix on the published Release page. A tier of
+`^:[a-z0-9_]+: <type>[(:]` parsers now files by the type the author declared. Practical
+consequence for authors: **your `type(scope):` decides the group; the emoji is decoration.** Two
+things stay in Other by design — `revert(…)`, which has no group, and one malformed historical
+subject. Both polarities are pinned in `hack/release/changelog_gate_test.sh` §8/§8a.
+
 **Merge commits never render (D-136).** `cliff.toml`'s parser list starts with
 `{ field = "merge_commit", pattern = "true", skip = true }`, which keys on the commit having
 more than one parent rather than on its subject text, so no merge subject reaches `CHANGELOG.md`

@@ -383,16 +383,28 @@ mutant_merges="$(grep -cE '^- Merge ' "$WORK/mutant-full.md" || true)"
   || fail "removing the merge-skip parser produced no merge subjects at all — history no longer contains the anchor commits, so the clean-render assertion above proves nothing"
 echo "OK: deleting the merge-skip parser puts $mutant_merges merge subject(s) back"
 
-# The rule must remove merge lines and NOTHING else. Every diff line is either a
-# hunk header or a deleted `- Merge …` line; anything else means the parser is
-# also swallowing ordinary commits.
-diff "$WORK/mutant-full.md" "$WORK/clean-full.md" >"$WORK/render.diff" || true
-[[ -s "$WORK/render.diff" ]] || fail "clean and mutant renders are identical — the merge-skip parser has no effect"
-if grep -vE '^([0-9]+(,[0-9]+)?[acd][0-9]+(,[0-9]+)?|< - Merge |---)' "$WORK/render.diff" >"$WORK/render.diff.extra"; then
-  cat "$WORK/render.diff.extra" >&2
-  fail "the merge-skip parser changes the render beyond deleting merge subjects — it is over-skipping ordinary commits"
+# The rule must remove merge subjects and NOTHING else. Stated over the MULTISET
+# of rendered bullets, not as a line diff: a raw diff also shows structural churn
+# that is a consequence, not a side effect — when a group's last member was a
+# merge line the whole `### Other` heading disappears with it, and re-grouping
+# (REL-14) moves bullets between sections. The honest claim is: no bullet appears
+# that was not there before, and the only bullets that disappear are merge
+# subjects.
+grep -E '^- ' "$WORK/clean-full.md" | sort >"$WORK/clean.bullets"
+grep -E '^- ' "$WORK/mutant-full.md" | sort >"$WORK/mutant.bullets"
+[[ -s "$WORK/clean.bullets" ]] || fail "clean render has no bullets at all — the comparison below would be vacuous"
+comm -13 "$WORK/clean.bullets" "$WORK/mutant.bullets" >"$WORK/only-in-mutant"
+comm -23 "$WORK/clean.bullets" "$WORK/mutant.bullets" >"$WORK/only-in-clean"
+[[ -s "$WORK/only-in-mutant" ]] || fail "clean and mutant renders carry the same bullets — the merge-skip parser has no effect"
+if [[ -s "$WORK/only-in-clean" ]]; then
+  cat "$WORK/only-in-clean" >&2
+  fail "the merge-skip parser makes bullets APPEAR that the mutant render does not have — it cannot add content, so the comparison is wrong"
 fi
-echo "OK: the parser deletes merge subjects and changes nothing else"
+if grep -vE '^- Merge ' "$WORK/only-in-mutant" >"$WORK/only-in-mutant.extra"; then
+  cat "$WORK/only-in-mutant.extra" >&2
+  fail "the merge-skip parser removes bullets that are not merge subjects — it is over-skipping ordinary commits"
+fi
+echo "OK: multiset-identical apart from $(wc -l <"$WORK/only-in-mutant" | tr -d ' ') merge subject(s), which only the mutant renders"
 
 echo "== 7b. the rule is structural: any merge commit, any subject =="
 SANDBOX="$WORK/sandbox"
@@ -486,4 +498,92 @@ for line in "${SANDBOX_MERGES[@]}"; do
 done
 echo "OK: polarity control — removing the parser brings all three merge subjects back"
 
-echo "PASS: changelog drift gate regenerated, wired into task check + verify.yaml, and proven at both polarities (REQ-AUD-S02-01/02); release body carries the compatibility notes and no merge subject (D-136)"
+# ------------- 8. gitmoji subjects reach their real group, not Other (REL-14) --
+#
+# `cliff.toml`'s original parser list matched eight gitmoji shortcodes and, as a
+# fallback, conventional types at the START of the subject (`^fix`, `^ci`, ...).
+# In this project the shortcode always comes FIRST, so those `^type` alternatives
+# could never fire: every subject whose shortcode was outside the eight fell
+# through the `.*` catch-all into "Other". The published v0.2.0 Release body
+# therefore filed a real user-facing fix — `:ambulance: fix(forge): skip
+# malformed bot markers ...` — under Other, alongside 18 `ci(...)` commits.
+#
+# D-137's fix maps on the CONVENTIONAL TYPE the author declared after the
+# shortcode, not on the emoji's dictionary meaning, because the emoji is the
+# unreliable half: `:lipstick: fix(provider): ...` is a fix, not a UI change, and
+# `:art:` is used for both `style(...)` and `refactor(...)`. Two things stay in
+# Other on purpose — `revert(...)`, which has no group to go to, and one
+# malformed `:test(release):` subject that declares no parseable type.
+#
+# Polarities: the `:ambulance:` fix must render under Fixes, and stripping the
+# new parser entries must put it back under Other. The second assertion is
+# structural rather than a snapshot, so it keeps holding as history grows: NO
+# line in Other may declare a type this repo knows how to file.
+
+echo "== 8. gitmoji subjects reach their real group, not Other (REL-14 / D-137) =="
+
+# group_lines <rendered changelog> -> "GROUP<TAB>- subject" per rendered bullet.
+group_lines() {
+  awk '
+    /^### / { grp = substr($0, 5); next }
+    /^## /  { grp = "" }
+    /^- / && grp != "" { print grp "\t" $0 }
+  ' "$1"
+}
+
+# The anchor: a real fix an adopter would look for under Fixes.
+AMBULANCE='- :ambulance: fix(forge): skip malformed bot markers with a warning instead of bricking reconcile (AUD-S12, REL-06)'
+# Types this repo files somewhere. `revert` is deliberately absent: no group
+# fits it, and inventing one is a changelog-structure change, not this fix.
+FILEABLE_TYPES='feat|fix|docs|specs|refactor|style|test|chore|build|ci|perf|security'
+
+group_lines "$WORK/clean-full.md" >"$WORK/clean.groups"
+[[ -s "$WORK/clean.groups" ]] || fail "group extraction produced no lines — section 8's assertions would all be vacuous"
+distinct_groups="$(cut -f1 "$WORK/clean.groups" | sort -u | wc -l | tr -d ' ')"
+[[ "$distinct_groups" -ge 5 ]] \
+  || fail "group extraction found only $distinct_groups distinct group(s) — the awk range is broken"
+anchor_hits="$(grep -cF -e "$AMBULANCE" "$WORK/clean.groups" || true)"
+[[ "$anchor_hits" -ge 1 ]] \
+  || fail "the REL-14 anchor commit is not in the rendered changelog at all — section 8 is testing nothing (subject: $AMBULANCE)"
+echo "OK: $distinct_groups groups extracted, anchor present $anchor_hits time(s)"
+
+anchor_group="$(grep -F -e "$AMBULANCE" "$WORK/clean.groups" | head -1 | cut -f1)"
+[[ "$anchor_group" == "Fixes" ]] \
+  || fail "the ':ambulance: fix(forge): ...' hotfix renders under '$anchor_group', not 'Fixes' — a user-facing fix is mis-filed on the published Release page (REL-14)"
+echo "OK: the :ambulance: hotfix renders under Fixes"
+
+awk -F'\t' '$1 == "Other" { print $2 }' "$WORK/clean.groups" >"$WORK/clean.other"
+if grep -nE "^- :[a-z0-9_]+: ($FILEABLE_TYPES)[(:]" "$WORK/clean.other" >"$WORK/clean.other.mappable"; then
+  cat "$WORK/clean.other.mappable" >&2
+  fail "the lines above declare a conventional type this repo files, yet render under Other — extend cliff.toml's type-keyed parsers (REL-14)"
+fi
+echo "OK: nothing in Other declares a fileable type ($(wc -l <"$WORK/clean.other" | tr -d ' ') line(s) remain in Other by design: revert + one malformed subject)"
+
+echo "== 8a. the grouping assertions can fail (mutation) =="
+mutant_cfg2="$WORK/cliff.no-type-parsers.toml"
+grep -v '# REL-14' "$ROOT/cliff.toml" >"$mutant_cfg2"
+if grep -q '# REL-14' "$mutant_cfg2"; then
+  fail "mutation did not land: '# REL-14' entries are still in $mutant_cfg2"
+fi
+removed=$(( $(wc -l <"$ROOT/cliff.toml") - $(wc -l <"$mutant_cfg2") ))
+[[ "$removed" -ge 2 ]] \
+  || fail "mutation did not land: only $removed line(s) removed from cliff.toml — the REL-14 parsers are not tagged '# REL-14'"
+"$CLIFF" --config "$mutant_cfg2" -o "$WORK/mutant-groups.md" 2>"$WORK/mutant-groups.err" || {
+  cat "$WORK/mutant-groups.err" >&2
+  fail "git-cliff failed with the type-parser mutation — the mutation broke the TOML instead of removing the entries"
+}
+group_lines "$WORK/mutant-groups.md" >"$WORK/mutant.groups"
+mutant_anchor_group="$(grep -F -e "$AMBULANCE" "$WORK/mutant.groups" | head -1 | cut -f1)"
+[[ "$mutant_anchor_group" == "Other" ]] \
+  || fail "removing the $removed REL-14 parser entries leaves the hotfix under '$mutant_anchor_group' — section 8 does not detect the regression it exists to catch"
+echo "OK: removing the $removed REL-14 parser entries puts the hotfix back under Other"
+
+# The parsers must only RE-FILE lines, never add or drop one.
+cut -f2 "$WORK/clean.groups" | sort >"$WORK/clean.subjects"
+cut -f2 "$WORK/mutant.groups" | sort >"$WORK/mutant.subjects"
+if ! cmp -s "$WORK/clean.subjects" "$WORK/mutant.subjects"; then
+  fail "the REL-14 parsers change WHICH subjects render, not just where they are filed — they must only re-group"
+fi
+echo "OK: identical subject multiset before and after grouping — the parsers only re-file"
+
+echo "PASS: changelog drift gate regenerated, wired into task check + verify.yaml, and proven at both polarities (REQ-AUD-S02-01/02); release body carries the compatibility notes and no merge subject (D-136); every fileable subject reaches its real group (REL-14 / D-137)"
