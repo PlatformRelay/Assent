@@ -131,33 +131,103 @@ func TestRealDiffNumericShrinkBlocks(t *testing.T) {
 	assertHasFinding(t, res.Findings, aggregate.EffectBlock, "partition-count-shrunk")
 }
 
-// TestStringOldNewFailsOpen is the MUTATION proof that the decoder is load-bearing.
-// With the SAME rule but Old/New left as the RAW canonical strings "12"/"6" (the
-// un-decoded shape), `new >= old` is a LEXICAL compare and "6" >= "12" is TRUE — the
-// obligation "proves", nothing fires, and the shrink APPROVEs. That is exactly the
-// forbidden outcome decodeCanonical closes; if this ever stops APPROVing, the engine
-// changed and the gate above no longer demonstrates the decoder matters.
-func TestStringOldNewFailsOpen(t *testing.T) {
-	in := aggregate.EvaluationInput{
-		ChangeSet: aggregate.ChangeSet{Changes: []aggregate.EvalChange{{
-			Subject: "file:topics/prod/orders-events.yaml",
-			File:    "topics/prod/orders-events.yaml",
-			Path:    "/partitions",
-			Kind:    "modify",
-			Old:     "12", // RAW canonical string (the fail-open shape the decoder replaces)
-			New:     "6",
-		}}},
-		Facts:   map[string]map[string]aggregate.Fact{},
-		Require: []string{"non-destructive"},
+// TestUndecodedStringOldNewFailsSafe is the MUTATION proof that the decoder is
+// load-bearing — rewritten for D-131. It used to assert that the un-decoded shape
+// APPROVEs a shrink (documenting the lexical fail-open as the thing the decoder
+// closes). That fail-open is now closed a SECOND time, at the engine seam: a
+// relational compare over two string-bound operands errors instead of answering
+// lexically. So the mutation no longer flips the decision to APPROVE — it degrades
+// it to the fail-safe REVIEW.
+//
+// The proof stays DISCRIMINATING by asserting the pair, not merely "not APPROVE":
+// decoded (json.Number) -> BLOCK + partition-count-shrunk (the policy's real
+// answer); un-decoded (raw canonical strings) -> REVIEW + predicate.error. Delete
+// the decoder and the first arm fails; delete the engine guard and the second arm
+// goes back to APPROVE. Neither layer can rot silently.
+func TestUndecodedStringOldNewFailsSafe(t *testing.T) {
+	mkInput := func(oldVal, newVal any) aggregate.EvaluationInput {
+		return aggregate.EvaluationInput{
+			ChangeSet: aggregate.ChangeSet{Changes: []aggregate.EvalChange{{
+				Subject: "file:topics/prod/orders-events.yaml",
+				File:    "topics/prod/orders-events.yaml",
+				Path:    "/partitions",
+				Kind:    "modify",
+				Old:     oldVal,
+				New:     newVal,
+			}}},
+			Facts:   map[string]map[string]aggregate.Fact{},
+			Require: []string{"non-destructive"},
+		}
 	}
+	mp, bind := shrinkPolicy()
+
+	decoded := mkInput(json.Number("12"), json.Number("6"))
+	resDecoded, err := aggregate.CoverWithApproval(mp, bind, &decoded, nil)
+	if err != nil {
+		t.Fatalf("CoverWithApproval (decoded): %v", err)
+	}
+	if resDecoded.Decision != aggregate.DecisionBlock {
+		t.Fatalf("decoded decision = %q, want BLOCK — the typed numeric compare 6 >= 12 is false", resDecoded.Decision)
+	}
+	assertHasFinding(t, resDecoded.Findings, aggregate.EffectBlock, "partition-count-shrunk")
+
+	undecoded := mkInput("12", "6") // RAW canonical strings: the un-decoded shape
+	resStr, err := aggregate.CoverWithApproval(mp, bind, &undecoded, nil)
+	if err != nil {
+		t.Fatalf("CoverWithApproval (un-decoded): %v", err)
+	}
+	if resStr.Decision == aggregate.DecisionApprove {
+		t.Fatalf("un-decoded decision = APPROVE — the lexical fail-open (\"6\" >= \"12\" is true) is OPEN again")
+	}
+	if resStr.Decision != aggregate.DecisionReview {
+		t.Fatalf("un-decoded decision = %q, want REVIEW (the relational-over-text guard fails safe)", resStr.Decision)
+	}
+	assertHasFinding(t, resStr.Findings, aggregate.EffectRequireReview, "predicate.error")
+}
+
+// TestQuotedNumericShrinkFailsSafeEndToEnd is the REACHABLE half of D-131, driven
+// through the whole production chain (change.Diff -> DecodeCanonical -> Cover) on
+// a real base/head YAML pair whose `partitions` is QUOTED — routine in adopter
+// YAML. The decoder keeps a !!str a Go string BY DESIGN (a quoted "12" is not the
+// number 12), so before the fix the D-016 rule's bare `new >= old` became the
+// lexical "6" >= "12" = TRUE: `non-destructive` "proved", nothing fired, and a
+// partition shrink came out APPROVE with zero findings. The compare must error.
+func TestQuotedNumericShrinkFailsSafeEndToEnd(t *testing.T) {
+	path := "topics/prod/orders-events.yaml"
+	base := readFixture(t, "shrink-diff-quoted", "base", path)
+	head := readFixture(t, "shrink-diff-quoted", "head", path)
+
+	cs, err := change.Diff(path, base, head)
+	if err != nil {
+		t.Fatalf("change.Diff: %v", err)
+	}
+	if len(cs.Changes) != 1 {
+		t.Fatalf("changes = %d (%+v), want exactly 1 (/partitions modify)", len(cs.Changes), cs.Changes)
+	}
+	// The differ's canonical render JSON-QUOTES a !!str, discriminating it from the
+	// !!int literal — that tag discrimination is what makes the value a Go string.
+	if c := cs.Changes[0]; c.Path != "/partitions" || c.Old != `"12"` || c.New != `"6"` {
+		t.Fatalf("change = %+v, want /partitions old=%q new=%q (JSON-quoted !!str render)", c, `"12"`, `"6"`)
+	}
+
+	in := evaldecode.BuildEvaluationInput(cs, aggregate.MR{}, []string{"non-destructive"})
+	got := in.ChangeSet.Changes[0]
+	if got.Old != "12" || got.New != "6" {
+		t.Fatalf("decoded old/new = %#v/%#v, want the bare Go strings \"12\"/\"6\" (a !!str stays a string)", got.Old, got.New)
+	}
+
 	mp, bind := shrinkPolicy()
 	res, err := aggregate.CoverWithApproval(mp, bind, &in, nil)
 	if err != nil {
 		t.Fatalf("CoverWithApproval: %v", err)
 	}
-	if res.Decision != aggregate.DecisionApprove {
-		t.Fatalf("decision = %q, want APPROVE — this test DOCUMENTS the lexical fail-open (\"6\" >= \"12\" is true) that decodeCanonical closes; a non-APPROVE here means the mutation proof is stale", res.Decision)
+	if res.Decision == aggregate.DecisionApprove {
+		t.Fatalf("decision = APPROVE with findings %+v — a quoted-numeric partition shrink 12->6 reached APPROVE through the real differ", res.Findings)
 	}
+	if res.Decision != aggregate.DecisionReview {
+		t.Fatalf("decision = %q, want REVIEW (predicate error over text operands)", res.Decision)
+	}
+	assertHasFinding(t, res.Findings, aggregate.EffectRequireReview, "predicate.error")
 }
 
 // TestCapitalizedBoolDecodesAsBool is the F1 proof: a !!bool field rendered
@@ -232,9 +302,14 @@ func TestSubjectOf(t *testing.T) {
 
 func readShrinkFixture(t *testing.T, side, path string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", "shrink-diff", side, filepath.FromSlash(path))) //nolint:gosec // fixed test fixture path, not user input.
+	return readFixture(t, "shrink-diff", side, path)
+}
+
+func readFixture(t *testing.T, dir, side, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", dir, side, filepath.FromSlash(path))) //nolint:gosec // fixed test fixture path, not user input.
 	if err != nil {
-		t.Fatalf("read %s fixture %s: %v", side, path, err)
+		t.Fatalf("read %s/%s fixture %s: %v", dir, side, path, err)
 	}
 	return b
 }
