@@ -100,6 +100,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(openspec): close H1/H2 — the FileAtRef enumeration was not exhaustive
 - :memo: docs(openspec): make the cmd/assent port boundary an enforced invariant (I1-I3)
 - :memo: docs(openspec): fix 4 P1 design defects found by independent review of PR #47
+- :memo: docs(openspec): close F7/F8/F10/F11/F17/F18 from the PR #47 re-review
 
 ### Testing
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token
