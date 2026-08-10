@@ -247,9 +247,21 @@ Both repos demonstrate the ladder, each rung runnable:
 | Layer | Mechanism | Network? | Tier |
 | --- | --- | --- | --- |
 | **L0** | `.assent/tests/**/facts.yaml` fixtures | none | 1 — works for every reader |
-| **L1** | `builtin/repo-file` + `builtin/resource-owner` — ownership from files in the repo | none | 1 and 2 — the repos' default |
+| **L1** | `builtin/repo-file` + `builtin/resource-owner` — ownership from files in the repo | none | **2 only** — see the fence note below |
 | **L2** | `builtin/forge-groups` — the author's forge group membership | forge only | 2 (GitLab now, GitHub with E10) |
 | **L3** | `type: http` → **your** IdP broker | broker only | 2, adopter-supplied |
+
+🔴 **L1 does NOT run at tier 1, and the README must not imply it does.** `assent test` is
+**fenced from the live provider host by a guard test**: `cmd/assent/test_provider_fence_test.go:69-80`
+fails the build if `test.go` imports `internal/provider` or contains `ResolveFacts(`,
+`ResolveFactsChecked(`, `CallHTTP(`, `CallExec(` or `resolveRunFacts(` — *"assent test must stay
+on facts.yaml stubs (ADR-0014)"*. Tier-1 facts come **solely** from `adoptertest.MapFacts`
+(`internal/adoptertest/adoptertest.go:109-119`). So at tier 1 a reader sees ownership resolve
+from a **fixture literal**, not from repo files. This is deliberate existing design, not a
+defect — but claiming L1 at tier 1 would make the demo's load-bearing claim false, which for a
+demo whose whole premise is *"everybody can see assent in action themselves"* is the worst
+possible place to over-claim. Any README sentence implying live provider resolution at tier 1 is
+a story failure.
 
 L3 ships a runnable reference: `contrib/providers/idp-groups/` — one small Go binary, two
 adapter shapes (**Entra ID** `transitiveMemberOf`, **Keycloak** `users/<id>/groups`), both
@@ -369,10 +381,37 @@ binding selected by the changed file's class and environment, **so that** a mult
 evaluates at all instead of failing closed.
 
 **Do this first.** Every assembly story (S07, S11) and the environment-split demonstration
-(S09-03) are blocked on it. It is wiring, not new contract: `policy.Config` already carries
+(S09-03) are blocked on it. The *matcher* is cheap — `policy.Config` already carries
 `Environments []NamedMatch` and `Classes []NamedMatch` with `Match PathMatch`
-(`internal/core/policy/policy.go:196-228`), populated in every shipped example pack. **Nothing
-is parsed-and-discarded — the data already reaches these call sites.**
+(`internal/core/policy/policy.go:196-228`), populated in every shipped example pack, and
+`internal/glob.Match` (used by `internal/core/classify/matcher.go:31`) already implements
+`*`/`**`. So `internal/core` can stay byte-unchanged.
+
+**🔴 But the earlier claim that "the data already reaches these call sites" was FALSE, and the
+correction changes this story's size.** Found by the independent review of PR #47 and verified
+against the tree. It is **not** pure wiring, and an implementer told otherwise will get stuck:
+
+- **`assent run`: Config is loaded *after* the binding is selected, and only sometimes.**
+  `selectBinding(rb)` is `run.go:219`; the Config load is step 2b at `run.go:224-237` and is
+  guarded by `if cfg.config != ""` — `--config` is **optional**. So at the moment routing must
+  happen, `conf` does not exist. S00 must move the load ahead of selection **and decide
+  explicitly what happens when `--config` is absent** — a repo with a multi-binding document
+  and no Config has no routing input, and that case must **fail closed**, never silently
+  fall back to a collapse or to binding zero. That decision is part of this story.
+- **`assent test` never loads a Config at all.** `test.go:67` calls `catalogue.LoadFromDir`,
+  and `internal/catalogue/catalogue.go:124-127` says so in its own words: *"Config is not among
+  the D-017 B10 field derivations … so Config is deliberately absent; a later story that needs
+  config-derived fields adds it then."* `Input` is `{Packs, Bindings}`. **S00 is that later
+  story.** Extending `catalogue.Input` to carry Config is a deliberate **E6 contract change**,
+  not wiring — it must be called that, reviewed as that, and it is why this story is
+  `engine-grade · maintainer LGTM`.
+- **`Config.Classes` has zero production readers today** (`grep '\.Classes'` finds only
+  `Spec.Classes` on profiles, plus tests). It is *precisely* parsed-and-discarded — the opposite
+  of the original claim.
+
+**Why this matters more than a wording fix:** tier 1 (`assent test`) is the epic's *primary*
+deliverable — the "everybody can see it" claim. An implementer who wires only `run.go` leaves
+tier 1 failing closed for both demo repos while the story reads done.
 
 **REQ-DEM-S00-01** — A changed file's `(class, environment)` is resolved from
 `Config.classes[].match.paths` and `Config.environments[].match.paths`, and the covering
@@ -395,7 +434,9 @@ amended to record the supersession.
 
 **REQ-DEM-S00-05** — `classify`'s reserved classes (`unclassified`, `assent-policy`) are handled
 explicitly by the matcher: `assent-policy` keeps GUARD-1 dominance, and `unclassified` must not
-resolve to a vouch-carrying binding (ADR-0008 §27). **This is the same seam DEM-S10 probes** —
+resolve to a vouch-carrying binding (ADR-0008 §1's classification stage plus the
+2026-07-21 fail-safe-by-construction amendment, enforced by `classify.ValidateRouting` /
+`ErrReservedClassRouting` at `internal/core/classify/classify.go:127-145`). **This is the same seam DEM-S10 probes** —
 the two stories must agree, and S10 is written against whatever S00 establishes.
 
 **REQ-DEM-S00-06** — `internal/core` byte-unchanged and `git diff schemas/` == 0, the DoD the
@@ -532,9 +573,19 @@ prod `*`-pattern resource is blocked.
 **REQ-DEM-S05-03** — **Tier-1 ceiling record.** For each rule, record whether it is
 CEL-expressible under ADR-0013 and, where it is not, the concrete shape that defeats it. The
 record is written into this spec directory and is a **named input to E11-S01** (D-141).
-**REQ-DEM-S05-04** — A referenced topic that is *deleted in the same changeset* the ACL
-references it must not evaluate as present. Pinned as a test — the ChangeSet, not the base
-tree, is the authority.
+**REQ-DEM-S05-04** — 🔴 **RESCOPED TO TIER 2 — as originally written this was unbuildable.**
+The intent stands: a referenced topic *deleted in the same changeset* the ACL references must
+not evaluate as present. But **the evaluation unit is one file**: `assent run` takes exactly one
+`--subject file:<path>` (`cmd/assent/run.go:266`) and diffs that file alone (`:289`); the
+changed-file fold (`:316-336`) propagates only `classify.ClassAssentPolicy` and opacity, and
+`adoptertest.Case` is singular (`File string; Base, Head []byte`,
+`internal/adoptertest/adoptertest.go:150-160`). No single evaluation can contain both files, and
+there is no cross-subject aggregation at the run seam. **The escape hatch is real but tier-2
+only:** `builtin/repo-file` reads the *merged-result checkout* (ADR-0008 §4,
+`OpenRepoRoot` in `internal/provider/builtin/repo_file.go`), so same-MR presence **is**
+resolvable — under `--checkout`, i.e. DEM-S14 `[infra-gated · operator]`. **Anti-tautology
+clause:** satisfying this with a hand-authored `facts.yaml` value asserting the topic is absent
+proves nothing and does **not** close the REQ.
 
 **Given** an MR adding an ACL for a topic owned by another team, **when** assent evaluates,
 **then** BLOCK with a finding naming the owning team.
@@ -549,7 +600,13 @@ repo within the allow-listed org; `syncPolicy.automated.prune: true` on a prod A
 REVIEW; removing an Application in prod → no-destruction BLOCK.
 **REQ-DEM-S06-02** — Both polarities per rule.
 **REQ-DEM-S06-03** — The per-environment allow-list demonstrates `repo-file` most-specific-first
-resolution across at least two levels, with the walk-up visible in the test fixture layout.
+resolution across at least two levels, with the walk-up visible in the fixture layout.
+🔴 **This is a tier-2 requirement and must be labelled as one.** `assent test` cannot exercise
+it: the E6 fence (`cmd/assent/test_provider_fence_test.go:69-80`) keeps tier 1 on
+`facts.yaml` stubs, so **nothing walks up at tier 1**. Satisfying this REQ with an authored
+`facts.yaml` value that merely *looks* like a resolved owner is a **test that cannot fail** and
+does not satisfy it. Either demonstrate the walk-up at tier 2 (DEM-S14), or state plainly in the
+fixture and the README that tier 1 shows a stubbed fact and the resolution itself is tier 2.
 
 ### DEM-S07 — Repo 1 assembly `[autonomous]`
 
@@ -607,7 +664,8 @@ guarantee gets over-claimed:
 - **Delete** — an unmatched whole-file delete escalates fail-safe to REVIEW
   (**D-063**, `aggregate.unmatchedDelete` / `fileEvent.unmatchedDelete`). Operator-confirmed;
   no relaxation to APPROVE authorized.
-- **Edit** — governed by **ADR-0008 §27**'s implicit `unclassified` class, which no vouch rule
+- **Edit** — governed by **ADR-0008 §1**'s implicit `unclassified` class (`classify.go:18-20`),
+  which no vouch rule
   may match, so an unmatched edit cannot be vouched for.
 
 **REQ-DEM-S10-02** — **What actually happens to an unmatched EDIT at the `run` seam is
@@ -617,9 +675,18 @@ lane"*. The observed behaviour is recorded with the commands used. If it is anyt
 a refusal or REVIEW, **that is a finding, not a demo feature**, and it is logged rather than
 worked around. Depends on DEM-S00, which owns the same seam (REQ-DEM-S00-05).
 
-**REQ-DEM-S10-03** — Pinned in both polarities, including a changeset touching **both** a
-governed `.tfvars` and `backend.tf`: the ungoverned file must dominate, and an otherwise-clean
-governed change must not carry the ungoverned one to APPROVE.
+**REQ-DEM-S10-03** — 🔴 **RESCOPED TO TIER 2 — as originally written this was unbuildable.**
+The intent stands: in a changeset touching **both** a governed `.tfvars` and `backend.tf`, the
+ungoverned file must dominate and an otherwise-clean governed change must not carry the
+ungoverned one to APPROVE. But per REQ-DEM-S05-04's note the evaluation unit is **one file**, so
+no single tier-1 evaluation can contain both — and there is no unmatched-**edit** analogue of
+the delete escalation (`internal/core/aggregate/coverage.go:251-253` gates on
+`ch.Path == "" && ch.Kind == delete`). Demonstrate this at tier 2 (DEM-S14) against a real MR
+touching both files, or state the single-subject constraint and drop the claim. **Anti-tautology
+clause:** two separate single-file evaluations run side by side do **not** demonstrate
+domination — domination is a property of aggregating them, which is the thing that does not
+exist. Building that aggregation is engine work this epic explicitly fences out; if S10 finds it
+necessary, that is a **finding to log**, not a demo feature to add.
 
 ### DEM-S11 — Repo 2 assembly `[autonomous]`
 
