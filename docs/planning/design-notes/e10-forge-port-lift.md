@@ -1,7 +1,38 @@
 # Design note: forge port lift (pre-GitHub-adapter) — seeds E10
 
-Status: note only (no decision taken; decide via ADR when the GitHub adapter epic opens).
+Status: **SUPERSEDED as the design authority by ADR-0021** (2026-08-10), which took the
+decision this note deferred. E10 opened with D-140; the epic is
+`openspec/specs/p5-e10-github-forge/spec.md`. This note is retained as the record of the
+pre-AUD-S15 problem and of steps 1–2, which shipped.
 Trigger: ARCH-02, PROJECT-AUDIT-2026-08-06.
+
+> **This note is INCOMPLETE as an epic scope — that was a finding, not an omission you should
+> work around.** The 2026-08-09 audit recorded ARCH-18/ARCH-19: this note "under-scopes the
+> epic by two design buckets, and the conformance suite cannot be run by a second adapter
+> because all ~1,155 lines live in `_test.go` files Go cannot import."
+>
+> The original ARCH-18/ARCH-19 finding text is **not in the repo** — only the one-line summary
+> at `agent-context/PROJECT-AUDIT-2026-08-09.md:412` survives. The two buckets were therefore
+> **re-derived** during the 2026-08-10 design session, and are recorded as a re-derivation,
+> not as a citation:
+>
+> - **Bucket A — capability model.** `docs/planning/forge-dossier-github.md` §4 enumerates
+>   eleven capability flags the port needs; `probeCapabilities` reads three project fields,
+>   and `capabilityGap` is computed in GitLab terms. Arming (ADR-0015 §4) hangs off that
+>   vocabulary, so a second adapter would restate it or silently arm under a different meaning
+>   of "capable". ADR-0021 §3 resolves this: a port-owned capability enum, `supported |
+>   absent | unknown`, gap computed at the port, and **`unknown` never arms**.
+> - **Bucket B — transport and auth policy.** Bounded reads and pagination caps (AUD-S10),
+>   idempotent-GET retry/backoff and deadlines (AUD-S11) were built into
+>   `internal/forge/gitlab`. GitHub additionally needs a **GraphQL** client (thread resolution
+>   is GraphQL-only, dossier §4) and **two auth shapes** (PAT, App installation token). Left
+>   at the adapter, the forges' availability and fail-closed behaviour diverge undetected.
+>   ADR-0021 §4 makes these port requirements with conformance cases, while leaving protocol
+>   and auth as adapter-internal freedom.
+>
+> The unimportable conformance suite is tracked separately as **E10-S01, story zero**
+> (ADR-0021 §2) — until it is fixed, no adapter can be developed against an executable
+> contract and D-084's `github-deferred` catalog rows are unflippable by construction.
 
 Progress: **steps 1 and 2 below shipped in AUD-S15** (`internal/forge/port.go`,
 `internal/forge/port_test.go`, the ARCH-02 section of `hack/lint/depguard_test.sh`). Steps

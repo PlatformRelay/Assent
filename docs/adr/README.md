@@ -32,3 +32,4 @@ supersessions by ADR-0016/0017 are noted on each ADR's status line (not full
 | [0018](0018-policy-lifecycle-phase-profile-comparison.md) | Policy lifecycle — phase, profiles, comparison | Accepted (D-030) |
 | [0019](0019-publication-marker-reconciliation-protocol.md) | Publication marker + reconciliation protocol (database-free) | Accepted (D-030) — **one MUST unmet: doctor omits `duplicate_prevention:`** |
 | [0020](0020-forge-snapshot-changed-file-completeness.md) | Forge snapshot changed-file completeness contract | Accepted (D-119) |
+| [0021](0021-multi-adapter-forge-seam.md) | Multi-adapter forge seam — `forge.RunPort`, neutral capabilities, transport policy | Proposed (D-140) — governs E10 |
