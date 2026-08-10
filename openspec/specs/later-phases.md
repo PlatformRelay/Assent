@@ -257,12 +257,30 @@ schema drift guard; **D-112–D-117 cited.** **9 stories (9 autonomous)** — E1
 without compare debt.
 Seeds: `examples/comparison/**`, `hack/compare/exitgate_test.sh`.
 
-### E10 — GitHub adapter + Actions entrypoint — **Locked (D-012)**
-Unlocks with a named consumer. Seam kept honest by the P1-E3-S03 dossier (REQUEST_CHANGES +
-conversation-resolution parity, merge queue as merge-result pin, base-ref workflow trust)
-and by the conformance suite being forge-neutral (E7). No frozen contract until unlock.
+### E10 — GitHub adapter + Actions entrypoint — **UNLOCKED (D-140, 2026-08-10)** — spec: [p5-e10-github-forge](p5-e10-github-forge/spec.md)
+Was Locked (D-012), reaffirmed locked by D-017 and D-019; unlocked by direct operator
+instruction (D-140), not by the named-consumer trigger. Seam kept honest by the P1-E3-S03
+dossier (REQUEST_CHANGES + conversation-resolution parity, merge queue as merge-result pin,
+base-ref workflow trust) and by the conformance suite being forge-neutral (E7).
+**18 stories (S01–S17 autonomous, S18 infra-gated)** governed by **ADR-0021**, which decides
+the three things the audit found under-scoped (ARCH-18/ARCH-19): the named `forge.RunPort`
+composite port, an **importable** conformance suite (today all ~1,166 lines are in `_test.go`
+files a second adapter cannot import), a neutral capability model where `unknown` never arms,
+and port-level transport/auth policy. Ordering is normative: the seam (S01–S05) lands before
+the first GitHub API call. v1 target is behavioural parity for the **gate**, with capability
+gaps failing closed.
 
-### E11 — Complex-rule backend (Rego) — **Unlocked (D-017), implementation after Phase 4**
+### E11 — Complex-rule backend (Rego) — **IMPLEMENTATION UNLOCKED (D-141, 2026-08-10)** — spec: [p5-e11-rego-backend](p5-e11-rego-backend/spec.md)
+Contract unlocked by D-017; implementation was gated twice — "after Phase 4" (satisfied, the
+adoption gate closed with D-042) and D-017's **per-rule evidence** gate, which D-141 lifts by
+operator instruction. The design need survives the lift: E11-S01 still writes the tier-1
+ceiling document, and any shape found CEL-expressible is struck from scope. **13 stories, all
+autonomous.** Two constraints found during design: E11 is the **first epic whose DoD is
+`git diff schemas/` != 0** (the `rego:` leaf is an announced additive change to
+`merge-policy.schema.json` per `API_STABILITY.md`; `EvaluationInput` is untouched, so
+P3-E1-S02's neutrality guarantee holds), and bounding evaluation with a **wall-clock timeout
+would itself violate rule 7** — the budget must be machine-independent and exceeding it is a
+process error, never a policy outcome. Original framing, unchanged:
 The named consumer's multi-pass / cross-manifest / set-difference / graph-relationship
 checks are the consumer D-012 required. Contract committed in Phase 3 (EvaluationInput
 stays backend-neutral, P3-E1); implementation only in the named-consumer expansion, and
