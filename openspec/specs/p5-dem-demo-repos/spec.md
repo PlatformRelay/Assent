@@ -363,6 +363,15 @@ additionally `[engine-grade · maintainer LGTM]`**: it changes decision routing 
 `cmd/assent` seam, which is exactly the class `/agent-loop-auto` must surface rather than
 auto-merge. S13/S14 **`[operator]`** / **`[infra-gated · operator]`**.
 
+🔴 **PRECONDITION ON EVERY STORY — no DEM story is implementable until its REQs carry
+`Test:` / `Verify:` / `Level:` annotations**, per the sibling-epic convention (E10 has 53,
+E11 36, E6 42; **DEM currently has 0**). This epic's REQs state intent but name no command, so
+"green" is undefined for all 15 stories. That is precisely the condition that produced this
+project's documented **six tests that cannot fail** — a story picked up with no definition of
+done. The annotation pass is deferred to its own change, not waived; until it lands, DEM-S00 in
+particular must not be started, because it is `engine-grade · maintainer LGTM` and is the story
+someone will reach for first.
+
 **Dependency order**: **S00** → S01 → S02 → S03 → {S04 → S05 → S06 → S07} ∥ {S08 → S09 → S10 →
 S11} → S12 → S13 → S14. **Do first: S00** — until `(class, environment)` routing exists, both
 demo repos fail closed in both tiers and every assembly story is unbuildable; S10 also probes
@@ -474,8 +483,11 @@ the split between repo-side `{type,url,failure}` and host-side `outputs`/`exec`/
 `resourceOwner`, and the **silent-skip behaviour** of a missing declaration.
 
 **REQ-DEM-S01-04** — The `http`-typed example providers either gain a declaration *and* are
-re-pointed at the reference broker (S03), or are converted to a builtin. **No example may ship
-a provider block that cannot resolve.**
+re-pointed at the reference broker, or are converted to a builtin. **No example may ship
+a provider block that cannot resolve.** ⚠️ **Ordering:** the reference broker is **S03**, which
+comes *after* S01 — so this REQ must be satisfied by the **builtin conversion** arm, or S01
+closes only once S03 lands and the epic's stated S01 → S02 → S03 order is a lie. Prefer the
+builtin: it keeps S01 self-contained and removes the forward dependency entirely.
 
 **Given** an example pack with `providers.author`, **when** its `providers/author.json` is
 deleted, **then** the gate fails naming the pack and the provider.
@@ -616,7 +628,9 @@ content, `.assent/{config.yaml,bindings.yaml,packs/**,tests/**,providers/*.json}
 shows every rule covered in **both** polarities.
 **REQ-DEM-S07-03** — README leads with the **60-second tier-1 path** (clone → `assent test .`),
 then the tier-2 live path, then the L0→L3 user-resolution ladder with the two-file L2→L3 diff
-shown inline.
+shown inline. **The ladder must carry its tier column** — per the fence note above, **L1 and up
+are tier 2 only**; a README presenting the ladder without that qualifier implies live provider
+resolution at tier 1 and is a story failure.
 **REQ-DEM-S07-04** — Prepared demo branches, each named for its outcome and each an entry in
 the test suite so it cannot silently stop reproducing: at minimum
 `demo/approve-add-dev-topic`, `demo/review-prod-partition-shrink`, `demo/block-foreign-team-acl`,

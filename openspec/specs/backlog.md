@@ -619,11 +619,15 @@ in **both** tiers on **both** forges as designed. S13 is **operator-gated** — 
 repos under the `PlatformRelay` org is outward-facing and **not** covered by AGENTS.md rule 2's
 push grant to `PlatformRelay/assent` (D-142 judgment call (d)).
 
+🔴 **No DEM story is implementable until its REQs carry `Test:`/`Verify:`/`Level:` annotations** —
+the epic has **0** today against E10's 53, E11's 36 and E6's 42, so "green" is undefined for all
+15 stories. Deferred to its own change, not waived.
+
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
 | DEM-S00 | 🔴 Wire `(class, environment)` binding routing at the `cmd/assent` seam; **delete** `selectBindingForTest`'s strictest-collapse | **[autonomous · engine-grade · LGTM]** | none | **do first** — without it both repos fail closed in both tiers; supersedes D-060 |
 | DEM-S01 | Provider host declarations: worked examples, docs, and a both-polarity gate | **[autonomous]** | S00 | closes G1 — today **every** shipped example's provider resolves to nothing |
-| DEM-S02 | Provider-author guide | **[autonomous]** | S01 | must state OQ-32's answer before it publishes |
+| DEM-S02 | Provider-author guide | **[autonomous — but see OQ-32]** | S01 | 🔴 the guide **cannot publish** until OQ-32 is ruled; S02 may write everything else and must cross-link the OQ, but the `docs/vision.md:67` + ADR-0004 §1 amendment is operator-gated |
 | DEM-S03 | Reference IdP-groups broker provider (`contrib/`, Entra + Keycloak adapters) | **[autonomous]** | S02 | the L2→L3 step is two files, zero lines of assent rebuilt |
 | DEM-S04 | New sample shapes: Kafka ACL + ArgoCD Application | **[autonomous]** | S03 | referential shapes no shipped example exercises |
 | DEM-S05 | `kafka-acl` class + cross-manifest reference rules | **[autonomous]** | S04 | doubles as the **E11-S01 tier-1 ceiling probe** (D-141) |
@@ -633,7 +637,7 @@ push grant to `PlatformRelay/assent` (D-142 judgment call (d)).
 | DEM-S09 | `tf-module-instance` class + rules | **[autonomous]** | S08 | magnitude / blast-radius archetype |
 | DEM-S10 | `tf-backend` **ungoverned → REVIEW** (D-063) | **[autonomous]** | S09 | must **determine** unmatched-edit behaviour by running it, not assert it |
 | DEM-S11 | Repo 2 assembly (`assent-demo-terraform`, GitHub) | **[autonomous]** | S10 | also **E10-S18's live adoption target** |
-| DEM-S12 | Demo CI + mirror-drift gate | **[autonomous]** | S07, S11 | in-tree under `examples/demo/**` so `task check` covers it |
+| DEM-S12 | Demo CI + mirror-drift gate | **[autonomous]** | S07, S11 | in-tree under `examples/demo/**` **so that `task check` will cover it — it does NOT today**: `task check` runs no example dogfood, `task dogfood-examples` is called by nothing, and `verify.yaml` duplicates it as a hardcoded pack loop. S12 must edit **both** |
 | DEM-S13 | 🔴 Publish the repositories under the `PlatformRelay` org | **[operator]** | S12 | **operator-gated** — outward-facing, beyond rule 2's grant |
 | DEM-S14 | Live tier-2 proof on GitLab | **[infra-gated · operator]** | S13 | **the DEM exit gate** |
 
