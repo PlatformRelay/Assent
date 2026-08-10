@@ -95,6 +95,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(openspec): correct the E10 story count to 19 after adding S00
 - :memo: docs(openspec): fix 3 P1 design defects found by independent review of PR #45
 - :memo: docs(openspec): design P5-DEM public demo repositories (D-142, OQ-32)
+- :memo: docs(openspec): add the missing P5-DEM backlog rows and correct the story count
 
 ### Testing
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token
