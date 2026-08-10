@@ -261,7 +261,10 @@ runs it.
   (`refFilePort` is a *named* interface, not an anonymous literal — the DoD's original wording
   did not describe it and so did not cover it.) Plus: **the neutral adapter factory lands in
   this story**; depguard denies **both** concrete adapters from `cmd/assent`; zero behaviour
-  change (goldens and conformance byte-identical).
+  change (goldens and conformance byte-identical). **The two names above are evidence, not the
+  contract** — an allowlist of the ports that exist today goes stale the moment a third is
+  added, and this enumeration has now been wrong three times. REQ-E10-S02-07 states the
+  invariant and enforces it mechanically.
 - **Corrected after adversarial review — the first draft of this story could not close.** It
   required depguard to deny both adapters "with no symbol allowlist", but `cmd/assent/main.go:72,83`
   calls `gitlab.New(endpoint, token, botAuthor)` and no story supplied a neutral factory until
@@ -322,15 +325,35 @@ runs it.
   (i) the governed-subject reads (`cmd/assent/run.go:270`, `:274`, via `fileAtRefOrAbsent`)
   call `FileAtBase`/`FileAtHead` and **no** `FileAtRef` call remains on the governed-subject
   path — asserted by a source-level guard, because a green `TestForkMRNoFabricatedDelete`
-  against a fake that happens to serve the right bytes does not prove the call was rewritten;
+  against a fake that happens to serve the right bytes does not prove the call was rewritten.
+  **Read this as scoped to the forge-sourced path, not as "all governed-subject sourcing is now
+  MR-relative":** under `--checkout`, `run.go:283` overrides base/head from the local tree via
+  `dirCheckout.FileContents(governed)`, which carries no `FileAtRef` call and is therefore
+  invisible to the source-level guard. That is intended existing behaviour (EFE-S03 /
+  ADR-0008 §4 — the local head tree is the presence authority), and S02 does not change it;
   (ii) the **policy and decision-input** loads (`run.go:203`, `:211`, `:230`, `:249` and
   `provider_host.go:82`, `:275` — all six) still use
-  `FileAtRef(project, path, targetBranch)` and are **not** migrated — a test asserts policy is
+  `FileAtRef(project, path, targetRef)` and are **not** migrated — a test asserts policy is
   read from the target ref of the target project even for a fork MR, so a well-meaning
   "consistency" refactor onto an MR-relative accessor (which would let a fork's head reach the
   policy load) fails the suite rather than silently crossing ADR-0015 §1's trust boundary.
   - Test: `internal/forge/port.go`, `internal/forge/conformance/`, `cmd/assent/run.go`
   - Verify: `go test ./... -run 'TestForkMRNoFabricatedDelete|TestPolicyLoadsFromTargetRefOnForkMR'`
+  - Level: L1
+- **REQ-E10-S02-07** — Given an allowlist of today's ports cannot survive a port added
+  tomorrow, when `hack/lint/depguard_test.sh` runs, then it enforces the **invariant** rather
+  than the list: **no interface declared in `cmd/assent` may carry a forge read or write method
+  except `forge.RunPort` itself**. The scanner already walks `cmd/assent` source and already
+  carries the mutation-control pattern at `:356-363` that REQ-E10-S02-04 rebuilds, so this is
+  an added assertion, not new machinery. A mutation control proves it goes **red** on a
+  hand-rolled `interface{ FileAtRef(...) }` reintroduced anywhere in `cmd/assent`.
+  `checkout.go:27 localCheckout` must stay **green** — it is a local-tree seam carrying no
+  forge method, and a guard that cannot tell those apart would either block legitimate seams or
+  be switched off. Without this REQ, "both port declarations retired" is provable only by a
+  human re-reading the tree at S02 time — which is exactly what failed on this enumeration
+  three times over.
+  - Test: `hack/lint/depguard_test.sh`, `cmd/assent/run.go`, `cmd/assent/provider_host.go`
+  - Verify: `task lint && task lint-depguard-test`
   - Level: L1
 - **REQ-E10-S02-06** — Given ADR-0021 item 7, when the port is declared, then it exposes the
   **authenticated identity**, and a case proves markers are recognised as our own under
