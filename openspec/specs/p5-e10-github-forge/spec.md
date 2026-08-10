@@ -252,10 +252,16 @@ runs it.
 - **Goal**: `cmd/assent` depends on one named, forge-neutral interface and on no concrete
   adapter package.
 - **Dependencies**: S00, S01 (so the port change is proven by an executable suite).
-- **Definition of done**: `forge.RunPort` declared in `internal/forge`; `cmd/assent`'s
-  anonymous port literal deleted; **the neutral adapter factory lands in this story**;
-  depguard denies **both** concrete adapters from `cmd/assent`; zero behaviour change
-  (goldens and conformance byte-identical).
+- **Definition of done**: `forge.RunPort` declared in `internal/forge`; **both** of
+  `cmd/assent`'s port declarations retired — `run.go:64 forgePort` (the anonymous literal at
+  the call site) **and** `provider_host.go:246 refFilePort`, a second, hand-rolled
+  `FileAtRef`-only interface. Naming only the first is how this story closes while
+  `cmd/assent` still depends on a private port: replacing `forgePort` alone leaves
+  `refFilePort` standing, the DoD reads satisfied, and `go build` + `task lint` stay green.
+  (`refFilePort` is a *named* interface, not an anonymous literal — the DoD's original wording
+  did not describe it and so did not cover it.) Plus: **the neutral adapter factory lands in
+  this story**; depguard denies **both** concrete adapters from `cmd/assent`; zero behaviour
+  change (goldens and conformance byte-identical).
 - **Corrected after adversarial review — the first draft of this story could not close.** It
   required depguard to deny both adapters "with no symbol allowlist", but `cmd/assent/main.go:72,83`
   calls `gitlab.New(endpoint, token, botAuthor)` and no story supplied a neutral factory until
@@ -272,9 +278,12 @@ runs it.
   and `cmd/assent` references that named type only. **Both accessors are required and they are
   not interchangeable** — REQ-E10-S02-05 binds which is legal where. `FileAtRef` is retained
   **only** for the ref-addressed *policy* loads ADR-0015 §1 mandates (`cmd/assent/run.go:203`,
-  `:211`, `:230`, `:249` — MergePolicy, RulesetBinding, **Config** and pack, all from the target
-  ref by name; the Config load at `:230` is the one most easily missed and the most damaging to
-  migrate, since `.assent/config.yaml` declares the provider hosts);
+  `:211`, `:230`, `:249` — MergePolicy, RulesetBinding, **Config** and pack — **plus
+  `cmd/assent/provider_host.go:82` (provider host declaration) and `:275` (resource-owner
+  registry)**, all from the target ref by name. That is **six** call sites, not four: the
+  `run.go` list alone is not exhaustive for `cmd/assent`. `provider_host.go:275` is the single
+  most dangerous one to migrate — the registry decides **who may approve**, and preferring the
+  checkout there was the D-130 vouching escalation);
   implementing this REQ by freezing `FileAtRef` as the *sole* content accessor satisfies the
   signature while preserving the fabricated-DELETE defect, and is a failure of this story.
   - Test: `internal/forge/port.go`, `cmd/assent/run.go`
@@ -314,7 +323,8 @@ runs it.
   call `FileAtBase`/`FileAtHead` and **no** `FileAtRef` call remains on the governed-subject
   path — asserted by a source-level guard, because a green `TestForkMRNoFabricatedDelete`
   against a fake that happens to serve the right bytes does not prove the call was rewritten;
-  (ii) the **policy** loads (`run.go:203`, `:211`, `:230`, `:249`) still use
+  (ii) the **policy and decision-input** loads (`run.go:203`, `:211`, `:230`, `:249` and
+  `provider_host.go:82`, `:275` — all six) still use
   `FileAtRef(project, path, targetBranch)` and are **not** migrated — a test asserts policy is
   read from the target ref of the target project even for a fork MR, so a well-meaning
   "consistency" refactor onto an MR-relative accessor (which would let a fork's head reach the
