@@ -272,7 +272,9 @@ runs it.
   and `cmd/assent` references that named type only. **Both accessors are required and they are
   not interchangeable** — REQ-E10-S02-05 binds which is legal where. `FileAtRef` is retained
   **only** for the ref-addressed *policy* loads ADR-0015 §1 mandates (`cmd/assent/run.go:203`,
-  `:211`, `:253` — MergePolicy, RulesetBinding, pack, all from the target ref by name);
+  `:211`, `:230`, `:249` — MergePolicy, RulesetBinding, **Config** and pack, all from the target
+  ref by name; the Config load at `:230` is the one most easily missed and the most damaging to
+  migrate, since `.assent/config.yaml` declares the provider hosts);
   implementing this REQ by freezing `FileAtRef` as the *sole* content accessor satisfies the
   signature while preserving the fabricated-DELETE defect, and is a failure of this story.
   - Test: `internal/forge/port.go`, `cmd/assent/run.go`
@@ -312,7 +314,7 @@ runs it.
   call `FileAtBase`/`FileAtHead` and **no** `FileAtRef` call remains on the governed-subject
   path — asserted by a source-level guard, because a green `TestForkMRNoFabricatedDelete`
   against a fake that happens to serve the right bytes does not prove the call was rewritten;
-  (ii) the **policy** loads (`run.go:203`, `:211`, `:253`) still use
+  (ii) the **policy** loads (`run.go:203`, `:211`, `:230`, `:249`) still use
   `FileAtRef(project, path, targetBranch)` and are **not** migrated — a test asserts policy is
   read from the target ref of the target project even for a fork MR, so a well-meaning
   "consistency" refactor onto an MR-relative accessor (which would let a fork's head reach the

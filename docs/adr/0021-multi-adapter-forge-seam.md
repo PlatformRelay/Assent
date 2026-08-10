@@ -108,8 +108,12 @@ consisting of four committed pieces:
    `FileAtBase(mr, path string) ([]byte, error)` / `FileAtHead(mr, path string) ([]byte, error)`.
    **The two accessors are not redundant and neither replaces the other** — item 5 decides
    which is legal where. `FileAtRef` survives because *policy* is ref-addressed by contract:
-   ADR-0015 §1 requires the MergePolicy, RulesetBinding and pack to load from the **target
-   ref by name**, which `cmd/assent/run.go:203,211,253` does today and must keep doing.
+   ADR-0015 §1 requires the MergePolicy, RulesetBinding, Config and pack to load from the
+   **target ref by name**, which `cmd/assent/run.go:203`, `:211`, `:230` and `:249` do today
+   and must keep doing. **That enumeration is exhaustive as of 2026-08-10 — verify it against
+   the tree before relying on it**, and note `:230` (`.assent/config.yaml`) especially: it
+   carries the provider-host declarations, so migrating it to an MR-relative accessor would
+   let a fork's head redefine its own fact semantics.
    `FileAtBase`/`FileAtHead` are the **governed subject's** only legal accessors. An adapter
    that implements `FileAtBase` by delegating to `FileAtRef(project, path, sourceBranch)`
    reintroduces the defect item 5 exists to kill.
@@ -148,7 +152,8 @@ consisting of four committed pieces:
    **Scope of the narrowing, stated precisely because item 1 keeps both accessors:** it binds
    the governed subject only — `run.go:270,274`, the reads whose 404-maps-to-`nil` feeds
    `change.OneSidedLifecycle` and mints the fabricated whole-file DELETE. The **policy** loads
-   at `run.go:203,211,253` are *deliberately* still `FileAtRef(project, path, targetBranch)`:
+   at `run.go:203`, `:211`, `:230`, `:249` are *deliberately* still
+   `FileAtRef(project, path, targetBranch)`:
    they read the protected target ref of the target project, which is exactly the trust
    boundary ADR-0015 §1 draws, and a fork's head must never be able to reach them. Rewriting
    those onto an MR-relative accessor would be a trust-boundary regression, not a cleanup.
