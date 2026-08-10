@@ -16,7 +16,7 @@ seam a second adapter must plug into is only half-built:
    `internal/forge` (`port.go`), but `cmd/assent`'s `forgePort` is still an anonymous
    interface literal declared at the call site, and `run.go` still calls
    `gitlab.SyntheticDigest` directly. `port.go`'s own scope note records both as E10 work.
-2. **The conformance suite cannot be reused.** All 1,166 lines of
+2. **The conformance suite cannot be reused.** All 1,155 lines of
    `internal/forge/conformance` live in `_test.go` files, which Go cannot import. The suite
    that defines "behaves like a forge" is therefore unrunnable by a second adapter — the
    GitHub adapter would be developed against no executable contract.
@@ -104,7 +104,15 @@ consisting of four committed pieces:
    `cmd/assent`'s anonymous port literal:
    `forge.Forge` + `forge.Snapshotter` + `forge.Resolver` +
    `Describe(project, mr string) (forge.MRInfo, error)` +
-   `FileAtRef(project, path, ref string) ([]byte, error)`.
+   `FileAtRef(project, path, ref string) ([]byte, error)` +
+   `FileAtBase(mr, path string) ([]byte, error)` / `FileAtHead(mr, path string) ([]byte, error)`.
+   **The two accessors are not redundant and neither replaces the other** — item 5 decides
+   which is legal where. `FileAtRef` survives because *policy* is ref-addressed by contract:
+   ADR-0015 §1 requires the MergePolicy, RulesetBinding and pack to load from the **target
+   ref by name**, which `cmd/assent/run.go:203,211,253` does today and must keep doing.
+   `FileAtBase`/`FileAtHead` are the **governed subject's** only legal accessors. An adapter
+   that implements `FileAtBase` by delegating to `FileAtRef(project, path, sourceBranch)`
+   reintroduces the defect item 5 exists to kill.
    `cmd/assent` depends on `forge.RunPort` **only** — a depguard rule denies
    `cmd/assent` importing `internal/forge/gitlab` **and** `internal/forge/github`, replacing
    the current three-symbol allowlist. The merge-digest *scheme* is adapter-owned:
@@ -129,14 +137,21 @@ consisting of four committed pieces:
    installation token) and protocol (REST vs. GraphQL) stay **adapter-internal freedom** —
    the port never names a transport.
 
-5. **An explicit addressing model, decided before `FileAtRef` is frozen.** The port stops
-   addressing content by `(project, branch-name)` and instead exposes the two sides of the
-   change relative to the merge request itself — `FileAtBase(mr, path)` / `FileAtHead(mr,
-   path)` — leaving each adapter to own how it reaches a fork's head (`refs/pull/N/head` on
-   GitHub, source-project ID on GitLab). A conformance case **must** prove that a fork MR with
-   an unchanged governed file yields *no* lifecycle event, on both adapters. Smuggling
-   `refs/pull/N/head` into `MRInfo.SourceBranch` is explicitly rejected: it corrupts a
-   documented field and leaks into rendering.
+5. **An explicit addressing model, decided before the port is frozen.** The port stops
+   addressing **the governed subject** by `(project, branch-name)` and instead exposes the two
+   sides of the change relative to the merge request itself — `FileAtBase(mr, path)` /
+   `FileAtHead(mr, path)` — leaving each adapter to own how it reaches a fork's head
+   (`refs/pull/N/head` on GitHub, source-project ID on GitLab). A conformance case **must**
+   prove that a fork MR with an unchanged governed file yields *no* lifecycle event, on both
+   adapters. Smuggling `refs/pull/N/head` into `MRInfo.SourceBranch` is explicitly rejected:
+   it corrupts a documented field and leaks into rendering.
+   **Scope of the narrowing, stated precisely because item 1 keeps both accessors:** it binds
+   the governed subject only — `run.go:270,274`, the reads whose 404-maps-to-`nil` feeds
+   `change.OneSidedLifecycle` and mints the fabricated whole-file DELETE. The **policy** loads
+   at `run.go:203,211,253` are *deliberately* still `FileAtRef(project, path, targetBranch)`:
+   they read the protected target ref of the target project, which is exactly the trust
+   boundary ADR-0015 §1 draws, and a fork's head must never be able to reach them. Rewriting
+   those onto an MR-relative accessor would be a trust-boundary regression, not a cleanup.
    *Consequence accepted:* this is a larger refactor than the design note anticipated and it
    collides with the byte-identical-golden requirement; the goldens are re-proved equal on
    GitLab rather than assumed.

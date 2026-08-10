@@ -575,7 +575,7 @@ them rather than auto-merge.
 | E10-S13 | Forge selection in `run`/`doctor`; ambiguity fails closed | **[autonomous]** | S12 | no default-to-GitLab |
 | E10-S14 | Conformance parity — **every** row needs an adapter disposition, not just deferrals | **[autonomous]** | S13 | else GitHub ships with 0 trust-boundary cases proven |
 | E10-S15 | Docs & maturity truth (README tier, C4, `--forge`, dossier items) | **[autonomous]** | S14 | no doc claims an `unknown` capability |
-| E10-S16 | Actions entrypoint (`action.yml`, pinned binary, base-ref trust) | **[autonomous — scope-flagged]** | S15 | **D-140 open sub-question**; independently droppable |
+| E10-S16 | Actions entrypoint (`action.yml`, pinned binary, base-ref trust) | **[autonomous]** | S15 | ✅ **operator-answered 2026-08-10: stays in E10**, last + independently droppable |
 | E10-S17 | Exit gate | **[autonomous]** | S01–S16 | **the E10 exit gate** |
 | E10-S18 | Live GitHub adoption proof on a real repo (mirrors D-042) | **[infra-gated · operator]** | S17 + infra | D-012-grade evidence; not an autonomous blocker |
 
@@ -590,11 +590,11 @@ LGTM** (published contract + the decision path itself). Independent of E10; may 
 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
+| E11-S00 | ⚠️ **SPIKE, do first**: does OPA expose a deterministic (non-wall-clock) eval budget? Nested throwaway module — root `go.mod` unchanged | **[autonomous · spike]** | none | if not, S06 stalls the epic *after* S02+S03 commit |
 | E11-S01 | Record the tier-1 (CEL) ceiling with concrete exceeding rules | **[autonomous]** | none | **do first** — a CEL-expressible shape is struck from scope |
-| E11-S06′ | ⚠️ **SPIKE first**: does OPA expose a deterministic (non-wall-clock) eval budget? | **[autonomous · spike]** | S01 | if not, S06 stalls the epic *after* S02+S03 commit |
-| E11-S02 | ⚠️ Additive `rego:` leaf in the policy schema (announced, no `apiVersion` bump) | **[autonomous · engine-grade · LGTM]** | S01, S06′ | drift guard scoped; both polarities tested |
-| E11-S03 | Module loading from the **target ref**; compile failure is a lint hard error | **[autonomous]** | S02 | no second, laxer load path |
-| E11-S04 | 🔴 OPA capability sandbox — **blocked on the operator's rule-7 answer (d1/d2/d3)** | **[autonomous · engine-grade · LGTM]** | S03 + operator | both purity gates are non-transitive; see D-141 |
+| E11-S02 | ⚠️ Additive `rego:` leaf in the policy schema (announced, no `apiVersion` bump) | **[autonomous · engine-grade · LGTM]** | **S00**, S01 | drift guard scoped; both polarities tested |
+| E11-S03 | 🔴 Module loading from the **target ref**; compile failure is a lint hard error — **blocked on the operator's rule-7 answer (d1/d2)**: this story adds OPA to `go.mod` inside the guarded tree | **[autonomous · engine-grade · LGTM]** | S02 + operator | no second, laxer load path; transitive purity guard under (d1) |
+| E11-S04 | 🔴 OPA capability sandbox — **blocked on the operator's rule-7 *mechanism* answer (d1 vs d2)**; "accept and pin" settled only the supply-chain half | **[autonomous · engine-grade · LGTM]** | S03 + operator | both purity gates are non-transitive; see D-141 |
 | E11-S05 | ⚠️ Input binding to the identical `EvaluationInput` | **[autonomous · engine-grade]** | S04 | proves P3-E1-S02 neutrality empirically |
 | E11-S06 | ⚠️ Deterministic evaluation budget (never wall-clock) | **[autonomous · engine-grade · LGTM]** | S05 | N≥100 identical runs; budget ≠ decision |
 | E11-S07 | ⚠️ Violations → findings; **zero violations never proves an obligation** | **[autonomous · engine-grade · LGTM]** | S06 | the failing polarity is tested |
@@ -603,7 +603,7 @@ LGTM** (published contract + the decision path itself). Independent of E10; may 
 | E11-S10 | `assent test` support + both-polarity coverage | **[autonomous]** | S08 | ADR-0014 unchanged |
 | E11-S11 | Remove the `# locked: D-012` quarantine; **update** the P3-E3-S04 guard | **[autonomous]** | S10 | only E11's lane may do this |
 | E11-S12 | Docs & maturity truth; retire ADR-0002's "pluggable half unbuilt" line | **[autonomous]** | S11 | nothing still calls Rego locked |
-| E11-S13 | Exit gate | **[autonomous]** | S01–S12 | **the E11 exit gate** |
+| E11-S13 | Exit gate | **[autonomous]** | S00–S12 | **the E11 exit gate** |
 
 ## Phases 3–5
 
@@ -614,7 +614,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S13, D-099–D-111 CLOSED; Homebrew Formula live; PAT rotate optional); **PCS AUTONOMOUS COMPLETE** ([p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md), S01–S09, **D-057 closed**, D-118); **E10 UNLOCKED + DECOMPOSED** (D-140, [p5-e10-github-forge/spec.md](p5-e10-github-forge/spec.md), 19 stories, ADR-0021); **E11 IMPLEMENTATION UNLOCKED + DECOMPOSED** (D-141, [p5-e11-rego-backend/spec.md](p5-e11-rego-backend/spec.md), 13 stories); E12 **contract-unlocked** (D-017), not decomposed; E14 gated on Spike D; **E13 still locked** (D-012) | per-epic; E9 exit = tagged signed release + docs live + brew Formula (D-111); PAT rotate optional |
+| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S13, D-099–D-111 CLOSED; Homebrew Formula live; PAT rotate optional); **PCS AUTONOMOUS COMPLETE** ([p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md), S01–S09, **D-057 closed**, D-118); **E10 UNLOCKED + DECOMPOSED** (D-140, [p5-e10-github-forge/spec.md](p5-e10-github-forge/spec.md), 19 stories, ADR-0021); **E11 IMPLEMENTATION UNLOCKED + DECOMPOSED** (D-141, [p5-e11-rego-backend/spec.md](p5-e11-rego-backend/spec.md), 14 stories); E12 **contract-unlocked** (D-017), not decomposed; E14 gated on Spike D; **E13 still locked** (D-012) | per-epic; E9 exit = tagged signed release + docs live + brew Formula (D-111); PAT rotate optional |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).

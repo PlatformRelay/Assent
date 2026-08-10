@@ -264,7 +264,7 @@ dossier (REQUEST_CHANGES + conversation-resolution parity, merge queue as merge-
 base-ref workflow trust) and by the conformance suite being forge-neutral (E7).
 **19 stories (S00–S17 autonomous, S18 infra-gated)** governed by **ADR-0021**, which decides
 the three things the audit found under-scoped (ARCH-18/ARCH-19): the named `forge.RunPort`
-composite port, an **importable** conformance suite (today all ~1,166 lines are in `_test.go`
+composite port, an **importable** conformance suite (today all 1,155 lines are in `_test.go`
 files a second adapter cannot import), a neutral capability model where `unknown` never arms,
 and port-level transport/auth policy. Ordering is normative: the seam (S01–S05) lands before
 the first GitHub API call. v1 target is behavioural parity for the **gate**, with capability
@@ -274,8 +274,8 @@ gaps failing closed.
 Contract unlocked by D-017; implementation was gated twice — "after Phase 4" (satisfied, the
 adoption gate closed with D-042) and D-017's **per-rule evidence** gate, which D-141 lifts by
 operator instruction. The design need survives the lift: E11-S01 still writes the tier-1
-ceiling document, and any shape found CEL-expressible is struck from scope. **13 stories, all
-autonomous.** Two constraints found during design: E11 is the **first epic whose DoD is
+ceiling document, and any shape found CEL-expressible is struck from scope. **14 stories
+(S00–S13), all autonomous.** Two constraints found during design: E11 is the **first epic whose DoD is
 `git diff schemas/` != 0** (the `rego:` leaf is an announced additive change to
 `merge-policy.schema.json` per `API_STABILITY.md`; `EvaluationInput` is untouched, so
 P3-E1-S02's neutrality guarantee holds), and bounding evaluation with a **wall-clock timeout

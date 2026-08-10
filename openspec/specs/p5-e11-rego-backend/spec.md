@@ -61,7 +61,8 @@ second tier real.
   the loader tier alongside CEL compilation; module *evaluation* is pure computation and may
   live in core only once S04's sandbox makes that true by construction.
 
-**Scope**: (S01) the tier-1 ceiling, recorded with concrete exceeding rules; (S02) additive
+**Scope**: (S00) the deterministic-budget feasibility spike, in a nested throwaway module so it
+adds no dependency; (S01) the tier-1 ceiling, recorded with concrete exceeding rules; (S02) additive
 `rego:` leaf in the policy schema; (S03) module loading + compile-time errors; (S04) OPA
 capability sandbox (D-013); (S05) input binding to the identical `EvaluationInput`; (S06)
 deterministic evaluation budget; (S07) violations → findings with explicit obligation-proof
@@ -89,17 +90,36 @@ loader, E3's lint hard-error framework, E6's `assent test` harness, the committe
 **New**: `rego:` leaf, OPA integration + capability file, deterministic budget, violation
 mapping.
 
-**Executability**: S01–S13 all **`[autonomous]`** — hermetic, no infrastructure. S02, S04,
+**Executability**: S00–S13 all **`[autonomous]`** — hermetic, no infrastructure. S02, S04,
 S06, S07 are **engine-grade** (frozen-schema change, sandbox, determinism, decision polarity)
 and additionally **`[maintainer LGTM]`**: S02 changes a published contract and S04/S06/S07 are
 the decision path itself.
 
-**Dependency order**: S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → {S09, S10} → S11 → S12
-→ S13. **Do first: S01** — the ceiling document determines whether the backend's shape is
-right; building it without one reproduces the speculative-generality risk D-012 existed to
-prevent. **S04 is blocked on an operator answer** (judgment call (d)): the rule-7 boundary
-question decides which package the evaluator lives in and which gate enforces it. S01–S03 are
-unblocked and can run while that answer is pending.
+**Dependency order**: {S00, S01} → S02 → S03 → S04 → S05 → S06 → S07 → S08 → {S09, S10} → S11
+→ S12 → S13 — **14 stories, S00–S13.** **Do first: S00 and S01**, which are independent of each
+other and of judgment call (d), so both can run immediately and in parallel. S01 (the ceiling
+document) determines whether the backend's shape is right; building it without one reproduces
+the speculative-generality risk D-012 existed to prevent. S00 (the budget spike) determines
+whether the backend can be bounded at all.
+
+**What is blocked, and by what — stated precisely, because the obvious reading is wrong:**
+
+- **S02 is blocked on S00**, not merely sequenced after it. S02 changes a **published
+  contract**; if S00 returns "no deterministic budget exists", the `rego:` leaf that should be
+  announced is the `phase: observe`-only shape, not the gating shape (REQ-E11-S00-03).
+- **S03 and S04 are both blocked on judgment call (d)** — this corrects an earlier reading of
+  this spec which said S01–S03 were unblocked. They are not. **S03 is the story that *effects*
+  the narrowing (d) governs**: REQ-E11-S03-03 adds OPA to `go.mod`, and S03's own Test paths
+  sit in `internal/core/policy/**` — inside the D-123 guarded tree. Landing S03 while (d) is
+  open converts rule 7's decision-path guarantee from link-enforced to capability-enforced
+  **silently and green**, because — as (d) documents — *neither* purity gate is transitive.
+  Deciding a hard-rule narrowing by merging a story is exactly what rule 6 forbids. (d) also
+  decides *which package* the evaluator lives in, so S03–S08's `internal/core/policy` paths are
+  written against **(d1)** and must be re-pathed if the operator answers **(d2)**.
+- The operator's 2026-08-10 answer — *accept and pin OPA* — disposes of (d)'s **supply-chain**
+  half and rejects **(d3)**. It does **not** discriminate **(d1) from (d2)**: (d2) also accepts
+  and pins OPA while keeping the guarded tree OPA-free. That half remains open and is the one
+  that unblocks S03.
 
 ## Judgment calls (decide-and-log / operator)
 
@@ -110,16 +130,20 @@ silently ignore a rule it cannot evaluate). This is backward-compatible and deli
 forward-**in**compatible, and S02 records it in `API_STABILITY.md` as an announced additive
 change — no `apiVersion` bump.
 
-(b1) **⚠️ SPIKE S06 BEFORE S02 — it is a serial chokepoint on an API that may not exist.**
-Adversarial review, marked verify-not-verified: OPA's public `rego` package may bound
-evaluation only via `context.Context` cancellation, with **no supported deterministic
-instruction/step budget**. If so, judgment call (b) below cannot be satisfied as written — and
-the current order (S05→S06→…) would stall the epic at story 6 of 13 with the **schema already
-changed (S02)** and the **OPA dependency already added (S03)**. Mitigation, in order of
-preference: (i) spike S06's feasibility before S02 lands anything irreversible; (ii) if no
-deterministic budget exists, the fallback is that Rego-backed rules are restricted to
-`phase: observe` — they report but never gate — so the epic still lands something honest; (iii)
-what is **not** acceptable is relaxing (b).
+(b1) **DECIDED — the feasibility spike is story E11-S00 and S02 is blocked on it.** Adversarial
+review, marked verify-not-verified: OPA's public `rego` package may bound evaluation only via
+`context.Context` cancellation, with **no supported deterministic instruction/step budget**. If
+so, judgment call (b) below cannot be satisfied as written — and an S05→S06 order would stall
+the epic at story 7 of 14 with the **schema already changed (S02)** and the **OPA dependency
+already added (S03)**. **Resolution:** mitigation (i) is adopted and given a story rather than
+left as a preference — **E11-S00**, which runs first, carries REQ IDs and a DoD like any other
+story, and is deliberately built in a **nested throwaway module** so it can answer the question
+without adding OPA to `go.mod` (which judgment call (d) has not yet authorised). Fallback
+(ii) — if no deterministic budget exists, Rego-backed rules are restricted to `phase: observe`,
+reporting but never gating — is retained and is now REQ-E11-S00-03, which also re-scopes S02's
+published schema change to match, because an observe-only leaf is a different contract from a
+gating one. (iii) stands unchanged: relaxing (b) is **not** acceptable, and "timeout → BLOCK" is
+not a resolution.
 
 (b) **DECIDED — evaluation is bounded by a deterministic budget, never a wall-clock timeout.**
 Per rule 7: the bound is an OPA evaluation-step/instruction budget that yields the identical
@@ -174,7 +198,17 @@ made silently by a story.
 *Supply chain, separately:* OPA is a large dependency with a large transitive tree on a
 project shipping cosign signing, SLSA-grade provenance, `govulncheck`, and Scorecard. It
 materially changes binary size, vulnerability surface, and `renovate` load. S03 pins it and
-records the size delta. **Both halves are recorded as D-141's open sub-question.**
+records the size delta.
+
+*Status (2026-08-10) — the two halves have diverged and must not be conflated:*
+- ✅ **Supply-chain half: ANSWERED — accept and pin.** The operator accepted
+  `github.com/open-policy-agent/opa` as a dependency. **(d3) is rejected** by that answer.
+- 🔴 **Mechanism half: STILL OPEN — (d1) vs (d2), and this is the half that blocks S03.**
+  Accepting the dependency does not say *where the evaluator lives* or *which gate enforces
+  rule 7*: **(d2) also accepts and pins OPA** while keeping the guarded tree OPA-free. Reading
+  "accept and pin" as settling (d) would silently choose (d1) — the exact silent hard-rule
+  narrowing this judgment call exists to prevent. Per REQ-E11-S04-04 the answer needs an
+  **ADR-0011/rule-7 amendment plus a `D-nnn` row**, whichever way it goes.
 
 (e) **DECIDED — Rego modules are policy, and load from the target ref like all policy.**
 ADR-0010/ADR-0015's trust rules apply unchanged: a module is loaded from the target ref,
@@ -189,6 +223,53 @@ review bandwidth. Recommended sequencing is **E10 first** — it has a live-adop
 human dependency.
 
 ---
+
+### E11-S00 — Spike: does OPA expose a deterministic evaluation budget? `[autonomous · spike]`
+
+- **Goal**: answer, against a pinned OPA version and with a runnable reproduction, whether
+  OPA's public API can bound evaluation by a **machine-independent instruction/step count**
+  rather than by `context.Context` cancellation (wall clock).
+- **Why first**: judgment call (b) requires exactly that budget, and judgment call (b1) records
+  that the API may not exist. If it does not, the epic's shape changes — and every later story
+  is downstream of that. Ordering this after S02/S03 would discover it with the **published
+  schema already changed** and the **OPA dependency already in `go.mod`**: both irreversible in
+  the annoying direction. This story exists so that discovery is free.
+- **Dependencies**: none. It is deliberately **not** blocked on judgment call (d) — see
+  REQ-E11-S00-01, which is what makes that true.
+- **Definition of done**: `docs/planning/spikes/spike-d-rego-budget.md` records the verdict, the
+  pinned OPA version it was established against, the exact API surface examined, and the
+  reproduction command — and the repository's own `go.mod`/`go.sum` are byte-unchanged.
+
+- **REQ-E11-S00-01** — Given judgment call (d) is **open** and is precisely the question of
+  whether OPA may enter this module's dependency graph, when the spike is written, then it
+  lives in its **own nested module** (`hack/spikes/rego/go.mod`) and the repository's root
+  `go.mod`/`go.sum` gain **no OPA entry**. Go excludes a directory carrying its own `go.mod`
+  from the parent module's `./...`, and this repository has **no `go.work`** (verified), so the
+  spike is unbuildable by `task check` and cannot smuggle the adoption (d) has not yet
+  authorised. Spiking a dependency is not adopting it.
+  - Test: `hack/spikes/rego/go.mod`, root `go.mod`, root `go.sum`
+  - Verify: `git diff --exit-code -- go.mod go.sum && go list ./... | grep -c 'spikes/rego' | grep -qx 0 && task check`
+  - Level: L0
+- **REQ-E11-S00-02** — Given the question is empirical, when the spike runs, then it either
+  (i) **names the public API** that bounds evaluation by a machine-independent count and
+  demonstrates an **identical outcome and identical budget consumption** across N≥100 runs and
+  across at least two `GOMAXPROCS` settings — the property S06 will later have to gate on — or
+  (ii) records that **no such API exists** in the pinned version, with the surface examined
+  enumerated so the finding is falsifiable rather than an absence-of-evidence claim.
+  - Test: `hack/spikes/rego/`, `docs/planning/spikes/spike-d-rego-budget.md`
+  - Verify: `cd hack/spikes/rego && go test ./...`
+  - Level: L0
+- **REQ-E11-S00-03** — Given the verdict routes the epic, when it is recorded, then it states
+  the consequence explicitly and a `D-nnn` row captures it **before S02 changes the published
+  schema**: outcome (i) → judgment call (b) stands unamended and S06 is buildable as written;
+  outcome (ii) → the (b1)(ii) fallback is adopted, Rego-backed rules are restricted to
+  `phase: observe`, and **S02's schema change is re-scoped accordingly** — a `rego:` leaf that
+  can only ever observe is a *different published contract* from one that can gate, and
+  shipping the gating shape first would announce a capability the epic cannot deliver. Under
+  no outcome is this resolved by "timeout → BLOCK" (judgment call (b), (iii)).
+  - Test: `docs/planning/spikes/spike-d-rego-budget.md`, `docs/decisions/decisions.md`
+  - Verify: manual review
+  - Level: L0
 
 ### E11-S01 — Record the tier-1 ceiling with concrete exceeding rules `[autonomous]`
 
@@ -207,7 +288,7 @@ human dependency.
   be expressed within the frozen predicate-scope table (`docs/planning/predicate-scope.md`) —
   and no employer or internal system name appears (D-002).
   - Test: `docs/planning/rego-tier-ceiling.md`
-  - Verify: `task scrub && task check`
+  - Verify: `bash hack/check-sanitization.sh && task check`
   - Level: L0
 - **REQ-E11-S01-02** — Given a shape might in fact be CEL-expressible, when the document is
   reviewed, then any shape found expressible in CEL is **struck from E11's scope** and
@@ -218,7 +299,9 @@ human dependency.
 
 ### E11-S02 — Additive `rego:` leaf in the policy schema `[autonomous · engine-grade · maintainer LGTM]`
 
-- **Dependencies**: S01.
+- **Dependencies**: **S00** (blocking — its verdict decides whether the announced leaf is the
+  gating shape or the `phase: observe`-only shape, per REQ-E11-S00-03; this is a published
+  contract and announcing the wrong shape is not walk-back-able) and S01.
 - **Definition of done**: `merge-policy.schema.json`'s `leaf` becomes a `oneOf` over the
   existing `cel` shape and a new `rego` shape; strict-decode still rejects unknown fields and
   a leaf carrying **both** backends; `API_STABILITY.md` records the announced additive change;
@@ -249,14 +332,26 @@ human dependency.
 - **REQ-E11-S02-04** — Given every prior epic's DoD was `git diff schemas/` == 0, when E11's
   gates run, then the schema-drift guard is **scoped**, not deleted: drift is permitted only
   in `merge-policy.schema.json` and only for this change; drift in any `schemas/decision/**`
-  file still fails.
-  - Test: `hack/` schema-drift guard
-  - Verify: `task check`
+  file still fails. **The guard is Go, not a shell script**:
+  `internal/schemadrift/drift.go`'s `CheckGitFrozenOrD088PresentationOnly` compares against
+  `origin/main` through a two-file fence list and is invoked from three exit-gate tests, so
+  scoping it means adding a **third fence plus an `Allowed…Change` validator** — not editing
+  `hack/`. The validator must accept *only* the additive `rego:` leaf; a fence that permits
+  arbitrary drift in `merge-policy.schema.json` would retire the guarantee rather than scope it.
+  - Test: `internal/schemadrift/drift.go`, `internal/schemadrift/drift_test.go`
+  - Verify: `go test ./internal/schemadrift/... && task check`
   - Level: L1
 
-### E11-S03 — Module loading and compile-time errors `[autonomous]`
+### E11-S03 — Module loading and compile-time errors `[autonomous · engine-grade · maintainer LGTM]`
 
-- **Dependencies**: S02.
+- **Dependencies**: S02 **and the operator's answer to judgment call (d)** — S03 cannot start
+  without it. This story is where the narrowing (d) governs actually *happens*: REQ-E11-S03-03
+  puts OPA in `go.mod`, and this story's Test paths are inside the D-123 guarded tree. Because
+  neither purity gate is transitive, S03 would land **green** while converting rule 7's
+  guarantee from link-enforced to capability-enforced — a hard-rule change made by merging a
+  story, which rule 6 forbids. (d) additionally decides **which package** the evaluator lives
+  in: the `internal/core/policy/**` paths below are written against **(d1)** and must be
+  re-pathed to the injected, unguarded package if the operator answers **(d2)**.
 - **Definition of done**: modules resolve from the pack directory **on the target ref**
   (judgment call (e)); a module that fails to compile is a **load-time hard error** (E3 lint
   parity), never a runtime surprise; the OPA dependency is pinned.
@@ -265,8 +360,15 @@ human dependency.
   resolves through the **same target-ref policy load path** as YAML policy, and no second
   loader can read a module from the PR head — asserted by a test that places a hostile module
   on the head ref and proves it is not evaluated.
-  - Test: `internal/core/policy/rego_load.go`, `rego_load_test.go`
-  - Verify: `go test ./internal/core/... -run TestRegoLoadsFromTargetRef`
+  **Placement, because the obvious location does not compile:** `internal/core/policy`'s loader
+  tier is **bytes-in and pure** (`LoadMergePolicy(raw []byte)`); *all* ref-addressed reading
+  lives in `cmd/assent` (`run.go:203`, `:211`, `:253`), and `.golangci.yml:39` denies
+  `internal/forge` from `**/internal/core/**` — so a core-resident loader cannot fetch a ref at
+  all. `internal/core/policy/rego_load.go` therefore takes an **injected reader** supplied by
+  `cmd/assent`, and the hostile-module-on-the-head-ref test lives in **`cmd/assent`**, where the
+  ref plumbing exists. If the operator answers **(d2)**, these paths move with the evaluator.
+  - Test: `internal/core/policy/rego_load.go`, `rego_load_test.go`, `cmd/assent/run_rego_test.go`
+  - Verify: `go test ./internal/core/... ./cmd/... -run TestRegoLoadsFromTargetRef`
   - Level: L1
 - **REQ-E11-S03-02** — Given E3's hard-error framework, when a module fails to compile or
   references an undefined rule, then `assent lint` reports it as a **hard error** with the
@@ -276,16 +378,31 @@ human dependency.
   - Level: L1
 - **REQ-E11-S03-03** — Given judgment call (d), when OPA is added to `go.mod`, then the
   version is pinned, `govulncheck` and `renovate` cover it, and the binary-size delta is
-  recorded in the story's notes.
+  recorded in the story's notes. **This REQ may not be started before (d) is answered** — it is
+  the adoption itself, not a consequence of it.
   - Test: `go.mod`, `go.sum`
   - Verify: `task check && govulncheck ./...`
   - Level: L0
+- **REQ-E11-S03-04** — Given both purity gates are **non-transitive** and (d1)'s entire premise
+  is that the exception stays visible, when the operator answers **(d1)**, then this story also
+  extends the purity guard to a **transitive** check (`go list -deps` over the guarded tree)
+  asserting the transitive closure contains no `net`/`net/*` **except** through the single
+  explicitly allowlisted OPA path — and a mutation control proves the guard goes red when a
+  *second* dependency pulls `net` in, so the exception cannot widen unnoticed. Without this the
+  narrowing is accepted but not enforced, which is strictly worse than the status quo: it reads
+  as governed while checking nothing. If the operator answers **(d2)** this REQ is struck and
+  replaced by the depguard rule denying the evaluator package from `internal/core/**`.
+  - Test: `internal/core/purity_test.go`, `.golangci.yml`, `hack/lint/depguard_test.sh`
+  - Verify: `task lint && task lint-depguard-test && go test ./internal/core/... -run TestPurity`
+  - Level: L1
 
 ### E11-S04 — OPA capability sandbox `[autonomous · engine-grade · maintainer LGTM]`
 
 - **Dependencies**: S03 **and the operator's answer to judgment call (d)** — S04 cannot close
   without it, because (d1) and (d2) place the evaluator in different packages and gate it with
-  different mechanisms. Everything upstream of S04 (S01–S03) is unaffected and may proceed.
+  different mechanisms. **S03 is blocked on the same answer** (see S03's dependencies); the only
+  stories genuinely unaffected by (d) and free to proceed while it is pending are **S00, S01
+  and S02**.
 - **Definition of done**: D-013's sandbox is real — a capability set that **denies by
   default** and allows an explicit, enumerated builtin list; `http.send`, `net.*`,
   `opa.runtime`, `time.*`, `rand.*`, and any I/O builtin are unavailable; a module using one
@@ -434,14 +551,14 @@ human dependency.
 - **REQ-E11-S09-01** — Given E3's framework, when a pack contains a broken Rego rule, then
   `assent lint` exits non-zero with a positioned, contributor-legible message per failure
   class — one test per class.
-  - Test: `internal/core/lint/rego_test.go`
-  - Verify: `go test ./internal/core/lint/`
+  - Test: `internal/lint/rego_test.go`
+  - Verify: `go test ./internal/lint/`
   - Level: L1
 - **REQ-E11-S09-02** — Given D-048's catalogue rules, when a Rego-backed rule is catalogued,
   then its entry is faithful (authored `phase`, `effectivePhase`, generated `docs.url`) and
   fabricates no lifecycle metadata.
-  - Test: `internal/core/catalogue/`
-  - Verify: `go test ./internal/core/catalogue/`
+  - Test: `internal/catalogue/`
+  - Verify: `go test ./internal/catalogue/`
   - Level: L1
 
 ### E11-S10 — `assent test` support and goldens `[autonomous]`
@@ -459,7 +576,7 @@ human dependency.
   - Level: L1
 - **REQ-E11-S10-02** — Given E6's both-polarity coverage rule, when `--coverage` runs, then a
   Rego rule counts as covered only when **both** polarities are exercised.
-  - Test: `internal/core/testharness/`
+  - Test: `internal/adoptertest/`
   - Verify: `go test ./internal/core/...`
   - Level: L1
 
@@ -475,8 +592,12 @@ human dependency.
   removed, then `hack/check-migration-invariants.sh` is updated so it still forbids what
   remains forbidden (no `rego:` leaf in an archetype/starter pack that has not been migrated)
   and no longer asserts a marker that must not exist — the guard is never simply deleted.
-  - Test: `hack/check-migration-invariants.sh`
-  - Verify: `task check`
+  **`task check` does NOT run this guard** — `hack/check-migration-invariants.sh` is invoked
+  only by `.github/workflows/schemas.yml`, so a green local gate proves nothing here. Invoke it
+  directly, and add a mutation control proving the updated guard still goes red on an
+  un-migrated pack carrying a `rego:` leaf.
+  - Test: `hack/check-migration-invariants.sh`, `.github/workflows/schemas.yml`
+  - Verify: `bash hack/check-migration-invariants.sh && task check`
   - Level: L1
 - **REQ-E11-S11-02** — Given the example was excluded from CI, when the quarantine lifts, then
   `examples/policies/rego/bounded_change.rego` validates, compiles under S04's capabilities,
