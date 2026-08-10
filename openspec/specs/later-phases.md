@@ -262,7 +262,7 @@ Was Locked (D-012), reaffirmed locked by D-017 and D-019; unlocked by direct ope
 instruction (D-140), not by the named-consumer trigger. Seam kept honest by the P1-E3-S03
 dossier (REQUEST_CHANGES + conversation-resolution parity, merge queue as merge-result pin,
 base-ref workflow trust) and by the conformance suite being forge-neutral (E7).
-**18 stories (S01–S17 autonomous, S18 infra-gated)** governed by **ADR-0021**, which decides
+**19 stories (S00–S17 autonomous, S18 infra-gated)** governed by **ADR-0021**, which decides
 the three things the audit found under-scoped (ARCH-18/ARCH-19): the named `forge.RunPort`
 composite port, an **importable** conformance suite (today all ~1,166 lines are in `_test.go`
 files a second adapter cannot import), a neutral capability model where `unknown` never arms,
