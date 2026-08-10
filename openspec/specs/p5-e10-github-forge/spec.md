@@ -12,7 +12,7 @@ half-built. AUD-S15 lifted `MRInfo`/`ErrNotFound` into `internal/forge/port.go`,
 `cmd/assent`'s `forgePort` is still an anonymous interface literal at the call site, `run.go`
 still calls `gitlab.SyntheticDigest`, capability vocabulary is GitLab-private, transport
 policy (bounded reads, pagination caps, retry, deadlines) lives inside
-`internal/forge/gitlab`, and **all 1,166 lines of `internal/forge/conformance` are in
+`internal/forge/gitlab`, and **all 1,155 lines of `internal/forge/conformance` are in
 `_test.go` files Go cannot import** — so the suite that defines "behaves like a forge" cannot
 be run by a second adapter. The 2026-08-09 audit recorded this as ARCH-18/ARCH-19:
 `e10-forge-port-lift.md` under-scopes the epic by two design buckets (capability model;
@@ -90,8 +90,9 @@ fixtures, P1-E3-S03 GitHub dossier, AUD-S10/S11 transport hardening, AUD-S15 por
 **New**: importable conformance runner, `forge.RunPort`, `forge.Capability`/`CapabilityReport`,
 `internal/forge/github`, forge selection, `action.yml`.
 
-**Executability**: S01–S17 **`[autonomous]`** with httptest servers (REST **and** GraphQL) and
-the in-memory fake. S02/S04 additionally **`[maintainer LGTM]`** — ADR-0021 names the port and
+**Executability**: S00–S17 **`[autonomous]`** with httptest servers (REST **and** GraphQL) and
+the in-memory fake. S00 is a **design** story (a document, no code) and S00/S02/S04 additionally
+**`[maintainer LGTM]`** — ADR-0021 names the port and
 capability model core-contract work per GOVERNANCE, and `/agent-loop-auto`'s stop conditions
 already require surfacing public-API/core-contract changes rather than auto-merging them. S18
 **`[infra-gated · operator]`** (a real GitHub repository, live PRs, a token).
@@ -106,13 +107,14 @@ executable contract.
 
 ## Judgment calls (decide-and-log / operator)
 
-(a) **🟡 OPERATOR — Actions entrypoint (S16) is IN scope but LAST and independently
-droppable.** `later-phases.md` titles the epic "GitHub adapter + Actions entrypoint", so
-dropping it silently would contradict the plan; but a composite action is a *distribution*
-concern (E9's domain) sitting on top of an adapter, and it is the one story whose absence
-leaves everything else useful. Recommended default: keep S16 as the final pre-gate story;
-if the operator prefers, cut it to a follow-on and the exit gate (S17) drops its row without
-any other change. **Recorded as D-140's open sub-question.**
+(a) **✅ OPERATOR-ANSWERED (2026-08-10): option (a) — Actions entrypoint (S16) is IN scope but
+LAST and independently droppable.** `later-phases.md` titles the epic "GitHub adapter + Actions
+entrypoint", so dropping it silently would contradict the plan; but a composite action is a
+*distribution* concern (E9's domain) sitting on top of an adapter, and it is the one story whose
+absence leaves everything else useful. The operator confirmed the recommended default: **keep
+S16 as the final pre-gate story**; should it later be cut to a follow-on, the exit gate (S17)
+drops its row without any other change. This sub-question of D-140 is **closed** — S16 is not
+blocked and needs no further operator input.
 
 (b) **DECIDED — v1 GitHub target is behavioural parity for the *gate*, with capability gaps
 failing closed.** Per dossier §3 and OQ-7/OQ-18: required-conversation-resolution carries
@@ -200,7 +202,8 @@ runs it.
 
 - **Goal**: a second adapter can execute the *existing* forge conformance cases without
   copying them.
-- **Why now**: `internal/forge/conformance` is 1,166 lines across four `_test.go` files. Go
+- **Why now**: `internal/forge/conformance` is 1,155 lines across four `_test.go` files (the
+  package totals 1,166 including the 11-line non-test `doc.go`). Go
   cannot import `_test.go`, so today the only way to conformance-test a new adapter is
   duplication — which guarantees drift and makes D-084's `github-deferred` rows unflippable.
 - **Dependencies**: S00.
@@ -264,8 +267,14 @@ runs it.
 
 - **REQ-E10-S02-01** — Given ADR-0021 §1, when `forge.RunPort` is declared, then it composes
   `forge.Forge`, `forge.Snapshotter`, `forge.Resolver`, `Describe(project, mr string)
-  (forge.MRInfo, error)` and `FileAtRef(project, path, ref string) ([]byte, error)`, and
-  `cmd/assent` references that named type only.
+  (forge.MRInfo, error)`, `FileAtRef(project, path, ref string) ([]byte, error)` **and**
+  `FileAtBase(mr, path string) ([]byte, error)` / `FileAtHead(mr, path string) ([]byte, error)`,
+  and `cmd/assent` references that named type only. **Both accessors are required and they are
+  not interchangeable** — REQ-E10-S02-05 binds which is legal where. `FileAtRef` is retained
+  **only** for the ref-addressed *policy* loads ADR-0015 §1 mandates (`cmd/assent/run.go:203`,
+  `:211`, `:253` — MergePolicy, RulesetBinding, pack, all from the target ref by name);
+  implementing this REQ by freezing `FileAtRef` as the *sole* content accessor satisfies the
+  signature while preserving the fabricated-DELETE defect, and is a failure of this story.
   - Test: `internal/forge/port.go`, `cmd/assent/run.go`
   - Verify: `go build ./... && go test ./cmd/... ./internal/forge/...`
   - Level: L1
@@ -291,14 +300,25 @@ runs it.
   - Test: `hack/lint/depguard_test.sh`
   - Verify: `task lint`
   - Level: L1
-- **REQ-E10-S02-05** — Given ADR-0021 item 5, when `RunPort` is declared, then content is
-  addressed **relative to the merge request** (`FileAtBase(mr, path)` / `FileAtHead(mr,
-  path)`), not by `(project, branch-name)`, so an adapter owns how it reaches a fork's head.
-  A conformance case proves a **fork MR with an unchanged governed file yields NO lifecycle
-  event** on every adapter — the fabricated-DELETE defect. Smuggling `refs/pull/N/head` into
-  `MRInfo.SourceBranch` is rejected: it corrupts a documented field and leaks into rendering.
+- **REQ-E10-S02-05** — Given ADR-0021 item 5, when `RunPort` is declared, then **the governed
+  subject** is addressed **relative to the merge request** (`FileAtBase(mr, path)` /
+  `FileAtHead(mr, path)`), not by `(project, branch-name)`, so an adapter owns how it reaches a
+  fork's head. A conformance case proves a **fork MR with an unchanged governed file yields NO
+  lifecycle event** on every adapter — the fabricated-DELETE defect. Smuggling
+  `refs/pull/N/head` into `MRInfo.SourceBranch` is rejected: it corrupts a documented field and
+  leaks into rendering.
+  **The boundary is enforced in both directions, and both are asserted:**
+  (i) the governed-subject reads (`cmd/assent/run.go:270`, `:274`, via `fileAtRefOrAbsent`)
+  call `FileAtBase`/`FileAtHead` and **no** `FileAtRef` call remains on the governed-subject
+  path — asserted by a source-level guard, because a green `TestForkMRNoFabricatedDelete`
+  against a fake that happens to serve the right bytes does not prove the call was rewritten;
+  (ii) the **policy** loads (`run.go:203`, `:211`, `:253`) still use
+  `FileAtRef(project, path, targetBranch)` and are **not** migrated — a test asserts policy is
+  read from the target ref of the target project even for a fork MR, so a well-meaning
+  "consistency" refactor onto an MR-relative accessor (which would let a fork's head reach the
+  policy load) fails the suite rather than silently crossing ADR-0015 §1's trust boundary.
   - Test: `internal/forge/port.go`, `internal/forge/conformance/`, `cmd/assent/run.go`
-  - Verify: `go test ./... -run TestForkMRNoFabricatedDelete`
+  - Verify: `go test ./... -run 'TestForkMRNoFabricatedDelete|TestPolicyLoadsFromTargetRefOnForkMR'`
   - Level: L1
 - **REQ-E10-S02-06** — Given ADR-0021 item 7, when the port is declared, then it exposes the
   **authenticated identity**, and a case proves markers are recognised as our own under
@@ -428,7 +448,7 @@ runs it.
 - **REQ-E10-S06-03** — Given `gitleaks` and D-002, when the adapter and its cassettes are
   committed, then no real token, org name, or private repository name appears in any fixture.
   - Test: `internal/forge/github/testdata/**`
-  - Verify: `task scrub && task check`
+  - Verify: `bash hack/check-sanitization.sh && task check`
   - Level: L0
 
 ### E10-S07 — GitHub Snapshot `[autonomous]`
@@ -633,7 +653,7 @@ runs it.
   `github-deferred` row in `catalog.yaml` is either flipped to `both` or **retains the
   deferral with a named, cited reason**; D-084 is dispositioned.
 
-- **REQ-E10-S14-01** — Given **every one of the 15 non-deferred catalog rows is
+- **REQ-E10-S14-01** — Given **every one of the 14 non-deferred catalog rows is
   `forge: gitlab`**, when the catalog is updated, then **every row** — not only
   `github-deferred` ones — carries an explicit per-adapter disposition (`both`, or a single
   forge **plus a cited reason**), and a test fails on any bare `forge: gitlab` row.
