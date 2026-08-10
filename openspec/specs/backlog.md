@@ -542,6 +542,61 @@ table. Every one of the **37** 2026-08-06 finding IDs is dispositioned in
 > check (it is skipped on PRs today, so a regression is detected only post-merge — which is
 > exactly what happened at `49ba1ad`).
 
+## P5-E10 — GitHub forge adapter + Actions entrypoint (**UNLOCKED D-140**)
+
+Spec: [p5-e10-github-forge/spec.md](p5-e10-github-forge/spec.md) · ADR: **0021** (the seam) ·
+Dossier: [forge-dossier-github.md](../../docs/planning/forge-dossier-github.md).
+**Ordering is normative — the seam (S01–S05) lands before the first GitHub API call**, because
+the conformance suite is unimportable today and an adapter written now would have no executable
+contract to satisfy. S02/S04 are core-contract and require **maintainer LGTM** (GOVERNANCE);
+`/agent-loop-auto` must surface them rather than auto-merge.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| E10-S01 | Extract the conformance suite into an importable package (`RunSuite`) | **[autonomous]** | none | **story zero** — without it no adapter can be TDD'd |
+| E10-S02 | ⚠️ `forge.RunPort` named composite port + depguard denies both adapters from `cmd` | **[autonomous · engine-grade · LGTM]** | S01 | one neutral seam; ARCH-02 cannot recur |
+| E10-S03 | ⚠️ Collapse `SyntheticDigest` onto `Snapshot.Heads.MergeResultDigest` | **[autonomous · engine-grade]** | S02 | digest scheme adapter-owned; allowlist emptied |
+| E10-S04 | ⚠️ Neutral capability model — `unknown` never arms | **[autonomous · engine-grade · LGTM]** | S02 | one fail-closed guarantee, not two |
+| E10-S05 | Port-level transport requirements (bounded reads, caps, GET-only retry, deadlines) | **[autonomous]** | S01, S04 | availability behaviour can't diverge per adapter |
+| E10-S06 | GitHub client: REST + GraphQL, PAT + App installation auth | **[autonomous]** | S05 | adapter foundation; no secret in any fixture |
+| E10-S07 | GitHub Snapshot (MRInfo, ADR-0020 changed-file completeness, merge-result pin) | **[autonomous]** | S06 | absent-means-trusted closed on fork detection |
+| E10-S08 | ⚠️ GitHub Resolve → `ApprovalEvidence` (author/bot excluded, dismissal-aware) | **[autonomous · engine-grade]** | S06 | unprovable eligibility ⇒ unsatisfiable |
+| E10-S09 | ⚠️ GitHub capability report (11 flags; unverified ⇒ `unknown`) | **[autonomous · engine-grade]** | S04, S06 | honest gaps; exhaustiveness enforced |
+| E10-S10 | ⚠️ GitHub Reconcile writes (ADR-0019 parity, GraphQL thread resolution) | **[autonomous · engine-grade]** | S07–S09 | same engine, second adapter |
+| E10-S11 | ⚠️ SHA-guarded merge + deferred arming + revoke-on-push | **[autonomous · engine-grade]** | S10 | ADR-0015 §2 on GitHub |
+| E10-S12 | ⚠️ Capability gaps fail closed (3 deltas, `merges == 0` proven) | **[autonomous · engine-grade]** | S11 | the polarity reviews keep finding untested |
+| E10-S13 | Forge selection in `run`/`doctor`; ambiguity fails closed | **[autonomous]** | S12 | no default-to-GitLab |
+| E10-S14 | Conformance parity + `github-deferred` catalog flip (D-084 dispositioned) | **[autonomous]** | S13 | no bare deferrals; both factories in CI |
+| E10-S15 | Docs & maturity truth (README tier, C4, `--forge`, dossier items) | **[autonomous]** | S14 | no doc claims an `unknown` capability |
+| E10-S16 | Actions entrypoint (`action.yml`, pinned binary, base-ref trust) | **[autonomous — scope-flagged]** | S15 | **D-140 open sub-question**; independently droppable |
+| E10-S17 | Exit gate | **[autonomous]** | S01–S16 | **the E10 exit gate** |
+| E10-S18 | Live GitHub adoption proof on a real repo (mirrors D-042) | **[infra-gated · operator]** | S17 + infra | D-012-grade evidence; not an autonomous blocker |
+
+## P5-E11 — Complex-rule backend: Rego predicate tier (**IMPLEMENTATION UNLOCKED D-141**)
+
+Spec: [p5-e11-rego-backend/spec.md](p5-e11-rego-backend/spec.md) · ADR: **0002 v2** (governing).
+**Two traps recorded in D-141**: E11 is the **first epic whose DoD is `git diff schemas/` != 0**
+(announced additive `rego:` leaf; `schemas/decision/**` still frozen), and a **wall-clock
+evaluation timeout would itself violate rule 7** — the budget must be machine-independent and
+exceeding it is a process error, never a policy outcome. S02/S04/S06/S07 require **maintainer
+LGTM** (published contract + the decision path itself). Independent of E10; may run in parallel.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| E11-S01 | Record the tier-1 (CEL) ceiling with concrete exceeding rules | **[autonomous]** | none | **do first** — a CEL-expressible shape is struck from scope |
+| E11-S02 | ⚠️ Additive `rego:` leaf in the policy schema (announced, no `apiVersion` bump) | **[autonomous · engine-grade · LGTM]** | S01 | drift guard scoped, not deleted |
+| E11-S03 | Module loading from the **target ref**; compile failure is a lint hard error | **[autonomous]** | S02 | no second, laxer load path |
+| E11-S04 | ⚠️ OPA capability sandbox (D-013) — denied builtins fail at **compile** | **[autonomous · engine-grade · LGTM]** | S03 | rule 7 structurally; golden allowlist |
+| E11-S05 | ⚠️ Input binding to the identical `EvaluationInput` | **[autonomous · engine-grade]** | S04 | proves P3-E1-S02 neutrality empirically |
+| E11-S06 | ⚠️ Deterministic evaluation budget (never wall-clock) | **[autonomous · engine-grade · LGTM]** | S05 | N≥100 identical runs; budget ≠ decision |
+| E11-S07 | ⚠️ Violations → findings; **zero violations never proves an obligation** | **[autonomous · engine-grade · LGTM]** | S06 | the failing polarity is tested |
+| E11-S08 | ⚠️ Aggregation boundary — module cannot set effect/points/phase | **[autonomous · engine-grade]** | S07 | ADR-0002 v2 / ADR-0007 held structurally |
+| E11-S09 | `assent lint` hard errors + faithful catalogue entries | **[autonomous]** | S08 | E3 parity for the second backend |
+| E11-S10 | `assent test` support + both-polarity coverage | **[autonomous]** | S08 | ADR-0014 unchanged |
+| E11-S11 | Remove the `# locked: D-012` quarantine; **update** the P3-E3-S04 guard | **[autonomous]** | S10 | only E11's lane may do this |
+| E11-S12 | Docs & maturity truth; retire ADR-0002's "pluggable half unbuilt" line | **[autonomous]** | S11 | nothing still calls Rego locked |
+| E11-S13 | Exit gate | **[autonomous]** | S01–S12 | **the E11 exit gate** |
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
@@ -551,7 +606,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S13, D-099–D-111 CLOSED; Homebrew Formula live; PAT rotate optional); **PCS AUTONOMOUS COMPLETE** ([p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md), S01–S09, **D-057 closed**, D-118); E11/E12 **unlocked** (D-017); E14 gated on Spike D; E10/E13 **locked** (D-012) | per-epic; E9 exit = tagged signed release + docs live + brew Formula (D-111); PAT rotate optional |
+| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S13, D-099–D-111 CLOSED; Homebrew Formula live; PAT rotate optional); **PCS AUTONOMOUS COMPLETE** ([p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md), S01–S09, **D-057 closed**, D-118); **E10 UNLOCKED + DECOMPOSED** (D-140, [p5-e10-github-forge/spec.md](p5-e10-github-forge/spec.md), 18 stories, ADR-0021); **E11 IMPLEMENTATION UNLOCKED + DECOMPOSED** (D-141, [p5-e11-rego-backend/spec.md](p5-e11-rego-backend/spec.md), 13 stories); E12 **contract-unlocked** (D-017), not decomposed; E14 gated on Spike D; **E13 still locked** (D-012) | per-epic; E9 exit = tagged signed release + docs live + brew Formula (D-111); PAT rotate optional |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).

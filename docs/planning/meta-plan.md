@@ -97,9 +97,12 @@ Follow-on epics cut during Phase 5, outside the E1–E9 sequence: **EFE**
 (`p5-pcs-policy-comparison`, full comparison-suite runner), **AUD**
 (`p5-aud-audit-remediation`, post-release audit remediation).
 
-Deferred tiers keep their own numbers and unlock only with a named consumer (D-012):
-**E10** GitHub adapter, **E11** Rego backend, **E12** `serve` (HTTP API), **E13** remote
-packs — see the feature-maturity table in `README.md`.
+Deferred tiers keep their own numbers. **E10** GitHub adapter (**unlocked D-140**, spec
+`p5-e10-github-forge`, governed by ADR-0021) and **E11** Rego backend (**implementation
+unlocked D-141**, spec `p5-e11-rego-backend`) are decomposed and executable; **E12** `serve`
+(contract-unlocked by D-017, not decomposed) and **E13** remote packs (**still Locked** under
+D-012 — the named-consumer requirement is untouched for that tier) are not. See the
+feature-maturity table in `README.md`.
 
 Ordering constraint: E7 starts early (alongside E1) because every later epic's exit gate
 depends on it.
