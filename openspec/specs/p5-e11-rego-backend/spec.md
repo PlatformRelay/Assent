@@ -236,7 +236,7 @@ human dependency.
   the annoying direction. This story exists so that discovery is free.
 - **Dependencies**: none. It is deliberately **not** blocked on judgment call (d) — see
   REQ-E11-S00-01, which is what makes that true.
-- **Definition of done**: `docs/planning/spikes/spike-d-rego-budget.md` records the verdict, the
+- **Definition of done**: `docs/planning/spikes/spike-e-rego-budget.md` records the verdict, the
   pinned OPA version it was established against, the exact API surface examined, and the
   reproduction command — and the repository's own `go.mod`/`go.sum` are byte-unchanged.
 
@@ -248,7 +248,7 @@ human dependency.
   spike is unbuildable by `task check` and cannot smuggle the adoption (d) has not yet
   authorised. Spiking a dependency is not adopting it.
   - Test: `hack/spikes/rego/go.mod`, root `go.mod`, root `go.sum`
-  - Verify: `git diff --exit-code -- go.mod go.sum && go list ./... | grep -c 'spikes/rego' | grep -qx 0 && task check`
+  - Verify: `git diff --exit-code -- go.mod go.sum && ! go list ./... | grep -q 'spikes/rego' && task check`
   - Level: L0
 - **REQ-E11-S00-02** — Given the question is empirical, when the spike runs, then it either
   (i) **names the public API** that bounds evaluation by a machine-independent count and
@@ -256,7 +256,7 @@ human dependency.
   across at least two `GOMAXPROCS` settings — the property S06 will later have to gate on — or
   (ii) records that **no such API exists** in the pinned version, with the surface examined
   enumerated so the finding is falsifiable rather than an absence-of-evidence claim.
-  - Test: `hack/spikes/rego/`, `docs/planning/spikes/spike-d-rego-budget.md`
+  - Test: `hack/spikes/rego/`, `docs/planning/spikes/spike-e-rego-budget.md`
   - Verify: `cd hack/spikes/rego && go test ./...`
   - Level: L0
 - **REQ-E11-S00-03** — Given the verdict routes the epic, when it is recorded, then it states
@@ -267,7 +267,7 @@ human dependency.
   can only ever observe is a *different published contract* from one that can gate, and
   shipping the gating shape first would announce a capability the epic cannot deliver. Under
   no outcome is this resolved by "timeout → BLOCK" (judgment call (b), (iii)).
-  - Test: `docs/planning/spikes/spike-d-rego-budget.md`, `docs/decisions/decisions.md`
+  - Test: `docs/planning/spikes/spike-e-rego-budget.md`, `docs/decisions/decisions.md`
   - Verify: manual review
   - Level: L0
 
@@ -393,7 +393,7 @@ human dependency.
   as governed while checking nothing. If the operator answers **(d2)** this REQ is struck and
   replaced by the depguard rule denying the evaluator package from `internal/core/**`.
   - Test: `internal/core/purity_test.go`, `.golangci.yml`, `hack/lint/depguard_test.sh`
-  - Verify: `task lint && task lint-depguard-test && go test ./internal/core/... -run TestPurity`
+  - Verify: `task lint && task lint-depguard-test && go test ./internal/core/... -run TestCorePurity`
   - Level: L1
 
 ### E11-S04 — OPA capability sandbox `[autonomous · engine-grade · maintainer LGTM]`
@@ -623,7 +623,7 @@ human dependency.
 
 ### E11-S13 — Exit gate `[autonomous]`
 
-- **Dependencies**: S01–S12.
+- **Dependencies**: S00–S12.
 - **Definition of done**: `hack/policy/e11_exitgate_test.sh` proves in one invocation: denied
   builtins fail compilation (all cases); determinism over N ≥ 100 runs; the empty-violations
   polarity test present and failing-closed; the effect/points boundary held; the scoped schema
