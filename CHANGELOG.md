@@ -94,9 +94,13 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(openspec): fix two P0 design defects found by adversarial review
 - :memo: docs(openspec): correct the E10 story count to 19 after adding S00
 - :memo: docs(openspec): fix 3 P1 design defects found by independent review of PR #45
+- :memo: docs(openspec): design P5-DEM public demo repositories (D-142, OQ-32)
+- :memo: docs(openspec): add the missing P5-DEM backlog rows and correct the story count
 - :memo: docs(openspec): close 5 P2/P3 findings from the PR #45 re-review
 - :memo: docs(openspec): close H1/H2 — the FileAtRef enumeration was not exhaustive
 - :memo: docs(openspec): make the cmd/assent port boundary an enforced invariant (I1-I3)
+- :memo: docs(openspec): fix 4 P1 design defects found by independent review of PR #47
+- :memo: docs(openspec): close F7/F8/F10/F11/F17/F18 from the PR #47 re-review
 
 ### Testing
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token

@@ -605,6 +605,42 @@ LGTM** (published contract + the decision path itself). Independent of E10; may 
 | E11-S12 | Docs & maturity truth; retire ADR-0002's "pluggable half unbuilt" line | **[autonomous]** | S11 | nothing still calls Rego locked |
 | E11-S13 | Exit gate | **[autonomous]** | S00–S12 | **the E11 exit gate** |
 
+### P5-DEM — Public demo repositories + provider extensibility proof — spec: [p5-dem-demo-repos](p5-dem-demo-repos/spec.md)
+
+Designed spec-first by **D-142**; the provider-credential gap found while designing is **OQ-32**.
+Two public demo repos on a **two-tier contract**: tier 1 (`git clone && assent test .`) is
+forge-independent and deliverable now on both; tier 2 (live MR/PR) is GitLab now, GitHub blocked
+on E10-S18. Split by **governance shape, not by tool** — repo 1 is *referential* (an ACL names a
+topic and a principal), repo 2 is *blast radius* + the opaque-change fallback. **15 stories,
+S00–S14.** 🔴 **S00 is not optional and not cosmetic**: `(class, environment)` binding routing is
+**not wired** (`run.go:493` fails closed on >1 binding; `test.go:366` collapses to strictest but
+fails closed when bindings differ in `class`/`packs`/`require[]`), so both demo repos fail closed
+in **both** tiers on **both** forges as designed. S13 is **operator-gated** — creating public
+repos under the `PlatformRelay` org is outward-facing and **not** covered by AGENTS.md rule 2's
+push grant to `PlatformRelay/assent` (D-142 judgment call (d)).
+
+🔴 **No DEM story is implementable until its REQs carry `Test:`/`Verify:`/`Level:` annotations** —
+the epic has **0** today against E10's 53, E11's 36 and E6's 42, so "green" is undefined for all
+15 stories. Deferred to its own change, not waived.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| DEM-S00 | 🔴 Wire `(class, environment)` binding routing at the `cmd/assent` seam; **delete** `selectBindingForTest`'s strictest-collapse | **[autonomous · engine-grade · LGTM]** | none | **do first** — without it both repos fail closed in both tiers; supersedes D-060 |
+| DEM-S01 | Provider host declarations: worked examples, docs, and a both-polarity gate | **[autonomous]** | S00 | closes G1 — today **every** shipped example's provider resolves to nothing |
+| DEM-S02 | Provider-author guide | **[autonomous — but see OQ-32]** | S01 | 🔴 the guide **cannot publish** until OQ-32 is ruled; S02 may write everything else and must cross-link the OQ, but the `docs/vision.md:67` + ADR-0004 §1 amendment is operator-gated |
+| DEM-S03 | Reference IdP-groups broker provider (`contrib/`, Entra + Keycloak adapters) | **[autonomous]** | S02 | the L2→L3 step is two files, zero lines of assent rebuilt |
+| DEM-S04 | New sample shapes: Kafka ACL + ArgoCD Application | **[autonomous]** | S03 | referential shapes no shipped example exercises |
+| DEM-S05 | `kafka-acl` class + cross-manifest reference rules | **[autonomous]** | S04 | doubles as the **E11-S01 tier-1 ceiling probe** (D-141) |
+| DEM-S06 | `argocd-application` class + rules | **[autonomous]** | S05 | `builtin/resource-owner` (REF-GAP-1) end to end |
+| DEM-S07 | Repo 1 assembly (`assent-demo-platform`, GitLab) | **[autonomous]** | S06 | tier 1 green on repo 1 |
+| DEM-S08 | Raw `.tf` shape + HCL structuring truth | **[autonomous]** | S00 | states what assent can and cannot see in HCL |
+| DEM-S09 | `tf-module-instance` class + rules | **[autonomous]** | S08 | magnitude / blast-radius archetype |
+| DEM-S10 | `tf-backend` **ungoverned → REVIEW** (D-063) | **[autonomous]** | S09 | must **determine** unmatched-edit behaviour by running it, not assert it |
+| DEM-S11 | Repo 2 assembly (`assent-demo-terraform`, GitHub) | **[autonomous]** | S10 | also **E10-S18's live adoption target** |
+| DEM-S12 | Demo CI + mirror-drift gate | **[autonomous]** | S07, S11 | in-tree under `examples/demo/**` **so that `task check` will cover it — it does NOT today**: `task check` runs no example dogfood, `task dogfood-examples` is called by nothing, and `verify.yaml` duplicates it as a hardcoded pack loop. S12 must edit **both** |
+| DEM-S13 | 🔴 Publish the repositories under the `PlatformRelay` org | **[operator]** | S12 | **operator-gated** — outward-facing, beyond rule 2's grant |
+| DEM-S14 | Live tier-2 proof on GitLab | **[infra-gated · operator]** | S13 | **the DEM exit gate** |
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
