@@ -92,6 +92,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(decisions): unlock E10 + E11 (D-140/D-141) and record ADR-0021
 - :memo: docs(openspec): decompose E10 and E11 into INVEST stories
 - :memo: docs(openspec): fix two P0 design defects found by adversarial review
+- :memo: docs(openspec): correct the E10 story count to 19 after adding S00
 
 ### Testing
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token
