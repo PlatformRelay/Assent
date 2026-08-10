@@ -97,7 +97,9 @@ the decision path itself.
 **Dependency order**: S01 → S02 → S03 → S04 → S05 → S06 → S07 → S08 → {S09, S10} → S11 → S12
 → S13. **Do first: S01** — the ceiling document determines whether the backend's shape is
 right; building it without one reproduces the speculative-generality risk D-012 existed to
-prevent.
+prevent. **S04 is blocked on an operator answer** (judgment call (d)): the rule-7 boundary
+question decides which package the evaluator lives in and which gate enforces it. S01–S03 are
+unblocked and can run while that answer is pending.
 
 ## Judgment calls (decide-and-log / operator)
 
@@ -107,6 +109,17 @@ binary through strict-decode, which is the **correct** direction (an old binary 
 silently ignore a rule it cannot evaluate). This is backward-compatible and deliberately
 forward-**in**compatible, and S02 records it in `API_STABILITY.md` as an announced additive
 change — no `apiVersion` bump.
+
+(b1) **⚠️ SPIKE S06 BEFORE S02 — it is a serial chokepoint on an API that may not exist.**
+Adversarial review, marked verify-not-verified: OPA's public `rego` package may bound
+evaluation only via `context.Context` cancellation, with **no supported deterministic
+instruction/step budget**. If so, judgment call (b) below cannot be satisfied as written — and
+the current order (S05→S06→…) would stall the epic at story 6 of 13 with the **schema already
+changed (S02)** and the **OPA dependency already added (S03)**. Mitigation, in order of
+preference: (i) spike S06's feasibility before S02 lands anything irreversible; (ii) if no
+deterministic budget exists, the fallback is that Rego-backed rules are restricted to
+`phase: observe` — they report but never gate — so the epic still lands something honest; (iii)
+what is **not** acceptable is relaxing (b).
 
 (b) **DECIDED — evaluation is bounded by a deterministic budget, never a wall-clock timeout.**
 Per rule 7: the bound is an OPA evaluation-step/instruction budget that yields the identical
@@ -123,15 +136,45 @@ required obligation. A Rego-backed obligation is proven only by an explicit, str
 value; absence of violations satisfies **non-obligation** rules only. S07 owns both polarities
 and must test the failing one.
 
-(d) **🟡 OPERATOR — the OPA dependency is a supply-chain decision, not just an import.**
-`github.com/open-policy-agent/opa` is a large dependency with a large transitive tree, on a
-project whose release story includes SLSA-grade provenance, cosign signing, `govulncheck`, and
-Scorecard. Adding it materially changes binary size, vulnerability surface, and the
-`renovate`/`govulncheck` maintenance load. Recommended default: **accept**, since a
-hand-rolled Rego evaluator would be far worse, and pin + vendor-audit it in S03. Flagged for
-an explicit operator ack because it is the kind of change D-012's philosophy ("no speculative
-frozen contracts for tiers without users") exists to make deliberate. **Recorded as D-141's
-open sub-question.**
+(d) **🔴 OPERATOR — BLOCKING. Adopting OPA narrows AGENTS.md rule 7's *mechanism*, and both
+existing purity gates would miss it.** This is the sharpest finding of the design session and
+it must be decided before S03, not discovered during it.
+
+*The gap, verified:* `internal/core/purity_test.go` parses each guarded file and flags
+**that file's own** imports (`math/rand`, `crypto/rand`, `net`, `net/*`) and selectors
+(`os.Getenv`, `time.Now`); `.golangci.yml`'s `pure-tree` depguard is `list-mode: lax`,
+deny-only, over **direct** imports. **Neither is transitive.** So a file in
+`internal/core/**` importing `github.com/open-policy-agent/opa/rego` passes both gates
+green — while transitively linking `net/http` (OPA ships the `http.send` builtin), plus its
+own clock and randomness use. The `net` deny exists precisely to encode "no network stack on
+the decision path" (D-123), and OPA would defeat it invisibly.
+
+*Why S04's sandbox does not by itself resolve it:* the capability set makes `http.send`
+uncallable **from policy**, which is the real threat. But the guarantee's *nature* changes
+from "the network stack is not linked into the decision path" (structural, checkable by
+grep) to "the network stack is linked but unreachable from policy" (behavioural, resting on
+a capability file). That is a weaker guarantee, and it is a hard-rule change — it cannot be
+made silently by a story.
+
+*Options:*
+- **(d1) Accept the narrowing, explicitly [RECOMMENDED].** Rule 7's decision-path guarantee
+  becomes capability-enforced rather than link-enforced for the Rego tier. Requires an
+  **ADR-0011/rule-7 amendment** and a decision row — not just this spec. Pair it with
+  **extending the purity guard to a transitive check** (`go list -deps`) that asserts the
+  guarded tree's transitive closure contains no `net` **except** through the single,
+  explicitly allowlisted OPA path — so the exception is visible, pinned, and cannot widen to
+  a second dependency unnoticed.
+- **(d2) Keep the guarded tree OPA-free** — evaluation behind an interface, implementation in
+  an unguarded package injected from `cmd/assent`. Honest about the boundary, but it moves
+  part of the decision path *outside* the tree rule 7 guards, which is arguably worse: the
+  guarantee is then neither link-enforced nor guard-covered.
+- **(d3) Drop OPA.** A hand-rolled Rego evaluator would be far worse in every dimension.
+  Rejected unless the operator rejects (d1) and (d2).
+
+*Supply chain, separately:* OPA is a large dependency with a large transitive tree on a
+project shipping cosign signing, SLSA-grade provenance, `govulncheck`, and Scorecard. It
+materially changes binary size, vulnerability surface, and `renovate` load. S03 pins it and
+records the size delta. **Both halves are recorded as D-141's open sub-question.**
 
 (e) **DECIDED — Rego modules are policy, and load from the target ref like all policy.**
 ADR-0010/ADR-0015's trust rules apply unchanged: a module is loaded from the target ref,
@@ -189,9 +232,12 @@ human dependency.
   - Level: L0
 - **REQ-E11-S02-02** — Given backward compatibility, when the full pre-E11 example and
   fixture corpus is validated against the new schema, then **every document still validates**
-  and no golden changes.
-  - Test: `examples/**`, `test/**`
-  - Verify: `task test && git diff --exit-code -- examples/ test/`
+  and no golden changes. **Both polarities are required**: a `oneOf` widening can also make a
+  previously-**rejected** document validate, so the `do-not-generalize` guards
+  (`schemas/testdata/compat/do-not-generalize/`, named as executable guards by
+  `API_STABILITY.md`) must still reject everything they rejected before.
+  - Test: `examples/**`, `test/**`, `schemas/testdata/compat/do-not-generalize/`
+  - Verify: `task test && go test ./schemas/... -run TestDoNotGeneralize && git diff --exit-code -- examples/ test/`
   - Level: L1
 - **REQ-E11-S02-03** — Given `API_STABILITY.md:19`'s "announced-only for authored policy",
   when the schema changes, then `API_STABILITY.md` and the changelog record it as an announced
@@ -237,11 +283,14 @@ human dependency.
 
 ### E11-S04 — OPA capability sandbox `[autonomous · engine-grade · maintainer LGTM]`
 
-- **Dependencies**: S03.
+- **Dependencies**: S03 **and the operator's answer to judgment call (d)** — S04 cannot close
+  without it, because (d1) and (d2) place the evaluator in different packages and gate it with
+  different mechanisms. Everything upstream of S04 (S01–S03) is unaffected and may proceed.
 - **Definition of done**: D-013's sandbox is real — a capability set that **denies by
   default** and allows an explicit, enumerated builtin list; `http.send`, `net.*`,
   `opa.runtime`, `time.*`, `rand.*`, and any I/O builtin are unavailable; a module using one
-  fails to **compile**, not at runtime.
+  fails to **compile**, not at runtime; and the rule-7 boundary question is closed by an ADR
+  amendment + decision row rather than by a green-but-non-transitive purity walk.
 
 - **REQ-E11-S04-01** — Given rule 7 and D-013, when a module calls `http.send`, `net.lookup_ip_addr`,
   `time.now_ns`, `rand.intn`, or `opa.runtime`, then compilation **fails** with a message
@@ -256,12 +305,25 @@ human dependency.
   - Test: `internal/core/policy/testdata/allowed-builtins.golden`
   - Verify: `go test ./internal/core/... -run TestAllowedBuiltinsGolden`
   - Level: L1
-- **REQ-E11-S04-03** — Given `TestCorePurity`, when Rego evaluation lives in `internal/core`,
-  then the purity test still passes and the sandbox is what makes that true by construction —
-  if evaluation cannot be made pure, it moves out of core rather than weakening the test.
-  - Test: `internal/core/` purity test
-  - Verify: `go test ./internal/core/... -run TestCorePurity`
+- **REQ-E11-S04-03** — Given judgment call (d) and the verified gap that **both purity gates
+  are direct-import/direct-call only**, when Rego evaluation is placed, then the placement
+  follows the operator's answer (d1/d2/d3) and the story **fails** if it lands a green
+  `TestCorePurity` that is green only because the walk is non-transitive. Under **(d1)**: the
+  purity guard is extended to a transitive `go list -deps` assertion over the guarded tree,
+  with the OPA path as the single named, pinned exception, and a **mutation control** proving
+  the new check goes red when a second `net`-reaching dependency is added. Under **(d2)**: a
+  depguard rule denies the OPA package from every guarded directory, with a mutation control
+  proving it fires.
+  - Test: `internal/core/purity_test.go`, `.golangci.yml`, `hack/lint/depguard_test.sh`
+  - Verify: `go test ./internal/core/... -run TestCorePurity && task lint`
   - Level: L1
+- **REQ-E11-S04-04** — Given (d1) changes a hard rule, when that option is chosen, then an
+  **ADR amendment** (ADR-0011 / AGENTS.md rule 7) and a `D-nnn` row land **before** S05, both
+  stating plainly that the decision path's network guarantee became capability-enforced rather
+  than link-enforced for the Rego tier. The story cannot close on spec text alone.
+  - Test: `docs/adr/`, `docs/decisions/decisions.md`
+  - Verify: manual — S05 is blocked until present
+  - Level: L0
 
 ### E11-S05 — Input binding: the identical `EvaluationInput` `[autonomous · engine-grade]`
 

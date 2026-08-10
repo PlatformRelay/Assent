@@ -546,15 +546,22 @@ table. Every one of the **37** 2026-08-06 finding IDs is dispositioned in
 
 Spec: [p5-e10-github-forge/spec.md](p5-e10-github-forge/spec.md) · ADR: **0021** (the seam) ·
 Dossier: [forge-dossier-github.md](../../docs/planning/forge-dossier-github.md).
-**Ordering is normative — the seam (S01–S05) lands before the first GitHub API call**, because
-the conformance suite is unimportable today and an adapter written now would have no executable
-contract to satisfy. S02/S04 are core-contract and require **maintainer LGTM** (GOVERNANCE);
-`/agent-loop-auto` must surface them rather than auto-merge.
+**Ordering is normative — S00 before any code, and the seam (S01–S05) before the first GitHub
+API call.** An adversarial review of the first draft (2026-08-10) found **two P0 representation
+defects** by reading the port against the code: the port addresses head content by branch name
+in one project, so **every GitHub fork PR would mint a fabricated whole-file DELETE**
+(`run.go:274` → `fileAtRefOrAbsent` → `OneSidedLifecycle`); and `$defs.pins` is
+`additionalProperties:false` with a **single-string** `capabilityGap` required iff
+`mergeResultDigest` is null, so an eleven-capability report **has nowhere valid to be
+recorded**. Both are decided in ADR-0021 (items 5–8) and gated by S00. S00/S02/S04 are
+core-contract and require **maintainer LGTM** (GOVERNANCE); `/agent-loop-auto` must surface
+them rather than auto-merge.
 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
-| E10-S01 | Extract the conformance suite into an importable package (`RunSuite`) | **[autonomous]** | none | **story zero** — without it no adapter can be TDD'd |
-| E10-S02 | ⚠️ `forge.RunPort` named composite port + depguard denies both adapters from `cmd` | **[autonomous · engine-grade · LGTM]** | S01 | one neutral seam; ARCH-02 cannot recur |
+| E10-S00 | ⚠️ GitHub addressing & representation model (4 questions, ~1 page) | **[autonomous · design · LGTM]** | none | **do first** — kills both P0s before the port freezes |
+| E10-S01 | Extract the conformance suite into an importable package + observation surface | **[autonomous]** | S00 | first **code** story; no assertion may be weakened |
+| E10-S02 | ⚠️ `forge.RunPort` + **neutral factory** + MR-relative addressing + identity | **[autonomous · engine-grade · LGTM]** | S00, S01 | one neutral seam; ARCH-02 cannot recur |
 | E10-S03 | ⚠️ Collapse `SyntheticDigest` onto `Snapshot.Heads.MergeResultDigest` | **[autonomous · engine-grade]** | S02 | digest scheme adapter-owned; allowlist emptied |
 | E10-S04 | ⚠️ Neutral capability model — `unknown` never arms | **[autonomous · engine-grade · LGTM]** | S02 | one fail-closed guarantee, not two |
 | E10-S05 | Port-level transport requirements (bounded reads, caps, GET-only retry, deadlines) | **[autonomous]** | S01, S04 | availability behaviour can't diverge per adapter |
@@ -564,9 +571,9 @@ contract to satisfy. S02/S04 are core-contract and require **maintainer LGTM** (
 | E10-S09 | ⚠️ GitHub capability report (11 flags; unverified ⇒ `unknown`) | **[autonomous · engine-grade]** | S04, S06 | honest gaps; exhaustiveness enforced |
 | E10-S10 | ⚠️ GitHub Reconcile writes (ADR-0019 parity, GraphQL thread resolution) | **[autonomous · engine-grade]** | S07–S09 | same engine, second adapter |
 | E10-S11 | ⚠️ SHA-guarded merge + deferred arming + revoke-on-push | **[autonomous · engine-grade]** | S10 | ADR-0015 §2 on GitHub |
-| E10-S12 | ⚠️ Capability gaps fail closed (3 deltas, `merges == 0` proven) | **[autonomous · engine-grade]** | S11 | the polarity reviews keep finding untested |
+| E10-S12 | ⚠️ Capability gaps fail closed — `merges == 0` **and paired `merges == 1`** | **[autonomous · engine-grade]** | S11 | positive control mandatory; else vacuous |
 | E10-S13 | Forge selection in `run`/`doctor`; ambiguity fails closed | **[autonomous]** | S12 | no default-to-GitLab |
-| E10-S14 | Conformance parity + `github-deferred` catalog flip (D-084 dispositioned) | **[autonomous]** | S13 | no bare deferrals; both factories in CI |
+| E10-S14 | Conformance parity — **every** row needs an adapter disposition, not just deferrals | **[autonomous]** | S13 | else GitHub ships with 0 trust-boundary cases proven |
 | E10-S15 | Docs & maturity truth (README tier, C4, `--forge`, dossier items) | **[autonomous]** | S14 | no doc claims an `unknown` capability |
 | E10-S16 | Actions entrypoint (`action.yml`, pinned binary, base-ref trust) | **[autonomous — scope-flagged]** | S15 | **D-140 open sub-question**; independently droppable |
 | E10-S17 | Exit gate | **[autonomous]** | S01–S16 | **the E10 exit gate** |
@@ -584,9 +591,10 @@ LGTM** (published contract + the decision path itself). Independent of E10; may 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
 | E11-S01 | Record the tier-1 (CEL) ceiling with concrete exceeding rules | **[autonomous]** | none | **do first** — a CEL-expressible shape is struck from scope |
-| E11-S02 | ⚠️ Additive `rego:` leaf in the policy schema (announced, no `apiVersion` bump) | **[autonomous · engine-grade · LGTM]** | S01 | drift guard scoped, not deleted |
+| E11-S06′ | ⚠️ **SPIKE first**: does OPA expose a deterministic (non-wall-clock) eval budget? | **[autonomous · spike]** | S01 | if not, S06 stalls the epic *after* S02+S03 commit |
+| E11-S02 | ⚠️ Additive `rego:` leaf in the policy schema (announced, no `apiVersion` bump) | **[autonomous · engine-grade · LGTM]** | S01, S06′ | drift guard scoped; both polarities tested |
 | E11-S03 | Module loading from the **target ref**; compile failure is a lint hard error | **[autonomous]** | S02 | no second, laxer load path |
-| E11-S04 | ⚠️ OPA capability sandbox (D-013) — denied builtins fail at **compile** | **[autonomous · engine-grade · LGTM]** | S03 | rule 7 structurally; golden allowlist |
+| E11-S04 | 🔴 OPA capability sandbox — **blocked on the operator's rule-7 answer (d1/d2/d3)** | **[autonomous · engine-grade · LGTM]** | S03 + operator | both purity gates are non-transitive; see D-141 |
 | E11-S05 | ⚠️ Input binding to the identical `EvaluationInput` | **[autonomous · engine-grade]** | S04 | proves P3-E1-S02 neutrality empirically |
 | E11-S06 | ⚠️ Deterministic evaluation budget (never wall-clock) | **[autonomous · engine-grade · LGTM]** | S05 | N≥100 identical runs; budget ≠ decision |
 | E11-S07 | ⚠️ Violations → findings; **zero violations never proves an obligation** | **[autonomous · engine-grade · LGTM]** | S06 | the failing polarity is tested |
