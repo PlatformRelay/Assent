@@ -86,6 +86,9 @@ repository still gets a decision, never by following the link; no release carrie
 - build(deps): bump astral-sh/setup-uv from 6.1.0 to 9.0.0
 - build(deps): bump github/codeql-action/upload-sarif from 4.37.4 to 4.37.6
 - build(deps): bump github.com/santhosh-tekuri/jsonschema/v6 from 6.0.2 to 6.0.3
+- build(deps): bump actions/attest from 4.2.1 to 4.2.2
+- build(deps): bump github.com/google/cel-go from 0.30.0 to 0.31.0
+- build(deps): bump goreleaser/goreleaser-action from 6.4.0 to 7.2.3
 
 ### Documentation
 - :memo: docs(decisions): record D-126 (D-031 domain deferred) and D-127 (SEC-05 PAT rotation scheduled)
@@ -101,6 +104,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(openspec): make the cmd/assent port boundary an enforced invariant (I1-I3)
 - :memo: docs(openspec): fix 4 P1 design defects found by independent review of PR #47
 - :memo: docs(openspec): close F7/F8/F10/F11/F17/F18 from the PR #47 re-review
+- :memo: docs(openspec): specify Scorecard fuzzing and Best Practices residuals
 
 ### Testing
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token
