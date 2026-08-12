@@ -313,6 +313,15 @@ outcomes, emit a durable safety event, optionally open a revert MR via a separat
 authorized capability (never a direct revert push), and feed adjudicated outcomes into
 policy comparison without treating every human revert as proof the decision was wrong.
 
+### P5-SEC-SC — OpenSSF Scorecard residuals (fuzzing + Best Practices badge) — **Specified, not started**
+Two leftover Scorecard alerts after the 2026-08-13 security sweep (Dependabot/CodeQL/secrets/Sonar
+security clean; Maintained/Code-Review/Branch-Protection dismissed as tool-limit or solo-maintainer
+accepted risk). **S01** (autonomous): native Go `Fuzz*` targets on the YAML/JSON/HCL differ plus a
+CI smoke, so Scorecard Fuzzing is no longer 0 and untrusted MR bytes cannot panic/fail-open.
+**S02** (operator-gated): OpenSSF Best Practices *passing* badge — the operator must create the
+bestpractices.dev project first; in-tree work is an honest evidence page and a README badge only
+after passing. Stories: [p5-sec-scorecard-residuals/spec.md](p5-sec-scorecard-residuals/spec.md).
+
 ### E13 — Remote policy packs — **Locked (D-012)**
 `git::` pack sources pinned by commit SHA (tags are mutable), checksum/signature verified,
 same target-ref/no-self-modification trust rules as local policy (ADR-0010 amendment,
