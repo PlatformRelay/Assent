@@ -77,7 +77,7 @@ runs early/parallel. **Infra-gated (park for operator)**: S10 (L3 e2e green) the
 | --- | --- | --- | --- | --- |
 | **P4-KIND-LAB** | Durable local kind GitLab lab (`task kind-up`, etc.) | **OPEN — authorized, deferred** (D-038) | no (agent lane when claimed) | Promote Spike-B `boot-kind.sh`; CI stays testcontainer |
 | **P4-CODEQL** | Enable CodeQL (Go + Actions) | **DONE** (2026-08-03, D-045) — `.github/workflows/codeql.yaml` | no | Pinned, workflow-based CodeQL with a `go`(manual build)+`actions`(build-mode none) matrix, consistent with sibling repos (MKurator/Kollect); chosen over the zero-config default setup for SHA-pinned reproducibility |
-| **P4-SEC-OSSF** | OpenSSF/security hardening (SECURITY.md, CODEOWNERS, Scorecard, scheduled govulncheck) | **DONE** (2026-08-03, D-045) | no | `SECURITY.md` + `.github/CODEOWNERS` + `scorecard.yaml` + schedule-only `vulncheck.yaml`; modeled on MKurator/Kollect. Residual: turn on branch protection + required checks on `main` (operator) |
+| **P4-SEC-OSSF** | OpenSSF/security hardening (SECURITY.md, CODEOWNERS, Scorecard, scheduled govulncheck) | **DONE** (2026-08-03, D-045) | no | In-tree done. `main` now has required `verify`+CodeQL, `enforce_admins`, no force-push/delete. Remaining Scorecard points (mandatory approvers / required CODEOWNERS review) are **accepted solo-maintainer risk** (code-scanning #1/#4 dismissed 2026-08-13). Open Scorecard work is [P5-SEC-SC](#phase-5--sec-sc-openssf-scorecard-residuals) (fuzzing + Best Practices badge), not more branch-protection settings |
 | **AUD-OPS** | Operator-only audit residuals: SEC-05 rotate `HOMEBREW_TAP_GITHUB_TOKEN` to fine-grained PAT · SEC-06 tag ruleset · RELSE-07 `enforce_admins` on main | **OPEN — operator** | **yes** | Fenced out of P5-AUD (live GitHub settings/secrets); see audit 2026-08-06 |
 | **AUD-RELSE-08** | RELSE-08: make `release-exitgate` a required PR check on `main` (today it can be skipped/pending at merge) | **OPEN — operator** | **yes** | Dispatched from AUD-S03 not-in-scope (live GitHub branch-protection/required-checks settings); see audit 2026-08-06 |
 
@@ -641,6 +641,18 @@ the epic has **0** today against E10's 53, E11's 36 and E6's 42, so "green" is u
 | DEM-S13 | 🔴 Publish the repositories under the `PlatformRelay` org | **[operator]** | S12 | **operator-gated** — outward-facing, beyond rule 2's grant |
 | DEM-S14 | Live tier-2 proof on GitLab | **[infra-gated · operator]** | S13 | **the DEM exit gate** |
 
+## Phase 5 — SEC-SC OpenSSF Scorecard residuals
+
+Full INVEST stories in [p5-sec-scorecard-residuals/spec.md](p5-sec-scorecard-residuals/spec.md).
+Closes the two Scorecard code-scanning alerts that are real work after the 2026-08-13 security
+sweep (Dependabot/CodeQL/secret-scanning/Sonar security all clean). **S01 is the slice to start.**
+S02 cannot start until the operator creates the bestpractices.dev project (INBOX).
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| SEC-SC-S01 | Native Go fuzz targets on YAML/JSON/HCL differ (+ CI smoke) | **[autonomous]** | none | **do first** — Scorecard Fuzzing (#3); untrusted-byte crash/fail-open fence |
+| SEC-SC-S02 | OpenSSF Best Practices passing badge + honest evidence page | **[operator-gated]** | operator creates the bestpractices.dev project | Scorecard CII-Best-Practices (#6); no fake README badge |
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
@@ -650,7 +662,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S13, D-099–D-111 CLOSED; Homebrew Formula live; PAT rotate optional); **PCS AUTONOMOUS COMPLETE** ([p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md), S01–S09, **D-057 closed**, D-118); **E10 UNLOCKED + DECOMPOSED** (D-140, [p5-e10-github-forge/spec.md](p5-e10-github-forge/spec.md), 19 stories, ADR-0021); **E11 IMPLEMENTATION UNLOCKED + DECOMPOSED** (D-141, [p5-e11-rego-backend/spec.md](p5-e11-rego-backend/spec.md), 14 stories); E12 **contract-unlocked** (D-017), not decomposed; E14 gated on Spike D; **E13 still locked** (D-012) | per-epic; E9 exit = tagged signed release + docs live + brew Formula (D-111); PAT rotate optional |
+| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S13, D-099–D-111 CLOSED; Homebrew Formula live; PAT rotate optional); **PCS AUTONOMOUS COMPLETE** ([p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md), S01–S09, **D-057 closed**, D-118); **E10 UNLOCKED + DECOMPOSED** (D-140, [p5-e10-github-forge/spec.md](p5-e10-github-forge/spec.md), 19 stories, ADR-0021); **E11 IMPLEMENTATION UNLOCKED + DECOMPOSED** (D-141, [p5-e11-rego-backend/spec.md](p5-e11-rego-backend/spec.md), 14 stories); E12 **contract-unlocked** (D-017), not decomposed; E14 gated on Spike D; **E13 still locked** (D-012); **SEC-SC SPECIFIED, NOT STARTED** ([p5-sec-scorecard-residuals/spec.md](p5-sec-scorecard-residuals/spec.md), 2 stories — S01 autonomous fuzzing, S02 operator-gated Best Practices badge) | per-epic; E9 exit = tagged signed release + docs live + brew Formula (D-111); PAT rotate optional |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).
