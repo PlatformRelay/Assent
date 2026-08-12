@@ -89,6 +89,7 @@ repository still gets a decision, never by following the link; no release carrie
 - build(deps): bump actions/attest from 4.2.1 to 4.2.2
 - build(deps): bump github.com/google/cel-go from 0.30.0 to 0.31.0
 - build(deps): bump goreleaser/goreleaser-action from 6.4.0 to 7.2.3
+- :fire: chore(deps): drop dormant Renovate; Dependabot is the updater
 
 ### Documentation
 - :memo: docs(decisions): record D-126 (D-031 domain deferred) and D-127 (SEC-05 PAT rotation scheduled)
