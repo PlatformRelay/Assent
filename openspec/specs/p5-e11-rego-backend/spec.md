@@ -197,7 +197,7 @@ made silently by a story.
 
 *Supply chain, separately:* OPA is a large dependency with a large transitive tree on a
 project shipping cosign signing, SLSA-grade provenance, `govulncheck`, and Scorecard. It
-materially changes binary size, vulnerability surface, and `renovate` load. S03 pins it and
+materially changes binary size, vulnerability surface, and Dependabot load. S03 pins it and
 records the size delta.
 
 *Status (2026-08-10) — the two halves have diverged and must not be conflated:*
@@ -377,7 +377,7 @@ human dependency.
   - Verify: `go test ./internal/core/... -run TestRegoCompileErrorIsHardError`
   - Level: L1
 - **REQ-E11-S03-03** — Given judgment call (d), when OPA is added to `go.mod`, then the
-  version is pinned, `govulncheck` and `renovate` cover it, and the binary-size delta is
+  version is pinned, `govulncheck` and Dependabot cover it, and the binary-size delta is
   recorded in the story's notes. **This REQ may not be started before (d) is answered** — it is
   the adoption itself, not a consequence of it.
   - Test: `go.mod`, `go.sum`

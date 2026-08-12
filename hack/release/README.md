@@ -171,7 +171,7 @@ explicit `permissions:` block sets every unlisted scope to `none`, so this is no
 | --- | --- |
 | `task release-snapshot` | Local goreleaser snapshot under `dist/` |
 | `hack/release/snapshot_test.sh` | REQ-E9-S02 gate: archives, checksums, stamped version |
-| `hack/release/ci_audit_test.sh` | REQ-E9-S04 gate: no duplicate CodeQL workflow |
+| `hack/release/ci_audit_test.sh` | REQ-E9-S04 gate: no duplicate CodeQL workflow; Dependabot-only (no Renovate config) |
 
 ## Install script (E9-S07a)
 
