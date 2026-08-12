@@ -16,4 +16,18 @@ if ! grep -q codeql.yaml docs/planning/ci-hardening-status.md; then
   exit 1
 fi
 
-echo "OK: CI audit — single CodeQL workflow; hardening inventory present"
+# Operator 2026-08-13: Dependabot is the live updater; Renovate config is dormant
+# and must not return. Negative files are listed explicitly so a renamed
+# renovate.json5 / .github/renovate.json cannot hide.
+if [[ ! -f .github/dependabot.yml ]]; then
+  echo "FAIL: .github/dependabot.yml must exist (Dependabot is the version updater)" >&2
+  exit 1
+fi
+for stale in renovate.json renovate.json5 .github/renovate.json .renovaterc .renovaterc.json; do
+  if [[ -e "$stale" ]]; then
+    echo "FAIL: $stale must not exist — Dependabot is the updater; Renovate is not" >&2
+    exit 1
+  fi
+done
+
+echo "OK: CI audit — single CodeQL workflow; hardening inventory present; Dependabot-only"

@@ -13,7 +13,7 @@ Last reviewed: 2026-08-04 (E9-S04).
 | **govulncheck** (weekly) | ✅ Exists | `.github/workflows/vulncheck.yaml` | Schedule-only sweep; complements push gate. |
 | **gitleaks** | ✅ Exists | `.github/workflows/verify.yaml` (`gitleaks` step) | HEAD-scoped history scan; CLI (no paid org action). |
 | **SHA-pinned Actions** | ✅ Exists | All `.github/workflows/*.yaml` | Full commit SHAs + version comments (D-045). |
-| **Dependabot** | ✅ Exists | `.github/dependabot.yml` | `gomod`, `github-actions`, `pip` (docs) weekly. |
+| **Dependabot** | ✅ Exists | `.github/dependabot.yml` | `gomod`, `github-actions`, `pip` (docs), `npm` (hack/schemas-validator) weekly. **Chosen updater** (operator 2026-08-13); Renovate is not used. |
 | **actionlint** | ✅ Exists | `.github/workflows/actionlint.yaml` | Lint workflow YAML on workflow changes (E9-S04 residual). |
 
 ## Residual gaps (operator / later lanes)
@@ -22,13 +22,13 @@ Last reviewed: 2026-08-04 (E9-S04).
 | --- | --- | --- |
 | Branch protection + required status checks on `main` | Gap | Operator (D-045 residual) |
 | codecov / coverage badge | Gap | Deferred (not in D-045 scope) |
-| renovate (vs Dependabot-only) | Gap | Optional; Dependabot covers actions + modules |
 
 ## Explicit non-actions (D-102)
 
 - Do **not** add a second CodeQL workflow or matrix.
 - Do **not** duplicate govulncheck on every push (weekly job in `vulncheck.yaml` is sufficient).
 - Do **not** add a second Scorecard job.
+- Do **not** add Renovate (Dependabot is the chosen updater).
 
 Verify locally:
 

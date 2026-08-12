@@ -46,7 +46,7 @@ holds the *how*. Conflicts: ADRs win; update this file via PR when they do.
 - Prefer stdlib; new deps need: active maintenance (commits within 6 months), >1 effective
   maintainer, compatible license (Apache-2.0/MIT/BSD), and no heavyweight transitive tail
   into the single static binary (ADR-0001, ADR-0013's dependency-health bar).
-- SHA-pin CI actions; renovate/dependabot keep them current.
+- SHA-pin CI actions; Dependabot keeps them current.
 
 ## Repository discipline
 

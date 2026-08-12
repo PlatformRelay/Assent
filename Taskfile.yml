@@ -116,6 +116,14 @@ tasks:
       # .github/workflows/**, so without this line an unpinned workflow is caught
       # only by CI — and only for as long as the CI step itself survives.
       - task: lint-workflow-pins-test
+      # Operator 2026-08-13: Dependabot is the updater; a reintroduced
+      # renovate.json would otherwise merge green.
+      - task: ci-audit-test
+
+  ci-audit-test:
+    desc: "E9-S04 + Dependabot-only: single CodeQL workflow; no Renovate config"
+    cmds:
+      - bash hack/release/ci_audit_test.sh
 
   lint-workflow-pins-test:
     desc: "AUD-S09/S14 gate: workflow supply-chain pins are present and the checks can fail (REQ-AUD-S09-01, REQ-AUD-S14-01/02)"
