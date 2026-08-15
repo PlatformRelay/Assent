@@ -68,7 +68,7 @@ running, do not invent a parser) and DEM-S12's *wiring* (edit both `Taskfile.yml
 - **Do not call live providers.** `assent test` stays `facts.yaml`-stubbed (ADR-0014).
 - **Do not change `internal/core`.** Engine/decision-path changes only if a fixture cannot run
   without a one-line harness *discovery* fix (prefer fixture/docs).
-- **`git diff schemas/` == 0** is an epic invariant (no schema change).
+- **Schema freeze is ref-relative (AUD-S18 / D-132):** `git diff --name-status v0.1.0 -- schemas` over `*.json`, **not** a working-tree `git diff schemas/` (that is silent on committed edits — PCS vacuity). EX adds no schema JSON beyond the AUD-S18 permitted description-string. Base ref is the release tag; substituting `HEAD` reddens.
 - **Do not raise `COVERAGE_MIN`** (91%, D-010/D-128). Example-only lanes that add no
   `internal/` Go: coverage is N/A.
 - **No live GitLab, public org repos, or PAT rotation.** Park as non-goals / operator-gated
@@ -335,12 +335,13 @@ Requirements:
   - Test: `examples/packs/service-catalog/.assent/tests/catalog/<nested>/negative/expect.yaml`
   - Verify: `./bin/assent test examples/packs/service-catalog`
   - Level: L1
-- **REQ-EX-S03-04** — Given an unkeyed nested list is re-introduced into a pack fixture, when
-  `assent test` runs that case, then the implementer must **not** mark it APPROVE by ignoring
-  opacity; either the case is expected REVIEW (opaque fail-safe) or the list is not merged.
-  Pin one **edge** fixture *or* a comment+test that a tuple/list leaf is not treated as
-  structured (D-061 lesson recorded in the rule file comment).
-  - Test: pack test or `internal/change` existing list-leaf behaviour reused via a catalog case
+- **REQ-EX-S03-04** — Given a dedicated catalog case whose `head` re-introduces an **unkeyed**
+  nested list (`endpoints` and/or `tags` as JSON arrays — the D-061 shape), when `assent test`
+  runs that case, then the ChangeSet is **opaque** (or the pinned `expect.yaml` decision is
+  fail-safe non-APPROVE) and the case goes **red** if the differ starts emitting structured
+  field changes for that unkeyed list (silent accept). The S03-01 proving fixtures stay
+  keyed maps / nested objects only — this REQ is the both-polarity pin, not a comment.
+  - Test: `examples/packs/service-catalog/.assent/tests/catalog/unkeyed-list-opaque/`
   - Verify: `./bin/assent test examples/packs/service-catalog`
   - Level: L1
 
@@ -384,11 +385,13 @@ Requirements:
   - Test: `examples/packs/infra-vars/.assent/tests/vars/<nested>/negative/expect.yaml`
   - Verify: `./bin/assent test examples/packs/infra-vars`
   - Level: L1
-- **REQ-EX-S04-04** — Given a non-literal nested value (`owner = var.team`) is introduced in
-  a **dedicated** negative/opaque case *or* deferred to S05, when present in S04 it must not
-  be documented as a structured diff. S04's happy path stays literals only.
-  - Test: existing `TestHCLStructuralGuardsFailSafe` may remain the engine pin; pack must not
-    claim expression evaluation
+- **REQ-EX-S04-04** — Given S04's pack fixtures, when `assent test` runs infra-vars, then at
+  least one case diffs a **nested-map** modify (S04-01) as a non-opaque structured change —
+  this story may not skip the nested fixture. S04 fixtures contain **no** `.tf` files and
+  **no** non-literal HCL (`var.team`, `"${…}"`); those belong to S05 only. Edge: adding a
+  `.tf` or expression to an S04 proving `head/` fails this REQ.
+  - Test: `examples/packs/infra-vars/.assent/tests/vars/` (nested-map case; glob must not
+    match `*.tf` under S04 cases)
   - Verify: `./bin/assent test examples/packs/infra-vars`
   - Level: L1
 
@@ -416,7 +419,7 @@ story). Do **not** spec a new HCL parser.
 
 **Definition of done:** one proving structured tfvars case (from S04) plus one `.tf` opaque
 case with pinned `expect.yaml`; README inventory (S01) updated so the new format claim
-matches dogfood; `git diff schemas/` == 0; still single-class.
+matches dogfood; schema freeze vs `v0.1.0` (REQ-EX-S10-04); still single-class.
 
 **Not in scope:** Terraform plan blast radius (REF-GAP-4); DEM-S09 `tf-module-instance` class;
 expression evaluation; a fourth pack.
@@ -585,7 +588,7 @@ Requirements:
 - **REQ-EX-S07-05** — Given `cmd/assent/test_provider_fence_test.go`, when C5–C7 fixtures are
   added, then `assent test` still must not construct the live provider host.
   - Test: `cmd/assent/test_provider_fence_test.go`
-  - Verify: `go test ./cmd/assent/ -run TestProviderFence`
+  - Verify: `go test ./cmd/assent/ -run TestAssentTestNeverCallsProviderHost`
   - Level: L0
 
 ---
@@ -710,11 +713,11 @@ drift.
 **Goal:** `hack/examples/ex_exitgate_test.sh` (or Go test) asserts: (1) dogfood discovery
 runs four **formats** (yaml, json, tfvars, tf/HCL block case); (2) C1–C8 test directories
 exist and their `expect.yaml` decisions match the table (C3 BLOCK, C8 REVIEW, etc.); (3)
-S01 inventory + `task docs-gates` green; (4) `git diff schemas/` == 0 vs the branch base
-(working-tree, this epic adds no schema files); (5) `internal/core` untouched
-(`git diff origin/main -- internal/core` empty for EX lanes — pin as "no core files in this
-epic's commits" at gate time); (6) `task check` includes dogfood; (7) provider fence still
-holds. Do not raise `COVERAGE_MIN`.
+S01 inventory + `task docs-gates` green; (4) schema freeze is **ref-relative against
+`v0.1.0`** (AUD-S18 / D-132 — not working-tree `git diff schemas/`); (5) `internal/core`
+untouched on the lane (`git diff --exit-code origin/main...HEAD -- internal/core`); (6)
+`task check` includes dogfood; (7) provider fence still holds; (8) D-002 sanitization
+green. Do not raise `COVERAGE_MIN`.
 
 **Operator input:** none.
 
@@ -743,11 +746,20 @@ Requirements:
   - Test: `hack/examples/ex_exitgate_test.sh`
   - Verify: `bash hack/examples/ex_exitgate_test.sh`
   - Level: L1
-- **REQ-EX-S10-04** — Given `schemas/`, when the exit gate diffs against HEAD's schemas
-  (or `git diff --exit-code schemas/`), then the diff is empty.
-  - Test: `hack/examples/ex_exitgate_test.sh` (reuse `internal/schemadrift` if already used
-    in E6/EFE gates)
-  - Verify: `git diff --exit-code schemas/`
+- **REQ-EX-S10-04** — Given `schemas/**/*.json`, when the exit gate runs, then it diffs
+  against the immutable release tag **`v0.1.0`** — `git diff --name-status v0.1.0 -- schemas`
+  (JSON-only), the same freeze as AUD-S18 / D-132 / `hack/audit/exitgate_test.sh`
+  (`SCHEMA_BASE="${ASSENT_AUDIT_SCHEMA_BASE:-v0.1.0}"`). A working-tree `git diff schemas/`
+  MUST NOT be the Verify (PCS / `hack/compare/exitgate_test.sh` vacuity: committed schema
+  edits are invisible). The only JSON schema delta vs `v0.1.0` that may remain is the
+  AUD-S18 permitted description-string on
+  `schemas/decision/v1alpha1/decision-record.schema.json`; EX must add, delete, or modify
+  **no other** schema JSON. Edge: `SCHEMA_BASE` must match `^v[0-9]+\.[0-9]+\.[0-9]+$` and
+  resolve as `refs/tags/v0.1.0`; unsetting it or substituting `HEAD` reddens the gate
+  (D-132: a non-tag base compares the tree against itself).
+  - Test: `hack/examples/ex_exitgate_test.sh` (must contain the `v0.1.0` / `SCHEMA_BASE`
+    pin and `git diff --name-status`; deleting the base-ref reddens)
+  - Verify: `bash hack/examples/ex_exitgate_test.sh`
   - Level: L1
 - **REQ-EX-S10-05** — Given `task check`, when dogfood or docs-gates or inventory is unwired,
   then the exit gate or existing wiring pins fail.
@@ -759,6 +771,20 @@ Requirements:
   - Test: `hack/docs/example_format_inventory_test.sh`
   - Verify: `bash hack/docs/example_format_inventory_test.sh`
   - Level: L1
+- **REQ-EX-S10-07** — Given the EX lane, when the exit gate diffs `internal/core` against
+  `origin/main...HEAD` (three-dot, merge-base of the lane), then the diff is empty. Edge:
+  a working-tree `git diff internal/core` MUST NOT be the Verify; substituting `HEAD` for
+  `origin/main` reddens the pin.
+  - Test: `hack/examples/ex_exitgate_test.sh`
+  - Verify: `git diff --exit-code origin/main...HEAD -- internal/core`
+  - Level: L1
+- **REQ-EX-S10-08** — Given new example fixtures and docs, when the exit gate runs D-002
+  sanitization, then `hack/check-sanitization.sh` exits 0 (no employer names / internal
+  systems / verbatim private material). Edge: a planted employer token in a new fixture
+  reddens the script.
+  - Test: `hack/check-sanitization.sh`
+  - Verify: `bash hack/check-sanitization.sh`
+  - Level: L1
 
 ---
 
@@ -768,7 +794,7 @@ Requirements:
 | --- | --- | --- |
 | S01 | `hack/docs/example_format_inventory_test.sh`, `examples/README.md` (pack/format sentence only), `task docs-gates` invocation line | pack fixtures |
 | S02 | `examples/packs/topic-registry/` schema nested fields + nested-pointer rule/tests | C-series test dir names |
-| S03 | `examples/packs/service-catalog/` nested objects + rules/tests | unkeyed lists; C2 dir (S06) |
+| S03 | `examples/packs/service-catalog/` nested objects + `unkeyed-list-opaque` case | C2 dir (S06) |
 | S04 | `examples/packs/infra-vars/` tfvars nested maps + bounded-change pointers | `.tf` files; `config.yaml` class paths |
 | S05 | `config.yaml` class paths, `envs/**/*.tf` fixtures, README HCL sentence | rewriting S04 tfvars scalars |
 | S06 | new rules/tests `list-no-shrink`, `privilege-tier`, `wildcard-grant`, `soft-delete` | quota/placement/C7/C8 |
@@ -782,5 +808,6 @@ Requirements:
 ## Exit gate (epic)
 
 Four formats in dogfood; REF-EX C1–C8 present with expected decisions (C8 REVIEW); docs
-inventory + walkthrough pins green; `git diff schemas/` == 0; `internal/core` unchanged;
+inventory + walkthrough pins green; schema freeze vs `v0.1.0` (not working-tree);
+`internal/core` unchanged vs `origin/main...HEAD`; D-002 sanitization green;
 `task check` runs `dogfood-examples`; no live GitLab/PAT; D-002 clean.

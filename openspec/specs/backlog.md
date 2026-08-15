@@ -628,7 +628,7 @@ change, no `internal/core` edits.** `assent test` stays facts.yaml-stubbed. **Ev
 | EX-S07 | REF-EX C5–C8 (facts stubs + C8 known-limitation REVIEW) | **[autonomous]** | S04, S06 | closes D-071 demonstrators; C8 documented REVIEW |
 | EX-S08 | Discover packs; wire `dogfood-examples` into `task check` + verify.yaml | **[autonomous]** | S01 | DEM-S12 wiring without demo-repo scope |
 | EX-S09 | Product docs walkthrough byte-pinned to real complex-case CLI output | **[autonomous]** | S02–S07 | AUD-S06-style truth |
-| EX-S10 | Exit gate: four formats, C1–C8, docs gates, `git diff schemas/` == 0 | **[autonomous]** | S01–S09 | **the EX exit gate** |
+| EX-S10 | Exit gate: four formats, C1–C8, docs gates, schema freeze vs `v0.1.0` (D-132) | **[autonomous]** | S01–S09 | **the EX exit gate** |
 
 **Dependency order:** S01 → S08 ∥ {S02, S03, S04} → S05 (after S04) → S06 (after S02/S03) →
 S07 → S09 → S10. **Do first: S01.**
