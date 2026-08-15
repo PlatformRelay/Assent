@@ -8,6 +8,7 @@ don't run are lies, so the runnable ones are executed by the gates, not just rea
 - [`packs/`](packs/) — complete adopter policy trees (`topic-registry`, `service-catalog`,
   `infra-vars`). Each is a repo root: `assent lint <pack>` is clean and
   `assent test <pack>` passes, both under `task check`. Start here.
+  Input formats: yaml, json, tfvars.
 - [`policies/declarative/`](policies/declarative/) — standalone envelope rules with
   `assert` predicates
 - [`policies/rego/`](policies/rego/) — the tier-2 escape hatch for the same archetype.

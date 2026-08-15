@@ -26,6 +26,8 @@
 # WIRED (D-124/D-125): `task docs-gates` runs this and readme_smoke_test.sh, and
 # `task check` runs `docs-gates`. A docs edit that reopens one of these findings reds
 # the gate every developer runs before every commit.
+# REQ-EX-S01-05: docs-gates also runs example_format_inventory_test.sh (inventory
+# paper-gate). Deleting that line from Taskfile.yml reddens the pin below.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -211,6 +213,19 @@ if [[ "$adr_checked" -eq 0 ]]; then
   fail "ADR index: no ADRs compared — the pin would be vacuous"
 else
   pass "ADR index: $adr_checked ADR status rows agree with their files"
+fi
+
+# REQ-EX-S01-05 — docs-gates must invoke the example format inventory script.
+# Deleting that cmds line from Taskfile.yml makes this grep fail (non-vacuity).
+docs_gates_body="$(awk '
+  $0 == "  docs-gates:" { inblk = 1; next }
+  inblk && /^  [A-Za-z0-9_.:-]+:[[:space:]]*$/ { inblk = 0 }
+  inblk { print }
+' Taskfile.yml)"
+if printf '%s\n' "$docs_gates_body" | grep -q 'hack/docs/example_format_inventory_test.sh'; then
+  pass "EX-S01: docs-gates runs example_format_inventory_test.sh"
+else
+  fail "EX-S01: docs-gates does not run hack/docs/example_format_inventory_test.sh"
 fi
 
 if [[ "$fails" -ne 0 ]]; then
