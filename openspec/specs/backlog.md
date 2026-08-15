@@ -126,8 +126,8 @@ providers, not core-model redesign**. All rows below are generalized (invented n
 
 | ID | Gap | Status | Notes |
 | --- | --- | --- | --- |
-| **REF-GAP-1** | Referenced-resource authorization fact source (a list value / ACL names *another* team's resource → who owns it?) | **CLOSED (E5-S08)** | `builtin/resource-owner` shipped; hermetic L0 + run-path wiring in E5-S10. Demonstrator fixture = C7 (deferred — D-071) |
-| **REF-GAP-2** | In-repo-state-as-a-fact (quota/placement/limits registries + in-repo reviewers files that today no provider reads) | **CLOSED (E5-S07)** | `builtin/repo-file` most-specific-first shipped; hermetic run path in E5-S10 (`TestE5ExitGateResolvedFacts`). C5/C6 fixtures deferred — D-071 |
+| **REF-GAP-1** | Referenced-resource authorization fact source (a list value / ACL names *another* team's resource → who owns it?) | **CLOSED (E5-S08)** | `builtin/resource-owner` shipped; hermetic L0 + run-path wiring in E5-S10. Demonstrator fixture = C7 (**P5-EX EX-S07**, D-143 — was deferred D-071) |
+| **REF-GAP-2** | In-repo-state-as-a-fact (quota/placement/limits registries + in-repo reviewers files that today no provider reads) | **CLOSED (E5-S07)** | `builtin/repo-file` most-specific-first shipped; hermetic run path in E5-S10 (`TestE5ExitGateResolvedFacts`). C5/C6 fixtures = **P5-EX EX-S07** (D-143; was deferred D-071) |
 | **REF-GAP-3** | Cross-class / companion-file correlation ("two-step delete": remove from file A *and* append to manifest B) | **OPEN — likely out of v1** | `changes` is class-slice-scoped by contract (ADR-0017 §5); ship C8 as a known-limitation fixture (expected REVIEW), decide scope via OQ |
 | **REF-GAP-4** | Plan-level blast radius (weighting the expanded IaC plan, not the request diff) | **OUT of model** | assent gates the request diff; `points`/`threshold` bulk-guard on the diff is the in-scope approximation |
 
@@ -135,7 +135,7 @@ providers, not core-model redesign**. All rows below are generalized (invented n
 
 | ID | Item | Status | Closest existing archetype |
 | --- | --- | --- | --- |
-| **REF-EX** | Author 8 domain-neutral archetype fixtures C1–C8 (list-no-shrink, privilege-tier allow-list, wildcard-grant block, soft-delete-as-field-add, quota-ceiling-from-fact, placement allow-list, referenced-resource-ownership [gap demo], companion-file delete [known-limitation]) | **OPEN** (agent lane; do AFTER the E2 engine + E5 facts for C5/C6/C7) | extends no-destruction (C1/C4/C8), allowed-fields+ownership (C2/C3/C6/C7), bounded-change (C5); none duplicates an existing fixture |
+| **REF-EX** | Author 8 domain-neutral archetype fixtures C1–C8 (list-no-shrink, privilege-tier allow-list, wildcard-grant block, soft-delete-as-field-add, quota-ceiling-from-fact, placement allow-list, referenced-resource-ownership [gap demo], companion-file delete [known-limitation]) | **SPECIFIED (P5-EX)** — C1–C4 = EX-S06; C5–C8 = EX-S07; not started | [p5-ex-complex-examples](p5-ex-complex-examples/spec.md). Extends no-destruction (C1/C4/C8), allowed-fields+ownership (C2/C3/C6/C7), bounded-change (C5). Engine+E5 facts already shipped; D-071 deferral is this epic. **Not** P5-DEM (D-143) |
 
 ## Phase 5 — E1 canonical change model stories
 
@@ -605,6 +605,34 @@ LGTM** (published contract + the decision path itself). Independent of E10; may 
 | E11-S12 | Docs & maturity truth; retire ADR-0002's "pluggable half unbuilt" line | **[autonomous]** | S11 | nothing still calls Rego locked |
 | E11-S13 | Exit gate | **[autonomous]** | S00–S12 | **the E11 exit gate** |
 
+## Phase 5 — EX complex in-tree examples / adopter tests / docs truth
+
+Full INVEST stories in [p5-ex-complex-examples/spec.md](p5-ex-complex-examples/spec.md).
+Operator ask (2026-08-15, **D-143**): thicker multi-field nested examples, tests, and docs
+across **YAML, JSON, HCL, and tfvars** — not a one-field YAML happy path, and **not**
+implementing P5-DEM. DEM remains the public-org demo + DEM-S00 routing + provider-broker
+epic (0 `Test:`/`Verify:`/`Level:` annotations — that is why EX exists). EX extends
+`examples/packs/`, `examples/archetypes/`, `assent test` fixtures, and `docs/`; closes
+REF-EX C1–C8 in-tree. **No new HCL parser, no DEM-S00, no E10/E11/SEC-SC/AUD2, no schema
+change, no `internal/core` edits.** `assent test` stays facts.yaml-stubbed. **Every story
+`[autonomous]`.** REQ IDs `REQ-EX-S0n-nn`.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| EX-S01 | Docs + format-coverage inventory (paper-gate, both polarities) | **[autonomous]** | none | **do first** — claims cannot outrun dogfood |
+| EX-S02 | Thicken topic-registry (YAML nested multi-field + nested-pointer rules) | **[autonomous]** | none | YAML complexity |
+| EX-S03 | Thicken service-catalog (JSON nested objects/maps; D-061-safe) | **[autonomous]** | none | JSON complexity |
+| EX-S04 | Thicken infra-vars (tfvars deeper nested maps) | **[autonomous]** | none | tfvars complexity |
+| EX-S05 | HCL honesty: structured tfvars + `.tf` block → opaque → REVIEW | **[autonomous]** | S04 | fourth format; known-limitation fixture |
+| EX-S06 | REF-EX C1–C4 in-tree fixtures | **[autonomous]** | S02, S03 | list-no-shrink, privilege-tier, wildcard-grant, soft-delete |
+| EX-S07 | REF-EX C5–C8 (facts stubs + C8 known-limitation REVIEW) | **[autonomous]** | S04, S06 | closes D-071 demonstrators; C8 documented REVIEW |
+| EX-S08 | Discover packs; wire `dogfood-examples` into `task check` + verify.yaml | **[autonomous]** | S01 | DEM-S12 wiring without demo-repo scope |
+| EX-S09 | Product docs walkthrough byte-pinned to real complex-case CLI output | **[autonomous]** | S02–S07 | AUD-S06-style truth |
+| EX-S10 | Exit gate: four formats, C1–C8, docs gates, `git diff schemas/` == 0 | **[autonomous]** | S01–S09 | **the EX exit gate** |
+
+**Dependency order:** S01 → S08 ∥ {S02, S03, S04} → S05 (after S04) → S06 (after S02/S03) →
+S07 → S09 → S10. **Do first: S01.**
+
 ### P5-DEM — Public demo repositories + provider extensibility proof — spec: [p5-dem-demo-repos](p5-dem-demo-repos/spec.md)
 
 Designed spec-first by **D-142**; the provider-credential gap found while designing is **OQ-32**.
@@ -662,7 +690,7 @@ Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
 | --- | --- | --- |
 | 3 — Contracts first | P3-E1 schemas + contract fixture (incl. ApprovalEvidence + named-consumer fixture) · P3-E2 versioning/compat spec · P3-E3 example migration · P3-E4 lifecycle: phase/profiles/comparison (ADR-0018) · P3-E5 publication reconciliation protocol (ADR-0019) | strict end-to-end contract fixture validates (ADR-0017 §8, D-016); new ADRs 0018/0019 accepted at the freeze review |
 | 4 — Walking skeleton | P4-E1 (+ rerun-idempotence gate, D-017) · **P2-E4-NS (OQ-24 timed run)** · holdout adjudication (OQ-25) | L3 skeleton green + **one real repo on live MRs** (D-012); north-star wording only after timed run |
-| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S13, D-099–D-111 CLOSED; Homebrew Formula live; PAT rotate optional); **PCS AUTONOMOUS COMPLETE** ([p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md), S01–S09, **D-057 closed**, D-118); **E10 UNLOCKED + DECOMPOSED** (D-140, [p5-e10-github-forge/spec.md](p5-e10-github-forge/spec.md), 19 stories, ADR-0021); **E11 IMPLEMENTATION UNLOCKED + DECOMPOSED** (D-141, [p5-e11-rego-backend/spec.md](p5-e11-rego-backend/spec.md), 14 stories); E12 **contract-unlocked** (D-017), not decomposed; E14 gated on Spike D; **E13 still locked** (D-012); **SEC-SC SPECIFIED, NOT STARTED** ([p5-sec-scorecard-residuals/spec.md](p5-sec-scorecard-residuals/spec.md), 2 stories — S01 autonomous fuzzing, S02 operator-gated Best Practices badge) | per-epic; E9 exit = tagged signed release + docs live + brew Formula (D-111); PAT rotate optional |
+| 5 — Implementation | E1–E7 **DONE**; **E7 AUTONOMOUS COMPLETE** (S01–S05+S08, D-087); **E8 AUTONOMOUS COMPLETE** ([p5-e8-renderer/spec.md](p5-e8-renderer/spec.md), S01–S14, D-098); **E9 AUTONOMOUS COMPLETE** ([p5-e9-distribution/spec.md](p5-e9-distribution/spec.md), S01–S13, D-099–D-111 CLOSED; Homebrew Formula live; PAT rotate optional); **PCS AUTONOMOUS COMPLETE** ([p5-pcs-policy-comparison/spec.md](p5-pcs-policy-comparison/spec.md), S01–S09, **D-057 closed**, D-118); **E10 UNLOCKED + DECOMPOSED** (D-140, [p5-e10-github-forge/spec.md](p5-e10-github-forge/spec.md), 19 stories, ADR-0021); **E11 IMPLEMENTATION UNLOCKED + DECOMPOSED** (D-141, [p5-e11-rego-backend/spec.md](p5-e11-rego-backend/spec.md), 14 stories); E12 **contract-unlocked** (D-017), not decomposed; E14 gated on Spike D; **E13 still locked** (D-012); **SEC-SC SPECIFIED, NOT STARTED** ([p5-sec-scorecard-residuals/spec.md](p5-sec-scorecard-residuals/spec.md), 2 stories — S01 autonomous fuzzing, S02 operator-gated Best Practices badge); **P5-EX SPECIFIED, NOT STARTED** (D-143, [p5-ex-complex-examples/spec.md](p5-ex-complex-examples/spec.md), 10 stories — complex in-tree examples; **not** P5-DEM); **P5-DEM DESIGNED, NOT THIS ASK** (D-142, annotations still 0) | per-epic; E9 exit = tagged signed release + docs live + brew Formula (D-111); PAT rotate optional |
 
 Named-consumer disposition (what unlocked, what stayed locked, and why):
 [docs/planning/named-consumer-compat.md](../../docs/planning/named-consumer-compat.md).
