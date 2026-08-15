@@ -107,6 +107,9 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(openspec): close F7/F8/F10/F11/F17/F18 from the PR #47 re-review
 - :memo: docs(openspec): specify Scorecard fuzzing and Best Practices residuals
 
+### Fixes
+- :bug: fix(ci): pin ci-audit-test in the AUD-S18 check-stage list
+
 ### Testing
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token
 - :white_check_mark: test(release): key the merge-skip proof on commit shape, not subject prefix
