@@ -313,6 +313,21 @@ outcomes, emit a durable safety event, optionally open a revert MR via a separat
 authorized capability (never a direct revert push), and feed adjudicated outcomes into
 policy comparison without treating every human revert as proof the decision was wrong.
 
+### P5-EX — Complex in-tree examples, adopter tests, and docs truth — **Specified, not started (D-143)**
+Operator ask for thicker nested examples/tests/docs across YAML, JSON, HCL, and tfvars —
+**not** public demo repos. Full INVEST stories:
+[p5-ex-complex-examples](p5-ex-complex-examples/spec.md) (EX-S01–S10, all autonomous).
+Extends `examples/packs/` + archetypes + `assent test` + `docs/`; closes REF-EX C1–C8;
+wires `task dogfood-examples` into `task check`. Explicitly **not** P5-DEM (DEM-S00 routing,
+org publish, provider brokers). No E10/E11/SEC-SC/AUD2. `git diff schemas/` == 0.
+**Do first: EX-S01.**
+
+### P5-DEM — Public demo repositories + provider extensibility proof — **Designed (D-142), not this operator ask (D-143)**
+Still the vehicle for public `PlatformRelay` demo repos, `(class, environment)` routing
+(DEM-S00), and operator-gated publish (DEM-S13). Spec:
+[p5-dem-demo-repos](p5-dem-demo-repos/spec.md). Do not implement it as the complex-examples
+epic; REQs still lack `Test:`/`Verify:`/`Level:`.
+
 ### P5-SEC-SC — OpenSSF Scorecard residuals (fuzzing + Best Practices badge) — **Specified, not started**
 Two leftover Scorecard alerts after the 2026-08-13 security sweep (Dependabot/CodeQL/secrets/Sonar
 security clean; Maintained/Code-Review/Branch-Protection dismissed as tool-limit or solo-maintainer
