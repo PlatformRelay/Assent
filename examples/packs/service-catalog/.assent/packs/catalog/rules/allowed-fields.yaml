@@ -29,3 +29,19 @@ spec:
       onFailure:
         effect: require-review
         code: allowed-fields.sensitive
+    # Nested objects (sla / runtime) — EX-S03. Pointers are /services/<id>/<obj>/<field>
+    # (identity-keyed, not index). /sla/slo_percent is the safe nested leaf; any other
+    # nested modify (e.g. /sla/window, /runtime/language) requires review. Unkeyed
+    # endpoints/tags arrays stay out of proving fixtures (D-061).
+    - name: only-safe-nested-fields
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/services/*/*/*"]
+          kinds: [modify]
+      prove:
+        obligation: allowed-fields
+        when: 'path.endsWith("/sla/slo_percent")'
+      onFailure:
+        effect: require-review
+        code: allowed-fields.nested-sensitive

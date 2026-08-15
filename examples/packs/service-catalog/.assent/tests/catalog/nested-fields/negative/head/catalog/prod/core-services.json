@@ -4,11 +4,11 @@
     {
       "name": "orders-api",
       "owner": "orders-team",
-      "tier": 2,
+      "tier": 1,
       "oncall": "orders-rotation",
       "sla": {
         "slo_percent": 99.9,
-        "window": "30d"
+        "window": "7d"
       },
       "runtime": {
         "language": "go",

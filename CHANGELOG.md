@@ -109,6 +109,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: specs(p5-ex): decompose complex in-tree examples epic
 
 ### Features
+- :sparkles: feat(examples): thicken service-catalog with nested sla/runtime objects
 - :sparkles: feat(examples): thicken topic-registry nested YAML and nested-pointer rules
 - :sparkles: feat(examples): thicken infra-vars nested tfvars maps (EX-S04)
 

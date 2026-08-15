@@ -1,0 +1,6 @@
+# Nested /sla/window is outside the allow-list → only-safe-nested-fields → require-review.
+decision: REVIEW
+findings:
+  - rule: only-safe-nested-fields
+    obligation: allowed-fields
+    effect: require-review
