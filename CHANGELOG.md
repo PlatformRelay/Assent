@@ -108,6 +108,9 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(openspec): specify Scorecard fuzzing and Best Practices residuals
 - :memo: specs(p5-ex): decompose complex in-tree examples epic
 
+### Features
+- :sparkles: feat(docs): gate example pack and format claims against dogfood
+
 ### Fixes
 - :bug: fix(ci): pin ci-audit-test in the AUD-S18 check-stage list
 - :bug: specs(p5-ex): make S10 schema freeze and S07 fence non-vacuous
