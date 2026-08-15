@@ -1,0 +1,26 @@
+# Nested schema.compatibility band — valueChanges on /*/schema/compatibility
+# (not /*/partitions). Allow-listed string values; NONE is out of band.
+# Pointer is nested because map-at-root nests the topic under its identity key.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: topics-schema-compatibility
+spec:
+  entries:
+    kafka-topic:
+      mode: map
+      root: ""
+  rules:
+    - name: schema-compatibility-bounds
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/*/schema/compatibility"]
+          kinds: [modify]
+      prove:
+        obligation: bounded-change
+        when: 'new in ["BACKWARD", "FORWARD", "FULL"]'
+      points: 1
+      onFailure:
+        effect: challenge
+        code: bounded-change.out-of-band

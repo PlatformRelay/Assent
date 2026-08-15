@@ -1,0 +1,7 @@
+author:
+  login: alice
+  groups: [orders-team]
+quota:
+  max_partitions: 24
+schema:
+  valid: true

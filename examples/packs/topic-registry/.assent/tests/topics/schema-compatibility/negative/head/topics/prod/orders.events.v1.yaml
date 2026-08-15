@@ -1,13 +1,13 @@
 orders.events.v1:
   owner: orders-team
-  partitions: 48
+  partitions: 12
   replication_factor: 3
   retention_hours: 168
   cleanup_policy: delete
   schema:
     format: avro
     subject: orders.events.v1-value
-    compatibility: BACKWARD
+    compatibility: NONE
     references:
       orders.common: 1
   compaction:
