@@ -109,6 +109,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: specs(p5-ex): decompose complex in-tree examples epic
 
 ### Features
+- :sparkles: feat(docs): gate example pack and format claims against dogfood
 - :sparkles: feat(examples): thicken service-catalog with nested sla/runtime objects
 - :sparkles: feat(examples): thicken topic-registry nested YAML and nested-pointer rules
 - :sparkles: feat(examples): thicken infra-vars nested tfvars maps (EX-S04)
@@ -116,6 +117,7 @@ repository still gets a decision, never by following the link; no release carrie
 ### Fixes
 - :bug: fix(ci): pin ci-audit-test in the AUD-S18 check-stage list
 - :bug: specs(p5-ex): make S10 schema freeze and S07 fence non-vacuous
+- :bug: fix(docs-gates): fail on unmapped format tokens and de-confound the tests-dir mutation (EX-S01 review)
 
 ### Testing
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token

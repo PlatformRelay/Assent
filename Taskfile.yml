@@ -140,6 +140,7 @@ tasks:
     cmds:
       - bash hack/docs/readme_smoke_test.sh
       - bash hack/docs/truthlag_pins_test.sh
+      - bash hack/docs/example_format_inventory_test.sh
 
   compare-exitgate-test:
     desc: "PCS-S09 exit gate: full suite + E6 seed dir + schema drift guard (REQ-PCS-S09-01..03)"
