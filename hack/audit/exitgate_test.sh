@@ -6,7 +6,7 @@
 #
 #   (1) REL-07  — the AUD-S01 fail-closed cassettes PASS by name (not "go test
 #                 exited 0", which a `-run` regex matching nothing also does).
-#   (2) RELSE-01/TEST-03 — `task check` is green with all 14 pinned stages
+#   (2) RELSE-01/TEST-03 — `task check` is green with all 15 pinned stages
 #                 actually executed (incl. `changelog-verify`) and the measured
 #                 aggregate coverage at or above the epic's 91.0% bar.
 #   (3) RELSE-05 — the release job still runs the verify-green-on-tag-SHA gate,
@@ -122,9 +122,9 @@ S01_TESTS_CMD=(
   TestFoldSnapshotPathsIncompleteEnumeration
 )
 
-# (2) The 14 stages of `task check`. This list is the authority: the Taskfile's
+# (2) The 15 stages of `task check`. This list is the authority: the Taskfile's
 # `check:` list must equal it, and a real `task check` transcript must show all
-# 14 having run. Grading on the exit code alone is what "aborts at the first
+# 15 having run. Grading on the exit code alone is what "aborts at the first
 # failure" makes meaningless.
 CHECK_STAGES=(
   fmt
@@ -141,6 +141,7 @@ CHECK_STAGES=(
   docs-gates
   lint-depguard-test
   lint-workflow-pins-test
+  ci-audit-test
 )
 
 # (2) The epic's measured-coverage bar (AUD-S13 / judgment call (e)). The D-010
@@ -171,6 +172,7 @@ STAGE_BODY_PINS=(
   'coverage|echo "coverage: ${pct}%|the evidence line this gate parses must interpolate the MEASURED value, not a literal'
   'coverage|min="{{.COVERAGE_MIN}}"|an unrendered or dropped threshold makes the awk compare against 0 and admit anything (D-128)'
   'lint-workflow-pins-test|bash hack/lint/workflow_pins_test.sh|a wired stage with a gutted body is the same defect one level down'
+  'ci-audit-test|bash hack/release/ci_audit_test.sh|a wired stage with a gutted body is the same defect one level down'
 )
 
 # (6) Immutable base ref for the schema freeze. Overridable only to move it
@@ -453,7 +455,7 @@ check_s01_cassettes() { # <transcript>
 # (2) RELSE-01 / TEST-03 — `task check` green at the new bar
 # ============================================================================
 
-# The Taskfile's `check:` list must be exactly the 14 pinned stages. Without
+# The Taskfile's `check:` list must be exactly the 15 pinned stages. Without
 # this, deleting `- task: changelog-verify` reopens RELSE-01 with `task check`
 # still exiting 0 — the regression the whole story exists to prevent.
 check_check_wiring() { # <taskfile>
@@ -510,7 +512,7 @@ check_check_wiring() { # <taskfile>
 # Every pinned stage must have actually RUN. go-task prints `task: [<name>] <cmd>`
 # per stage; that transcript is the only evidence a stage executed, because
 # `task check` aborts at the first failure and the exit code cannot distinguish
-# "14 stages green" from "stage list truncated to 2".
+# "15 stages green" from "stage list truncated to 2".
 check_check_stages() { # <transcript>
   local tr="$1" rc=0
   [[ -f "$tr" ]] || {
@@ -1549,7 +1551,7 @@ expect_red check_s01_cassettes "the -run pattern matched NO test (go test exits 
 echo
 
 # ---------------------------------------------------------------------------
-echo "== (2) RELSE-01 / TEST-03 — task check green, 14 stages, coverage >= ${COVERAGE_BAR}% =="
+echo "== (2) RELSE-01 / TEST-03 — task check green, 15 stages, coverage >= ${COVERAGE_BAR}% =="
 
 expect_green check_check_wiring "Taskfile check: runs exactly the ${#CHECK_STAGES[@]} pinned stages" "$TASKFILE"
 expect_green check_coverage_floor "the single-sourced D-010 floor (Taskfile COVERAGE_MIN) is >= ${COVERAGE_BAR}" "$TASKFILE"
@@ -1622,6 +1624,12 @@ cp "$TASKFILE" "$tf_m"
 mutate "$tf_m" 's|      - bash hack/lint/workflow_pins_test.sh|      - echo skipped|' '      - echo skipped'
 expect_red check_stage_bodies "the lint-workflow-pins-test: stage body was gutted while the stage stayed wired" \
   'no longer contains: bash hack/lint/workflow_pins_test.sh' "$tf_m"
+
+tf_m="$WORK/Taskfile.guttedciaudit.yml"
+cp "$TASKFILE" "$tf_m"
+mutate "$tf_m" 's|      - bash hack/release/ci_audit_test.sh|      - echo skipped|' '      - echo skipped'
+expect_red check_stage_bodies "the ci-audit-test: stage body was gutted while the stage stayed wired" \
+  'no longer contains: bash hack/release/ci_audit_test.sh' "$tf_m"
 
 # Vacuity control on the extraction itself: with the task key gone there is no
 # body to read, and "no pin failed" must not be the answer.
