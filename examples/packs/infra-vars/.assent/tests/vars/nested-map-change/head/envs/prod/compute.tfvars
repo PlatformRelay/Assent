@@ -1,14 +1,14 @@
-# Governed entries: one keyed object per workload. Owner team is authoritative.
+# Nested maps are literal object constructors (EX-S04). No interpolations.
 workloads = {
   orders-api = {
     owner        = "orders-team"
     instance_set = "standard-4"
-    min_replicas = 5
+    min_replicas = 3
     max_replicas = 12
     memory_mb    = 2048
     resources = {
       cpu       = 500
-      memory_mb = 2048
+      memory_mb = 3072
     }
     labels = {
       team = "orders-team"

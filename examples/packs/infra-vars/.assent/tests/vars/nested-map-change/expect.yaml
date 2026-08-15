@@ -1,0 +1,4 @@
+# resources.memory_mb 2048 -> 3072 within prod band [512, 4096]
+# Nested object-constructor modify must stay structured (not opaque).
+decision: APPROVE
+findings: []
