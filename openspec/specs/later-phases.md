@@ -319,7 +319,8 @@ Operator ask for thicker nested examples/tests/docs across YAML, JSON, HCL, and 
 [p5-ex-complex-examples](p5-ex-complex-examples/spec.md) (EX-S01–S10, all autonomous).
 Extends `examples/packs/` + archetypes + `assent test` + `docs/`; closes REF-EX C1–C8;
 wires `task dogfood-examples` into `task check`. Explicitly **not** P5-DEM (DEM-S00 routing,
-org publish, provider brokers). No E10/E11/SEC-SC/AUD2. `git diff schemas/` == 0.
+org publish, provider brokers). No E10/E11/SEC-SC/AUD2. Schema freeze vs `v0.1.0` (AUD-S18 /
+D-132 — not working-tree `git diff schemas/`).
 **Do first: EX-S01.**
 
 ### P5-DEM — Public demo repositories + provider extensibility proof — **Designed (D-142), not this operator ask (D-143)**
