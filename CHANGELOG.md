@@ -114,6 +114,7 @@ repository still gets a decision, never by following the link; no release carrie
 ### Fixes
 - :bug: fix(ci): pin ci-audit-test in the AUD-S18 check-stage list
 - :bug: specs(p5-ex): make S10 schema freeze and S07 fence non-vacuous
+- :bug: fix(docs-gates): fail on unmapped format tokens and de-confound the tests-dir mutation (EX-S01 review)
 
 ### Testing
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token
