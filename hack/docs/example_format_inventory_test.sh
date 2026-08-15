@@ -76,13 +76,19 @@ readme_packs() {
   ' "$readme" | grep -oE '`[a-z0-9-]+`' | tr -d '`' | grep -vx 'packs' | LC_ALL=C sort -u
 }
 
-# Tokens on the dedicated "Input formats:" sentence (yaml, json, tfvars, tf, hcl, cue, …).
+# ALL comma-separated tokens on the dedicated "Input formats:" sentence.
+# No whitelist: an unrecognised claim (toml, ini, …) must surface as a token so
+# the doc-vs-filesystem comparison reddens instead of silently dropping it.
 readme_formats() {
   local readme="$1"
   local line
   line="$(grep -E '^[[:space:]]*Input formats:' "$readme" || true)"
   [[ -n "$line" ]] || return 0
-  printf '%s\n' "$line" | grep -oE '\b(yaml|yml|json|tfvars|tf|hcl|cue)\b' | sed 's/^yml$/yaml/' | LC_ALL=C sort -u
+  printf '%s\n' "$line" \
+    | sed -E 's/^[[:space:]]*Input formats:[[:space:]]*//; s/\.?[[:space:]]*$//' \
+    | tr ',' '\n' \
+    | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/^yml$/yaml/' \
+    | grep -v '^$' | LC_ALL=C sort -u
 }
 
 # Returns 0 when README and filesystem agree. Prints a PACKS=/FORMATS= report.
@@ -121,7 +127,18 @@ inventory_ok() {
     return 1
   fi
   if [[ -z "$fmts_doc" ]]; then
-    echo "README has no 'Input formats:' sentence (or no recognised tokens)" >&2
+    echo "README has no 'Input formats:' sentence (or no tokens on it)" >&2
+    return 1
+  fi
+  local tok unmapped=""
+  for tok in $fmts_doc; do
+    case " $fmts_fs " in
+      *" $tok "*) ;;
+      *) unmapped="$unmapped $tok" ;;
+    esac
+  done
+  if [[ -n "$unmapped" ]]; then
+    echo "README claims format(s) with no pack class match.paths extension:$unmapped" >&2
     return 1
   fi
   if [[ "$fmts_doc" != "$fmts_fs" ]]; then
@@ -180,6 +197,14 @@ else
   pass "REQ-EX-S01-04: claiming cue reddens"
 fi
 
+TOML="$WORK/readme.toml.md"
+sed 's/tfvars\./tfvars, toml./' "$GOOD_README" >"$TOML"
+if inventory_ok "$ROOT" "$TOML" >"$WORK/toml.out" 2>"$WORK/toml.err"; then
+  fail "claiming toml stayed green (unrecognised token silently dropped — REQ-EX-S01-04 fail-open)"
+else
+  pass "REQ-EX-S01-04: claiming toml (token outside any whitelist) reddens"
+fi
+
 HCL="$WORK/readme.hcl.md"
 sed 's/tfvars\./tfvars, hcl./' "$GOOD_README" >"$HCL"
 if inventory_ok "$ROOT" "$HCL" >"$WORK/hcl.out" 2>"$WORK/hcl.err"; then
@@ -188,7 +213,10 @@ else
   pass "claiming hcl / .tf before S05 reddens"
 fi
 
-# Incomplete tree: a fourth pack dir with .assent/ but no tests.
+# Incomplete tree: a fourth pack dir with .assent/ but no tests. The README
+# variant DOES list `orphan` (and its yaml format is already claimed), so the
+# missing-tests check is the ONLY thing that can redden this — deleting that
+# check must flip this assertion, not the packs-list comparison.
 INCOMPLETE="$WORK/incomplete-root"
 mkdir -p "$INCOMPLETE/examples/packs"
 for name in infra-vars service-catalog topic-registry; do
@@ -197,10 +225,16 @@ for name in infra-vars service-catalog topic-registry; do
 done
 mkdir -p "$INCOMPLETE/examples/packs/orphan/.assent"
 printf 'classes:\n  - name: x\n    match: { paths: ["x/**/*.yaml"] }\n' >"$INCOMPLETE/examples/packs/orphan/.assent/config.yaml"
-if inventory_ok "$INCOMPLETE" "$GOOD_README" >"$WORK/inc.out" 2>"$WORK/inc.err"; then
+INCOMPLETE_README="$WORK/readme.incomplete.md"
+sed 's/`infra-vars`/`infra-vars`, `orphan`/' "$GOOD_README" >"$INCOMPLETE_README"
+if inventory_ok "$INCOMPLETE" "$INCOMPLETE_README" >"$WORK/inc.out" 2>"$WORK/inc.err"; then
   fail "pack without .assent/tests/ stayed green"
 else
-  pass "pack directory without .assent/tests/ reddens"
+  if grep -q 'incomplete pack (no .assent/tests/): orphan' "$WORK/inc.err"; then
+    pass "pack directory without .assent/tests/ reddens"
+  else
+    fail "orphan mutation reddened for the wrong reason (confounded): $(cat "$WORK/inc.err")"
+  fi
 fi
 
 # --- happy path against the real tree (REQ-EX-S01-01) -------------------------
@@ -210,11 +244,7 @@ if inventory_ok "$ROOT" "$ROOT/examples/README.md" >"$WORK/real.out" 2>"$WORK/re
   echo "$report"
   if echo "$report" | grep -q 'PACKS: infra-vars service-catalog topic-registry' \
     && echo "$report" | grep -q 'FORMATS: json tfvars yaml'; then
-    if echo "$report" | grep -qw 'tf' && ! echo "$report" | grep -q 'tfvars'; then
-      fail "REQ-EX-S01-01: reported bare tf before the S05 fixture"
-    else
-      pass "REQ-EX-S01-01: real tree reports the three packs and yaml/json/tfvars"
-    fi
+    pass "REQ-EX-S01-01: real tree reports the three packs and yaml/json/tfvars"
   else
     fail "REQ-EX-S01-01: unexpected report: $report"
   fi
