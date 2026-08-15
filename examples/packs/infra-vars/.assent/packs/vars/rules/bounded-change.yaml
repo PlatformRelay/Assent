@@ -1,4 +1,5 @@
-# Bounded-change — memory_mb / min_replicas / max_replicas within per-env bands.
+# Bounded-change — memory_mb / min_replicas / max_replicas within per-env bands,
+# plus nested resources.memory_mb (EX-S04 object-constructor maps).
 # Over-band is acknowledgement (challenge), matching S01 bounded-change.
 apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
@@ -24,6 +25,24 @@ spec:
               message: "memory_mb {{ new }} below band min {{ facts.band.memory_mb.value.min }}"
             - cel: new <= facts.band.memory_mb.value.max
               message: "memory_mb {{ new }} exceeds band max {{ facts.band.memory_mb.value.max }}"
+      points: 1
+      onFailure:
+        effect: challenge
+        code: bounded-change.out-of-band
+    - name: resources-memory-mb-bounds
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/workloads/*/resources/memory_mb"]
+          kinds: [modify]
+      prove:
+        obligation: bounded-change
+        when:
+          all:
+            - cel: new >= facts.band.memory_mb.value.min
+              message: "resources.memory_mb {{ new }} below band min {{ facts.band.memory_mb.value.min }}"
+            - cel: new <= facts.band.memory_mb.value.max
+              message: "resources.memory_mb {{ new }} exceeds band max {{ facts.band.memory_mb.value.max }}"
       points: 1
       onFailure:
         effect: challenge

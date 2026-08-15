@@ -1,0 +1,6 @@
+# schema.compatibility BACKWARD -> NONE is outside the allow-list.
+decision: REVIEW
+findings:
+  - rule: schema-compatibility-bounds
+    obligation: bounded-change
+    effect: challenge

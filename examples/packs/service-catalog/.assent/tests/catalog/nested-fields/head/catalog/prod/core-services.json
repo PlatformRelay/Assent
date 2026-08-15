@@ -1,0 +1,47 @@
+{
+  "apiVersion": "catalog/v1",
+  "services": [
+    {
+      "name": "orders-api",
+      "owner": "orders-team",
+      "tier": 1,
+      "oncall": "orders-rotation",
+      "sla": {
+        "slo_percent": 99.5,
+        "window": "30d"
+      },
+      "runtime": {
+        "language": "go",
+        "replicas": 3
+      }
+    },
+    {
+      "name": "payments-gateway",
+      "owner": "payments-team",
+      "tier": 1,
+      "oncall": "payments-rotation",
+      "sla": {
+        "slo_percent": 99.9,
+        "window": "30d"
+      },
+      "runtime": {
+        "language": "go",
+        "replicas": 3
+      }
+    },
+    {
+      "name": "storefront-web",
+      "owner": "storefront-team",
+      "tier": 2,
+      "oncall": "storefront-rotation",
+      "sla": {
+        "slo_percent": 99.9,
+        "window": "30d"
+      },
+      "runtime": {
+        "language": "go",
+        "replicas": 3
+      }
+    }
+  ]
+}

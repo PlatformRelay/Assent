@@ -1,0 +1,6 @@
+# resources.memory_mb 2048 -> 65536 exceeds band max 4096
+decision: REVIEW
+findings:
+  - rule: resources-memory-mb-bounds
+    obligation: bounded-change
+    effect: challenge
