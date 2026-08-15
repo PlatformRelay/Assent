@@ -4,7 +4,7 @@
     {
       "name": "orders-api",
       "owner": "orders-team",
-      "tier": 2,
+      "tier": 1,
       "oncall": "orders-rotation",
       "sla": {
         "slo_percent": 99.9,
@@ -13,7 +13,14 @@
       "runtime": {
         "language": "go",
         "replicas": 3
-      }
+      },
+      "endpoints": [
+        "https://orders.example/api"
+      ],
+      "tags": [
+        "checkout",
+        "core"
+      ]
     },
     {
       "name": "payments-gateway",

@@ -1,0 +1,3 @@
+# Nested /sla/slo_percent modify is structured (not opaque) and allow-listed → APPROVE.
+decision: APPROVE
+findings: []

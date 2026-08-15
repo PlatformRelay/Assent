@@ -1,0 +1,9 @@
+# D-061 pin: unkeyed endpoints/tags arrays make the differ opaque → fail-safe REVIEW.
+# exact + empty findings: if the differ starts structuring that list, a value-change
+# rule would fire (or the decision would flip) and this case goes red.
+decision: REVIEW
+exact: true
+findings: []
+absent:
+  - only-safe-fields
+  - only-safe-nested-fields
