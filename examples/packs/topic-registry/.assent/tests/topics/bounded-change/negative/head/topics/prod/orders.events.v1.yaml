@@ -7,6 +7,11 @@ orders.events.v1:
   schema:
     format: avro
     subject: orders.events.v1-value
+    compatibility: BACKWARD
+    references:
+      orders.common: 1
+  compaction:
+    strategy: delete
   description: >
     Order lifecycle events (created, paid, shipped, cancelled) published by the
     order service for downstream consumers.

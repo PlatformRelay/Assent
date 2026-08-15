@@ -1,0 +1,3 @@
+# schema.compatibility BACKWARD -> FULL (allow-listed). Nested valueChanges proves → no finding.
+decision: APPROVE
+findings: []
