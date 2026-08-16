@@ -125,6 +125,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S07 lane follow-ups
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S07 lane
 - :memo: docs(walkthrough): pin the walkthrough to measured multi-format CLI output (EX-S09)
+- :memo: docs(walkthrough): close review gaps in the EX-S09 pins and repo snapshot
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
