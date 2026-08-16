@@ -1,0 +1,8 @@
+# REF-EX C5 (quota-ceiling-from-fact), explicit case: partitions 10 -> 18, within
+# the stubbed facts.quota.max_partitions ceiling (20). Reuses the SAME
+# partition-change-bounds rule bounded-change.yaml already wires to
+# facts.quota.max_partitions.value (D-071 deferral note) — this case just gives
+# the pattern its own discoverable name so C5 is not only implicit inside
+# bounded-change/. Satisfied prove -> no finding.
+decision: APPROVE
+findings: []

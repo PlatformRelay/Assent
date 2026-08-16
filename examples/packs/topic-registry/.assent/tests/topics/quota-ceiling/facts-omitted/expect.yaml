@@ -1,0 +1,4 @@
+# quota fact omitted -> the ceiling predicate errors on an unresolved fact -> the
+# engine fails safe to REVIEW, never APPROVE, even though the raw partition change
+# (10 -> 18) would have been within band had the fact resolved.
+decision: REVIEW

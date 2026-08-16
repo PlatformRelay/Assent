@@ -1,0 +1,7 @@
+author:
+  login: alice
+  groups: [analytics-team]
+quota:
+  max_partitions: 20
+schema:
+  valid: true

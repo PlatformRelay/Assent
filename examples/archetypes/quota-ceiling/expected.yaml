@@ -1,0 +1,3 @@
+# partitions 10 -> 18 (<= stubbed quota 20). Satisfied prove -> no finding.
+decision: APPROVE
+findings: []

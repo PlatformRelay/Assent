@@ -1,0 +1,6 @@
+# partitions 10 -> 34 exceeds the stubbed quota ceiling (20) -> challenge -> REVIEW.
+decision: REVIEW
+findings:
+  - rule: partition-change-bounds
+    obligation: bounded-change
+    effect: challenge

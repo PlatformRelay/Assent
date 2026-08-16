@@ -1,0 +1,9 @@
+# partitions 10 -> 34 exceeds the stubbed quota ceiling (20).
+decision: REVIEW
+findings:
+  - rule: partition-change-bounds
+    obligation: bounded-change
+    effect: challenge
+    subject: topic-registry:analytics.clicks.v1
+    points: 1
+    code: bounded-change.out-of-band

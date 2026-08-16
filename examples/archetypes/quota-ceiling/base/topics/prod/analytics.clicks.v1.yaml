@@ -1,0 +1,14 @@
+# REF-EX C5 (quota-ceiling-from-fact) — a value change is bounded by a FACT the
+# diff itself cannot see (an in-repo quota registry, stubbed here; see
+# builtin/repo-file, REF-GAP-2). Governed entry: one topic per file.
+name: analytics.clicks.v1
+owner: analytics-team
+partitions: 10
+replication_factor: 3
+retention_hours: 72
+cleanup_policy: delete
+schema:
+  format: avro
+  subject: analytics.clicks.v1-value
+description: >
+  Clickstream events for the analytics domain.
