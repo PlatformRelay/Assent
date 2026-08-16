@@ -125,6 +125,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(ci): pin ci-audit-test in the AUD-S18 check-stage list
 - :bug: specs(p5-ex): make S10 schema freeze and S07 fence non-vacuous
 - :bug: fix(docs-gates): fail on unmapped format tokens and de-confound the tests-dir mutation (EX-S01 review)
+- :bug: fix(examples): make privilege-tier's proving fixture load-bearing
 
 ### Refactoring
 - :recycle: refactor(examples): discover dogfood packs instead of a hardcoded 3-name loop

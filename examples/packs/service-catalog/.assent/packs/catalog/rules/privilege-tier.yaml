@@ -2,11 +2,24 @@
 # service entry and is already caught by only-safe-fields (any non-/oncall field
 # change escalates to require-review, allowed-fields.yaml). This rule adds a
 # NARROWER, value-level check on top of that coarse field-level one: a tier value
-# outside the allow-list (e.g. 0, or any value not in the declared band) is a
-# privilege-escalation attempt, not just an "other field changed" event. Reuses
-# the allowed-fields obligation (already required) so no bindings.yaml change is
-# needed. D-061: this stays a scalar leaf check on the already-governed keyed-list
-# entry field — no unkeyed nested list is reintroduced.
+# outside the allow-list is a privilege-escalation attempt, not just an "other
+# field changed" event. Reuses the allowed-fields obligation (already required)
+# so no bindings.yaml change is needed. D-061: this stays a scalar leaf check on
+# the already-governed keyed-list entry field — no unkeyed nested list is
+# reintroduced.
+#
+# Allow-list is [1, 3], deliberately EXCLUDING 2: tier 2 is a deprecated
+# mid-band value being consolidated away (existing tier-2 services, e.g.
+# storefront-web in the S02 fixtures, are grandfathered — they simply never
+# trigger a tier MODIFY — but no NEW assignment to 2 is permitted). This is
+# also what makes the rule's proving polarity load-bearing: a flat [1,2,3]
+# allow-list would let the pre-existing S02 allowed-fields/negative golden
+# (which coincidentally moves tier 1->2) silently double as this rule's
+# proving-polarity witness, so deleting THIS pack's own privilege-tier/
+# positive fixture would leave --coverage falsely green. With 2 excluded, that
+# S02 fixture's 1->2 change instead becomes a (tolerated, unasserted) FAILING
+# firing of this rule — proving-polarity coverage comes ONLY from this pack's
+# own privilege-tier/ fixture (tier 1->3).
 apiVersion: assent.dev/v1alpha1
 kind: MergePolicy
 metadata:
@@ -27,7 +40,7 @@ spec:
           kinds: [modify]
       prove:
         obligation: allowed-fields
-        when: "new in [1, 2, 3]"
+        when: "new in [1, 3]"
       onFailure:
         effect: require-review
         code: allowed-fields.tier-out-of-range
