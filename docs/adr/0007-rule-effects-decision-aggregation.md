@@ -16,6 +16,12 @@ Severity levels don't capture this — these are **effects** with different forg
 different aggregation semantics. Additionally, a scalar **risk score** is wanted so that many
 small oddities can add up to "human, please look" even when no single rule blocks.
 
+A predicate is not strictly binary either — a missing fact, a type mismatch, or a cost-limit
+hit must still resolve to *something*, never a silent pass. And a bulk change authored as many
+small edits must not slip under a per-rule threshold just because each edit fires its own rule
+once. The effect table, aggregation order, and scoring rule below hold both properties
+together.
+
 ## Decision (proposed)
 
 ### Effects (per rule, declared in the envelope)
@@ -29,16 +35,22 @@ small oddities can add up to "human, please look" even when no single rule block
 | `score` | contribute risk points (`points: N`) | none (recorded) | via threshold |
 
 A rule = match + predicate + **one effect** (plus optional `points`, allowed alongside any
-effect). Findings carry rule id, effect, paths, message, points.
+effect, accruing **per firing** rather than per rule — see amendment 2 for the bulk-change
+arithmetic this implies) and an optional `onFail:` block (`effect`, `message`, `points`)
+applied when that same predicate returns **false**. One predicate serving both outcomes avoids
+hand-negated twin rules that drift apart; see amendment 2 for the worked example. Findings
+carry rule id, effect, paths, message, points.
 
 ### Aggregation (deterministic, order-independent)
 
 1. Any `block` finding → **BLOCK**.
 2. Else any unresolved `challenge` → **REVIEW** (threads posted; on the forge the MR merges
    only after all threads are resolved *and* re-evaluation passes).
-3. Else **coverage check**: every entry in the ChangeSet must be matched by ≥1 `vouch` rule.
-   Unvouched changes → **REVIEW** with an explicit "uncovered change" finding. Fail-safe by
-   construction: an empty or non-matching policy set never automerges anything.
+3. Else **coverage check**: every entry in the ChangeSet must be matched by ≥1 `vouch` rule
+   from the routed pack set — packs may combine (union of denies, single-vouch trust; see
+   amendment 1 for the multi-pack semantics and the `coverage: exclusive` escape). Unvouched
+   changes → **REVIEW** with an explicit "uncovered change" finding. Fail-safe by construction:
+   an empty or non-matching policy set never automerges anything.
 4. Else **risk check**: `sum(points)` ≤ threshold for the active (environment, change class)
    binding (ADR-0008) → **APPROVE** (+ merge); over threshold → **REVIEW**.
 
@@ -63,7 +75,9 @@ finding list, per-rule traces, score arithmetic, and the aggregation path taken.
 - *"Vouch-coverage is annoying; default-allow with deny rules is less work."* — Default-allow
   automerge on config repos is how outages happen; annoyance is the feature.
 
-## Amendment (2026-07-21, adversarial review F6/F7/F10)
+## Amendment 1 (2026-07-21, adversarial review F6/F7/F10)
+
+Pinning down the tri-state, multi-pack, and cross-MR properties anticipated above:
 
 **Tri-state predicates (F6).** A predicate evaluates to true / false / **error** (missing
 fact, type mismatch, cost-limit hit, undefined). Error is fail-safe by effect: on a `vouch`
@@ -85,6 +99,8 @@ require serve-mode state and is explicitly out of scope for v1.
 
 ## Amendment 2 (2026-07-21, second review P1-6/P1-7)
 
+Arithmetic and a worked example for the `points` and `onFail` primitives declared above:
+
 **Points multiplicity.** The predicate runs once per matched change (ADR-0011 amendment);
 `points` accrue **per firing**, not per rule. `vouch` + `points` is therefore the built-in
 bulk-change guard: ten vouched partition bumps at `points: 1` against a prod threshold of 4
@@ -96,11 +112,8 @@ use points sparingly and the docs must state this multiplication explicitly.
 set of vouched change paths (`vouch contains path if { … }`); anything not in the set stays
 uncovered. No implicit "no violation = vouch".
 
-**`onFail` branch (kills negation pairs).** A rule may declare an `onFail:` block
-(`effect`, `message`, `points`) applied to matched changes whose predicate is **false** —
-one predicate, both outcomes, no hand-negated twin rules that drift. The shipped
-bounded-change example demonstrated the failure this fixes: `vouch` on
-`new >= old && new <= quota` left the quota-exceeded case silently uncovered with no
-message; with `onFail: {effect: challenge, message: "…exceeds quota…"}` the contributor gets
-told. Predicate **error** remains its own case (tri-state, amendment 1): errors never take
-the `onFail` branch — they fail safe by effect.
+**`onFail` in practice.** The bounded-change worked example shows the shape `onFail` is for:
+`vouch` on `new >= old && new <= quota` alone leaves the quota-exceeded case silently
+uncovered with no message; with `onFail: {effect: challenge, message: "…exceeds quota…"}` the
+contributor gets told. Predicate **error** remains its own case (tri-state, amendment 1):
+errors never take the `onFail` branch — they fail safe by effect.

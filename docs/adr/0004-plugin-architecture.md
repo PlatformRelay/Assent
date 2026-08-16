@@ -29,25 +29,37 @@ runtime-loaded data (ADR-0002); this ADR is about *imperative* extension points.
 
 **Tiered provider model behind one `FactProvider` / `PermissionProvider` port:**
 
-1. **Built-ins** (in-tree, config-activated): forge group membership (GitLab/GitHub), OIDC/
-   Keycloak group lookup, LDAP, ownership-file (CODEOWNERS-style) — covering the common cases
-   with zero plugin code.
+1. **Built-ins** (in-tree, config-activated): forge group membership (GitLab/GitHub),
+   ownership-file (CODEOWNERS-style) — covering the common cases with zero plugin code.
+   **OIDC/Keycloak/LDAP group lookup did not ship as built-ins and are not planned as
+   such** (OQ-32/D-147, decided while designing P5-DEM): every token-authenticated IdP
+   needs a bearer credential on each call, and no provider transport carries one
+   in-process by design ([ADR-0015 §7](0015-trust-boundaries-merge-integrity.md),
+   Amendment 2 below) — a credential entering the built-in tier would put it inside
+   the decision path's trust boundary for a capability tier 2 already covers.
+   The supported shape is tier 2 (HTTP/exec) behind either a credential-holding broker
+   documented for adopters, or (planned, D-147) a host-side secret resolver that keeps
+   the credential out of repo-side, MR-editable config. `docs/architecture/c4-context.md`
+   states this plainly; treat this row as superseding the built-in claim below.
 2. **HTTP / exec provider**: declare an endpoint or executable in config; assent calls it
-   with a versioned JSON request and expects a versioned JSON response. Any language, no SDK.
-3. **gRPC plugins** (`hashicorp/go-plugin`): for providers needing streaming, caching hooks,
-   or richer lifecycle; subprocess model matches the one-shot CI execution well.
-4. **WASM (wazero)** — reserved future tier for sandboxed, hot-loadable providers; recorded as
-   reversible option, not built in v1.
+   with a versioned JSON request and expects a versioned JSON response — any language, no SDK,
+   the tier a third-party adopter is expected to land on first.
+3. **gRPC plugins** (`hashicorp/go-plugin`): for providers needing streaming, caching hooks, or
+   richer lifecycle than one-shot request/response gives; the subprocess model matches the
+   one-shot CI execution that tier 2 already assumes.
+4. **WASM (wazero)** — reserved future tier for sandboxed, hot-loadable providers; recorded as a
+   reversible option from day one, not built in v1.
 
-All tiers implement the same request/response contract; the contract (not the transport) is
-the versioned public API.
+All four tiers implement the same request/response contract; the contract (not the transport)
+is the versioned public API, so moving a provider from tier 2 to tier 3 changes nothing a
+policy author can see.
 
 ## Consequences
 
 - Provider results become **facts** in PolicyInput — policies never call providers directly,
   keeping evaluation pure/deterministic and trivially testable (facts are fixtures in tests).
-- Caching, timeouts, and failure semantics (fail-open vs. fail-closed per provider) must be
-  spec'd; default is **fail-closed → human review**.
+- Caching, timeouts, and failure semantics (fail-open vs. fail-closed per provider) are pinned
+  down in the amendments below; default is **fail-closed → human review**.
 
 ## Counterpoints considered
 

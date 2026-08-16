@@ -19,6 +19,14 @@ Side-effect-free comparison (`assent compare`, shipped in E6) evaluates recorder
 profiles over the same ChangeSet solely to produce DecisionRecords for delta
 classification.
 
+> **Enforcement status (2026-08-16, tracked by D-145 / OQ-29):** the invariant above
+> holds for `assent compare`, which is the only caller of `aggregate.CoverWithProfile`.
+> **It is not yet enforced on the `assent run` path** — `cmd/assent/run.go` does not
+> load a profile at all, so a `writes: false` profile does not make a live `run`
+> recorder-only today; the run proceeds exactly as if no profile existed for it.
+> Landing that gate is a dedicated, independently-reviewed lane (D-145); this note
+> is removed once it merges.
+
 ## Contracts
 
 - Profile schema: `schemas/policy/v1alpha1/profile.schema.json` (`spec.writes` required)
