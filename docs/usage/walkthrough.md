@@ -22,6 +22,11 @@ retentionMs: 604800000
 
 Today every MR waits for a platform engineer. Goal: routine changes merge themselves.
 
+That flat snippet is illustrative, not the limit of what ships: the starter packs also
+govern nested YAML maps (`acl.grants`, keyed `consumers`), nested JSON objects, nested
+tfvars maps, and — opaquely, falling back to REVIEW — HCL `.tf` blocks. Step 3 below is
+real `assent test` output across all four.
+
 ## Step 1 — scaffold a policy tree
 
 > **Planned — `assent init` does not exist.** There is no scaffolding subcommand in the
@@ -69,21 +74,107 @@ hard errors, not warnings.
 $ assent test .
 PASS topics/bounded-change (APPROVE)
 PASS topics/bounded-change/negative (REVIEW)
+PASS topics/list-no-shrink (APPROVE)
+PASS topics/list-no-shrink/negative (REVIEW)
 PASS topics/ownership (APPROVE)
 PASS topics/ownership/negative (REVIEW)
+PASS topics/quota-ceiling (APPROVE)
+PASS topics/quota-ceiling/facts-omitted (REVIEW)
+PASS topics/quota-ceiling/negative (REVIEW)
+PASS topics/resource-ownership (APPROVE)
+PASS topics/resource-ownership/negative (REVIEW)
+PASS topics/schema-compatibility (APPROVE)
+PASS topics/schema-compatibility/negative (REVIEW)
 PASS topics/schema-valid (APPROVE)
 PASS topics/schema-valid/negative (BLOCK)
+PASS topics/soft-delete (APPROVE)
+PASS topics/soft-delete/negative (REVIEW)
+PASS topics/soft-delete/unrelated-modify (APPROVE)
+PASS topics/wildcard-grant (APPROVE)
+PASS topics/wildcard-grant/negative (BLOCK)
 PASS topics/non-destructive (APPROVE)
 PASS topics/non-destructive-delete (REVIEW)
 ```
 
-That is real output from the shipped starter pack. Each case is a directory with
-`base/`, `head/`, `facts.yaml` and `expect.yaml` (or an inline `cases.yaml` entry); a
+That is real output from the shipped `topic-registry` starter pack — **YAML** with nested
+`acl.grants` and keyed `consumers` maps, not a single flat field. Each case is a directory
+with `base/`, `head/`, `facts.yaml` and `expect.yaml` (or an inline `cases.yaml` entry); a
 failing case prints the expected and actual decision plus the findings that differ.
 `--update` rewrites expectations from the produced actuals (refused when `CI` is set),
 `--coverage` is the read-only both-polarity completeness gate. Exit `0` every case
 matched; `1` a mismatch, write or load error; `2` usage, discovery, or the CI guard
 refusing `--update`.
+
+`topic-registry` is one of **four** formats the shipped packs govern nested structure in:
+
+```console
+$ assent test examples/packs/service-catalog
+PASS catalog/allowed-fields (APPROVE)
+PASS catalog/allowed-fields/negative (REVIEW)
+PASS catalog/context-fresh (APPROVE)
+PASS catalog/context-fresh/negative (REVIEW)
+PASS catalog/nested-fields (APPROVE)
+PASS catalog/nested-fields/negative (REVIEW)
+PASS catalog/non-destructive (APPROVE)
+PASS catalog/non-destructive/negative (REVIEW)
+PASS catalog/ownership (APPROVE)
+PASS catalog/ownership/negative (REVIEW)
+PASS catalog/privilege-tier (REVIEW)
+PASS catalog/privilege-tier/negative (REVIEW)
+PASS catalog/schema-valid (APPROVE)
+PASS catalog/schema-valid/negative (BLOCK)
+PASS catalog/unkeyed-list-opaque (REVIEW)
+PASS catalog/file-non-destructive (APPROVE)
+PASS catalog/file-non-destructive-delete (BLOCK)
+```
+
+`service-catalog` is **JSON** with nested objects (`catalog/nested-fields`) and a tier
+allow-list (`catalog/privilege-tier`). `catalog/unkeyed-list-opaque` is a measured, not
+wished-for, limit: an *unkeyed* list is opaque to the differ by design (D-061), so a
+change inside one falls back to REVIEW rather than a false-precision partial diff.
+
+```console
+$ assent test examples/packs/infra-vars
+PASS vars/bounded-change (APPROVE)
+PASS vars/bounded-change/negative (REVIEW)
+PASS vars/max-replicas-change (APPROVE)
+PASS vars/max-replicas-change/negative (REVIEW)
+PASS vars/min-replicas-change (APPROVE)
+PASS vars/min-replicas-change/negative (REVIEW)
+PASS vars/nested-map-change (APPROVE)
+PASS vars/nested-map-change/negative (REVIEW)
+PASS vars/ownership (APPROVE)
+PASS vars/ownership/negative (REVIEW)
+PASS vars/placement (APPROVE)
+PASS vars/placement/negative (REVIEW)
+PASS vars/tf-opaque (REVIEW)
+PASS vars/companion-delete (REVIEW)
+```
+
+`infra-vars` is **tfvars** — keyed `workloads.*` maps, including the deeper
+`vars/nested-map-change` case. `vars/tf-opaque` and `vars/companion-delete` are the two
+honest edges of the current differ, both pinned as expected **REVIEW**, never a silent
+APPROVE:
+
+- **`.tf` is governed but not structurally diffed.** The differ only routes the
+  `.tfvars` extension to the HCL parser; a `.tf` file's content — blocks or bare literals
+  alike — is opaque and falls back to REVIEW, never a partial parse. Assent does **not**
+  understand Terraform expressions or resource blocks; it treats a whole changed `.tf`
+  file as one un-provable unit. This is a permanent v1 limitation, not a bug — see
+  `examples/README.md`.
+- **A companion file outside the pack's class match** (e.g. a `NOTES.md` next to the
+  `*.tfvars` files) deleted alongside a real change is caught only by the class-agnostic
+  unmatched-whole-file-delete fail-safe — REVIEW, no obligation attached. v1 does not
+  correlate "delete A and append B" across files; that is out of engine scope today.
+
+These packs also carry the **REF-EX C1–C8** governance patterns: keyed-map entry removal
+(C1, `topics/list-no-shrink`), a tier allow-list (C2, `catalog/privilege-tier`),
+wildcard-grant blocking (C3, `topics/wildcard-grant`), soft-delete-as-field-add (C4,
+`topics/soft-delete`), a fact-derived quota ceiling (C5, `topics/quota-ceiling`), a
+placement allow-list (C6, `vars/placement`), referenced-resource ownership (C7,
+`topics/resource-ownership`), and the companion-file-delete REVIEW above (C8,
+`vars/companion-delete`) — all runnable today from
+[`examples/packs/`](https://github.com/PlatformRelay/assent/tree/main/examples/packs).
 
 ## Step 4 — backtest before trusting it
 
