@@ -29,6 +29,15 @@ to the HCL parser, so a `.tf` file's content, blocks or bare literals alike, is
 opaque and falls back to REVIEW, never a partial parse (ADR-0003) — see the
 `infra-vars` pack's `tf-opaque` case. Only `.tfvars` gets structured diffing today.
 
+**Known limitation (REF-EX C8, REF-GAP-3):** deleting a file the pack's class does not
+match (e.g. a companion `envs/prod/NOTES.md` alongside `infra-vars`' `*.tfvars`) is caught
+only by the class-agnostic unmatched-whole-file-DELETE fail-safe (D-063/D-064,
+`internal/core/aggregate/coverage.go`), which raises the decision to REVIEW with no
+obligation attached — see the `infra-vars` pack's `vars/companion-delete` case (a
+**measured**, not wished, decision). This is not cross-file correlation: v1 does not know
+"delete A and append B" are related, and would REVIEW an unrelated companion delete the
+same way. Out of v1 engine scope.
+
 The authored surfaces here are the **frozen** `assent.dev/v1alpha1` schemas under
 `schemas/`, not drafts; the compatibility promises attached to them are in
 [`API_STABILITY.md`](../API_STABILITY.md).

@@ -26,6 +26,17 @@ classes:
     # the HCL producer (so a literal-only Terraform config file could structurally
     # diff, matching tfvars) is future engine work, not yet built.
     match: { paths: ["envs/**/*.tfvars", "envs/**/*.tf"] }
+    # KNOWN LIMITATION (REF-EX C8, REF-GAP-3, out of v1 engine scope): this class
+    # matches only *.tfvars and *.tf. A COMPANION file outside that match — e.g.
+    # envs/prod/NOTES.md — is unclassified (ADR-0008 §1), and its deletion is
+    # caught only by the class-agnostic D-063/D-064 unmatched-whole-file-DELETE
+    # fail-safe (internal/core/aggregate/coverage.go), which raises the decision
+    # to REVIEW with no obligation/rule attached (see vars/companion-delete in
+    # .assent/tests/vars/cases.yaml — a MEASURED, not wished, REVIEW). This is
+    # NOT cross-file correlation: the engine has no notion that NOTES.md is
+    # "related" to compute.tfvars, and would REVIEW an unrelated companion
+    # delete identically. v1 does not correlate "delete A and append B" across
+    # files — that remains REF-GAP-3, likely out of v1 scope.
 providers:
   author:
     type: builtin/gitlab-groups

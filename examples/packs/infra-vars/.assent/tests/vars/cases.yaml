@@ -1,0 +1,34 @@
+# REF-EX C8 (companion-file delete, known limitation) — a file OUTSIDE the
+# infra-vars class match (`envs/**/*.tfvars`, `envs/**/*.tf`) is deleted in head.
+# No class governs envs/prod/NOTES.md at all, so no fileEvents rule can ever
+# select it (this pack declares none anyway); the D-063/D-064 unmatched
+# whole-file-DELETE escalation (internal/core/aggregate/coverage.go) is the ONLY
+# thing standing between this delete and a silent APPROVE, and it raises the
+# decision to REVIEW (never higher — no obligation/rule fires, so `findings`
+# carries only the synthetic aggregate.unmatchedDelete escalation, `code:
+# fileEvent.unmatchedDelete`, no `obligation`).
+#
+# This is a MEASURED decision, not a wished one (REQ-EX-S07-04): the case was run
+# against the real engine before this comment was written. It is also a KNOWN
+# LIMITATION, not a feature — v1 does NOT correlate "delete A and append B" across
+# files (REF-GAP-3, out of v1 engine scope); this fixture demonstrates only that
+# the ungoverned companion delete fails safe to REVIEW rather than silently
+# vanishing. It must NOT be read as cross-file correlation — the engine has no
+# idea NOTES.md is "related" to compute.tfvars; it would REVIEW an unrelated
+# companion delete identically. See examples/README.md and this pack's
+# config.yaml for the same limitation documented in prose.
+cases:
+  - name: companion-delete
+    file: envs/prod/NOTES.md
+    base: |
+      # Deployment notes
+
+      Runbook links and the on-call rotation for the prod environment. This file
+      is NOT governed by the infra-vars class (only *.tfvars / *.tf are), so its
+      deletion is an ungoverned, unclassified companion change — REF-EX C8.
+    head: null
+    expect:
+      decision: REVIEW
+      findings:
+        - rule: aggregate.unmatchedDelete
+          effect: require-review
