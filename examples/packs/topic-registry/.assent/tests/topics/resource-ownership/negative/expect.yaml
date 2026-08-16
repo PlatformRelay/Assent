@@ -1,0 +1,8 @@
+# acl.resource ADD names billing.ledger-pool; facts.resource_owner.owner
+# (finance-team) is NOT in facts.author.groups.value -> referenced-resource-ownership
+# fails -> require-review -> REVIEW.
+decision: REVIEW
+findings:
+  - rule: referenced-resource-ownership
+    obligation: resource-ownership
+    effect: require-review

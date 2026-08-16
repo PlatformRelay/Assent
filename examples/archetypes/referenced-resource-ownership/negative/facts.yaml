@@ -1,0 +1,9 @@
+author:
+  login: alice
+  groups: [connectors-team, platform-team]
+# The resolved fact (finance-team) does NOT match the head's self-declared
+# acl.owner (billing-team) either — the predicate never reads entry.acl.owner,
+# only the resolved fact, precisely because a self-declared claim cannot be
+# trusted (that is the gap C7 demonstrates).
+resource_owner:
+  owner: finance-team

@@ -1,0 +1,10 @@
+# acl.resource ADD names billing.ledger-pool; the resolved fact (finance-team)
+# is NOT in facts.author.groups.value -> require-review.
+decision: REVIEW
+findings:
+  - rule: referenced-resource-ownership
+    obligation: resource-ownership
+    effect: require-review
+    subject: topic-registry:connectors.status.v1
+    points: 0
+    code: acl.resource-ownership-mismatch

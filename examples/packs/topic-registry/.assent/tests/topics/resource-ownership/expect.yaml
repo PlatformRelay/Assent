@@ -1,0 +1,5 @@
+# acl.resource ADD names platform.connector-pool; facts.resource_owner.owner
+# (platform-team) IS in facts.author.groups.value -> referenced-resource-ownership
+# proves silently -> APPROVE.
+decision: APPROVE
+findings: []

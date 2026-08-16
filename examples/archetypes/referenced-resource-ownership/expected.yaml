@@ -1,0 +1,4 @@
+# acl.resource ADD names platform.connector-pool; the resolved fact
+# (platform-team) IS in facts.author.groups.value. Satisfied prove -> no finding.
+decision: APPROVE
+findings: []

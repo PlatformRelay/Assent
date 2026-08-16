@@ -1,0 +1,46 @@
+# Referenced-resource-ownership (REF-EX C7, judgment call (b)) — an ACL entry
+# that NAMES another team's resource (acl.resource) is a cross-team reference the
+# changed file alone cannot authorize: the diff only shows what THIS topic
+# claims, not who actually owns the resource being referenced. facts.resource_owner.owner
+# stubs the shipped builtin/resource-owner shape (REF-GAP-1, OutputOwner="owner")
+# as the ground truth; the author must belong to that owning group, mirroring
+# ownership.yaml's own-entry check but for a REFERENCED resource rather than the
+# entry itself. Gap DEMO, not a new builtin: no cross-file resolution happens —
+# facts.resource_owner.owner.value is a fixture literal here, never resolved from
+# the referenced resource's own file. `acl.owner` is carried alongside
+# `acl.resource` as the entry's own self-declared claim (documentation only,
+# not read by this predicate — the predicate trusts the resolved fact, not the
+# unverified self-declaration, which is the whole point of the gap).
+#
+# Pointer-scoped to /*/acl/resource so this rule is vacuous (no match at all) on
+# every topic that never declares acl.resource. This is a STRONGER vacuity guard
+# than the spec's own summary ("vacuous when !has(entry.acl)"): S06's
+# wildcard-grant fixtures already populate `entry.acl` (via `acl.grants`) without
+# ever setting `acl.resource`, so a bare `!has(entry.acl)` guard would NOT be
+# vacuous for those goldens — a CEL predicate would then try
+# `facts.resource_owner.owner.value` on a facts.yaml that never declares
+# `resource_owner`, which errors and would flip those goldens' decision. Pointer
+# scoping avoids the whole class of has()-vs-acl-shape traps by construction: the
+# rule structurally cannot fire unless a change touches acl.resource specifically.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: topics-referenced-resource-ownership
+spec:
+  entries:
+    kafka-topic:
+      mode: map
+      root: ""
+  rules:
+    - name: referenced-resource-ownership
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/*/acl/resource"]
+          kinds: [add, modify]
+      prove:
+        obligation: resource-ownership
+        when: 'facts.resource_owner.owner.value in facts.author.groups.value'
+      onFailure:
+        effect: require-review
+        code: acl.resource-ownership-mismatch

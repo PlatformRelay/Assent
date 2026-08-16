@@ -1,0 +1,25 @@
+connectors.status.v1:
+  owner: connectors-team
+  partitions: 6
+  replication_factor: 3
+  retention_hours: 168
+  cleanup_policy: delete
+  schema:
+    format: avro
+    subject: connectors.status.v1-value
+    compatibility: BACKWARD
+    references:
+      connectors.common: 1
+  compaction:
+    strategy: delete
+  description: >
+    Connector health/status events. REF-EX C7 (referenced-resource-ownership)
+    demonstrator: acl already carries S06's grants map; base has no acl.resource
+    yet (acl.resource/acl.owner are ADDED as leaf keys under the SAME existing
+    acl mapping, not as a whole new subtree — a one-sided ADD of a mapping would
+    go opaque, E1-S05).
+  acl:
+    grants:
+      connectors-team: read
+    resource: billing.ledger-pool
+    owner: billing-team

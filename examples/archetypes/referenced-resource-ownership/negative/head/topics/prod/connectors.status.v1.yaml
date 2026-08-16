@@ -1,0 +1,16 @@
+name: connectors.status.v1
+owner: connectors-team
+partitions: 6
+replication_factor: 3
+retention_hours: 168
+cleanup_policy: delete
+schema:
+  format: avro
+  subject: connectors.status.v1-value
+description: >
+  Connector health/status events.
+acl:
+  grants:
+    connectors-team: read
+  resource: billing.ledger-pool
+  owner: billing-team
