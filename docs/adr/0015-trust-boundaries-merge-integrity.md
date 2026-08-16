@@ -129,3 +129,105 @@ deadlines, CEL cost budget — breach fails closed to REVIEW (spec'd with ADR-00
 summary comment always embeds the decision hash and a link to the report artifact; docs must
 warn that CI artifact retention limits the audit window and recommend a retention policy for
 report artifacts.
+
+## Amendment (2026-08-16, D-147 — host-side credential resolver for HTTP providers)
+
+### 10. Host-side credential resolver (D-147 / OQ-32)
+
+**Context.** §7 established that no provider transport carries a credential — `CallHTTP`
+sets only `Content-Type: application/json`, and the repo-side provider schema
+(`$defs/provider`) is closed over exactly `{type, url, failure}`. That was deliberate: a
+hostile-provider isolation proof (`TestIsolation`, Spike C) rests on it. But it forecloses
+calling a token-authenticated IdP (Entra ID, Keycloak) directly — every such provider had to
+go through a broker. D-147 (resolving OQ-32) rules that a direct credential channel should
+exist after all, provided it stays **host-side only**: the credential is configured on the
+assent host (env / CLI / host config), keyed by a provider name, and the host — never the
+MR — injects the auth header. The operator's stated adoption patterns (GitLab CI / GitHub
+Actions job variables as the common case; Vault-agent file injection; a hosted variant with
+its own backend) all shape the source list below.
+
+**Decision.**
+
+- Repo-side `$defs/provider` gains exactly **one** new optional field: `credentialRef`
+  (string, opaque, non-empty). Nothing else about the schema changes; it stays
+  `additionalProperties: false`.
+- The host holds a **credential allowlist**, keyed by `credentialRef` name, each entry
+  populated from a host-side source and binding, host-side, all of: source, header name +
+  scheme (default `Authorization: Bearer <token>`), and the **exact origin
+  (scheme+host[:port]) the credential may be attached to**. The origin bind is load-bearing,
+  not decorative: repo-side config still supplies `url`, so without it, `credentialRef` paired
+  with an attacker-chosen `url` in the same MR-editable tree reproduces exactly the
+  exfiltration shape a repo-side `secretRef` would have opened. §1 (policy loaded from the
+  target ref, never the MR branch) and the `assent-policy` block-by-default class are a
+  second, independent mitigation on the same hole — worth stating explicitly since D-147
+  credited them separately, but they gate by ref-trust, not by a runtime check, so they don't
+  substitute for the origin bind.
+  - **env**: `ASSENT_PROVIDER_TOKEN_<REF>` (normalized ref name) — the GitLab CI / GitHub
+    Actions "set a job variable" pattern; expected to be the common case.
+  - **file**: a host-config-declared path, read at resolve time — the Vault-agent-injects-a-
+    file pattern, and the Kubernetes/CSI secret-mounted-file pattern.
+  - **pluggable resolver interface** — a small `CredentialSource` contract so a hosted variant
+    can add a managed-secret-store backend later without a transport-contract change.
+  - An unknown or unallowlisted `credentialRef` is a **hard error** at provider resolution —
+    never silently ignored, never falls back to an unauthenticated call.
+- **Attachment**: the host resolves `credentialRef` → secret *before* `CallHTTP` builds its
+  request, and sets the allowlisted header (default `Authorization: Bearer <secret>`)
+  alongside the existing `Content-Type: application/json`. Credentialed calls additionally: (a)
+  refuse (hard error) to attach to a non-`https` URL, and (b) use a client with redirects
+  disabled, so a credential is never replayed to a redirect target outside the allowlisted
+  origin.
+- A provider with `credentialRef` set may never be configured `failure: open` — the same lint
+  hard-error idiom the schema already applies to controlling/authorization providers
+  (`docs/planning/lint-hard-errors.md`). A resolution failure must fail-safe (fact `unknown`,
+  ADR-0007 tri-state), never silently degrade to an unauthenticated call.
+- **Exec tier: excluded from this design, on purpose.** `ScrubEnv`/`ScrubArgv` keep stripping
+  every env/argv entry matching `(?i)(TOKEN|SECRET)` — no exception list, no bypass flag, for
+  exec providers under this amendment. The resolver's own host env-var convention
+  (`ASSENT_PROVIDER_TOKEN_<REF>`) is chosen deliberately to align with, not fight, that regex:
+  if a resolved value were ever echoed into an exec provider's declared env/argv by
+  misconfiguration, the existing scrub still catches it as a `TOKEN`-named canary. Exec stays
+  excluded rather than gaining a dedicated non-scrubbed channel because exec is precisely the
+  tier where §7's isolation claim rests on the scrub — a spawned child, with an environment and
+  argv visible in the host process table — and a bypass there would invert that claim for the
+  one tier that needs it most.
+- **Never persisted**: the resolved secret is never written to `Decision.Pins`, the evaluation
+  report, the summary comment, or debug/explain output — consistent with ADR-0004 Amendment
+  2's "providers must never return raw credentials as facts." Resolver errors name the
+  `credentialRef`, never the resolved value.
+- **Purity boundary**: resolution and attachment live in `internal/provider` (host-facing,
+  I/O-permitted), outside the arch-lint-enforced pure set (`internal/core`, `internal/change`,
+  etc. — ADR-0011 Amendment 3). This does not reopen AGENTS.md's determinism rule for the
+  decision path: resolution is a deterministic function of host state, and happens before
+  evaluation, not inside it.
+
+**Explicitly NOT authorized by this amendment:**
+
+- A repo-side literal secret, or a repo-side reference that also carries or selects a
+  destination. `credentialRef` is an opaque name only; the host — never the MR — decides what
+  it resolves to and where it may be sent.
+- A repo-side field that can choose or override header name, scheme, or target origin. Those
+  stay host-config-only, inside the allowlist entry.
+- Any exec-tier exception to `ScrubEnv`/`ScrubArgv`.
+
+**Consequences.**
+
+- Schema (`$defs/provider`): one new optional string property, `credentialRef`. Still
+  `additionalProperties: false`; still no way for one MR-editable document to name a URL and a
+  real credential together.
+- `transport.go`: `CallHTTP` gains a resolver call ahead of request-header construction, an
+  https-only guard, and a redirect-disabled client for credentialed requests. `ScrubEnv`/
+  `ScrubArgv` are otherwise unchanged — this amendment restates their exec-tier behavior, it
+  does not loosen it.
+- Host config gains a new credential-allowlist surface (source + header/scheme + origin bind,
+  keyed by ref name) that lives outside `.assent/**` — not repo-editable, not part of the
+  frozen repo-side schema tree.
+- The hostile-provider isolation proof's core claim is unchanged: the MR-editable tree still
+  cannot see, choose, or redirect a real credential — it can only name a reference the host has
+  already pre-bound to one destination.
+- Follow-up: openspec stories for the resolver, the host allowlist config shape, and the lint
+  hard-error pairing `credentialRef` with `failure: open`; provider-author guide (DEM-S02)
+  documents the GitLab-CI-variable / GitHub-Actions-secret / Vault-agent-file / hosted-backend
+  patterns.
+- This amendment touches both a security boundary (§7's isolation proof) and the repo-side
+  provider schema — implementation should carry explicit maintainer review before merge, not
+  rely on CI-green alone.
