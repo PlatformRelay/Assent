@@ -64,7 +64,7 @@ just report artifacts; `assent compare` covers the corpus-replay case today), an
 | --- | --- | --- |
 | Change understanding | regex on diff lines | canonical field-level change model for JSON / YAML / HCL-tfvars |
 | Rule language | imperative script | declarative YAML + CEL assertions, versioned in the governed repo (Rego backend *planned* — E11) |
-| Permission checks | hard-coded HTTP calls | pluggable providers: Keycloak, LDAP, GitLab/GitHub groups, ownership files, custom plugins |
+| Permission checks | hard-coded HTTP calls | pluggable providers: GitLab/GitHub groups, ownership files, generic HTTP/exec, custom plugins — Keycloak/Entra/LDAP via a credential broker or (planned, OQ-32/D-147) a host-side secret resolver, never a direct in-transport credential today |
 | Review UX | pipeline pass/fail | resolvable review threads, comments, approve/deny, auto-merge |
 | Testing | none | fixture-based policy tests, required by lint |
 | Platform | one forge | one forge-neutral port — GitLab adapter shipped, GitHub adapter *planned* (E10) |
