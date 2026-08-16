@@ -118,6 +118,10 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(openspec): correct test attribution in the REQ-EX-S05-05 amendment
 - :memo: docs(changelog): regenerate CHANGELOG.md after rebase onto origin/main
 - :memo: docs(planning): mark REF-EX C1-C8 landed; archetype-goldens manifest v2
+- :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S07 lane
+- :memo: docs(examples): state C5's measured zero incremental --coverage credit
+- :memo: docs(examples): note infra-vars has no fileEvents rule at all (C8)
+- :memo: docs(openspec): amend REQ-EX-S07-03/04 to match the measured implementation
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
