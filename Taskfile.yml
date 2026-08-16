@@ -58,16 +58,10 @@ tasks:
       - CGO_ENABLED=0 go build -ldflags "-X main.version=${ASSENT_VERSION:-0.0.0-dev}" -o bin/assent ./cmd/assent
 
   dogfood-examples:
-    desc: "Dogfood gate (P5-E6-S08): every non-locked example pack gates itself green under the real `assent test` (+ --coverage) CLI"
+    desc: "Dogfood gate (EX-S08): every examples/packs/<name> with .assent/tests gates itself green under the real `assent test` (+ --coverage) CLI — discovered, not hardcoded"
     deps: [build]
     cmds:
-      - |
-        set -e
-        for pack in service-catalog infra-vars topic-registry; do
-          echo "== assent test examples/packs/$pack =="
-          ./bin/assent test "examples/packs/$pack"
-          ./bin/assent test --coverage "examples/packs/$pack"
-        done
+      - bash hack/dogfood-examples.sh
 
   dogfood-comparison:
     desc: "Dogfood gate (PCS-S08): comparison corpus validates and runs green under assent compare --suite"
@@ -83,6 +77,11 @@ tasks:
       - task: test
       - task: coverage
       - task: build
+      # EX-S08: dogfood the shipped example packs through the real `assent test`
+      # CLI, sequential and AFTER build (D-124 lesson: a deps: race with fmt
+      # caused a prior bug — this stage runs the built binary, so it belongs
+      # after build like docs-gates runs after the tree is otherwise settled).
+      - task: dogfood-examples
       - task: dogfood-comparison
       - task: compare-exitgate-test
       # AUD-S02 (REQ-AUD-S02-02): CHANGELOG.md drift gate. It is the LOCAL half of the
@@ -116,6 +115,10 @@ tasks:
       # .github/workflows/**, so without this line an unpinned workflow is caught
       # only by CI — and only for as long as the CI step itself survives.
       - task: lint-workflow-pins-test
+      # EX-S08 (REQ-EX-S08-03): the dogfood-examples gate's own guard. Without
+      # this, deleting `- task: dogfood-examples` from check: above passes
+      # every wired gate — the same manual-gate defect D-124 closed elsewhere.
+      - task: dogfood-wiring-test
       # Operator 2026-08-13: Dependabot is the updater; a reintroduced
       # renovate.json would otherwise merge green.
       - task: ci-audit-test
@@ -124,6 +127,11 @@ tasks:
     desc: "E9-S04 + Dependabot-only: single CodeQL workflow; no Renovate config"
     cmds:
       - bash hack/release/ci_audit_test.sh
+
+  dogfood-wiring-test:
+    desc: "EX-S08 gate: task check runs dogfood-examples after build, and Taskfile.yml/verify.yaml both delegate to hack/dogfood-examples.sh (REQ-EX-S08-02/03)"
+    cmds:
+      - bash hack/examples/dogfood_wiring_test.sh
 
   lint-workflow-pins-test:
     desc: "AUD-S09/S14 gate: workflow supply-chain pins are present and the checks can fail (REQ-AUD-S09-01, REQ-AUD-S14-01/02)"

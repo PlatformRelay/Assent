@@ -31,6 +31,9 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -42,18 +45,52 @@ import (
 
 // greenExamplePacks are the non-locked example packs that gate themselves green under
 // `assent test`. rego is locked (D-012) and carries no .assent/tests/** at all.
-// Keep Taskfile.yml dogfood-examples + .github/workflows/verify.yaml dogfood step in
-// sync (TestDogfoodScriptsIncludeGreenExamplePacks).
-var greenExamplePacks = []string{"service-catalog", "infra-vars", "topic-registry"}
+//
+// EX-S08: this used to be a hardcoded three-name literal, duplicated by hand in
+// Taskfile.yml's dogfood-examples task and .github/workflows/verify.yaml's dogfood
+// step — a proven skew risk (a pack green in one, silently absent in another). It is
+// now DISCOVERED from the filesystem via discoverGreenExamplePacks, walking the same
+// examples/packs/*/.assent/tests contract that hack/dogfood-examples.sh (the script
+// Taskfile.yml and verify.yaml both now call) and examples/README.md's inventory gate
+// (EX-S01, hack/docs/example_format_inventory_test.sh) use — a fourth pack is picked
+// up here without editing this file.
+var greenExamplePacks = discoverGreenExamplePacks()
+
+// discoverGreenExamplePacks walks examples/packs/*/.assent/tests: every immediate
+// child of examples/packs/ with a .assent/tests/ subdirectory is a pack this gate
+// dogfoods. Mirrors hack/dogfood-examples.sh's discovery rule exactly.
+func discoverGreenExamplePacks() []string {
+	matches, err := filepath.Glob(filepath.Join(examplesPacksDir, "*", ".assent", "tests"))
+	if err != nil {
+		// filepath.Glob only errors on a malformed pattern; the pattern above is a
+		// compile-time constant, so this is unreachable short of test corruption.
+		panic("discoverGreenExamplePacks: " + err.Error())
+	}
+	packs := make([]string, 0, len(matches))
+	for _, m := range matches {
+		// m == examplesPacksDir/<pack>/.assent/tests
+		packs = append(packs, filepath.Base(filepath.Dir(filepath.Dir(m))))
+	}
+	sort.Strings(packs)
+	return packs
+}
 
 // brokenPackDir is the DELIBERATELY-broken fixture (a valid pack whose expect.yaml pins
 // the wrong decision). It lives under testdata, never examples/packs, so the shipped
 // corpus stays green while the failure path is still proven.
 const brokenPackDir = "testdata/broken-pack"
 
-// TestDogfoodScriptsIncludeGreenExamplePacks pins the CLI dogfood loops
-// (Taskfile dogfood-examples + verify.yaml) to the same pack set as greenExamplePacks
-// so unpinning a pack (EFE-S04 / topic-registry) cannot leave the shell loops stale.
+// hardcodedPackLoopPattern matches the OLD `for pack in <name1> <name2> ...` shell
+// loop shape (2+ space-separated tokens) that EX-S08 replaced. Mirrors
+// hack/examples/dogfood_wiring_test.sh's hardcoded_pack_loop check.
+var hardcodedPackLoopPattern = regexp.MustCompile(`for pack in [A-Za-z0-9_-]+ [A-Za-z0-9_-]+`)
+
+// TestDogfoodScriptsIncludeGreenExamplePacks is REQ-EX-S08-02: Taskfile.yml's
+// dogfood-examples task and verify.yaml's dogfood step both call the SHARED
+// hack/dogfood-examples.sh discovery script rather than each carrying its own
+// hardcoded pack-name loop. Before EX-S08 this test grepped for the three literal
+// pack names in each file — passing on the redundant-but-correct loop AND on a
+// hardcoded loop of DIFFERENT names, which is exactly the skew this story closes.
 func TestDogfoodScriptsIncludeGreenExamplePacks(t *testing.T) {
 	files := []string{
 		filepath.Join("..", "..", "Taskfile.yml"),
@@ -65,12 +102,106 @@ func TestDogfoodScriptsIncludeGreenExamplePacks(t *testing.T) {
 			t.Fatalf("read %s: %v", f, err)
 		}
 		body := string(raw)
-		for _, pack := range greenExamplePacks {
-			// Match the shell `for pack in …` token list, not incidental prose.
-			if !strings.Contains(body, pack) {
-				t.Errorf("%s: dogfood loop missing green pack %q", f, pack)
+		if !strings.Contains(body, "hack/dogfood-examples.sh") {
+			t.Errorf("%s: does not invoke the shared hack/dogfood-examples.sh discovery script", f)
+		}
+		if hardcodedPackLoopPattern.MatchString(body) {
+			t.Errorf("%s: re-hardcodes a pack-name loop instead of delegating to hack/dogfood-examples.sh", f)
+		}
+	}
+}
+
+// TestGreenExamplePacksIsFilesystemDerived is REQ-EX-S08-05: greenExamplePacks is
+// exactly the set of examples/packs/* directories with a .assent/tests/
+// subdirectory — not a hardcoded literal that happens to match today's corpus. A
+// hand-reverted `var greenExamplePacks = []string{...}` would still compile and
+// would still pass every other test in this file (they only iterate the slice), so
+// this pin independently recomputes the glob and compares.
+func TestGreenExamplePacksIsFilesystemDerived(t *testing.T) {
+	matches, err := filepath.Glob(filepath.Join(examplesPacksDir, "*", ".assent", "tests"))
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	want := make([]string, 0, len(matches))
+	for _, m := range matches {
+		want = append(want, filepath.Base(filepath.Dir(filepath.Dir(m))))
+	}
+	sort.Strings(want)
+	if len(want) == 0 {
+		t.Fatal("filesystem glob discovered zero packs — this assertion would be vacuous")
+	}
+	got := append([]string(nil), greenExamplePacks...)
+	sort.Strings(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("greenExamplePacks = %v, want filesystem-derived %v", got, want)
+	}
+}
+
+// TestBrokenPackFixtureIsNotDiscovered is the REQ-EX-S08-04 edge: the
+// deliberately-broken CLI fixture (brokenPackDir) lives under cmd/assent/testdata,
+// never under examples/packs/, precisely so the shipped corpus stays green while
+// the failure path is still proven. Discovery walks examples/packs/* only, so it
+// can never pick brokenPackDir up by construction — pinned explicitly so a future
+// move of the fixture under examples/packs/ is caught here rather than silently
+// turning every dogfood run red.
+func TestBrokenPackFixtureIsNotDiscovered(t *testing.T) {
+	for _, pack := range greenExamplePacks {
+		if pack == "broken-pack" {
+			t.Fatalf("greenExamplePacks discovered the testdata broken-pack fixture: %v", greenExamplePacks)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(examplesPacksDir, "broken-pack")); err == nil {
+		t.Fatal("broken-pack must not exist under examples/packs/ — the deliberately-broken fixture belongs under cmd/assent/testdata only")
+	}
+}
+
+// readmePackNames extracts the backtick-quoted pack names from examples/README.md's
+// `[`packs/`]` bullet (and its wrapped continuation line), mirroring
+// hack/docs/example_format_inventory_test.sh's readme_packs() exactly.
+func readmePackNames(t *testing.T, readmePath string) []string {
+	t.Helper()
+	raw, err := os.ReadFile(readmePath) //nolint:gosec // fixed in-repo docs path.
+	if err != nil {
+		t.Fatalf("read %s: %v", readmePath, err)
+	}
+	backtick := regexp.MustCompile("`([a-z0-9-]+)`")
+	inPacks := false
+	var names []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.Contains(line, "[`packs/`]") {
+			inPacks = true
+		} else if inPacks && (strings.TrimSpace(line) == "" ||
+			(strings.HasPrefix(strings.TrimSpace(line), "- [`"))) {
+			break
+		}
+		if !inPacks {
+			continue
+		}
+		for _, m := range backtick.FindAllStringSubmatch(line, -1) {
+			if m[1] != "packs" {
+				names = append(names, m[1])
 			}
 		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// TestExampleCorpusDiscoveryMatchesReadmeInventory is the second half of
+// REQ-EX-S08-02/05 ("the walk matches what README/inventory claims"): the
+// filesystem-discovered greenExamplePacks must equal the pack names
+// examples/README.md's `[`packs/`]` bullet advertises — the same equality EX-S01's
+// hack/docs/example_format_inventory_test.sh proves from the shell side. Two
+// independent readers (bash awk vs. Go regex) agreeing on the same filesystem
+// contract is the point: a drift only one of them would catch is exactly what this
+// duplication is meant to rule out.
+func TestExampleCorpusDiscoveryMatchesReadmeInventory(t *testing.T) {
+	readmePath := filepath.Join("..", "..", "examples", "README.md")
+	docPacks := readmePackNames(t, readmePath)
+	fsPacks := append([]string(nil), greenExamplePacks...)
+	sort.Strings(fsPacks)
+	if !reflect.DeepEqual(docPacks, fsPacks) {
+		t.Errorf("examples/README.md packs %v != filesystem discovery %v (EX-S01 inventory drift)", docPacks, fsPacks)
 	}
 }
 

@@ -78,13 +78,8 @@ jobs:
       - name: coverage gate (D-010 — threshold single-sourced from Taskfile.yml)
         run: task coverage
       - run: CGO_ENABLED=0 go build ./...
-      - name: dogfood examples (P5-E6-S08 — every non-locked pack gates itself green under the real `assent test` CLI)
-        run: |
-          CGO_ENABLED=0 go build -o bin/assent ./cmd/assent
-          for pack in service-catalog infra-vars topic-registry; do
-            ./bin/assent test "examples/packs/$pack"
-            ./bin/assent test --coverage "examples/packs/$pack"
-          done
+      - name: dogfood examples (EX-S08 — shared discovery script; every examples/packs/<name> with .assent/tests gates itself green under the real `assent test` CLI)
+        run: bash hack/dogfood-examples.sh
       - name: comparison corpus dogfood (PCS-S08 — examples/comparison validates and runs green)
         run: go test ./examples/comparison/...
       - name: PCS compare exit gate (RELSE-03 — REQ-PCS-S09)
