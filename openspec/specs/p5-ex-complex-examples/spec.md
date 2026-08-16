@@ -460,11 +460,13 @@ Requirements:
   itself is rule-polarity-level, not case-count-level, so a deleted case simply vanishes
   from the run without reddening anything. Non-vacuity is proven by inventory (the
   class-path-extension disjunct: `hack/docs/example_format_inventory_test.sh` derives
-  its `FORMATS` list from `config.yaml`'s declared glob extensions) plus a dedicated Go
-  test (the fixture-deleted disjunct: `cmd/assent/examples_infravars_tf_governance_test.go`'s
-  `TestInfraVarsTFFixtureIsGovernedByItsClass` — `os.Stat`s the fixture files and
+  its `FORMATS` list from `config.yaml`'s declared glob extensions) plus two dedicated
+  Go tests in `cmd/assent/examples_infravars_tf_governance_test.go` — one per disjunct:
+  `TestInfraVarsTFFixtureIsGovernedByItsClass` (class-path-extension disjunct)
   `glob.Match`s the class's declared paths against the fixture's path, the same matcher
-  `internal/core/classify`/`internal/core/aggregate` use) — never by `--coverage` alone.
+  `internal/core/classify`/`internal/core/aggregate` use; `TestInfraVarsTFFixtureFilesExist`
+  (fixture-deleted disjunct) `os.Stat`s the fixture's base/head files directly — never by
+  `--coverage` alone.
   - Test: pack `--coverage` + inventory + `go test ./cmd/assent/... -run TestInfraVarsTF`
   - Verify: `./bin/assent test --coverage examples/packs/infra-vars`;
     `bash hack/docs/example_format_inventory_test.sh`;
