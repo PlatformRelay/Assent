@@ -133,6 +133,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S10 lane
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S10 F2/F5 fixes
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S10 F6 fix
+- :memo: docs(changelog): regenerate CHANGELOG.md for the AUD-S18 CHECK_STAGES fix
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
@@ -152,6 +153,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(docs): pin case+decision pairs, not just case names, in the walkthrough (F1)
 - :bug: fix(examples): scope format extraction to match: lines, not the whole classes: block (F2)
 - :bug: fix(examples): close the same-line trailing-comment gap in format extraction (F6)
+- :bug: fix(audit): sync AUD-S18 CHECK_STAGES pin with Taskfile check task
 
 ### Refactoring
 - :recycle: refactor(examples): discover dogfood packs instead of a hardcoded 3-name loop
