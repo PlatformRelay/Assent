@@ -1,0 +1,29 @@
+# Placement allow-list (REF-EX C6) — instance_set (a keyed workload scalar, EX-S04)
+# must stay on a fact-sourced allow-list. facts.placement.allowed.value is a stub
+# for a real placement/capacity registry (REF-GAP-2 shape, builtin/repo-file):
+# an in-repo-state fact no live provider is called for under `assent test`
+# (ADR-0014). Pointer-scoped to /workloads/*/instance_set so this rule is vacuous
+# (no match at all) on every existing S01/S04 case, none of which touch
+# instance_set — the shipped goldens stay green untouched.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: vars-placement-allow-list
+spec:
+  entries:
+    infra-vars:
+      mode: map
+      root: /workloads
+  rules:
+    - name: instance-set-allow-list
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/workloads/*/instance_set"]
+          kinds: [modify]
+      prove:
+        obligation: placement
+        when: 'new in facts.placement.allowed.value'
+      onFailure:
+        effect: require-review
+        code: placement.disallowed-instance-set

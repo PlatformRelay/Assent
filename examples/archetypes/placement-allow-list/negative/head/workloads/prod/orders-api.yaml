@@ -1,0 +1,5 @@
+name: orders-api
+owner: orders-team
+instance_set: gpu-16
+min_replicas: 3
+max_replicas: 12
