@@ -1,0 +1,6 @@
+# consumers key DELETE (sms-service removed) -> consumer-removal fails -> REVIEW.
+decision: REVIEW
+findings:
+  - rule: consumer-removal
+    obligation: non-destructive
+    effect: require-review

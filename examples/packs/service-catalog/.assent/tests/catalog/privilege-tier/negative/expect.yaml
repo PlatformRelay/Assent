@@ -1,0 +1,11 @@
+# tier 1 -> 0 is outside the allow-list ([1,2,3]) -> tier-allow-list fails, on top
+# of the coarse-grained only-safe-fields escalation (both effects are
+# require-review, so the decision stays REVIEW either way).
+decision: REVIEW
+findings:
+  - rule: only-safe-fields
+    obligation: allowed-fields
+    effect: require-review
+  - rule: tier-allow-list
+    obligation: allowed-fields
+    effect: require-review

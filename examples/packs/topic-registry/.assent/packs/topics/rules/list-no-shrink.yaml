@@ -1,0 +1,32 @@
+# List-no-shrink (REF-EX C1) — identity-keyed `consumers` map on a topic entry.
+# consumers is keyed by consumer name (not an unkeyed list, ADR-0017 §5), so a
+# per-key add/delete is a genuine one-sided scalar change the differ can represent
+# (E1-S05: a one-sided ADD of a whole new mapping is opaque, but consumers already
+# exists as a map on every topic that declares it — only the LEAF key is one-sided).
+# Reuses the no-destruction pattern (non-destructive obligation, cf.
+# non-destructive.yaml): a consumer key ADD proves (kind != "delete"), a consumer
+# key DELETE fails -> require-review. Pointer-scoped to /*/consumers/* so this rule
+# is silent (vacuous, no match at all) on every topic file that never declares
+# `consumers` — the S02 goldens stay green untouched.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: topics-list-no-shrink
+spec:
+  entries:
+    kafka-topic:
+      mode: map
+      root: ""
+  rules:
+    - name: consumer-removal
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/*/consumers/*"]
+          kinds: [add, delete]
+      prove:
+        obligation: non-destructive
+        when: 'kind != "delete"'
+      onFailure:
+        effect: require-review
+        code: destruction.consumer-removed

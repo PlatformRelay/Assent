@@ -1,0 +1,3 @@
+# consumers key ADD (push-service) -> kind != "delete" -> consumer-removal proves silently.
+decision: APPROVE
+findings: []

@@ -1,0 +1,6 @@
+# Edge (REQ-EX-S06-04): retention_hours modify with status already present and
+# UNCHANGED ("active") must not fire status-retired-add — the rule is scoped to
+# the dedicated /*/status ADD pointer only, never a general field-add trigger.
+decision: APPROVE
+findings: []
+absent: [status-retired-add]

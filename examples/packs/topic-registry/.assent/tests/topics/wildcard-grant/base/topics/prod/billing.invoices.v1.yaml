@@ -1,0 +1,19 @@
+billing.invoices.v1:
+  owner: billing-team
+  partitions: 6
+  replication_factor: 3
+  retention_hours: 168
+  cleanup_policy: delete
+  schema:
+    format: avro
+    subject: billing.invoices.v1-value
+    compatibility: BACKWARD
+    references:
+      billing.common: 1
+  compaction:
+    strategy: delete
+  description: >
+    Invoice lifecycle events for the billing domain.
+  acl:
+    grants:
+      billing-team: read

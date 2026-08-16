@@ -1,0 +1,9 @@
+# tier 1 -> 3 is within the allow-list ([1,2,3]) -> tier-allow-list proves silently
+# (its proving polarity). The pre-existing only-safe-fields rule still escalates
+# ANY non-/oncall field change to require-review regardless of value — that is
+# unrelated coarse-grained coverage, not this rule's finding.
+decision: REVIEW
+findings:
+  - rule: only-safe-fields
+    obligation: allowed-fields
+    effect: require-review

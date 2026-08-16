@@ -1,0 +1,6 @@
+# status ADD as exactly "retired" (base lacked it) -> soft-delete-as-field-add, not silent APPROVE.
+decision: REVIEW
+findings:
+  - rule: status-retired-add
+    obligation: non-destructive
+    effect: require-review
