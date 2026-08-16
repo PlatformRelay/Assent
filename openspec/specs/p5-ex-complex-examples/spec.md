@@ -587,7 +587,17 @@ Requirements:
 - **REQ-EX-S07-03 (C7)** — Given `entry.acl` names another team's resource and
   `facts.resource_owner.owner.value` does not match the author groups, when the case runs,
   then `require-review`. Edge: topics **without** `acl` still APPROVE the vacuous branch.
-  - Test: `examples/packs/topic-registry/.assent/tests/topics/referenced-ownership/` +
+  Amendment (implementation): the case directory is named `resource-ownership/`, not
+  `referenced-ownership/` — `assent lint`'s tests-per-rule hard error requires the on-disk
+  case name to be one of `{rule.Name, obligation}` (`internal/lint/tests_per_rule.go`), and
+  the rule's obligation is `resource-ownership`. The vacuity guard is a pointer-scoped
+  `valueChanges` match on `/*/acl/resource` (add/modify), not a bare `!has(entry.acl)` CEL
+  guard — S06's `wildcard-grant` goldens already populate `entry.acl` (via `acl.grants`)
+  without `acl.resource`, so `!has(entry.acl)` alone would NOT be vacuous for those goldens
+  (a CEL read of `facts.resource_owner.owner.value` on a `facts.yaml` that never declares
+  `resource_owner` errors and would flip their decision). Pointer-scoping achieves the same
+  outcome — topics without `acl.resource` stay APPROVE — without a has()-vs-acl-shape trap.
+  - Test: `examples/packs/topic-registry/.assent/tests/topics/resource-ownership/` +
     `examples/archetypes/referenced-resource-ownership/`
   - Verify: `./bin/assent test examples/packs/topic-registry`
   - Level: L1
@@ -596,8 +606,20 @@ Requirements:
   wished). Docs (`examples/README.md` or pack config comment + walkthrough S09) call this a
   **known limitation**, not a feature. Edge: deleting a *governed* `.tfvars` file still hits
   existing non-destructive / unmatched-delete rules — C8 is the ungoverned companion only.
-  - Test: `examples/packs/infra-vars/.assent/tests/vars/companion-delete/` +
-    optional `examples/archetypes/` known-limitation seed
+  Amendment (implementation): the fixture is an **inline** `.assent/tests/vars/cases.yaml`
+  case (`head: null`), not a directory-form `companion-delete/` — the directory form's
+  `readSingleFilePair` errors when `head/<file>` is absent ("new/deleted-file cases are
+  E6-S06"), so a whole-file delete cannot be expressed as a directory case at all. Second
+  correction to the Edge clause itself: infra-vars declares **no** `fileEvents` rule in any
+  of its rule files, so a *governed* `.tfvars` delete hits the SAME class-agnostic
+  D-063/D-064 escalation as the ungoverned companion, not a distinct "non-destructive /
+  unmatched-delete rule" — there is no file-lifecycle rule in this pack to hit. This could
+  not be run as a case either (inline `cases.yaml` refuses a non-lossless `.tfvars` marshal;
+  the directory form again can't express a delete), so the config.yaml comment states it as
+  a direct reading of `fileDeleteGoverned` (`internal/core/aggregate/coverage.go`) rather
+  than a measured case.
+  - Test: `examples/packs/infra-vars/.assent/tests/vars/cases.yaml` (`companion-delete`) +
+    pack config.yaml comment
   - Verify: `./bin/assent test examples/packs/infra-vars`
   - Level: L1
 - **REQ-EX-S07-05** — Given `cmd/assent/test_provider_fence_test.go`, when C5–C7 fixtures are
