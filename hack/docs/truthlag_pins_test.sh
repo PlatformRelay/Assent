@@ -228,6 +228,99 @@ else
   fail "EX-S01: docs-gates does not run hack/docs/example_format_inventory_test.sh"
 fi
 
+# --- REQ-EX-S09-01 — every case name the walkthrough shows in console output is real ------
+#
+# The walkthrough's console blocks are supposed to be COPIED from a real `assent test`
+# run, not invented. This builds the binary (same pattern as hack/dogfood-examples.sh /
+# readme_smoke_test.sh) and runs it against every example pack, then diffs the case
+# names against every `PASS <case>` line the walkthrough shows. A hand-typed case name
+# that doesn't exist in the corpus (or a real case renamed without updating the doc)
+# reddens here, not just at eyeball-review time.
+WT=docs/usage/walkthrough.md
+BIN="${ASSENT_BIN:-bin/assent}"
+if [[ ! -x "$BIN" ]]; then
+  echo "== building $BIN for EX-S09 console pins =="
+  CGO_ENABLED=0 go build -o "$BIN" ./cmd/assent
+fi
+
+REAL_CASES="$(mktemp)"
+WT_CASES="$(mktemp)"
+trap 'rm -f "$MIRROR_EXPECTED" "$REAL_CASES" "$WT_CASES"' EXIT
+
+for pack in topic-registry service-catalog infra-vars; do
+  "$BIN" test "examples/packs/$pack" 2>/dev/null
+done | awk '{print $2}' | LC_ALL=C sort -u > "$REAL_CASES"
+
+grep -oE '^PASS [A-Za-z0-9/_-]+' "$WT" | awk '{print $2}' | LC_ALL=C sort -u > "$WT_CASES"
+
+wt_case_count="$(wc -l < "$WT_CASES" | tr -d ' ')"
+if [[ "$wt_case_count" -eq 0 ]]; then
+  fail "REQ-EX-S09-01: $WT has no 'PASS <case>' console lines to pin — vacuous"
+else
+  missing_cases="$(comm -23 "$WT_CASES" "$REAL_CASES")"
+  if [[ -n "$missing_cases" ]]; then
+    fail "REQ-EX-S09-01: $WT shows case name(s) absent from real 'assent test' output:"
+    printf '      %s\n' "$missing_cases" >&2
+  else
+    pass "REQ-EX-S09-01: all $wt_case_count walkthrough console case names are real"
+  fi
+fi
+
+# --- REQ-EX-S09-02 — the walkthrough names all four governed formats, honestly ------------
+#
+# Before EX-S09 the walkthrough's only console block was the topic-registry pack's
+# original 8-line output; there was no evidence any other format was governed at all.
+# Pin each pack's namespace AND the two hardest cases (the `.tf` opaque fallback and the
+# C8 companion-file-delete REVIEW) by name, plus the four format words, so a revert to
+# the old one-format sketch reddens on more than one axis.
+declare -A ex_s09_prefix_hint=(
+  [topics/]="YAML (topic-registry)"
+  [catalog/]="JSON (service-catalog)"
+  [vars/]="tfvars (infra-vars)"
+)
+for prefix in "${!ex_s09_prefix_hint[@]}"; do
+  if grep -q "PASS ${prefix}" "$WT"; then
+    pass "REQ-EX-S09-02: $WT shows a real ${ex_s09_prefix_hint[$prefix]} case"
+  else
+    fail "REQ-EX-S09-02: $WT has no '${prefix}' case — missing ${ex_s09_prefix_hint[$prefix]} coverage"
+  fi
+done
+
+for must_case in "vars/tf-opaque" "vars/companion-delete"; do
+  if grep -q "PASS $must_case" "$WT"; then
+    pass "REQ-EX-S09-02/03: $WT shows the $must_case case"
+  else
+    fail "REQ-EX-S09-02/03: $WT is missing the $must_case case (the .tf opaque / C8 REVIEW demonstrator)"
+  fi
+done
+
+for word in "YAML" "JSON" "tfvars" "HCL"; do
+  if grep -q "$word" "$WT"; then
+    pass "REQ-EX-S09-02: $WT names format $word"
+  else
+    fail "REQ-EX-S09-02: $WT never names format $word"
+  fi
+done
+
+# --- REQ-EX-S09-03 — HCL/.tf claims are honest: REVIEW/known-limitation, never "understands" -
+for f in "$WT" examples/README.md; do
+  if grep -qiE 'assent (fully |now )?(understands|parses|supports) terraform|full terraform support|evaluates terraform expressions' "$f"; then
+    fail "REQ-EX-S09-03: $f overclaims Terraform/.tf support"
+  else
+    pass "REQ-EX-S09-03: no Terraform-support overclaim in $f"
+  fi
+done
+
+if grep -qE '\.tf\b' "$WT"; then
+  if grep -qiE 'REVIEW|opaque|literal-only|known limitation|permanent v1 limitation' "$WT"; then
+    pass "REQ-EX-S09-03: $WT's .tf mention is paired with an honest REVIEW/opaque/limitation caveat"
+  else
+    fail "REQ-EX-S09-03: $WT mentions .tf without an honest caveat"
+  fi
+else
+  fail "REQ-EX-S09-03: $WT no longer mentions .tf at all — the honesty pin would be vacuous"
+fi
+
 if [[ "$fails" -ne 0 ]]; then
   echo "FAILED: $fails truth-lag pin(s) reopened" >&2
   exit 1
