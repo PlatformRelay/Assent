@@ -152,6 +152,20 @@ CORE_FILE_MIN=20
 # NOT a call into hack/docs/example_format_inventory_test.sh's pack_formats
 # (that reuse is REQ-EX-S10-06's job below). A regression in S01's own
 # extraction must not be invisible just because this gate trusts it blindly.
+#
+# Scoped STRICTLY to real `match: { paths: [...] }` YAML lines inside the
+# classes: block, not "any line in the classes: block". This is deliberate,
+# not merely a comment-strip pass: infra-vars' real config.yaml carries a
+# prose comment directly under its match: line reading "...matches only
+# *.tfvars and *.tf." — a naive "grab the whole classes: block, then grep for
+# *.ext tokens" extraction (the shape this function used to have, and the
+# shape hack/docs/example_format_inventory_test.sh's pack_formats still has)
+# would happily keep matching "*.tf" out of that COMMENT even after the real
+# match.paths entry lost it — the exact vacuity a mutation control built from
+# a synthetic comment-free fixture cannot catch, because it never contains
+# the confound. Anchoring on the `match: {` line shape structurally excludes
+# every comment line (they start with '#', never 'match:'), independent of
+# whether a stray "*.tf"-shaped substring appears in prose nearby.
 check_formats() { # <root>
   local root="$1" rc=0
   local found="$WORK/formats.found"
@@ -167,7 +181,12 @@ check_formats() { # <root>
     awk '
       $0 ~ /^classes:[[:space:]]*$/ { in_cls = 1; next }
       in_cls && /^[a-zA-Z]/ { in_cls = 0 }
-      in_cls { print }
+      in_cls {
+        s = $0
+        sub(/^[[:space:]]+/, "", s)
+        if (substr(s, 1, 1) == "#") next
+        if (s ~ /^match:[[:space:]]*\{[[:space:]]*paths:/) print s
+      }
     ' "$cfg" | grep -oE '\*\.[A-Za-z0-9]+' | sed -e 's/^\*\.//' -e 's/^yml$/yaml/' >>"$found"
   done
   ((rc == 0)) || return "$rc"
@@ -204,9 +223,9 @@ check_c_series() { # <root>
       rc=1
       continue
     fi
-    n="$(find "$full" -name expect.yaml | wc -l | tr -d '[:space:]')"
+    n="$(find "$full" -name expect.yaml -size +0c | wc -l | tr -d '[:space:]')"
     if [[ "$n" -eq 0 ]]; then
-      echo "  REQ-EX-S10-02: $id fixture directory $path has no expect.yaml anywhere under it — an empty/incomplete directory is not a case" >&2
+      echo "  REQ-EX-S10-02: $id fixture directory $path has no NON-EMPTY expect.yaml anywhere under it — a missing, empty, or zero-byte expect.yaml is not a measured case" >&2
       rc=1
     fi
   done
@@ -601,15 +620,15 @@ echo
 echo "-- (1) REQ-EX-S10-01: yaml/json/tfvars/tf present in class match paths --"
 expect_green check_formats "REQ-EX-S10-01: real tree covers yaml/json/tfvars/tf" "$ROOT"
 
+# Synthetic, comment-free sanity check FIRST (cheap, isolates the extraction
+# logic from any real-file confound) — but this alone is NOT sufficient proof
+# the function detects the real violation (a prior version of this gate
+# shipped exactly that gap: this synthetic control passed while the same
+# mutation against the REAL infra-vars config.yaml did not redden, because
+# that file's own KNOWN LIMITATION comment prose also contains the literal
+# substring "*.tf" a few lines below the match: line). Both controls run.
 MUT_FMT_ROOT="$WORK/mutant-formats"
 rm -rf "$MUT_FMT_ROOT"
-# Synthetic, comment-free config.yaml content — NOT a copy of the real files:
-# the real infra-vars config.yaml's KNOWN LIMITATION comment prose also
-# contains the literal substring "*.tf" (documenting the class match, in
-# English), which check_formats' extraction (matching S01's own pack_formats,
-# deliberately NOT comment-stripped) would then still see even after the
-# match: line itself was mutated — a confound that would make this mutation
-# pass for the wrong reason. Fully synthetic input sidesteps that.
 mkdir -p "$MUT_FMT_ROOT/examples/packs/topic-registry/.assent"
 mkdir -p "$MUT_FMT_ROOT/examples/packs/service-catalog/.assent"
 mkdir -p "$MUT_FMT_ROOT/examples/packs/infra-vars/.assent"
@@ -622,7 +641,34 @@ printf 'classes:\n  - name: catalog-service\n    match: { paths: ["catalog/**/*.
 printf 'classes:\n  - name: infra-vars\n    match: { paths: ["envs/**/*.tfvars"] }\n' \
   >"$MUT_FMT_ROOT/examples/packs/infra-vars/.assent/config.yaml"
 grep -q '\*\.tf"' "$MUT_FMT_ROOT/examples/packs/infra-vars/.assent/config.yaml" && fail "sanity: synthetic mutant config.yaml still contains a .tf class match"
-expect_red check_formats "dropping the .tf class match alternative" "format 'tf' is not covered" "$MUT_FMT_ROOT"
+expect_red check_formats "dropping the .tf class match alternative (synthetic, comment-free fixture)" "format 'tf' is not covered" "$MUT_FMT_ROOT"
+
+# THE REAL repro: copy the actual shipped config.yaml files verbatim — prose
+# comments and all — then remove ONLY the ".tf" alternative from infra-vars'
+# real `match: { paths: [...] }` line, leaving its KNOWN LIMITATION comment
+# ("...matches only *.tfvars and *.tf...") completely untouched a few lines
+# below. If check_formats' extraction ever regresses back to "grab the whole
+# classes: block, then grep for *.ext tokens anywhere", that comment's own
+# "*.tf" substring will keep this control green for the wrong reason — which
+# is exactly what happened here in review. This is the control that actually
+# proves the function is safe against the confound, not just a fixture
+# engineered to avoid it.
+MUT_REAL_ROOT="$WORK/mutant-formats-real"
+rm -rf "$MUT_REAL_ROOT"
+mkdir -p "$MUT_REAL_ROOT/examples/packs"
+for p in "${PACKS[@]}"; do
+  mkdir -p "$MUT_REAL_ROOT/examples/packs/$p/.assent"
+  cp "$ROOT/examples/packs/$p/.assent/config.yaml" "$MUT_REAL_ROOT/examples/packs/$p/.assent/config.yaml"
+done
+REAL_MUT_CFG="$MUT_REAL_ROOT/examples/packs/infra-vars/.assent/config.yaml"
+sed -i.bak 's#\[\"envs/\*\*/\*\.tfvars\", \"envs/\*\*/\*\.tf\"\]#["envs/**/*.tfvars"]#' "$REAL_MUT_CFG"
+rm -f "$REAL_MUT_CFG.bak"
+# Positive controls on the mutation itself, both directions:
+grep -Eq '^[[:space:]]*match:[[:space:]]*\{[[:space:]]*paths:.*\*\.tf"' "$REAL_MUT_CFG" &&
+  fail "sanity: the real config.yaml's match: line still contains a .tf entry after the mutation — the sed program did not land"
+grep -Fq '*.tf' "$REAL_MUT_CFG" ||
+  fail "sanity: the real config.yaml's KNOWN LIMITATION comment prose no longer mentions *.tf after the mutation — this control would no longer reproduce the comment-leak confound at all"
+expect_red check_formats "dropping the .tf class match alternative from the REAL infra-vars config.yaml (comment prose intact)" "format 'tf' is not covered" "$MUT_REAL_ROOT"
 echo
 
 echo "-- (2a) REQ-EX-S10-02: C1-C8 fixtures present --"
