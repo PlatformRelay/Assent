@@ -37,6 +37,16 @@ classes:
     # "related" to compute.tfvars, and would REVIEW an unrelated companion
     # delete identically. v1 does not correlate "delete A and append B" across
     # files — that remains REF-GAP-3, likely out of v1 scope.
+    #
+    # A GOVERNED *.tfvars delete is REVIEW too, by the SAME class-agnostic
+    # escalation, not a distinct file-lifecycle rule: this pack (unlike
+    # topic-registry/service-catalog) declares no fileEvents rule at all
+    # (`.assent/packs/vars/rules/*.yaml` has none), so `fileDeleteGoverned`
+    # (internal/core/aggregate/coverage.go) finds nothing governing ANY delete,
+    # governed path or not — read directly from that function rather than run,
+    # since `assent test` cannot express a whole-file delete of a `.tfvars`
+    # fixture either way (inline cases.yaml refuses non-lossless `.tfvars`
+    # marshal; the directory form requires the file present on both sides).
 providers:
   author:
     type: builtin/gitlab-groups
