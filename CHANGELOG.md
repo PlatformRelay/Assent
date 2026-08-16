@@ -131,6 +131,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S09 lane follow-ups
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S09 F1 fix
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S10 lane
+- :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S10 F2/F5 fixes
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
@@ -148,6 +149,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(docs-gates): fail on unmapped format tokens and de-confound the tests-dir mutation (EX-S01 review)
 - :bug: fix(examples): make privilege-tier's proving fixture load-bearing
 - :bug: fix(docs): pin case+decision pairs, not just case names, in the walkthrough (F1)
+- :bug: fix(examples): scope format extraction to match: lines, not the whole classes: block (F2)
 
 ### Refactoring
 - :recycle: refactor(examples): discover dogfood packs instead of a hardcoded 3-name loop
