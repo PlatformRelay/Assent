@@ -112,21 +112,28 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(adr): add ADR-0011 Amendment 4 — Rego/OPA rule-7 capability boundary
 - :memo: docs(adr): add ADR-0015 host-side credential resolver amendment
 - :memo: docs(adr): retcon ADR narrative to read as planned phases
+- :memo: docs(changelog): regenerate CHANGELOG.md for PR #59's operator-ruling commits
 - :memo: docs(changelog): regenerate CHANGELOG.md from git-cliff
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S05 lane
 - :memo: docs(openspec): correct test attribution in the REQ-EX-S05-05 amendment
+- :memo: docs(changelog): regenerate CHANGELOG.md after rebase onto origin/main
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
 - :sparkles: feat(examples): thicken service-catalog with nested sla/runtime objects
 - :sparkles: feat(examples): thicken topic-registry nested YAML and nested-pointer rules
 - :sparkles: feat(examples): thicken infra-vars nested tfvars maps (EX-S04)
+- :sparkles: feat(examples): close REF-EX C1-C4 in topic-registry/service-catalog
 - :sparkles: feat(examples): EX-S05 HCL honesty — govern .tf, pin the measured opaque decision
 
 ### Fixes
 - :bug: fix(ci): pin ci-audit-test in the AUD-S18 check-stage list
 - :bug: specs(p5-ex): make S10 schema freeze and S07 fence non-vacuous
 - :bug: fix(docs-gates): fail on unmapped format tokens and de-confound the tests-dir mutation (EX-S01 review)
+- :bug: fix(examples): make privilege-tier's proving fixture load-bearing
+
+### Refactoring
+- :recycle: refactor(examples): discover dogfood packs instead of a hardcoded 3-name loop
 
 ### Testing
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token
