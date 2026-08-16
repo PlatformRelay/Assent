@@ -1,6 +1,6 @@
 # Archetype golden corpus — `assent test` seed manifest
 
-**Manifest version:** `1`  
+**Manifest version:** `2`  
 **Owned by:** P3-E3-S04  
 **Corpus root:** [`examples/archetypes/`](https://github.com/PlatformRelay/assent/tree/main/examples/archetypes)
 **Inventory:** [`archetypes.md`](archetypes.md)
@@ -32,6 +32,12 @@ quadruple (or a `negative/` / case-subdir variant of that shape). `decision` is 
 | `examples/archetypes/no-destruction/delete/` | `BLOCK` | File delete; never author-thread authorization. |
 | `examples/archetypes/no-destruction/rename/` | `REVIEW` | Rename ≥ delete strictness; `require-review`. |
 | `examples/archetypes/no-destruction/near-similarity/` | `BLOCK` | Near-similarity must not downgrade below delete. |
+| `examples/archetypes/quota-ceiling/` | `APPROVE` | REF-EX C5 — in-band partition bump against a stubbed quota fact; empty findings. |
+| `examples/archetypes/quota-ceiling/negative/` | `REVIEW` | Over-quota → `challenge` / `bounded-change.out-of-band` (same mechanism as `bounded-change/negative`, named for C5 discoverability). |
+| `examples/archetypes/placement-allow-list/` | `APPROVE` | REF-EX C6 — `instance_set` change onto an allow-listed value (stubbed `facts.placement.allowed.value`); empty findings. |
+| `examples/archetypes/placement-allow-list/negative/` | `REVIEW` | `instance_set` off the allow-list → `require-review` / `placement.disallowed-instance-set`. |
+| `examples/archetypes/referenced-resource-ownership/` | `APPROVE` | REF-EX C7 (gap demo, judgment call (b)) — `acl.resource` names a resource the stubbed `facts.resource_owner.owner.value` confirms the author's group owns; empty findings. |
+| `examples/archetypes/referenced-resource-ownership/negative/` | `REVIEW` | Resolved owner does not match the author's groups → `require-review` / `acl.resource-ownership-mismatch`. |
 
 **Index (not a golden quadruple):** `examples/archetypes/no-destruction/expected.yaml`
 lists the three case directories above and reaffirms `onFailure.effect: require-review`

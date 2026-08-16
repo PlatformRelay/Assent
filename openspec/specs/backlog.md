@@ -126,16 +126,16 @@ providers, not core-model redesign**. All rows below are generalized (invented n
 
 | ID | Gap | Status | Notes |
 | --- | --- | --- | --- |
-| **REF-GAP-1** | Referenced-resource authorization fact source (a list value / ACL names *another* team's resource → who owns it?) | **CLOSED (E5-S08)** | `builtin/resource-owner` shipped; hermetic L0 + run-path wiring in E5-S10. Demonstrator fixture = C7 (**P5-EX EX-S07**, D-143 — was deferred D-071) |
-| **REF-GAP-2** | In-repo-state-as-a-fact (quota/placement/limits registries + in-repo reviewers files that today no provider reads) | **CLOSED (E5-S07)** | `builtin/repo-file` most-specific-first shipped; hermetic run path in E5-S10 (`TestE5ExitGateResolvedFacts`). C5/C6 fixtures = **P5-EX EX-S07** (D-143; was deferred D-071) |
-| **REF-GAP-3** | Cross-class / companion-file correlation ("two-step delete": remove from file A *and* append to manifest B) | **OPEN — likely out of v1** | `changes` is class-slice-scoped by contract (ADR-0017 §5); ship C8 as a known-limitation fixture (expected REVIEW), decide scope via OQ |
+| **REF-GAP-1** | Referenced-resource authorization fact source (a list value / ACL names *another* team's resource → who owns it?) | **CLOSED (E5-S08)** | `builtin/resource-owner` shipped; hermetic L0 + run-path wiring in E5-S10. Demonstrator fixture = C7, landed **P5-EX EX-S07** (`.assent/tests/topics/resource-ownership/`, D-143 — was deferred D-071) |
+| **REF-GAP-2** | In-repo-state-as-a-fact (quota/placement/limits registries + in-repo reviewers files that today no provider reads) | **CLOSED (E5-S07)** | `builtin/repo-file` most-specific-first shipped; hermetic run path in E5-S10 (`TestE5ExitGateResolvedFacts`). C5/C6 fixtures landed **P5-EX EX-S07** (`.assent/tests/topics/quota-ceiling/`, `.assent/tests/vars/placement/`, D-143; was deferred D-071) |
+| **REF-GAP-3** | Cross-class / companion-file correlation ("two-step delete": remove from file A *and* append to manifest B) | **OPEN — likely out of v1** | `changes` is class-slice-scoped by contract (ADR-0017 §5); C8 known-limitation fixture landed **P5-EX EX-S07** (`infra-vars` `vars/companion-delete`, measured REVIEW); the underlying correlation engine feature itself remains open, scope decided via OQ |
 | **REF-GAP-4** | Plan-level blast radius (weighting the expanded IaC plan, not the request diff) | **OUT of model** | assent gates the request diff; `points`/`threshold` bulk-guard on the diff is the in-scope approximation |
 
 **Generalized example/test candidates (a later sanitized authoring lane — passes `check-sanitization.sh`):**
 
 | ID | Item | Status | Closest existing archetype |
 | --- | --- | --- | --- |
-| **REF-EX** | Author 8 domain-neutral archetype fixtures C1–C8 (list-no-shrink, privilege-tier allow-list, wildcard-grant block, soft-delete-as-field-add, quota-ceiling-from-fact, placement allow-list, referenced-resource-ownership [gap demo], companion-file delete [known-limitation]) | **SPECIFIED (P5-EX)** — C1–C4 = EX-S06; C5–C8 = EX-S07; not started | [p5-ex-complex-examples](p5-ex-complex-examples/spec.md). Extends no-destruction (C1/C4/C8), allowed-fields+ownership (C2/C3/C6/C7), bounded-change (C5). Engine+E5 facts already shipped; D-071 deferral is this epic. **Not** P5-DEM (D-143) |
+| **REF-EX** | Author 8 domain-neutral archetype fixtures C1–C8 (list-no-shrink, privilege-tier allow-list, wildcard-grant block, soft-delete-as-field-add, quota-ceiling-from-fact, placement allow-list, referenced-resource-ownership [gap demo], companion-file delete [known-limitation]) | **C1–C8 landed** (C1–C4 EX-S06; C5–C8 EX-S07) | [p5-ex-complex-examples](p5-ex-complex-examples/spec.md). Extends no-destruction (C1/C4/C8), allowed-fields+ownership (C2/C3/C6/C7), bounded-change (C5, reused). Engine+E5 facts already shipped; D-071 deferral closed by this epic. **Not** P5-DEM (D-143) |
 
 ## Phase 5 — E1 canonical change model stories
 
