@@ -130,6 +130,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(walkthrough): fix Step 3 lede self-contradiction on .tf format count
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S09 lane follow-ups
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S09 F1 fix
+- :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S10 lane
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
@@ -158,6 +159,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(examples): close REQ-EX-S05-05's other disjunct (fixture deletion)
 - :white_check_mark: test(examples): close REF-EX C5 quota-ceiling-from-fact explicitly
 - :white_check_mark: test(examples): pin REF-EX C8 companion-file delete as REVIEW (known limitation)
+- :white_check_mark: test(examples): add the P5-EX epic exit gate (EX-S10)
 ## [0.2.0] - 2026-08-09
 
 ### Chores
