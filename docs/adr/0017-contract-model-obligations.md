@@ -20,6 +20,10 @@ the review's recommended direction wholesale; details freeze via the contract fi
 
 ## Decision (proposed)
 
+Each numbered item below closes exactly one P1/P2 finding from the review; together they
+replace vouch-only coverage and single-fact "authorization" with a model that states, and can
+lint, which specific safety property a change is missing.
+
 ### 1. Merge-result validity (P1-1)
 
 Decision preconditions pin **source SHA + target SHA + evaluated merge-result digest**.

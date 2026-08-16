@@ -61,6 +61,11 @@ Downstream (engine, findings, harness, docs) a rule is a rule regardless of back
 - Whether `assert` is implemented on kyverno-json or cel-go is an implementation detail
   hidden behind the wrapper — but the *authored syntax* it implies is not; Spike A must fix
   the syntax before Phase 3 freezes contracts.
+- The wrapper (`PredicateBackend`, ADR-0011) is what keeps adding the `rego` tier a placement
+  decision rather than a redesign: where the OPA evaluator lives and how its runtime
+  capabilities (`http.send`, wall-clock, randomness) stay contained inside the guarded core
+  tree is settled in ADR-0011's amendments (D-141/D-144). Rego still never touches routing,
+  effects, or aggregation — only what it computes as a predicate.
 
 ## Counterpoints considered
 
