@@ -1,0 +1,32 @@
+# Soft-delete-as-field-add (REF-EX C4) — a topic adding `status: retired` (a field
+# base entirely lacked) is a destructive lifecycle transition disguised as an
+# innocuous field add, not a silent-APPROVE metadata edit. Reuses the
+# non-destructive obligation (cf. non-destructive.yaml / list-no-shrink.yaml):
+# matched ONLY on kind add at the dedicated /*/status pointer, so a modify of any
+# OTHER field (retention_hours, description, ...) never fires this rule even when
+# status is untouched (Edge case in REQ-EX-S06-04) — proven by every existing S02
+# golden, none of which declare `status` at all (vacuous, no match). Both
+# polarities exercise the SAME add-kind match: adding status as anything other
+# than "retired" proves silently; adding it as exactly "retired" fails.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: topics-soft-delete
+spec:
+  entries:
+    kafka-topic:
+      mode: map
+      root: ""
+  rules:
+    - name: status-retired-add
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/*/status"]
+          kinds: [add]
+      prove:
+        obligation: non-destructive
+        when: 'new != "retired"'
+      onFailure:
+        effect: require-review
+        code: destruction.soft-delete

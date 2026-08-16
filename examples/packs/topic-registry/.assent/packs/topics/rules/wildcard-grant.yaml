@@ -1,0 +1,36 @@
+# Wildcard-grant block (REF-EX C3) — nested acl.grants map, keyed by principal.
+# A grant keyed by the literal wildcard principal "*" (i.e. "any principal may act
+# on this topic") is a security escalation disguised as an ordinary ACL entry ->
+# BLOCK, not a soft require-review. An explicit, named principal key does not
+# block. `path` carries the full JSON Pointer of the matched change (mirrors
+# allowed-fields.yaml's path.endsWith usage), so the last pointer segment IS the
+# principal key; a wildcard grant's pointer always ends in the literal "/*"
+# segment. Pointer-scoped to /*/acl/grants/* so this rule never matches (vacuous)
+# on a topic that has no acl.grants at all — the S02 goldens stay green. A
+# brand-new obligation (`wildcard-grant`, added to bindings.yaml require:) is safe
+# to require: coverage marks an obligation "covered" the instant an enforce rule
+# names it, independent of whether any subject actually matches it (E2-S04
+# uncovered-obligation guard), so every existing golden — none of which declare
+# acl — stays vacuously satisfied.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: topics-wildcard-grant
+spec:
+  entries:
+    kafka-topic:
+      mode: map
+      root: ""
+  rules:
+    - name: wildcard-grant-block
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/*/acl/grants/*"]
+          kinds: [add, modify]
+      prove:
+        obligation: wildcard-grant
+        when: '!path.endsWith("/*")'
+      onFailure:
+        effect: block
+        code: acl.wildcard-grant

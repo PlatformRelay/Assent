@@ -1,0 +1,17 @@
+inventory.updates.v1:
+  owner: inventory-team
+  partitions: 4
+  replication_factor: 3
+  retention_hours: 336
+  cleanup_policy: delete
+  schema:
+    format: avro
+    subject: inventory.updates.v1-value
+    compatibility: BACKWARD
+    references:
+      inventory.common: 1
+  compaction:
+    strategy: delete
+  description: >
+    Inventory level change events for the warehouse domain.
+  status: active

@@ -1,0 +1,6 @@
+# acl.grants ADD keyed by the literal wildcard principal "*" -> BLOCK.
+decision: BLOCK
+findings:
+  - rule: wildcard-grant-block
+    obligation: wildcard-grant
+    effect: block

@@ -1,0 +1,33 @@
+# Privilege-tier allow-list (REF-EX C2) — /services/*/tier already exists on every
+# service entry and is already caught by only-safe-fields (any non-/oncall field
+# change escalates to require-review, allowed-fields.yaml). This rule adds a
+# NARROWER, value-level check on top of that coarse field-level one: a tier value
+# outside the allow-list (e.g. 0, or any value not in the declared band) is a
+# privilege-escalation attempt, not just an "other field changed" event. Reuses
+# the allowed-fields obligation (already required) so no bindings.yaml change is
+# needed. D-061: this stays a scalar leaf check on the already-governed keyed-list
+# entry field — no unkeyed nested list is reintroduced.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: catalog-privilege-tier
+spec:
+  entries:
+    catalog-service:
+      mode: list
+      root: /services
+      identity:
+        pointer: /name
+  rules:
+    - name: tier-allow-list
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/services/*/tier"]
+          kinds: [modify]
+      prove:
+        obligation: allowed-fields
+        when: "new in [1, 2, 3]"
+      onFailure:
+        effect: require-review
+        code: allowed-fields.tier-out-of-range

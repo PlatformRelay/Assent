@@ -1,0 +1,3 @@
+# status ADD (base lacked it) as "active" (not "retired") -> status-retired-add proves silently.
+decision: APPROVE
+findings: []

@@ -5,9 +5,9 @@ bindings:
     environment: dev
     packs: [topics]
     risk: { threshold: 10 }
-    require: [ownership, bounded-change, non-destructive, schema-valid]
+    require: [ownership, bounded-change, non-destructive, schema-valid, wildcard-grant]
   - class: kafka-topic
     environment: prod
     packs: [topics]
     risk: { threshold: 4 }
-    require: [ownership, bounded-change, non-destructive, schema-valid]
+    require: [ownership, bounded-change, non-destructive, schema-valid, wildcard-grant]

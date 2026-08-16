@@ -1,0 +1,3 @@
+# acl.grants ADD keyed by an explicit principal (finance-team) -> not "*" -> wildcard-grant-block proves silently.
+decision: APPROVE
+findings: []

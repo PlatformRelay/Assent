@@ -1,0 +1,19 @@
+notifications.events.v1:
+  owner: growth-team
+  partitions: 8
+  replication_factor: 3
+  retention_hours: 168
+  cleanup_policy: delete
+  schema:
+    format: avro
+    subject: notifications.events.v1-value
+    compatibility: BACKWARD
+    references:
+      notifications.common: 1
+  compaction:
+    strategy: delete
+  description: >
+    Notification dispatch events consumed by downstream channels.
+  consumers:
+    email-service: reader
+    sms-service: reader

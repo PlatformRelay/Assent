@@ -119,6 +119,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :sparkles: feat(examples): thicken service-catalog with nested sla/runtime objects
 - :sparkles: feat(examples): thicken topic-registry nested YAML and nested-pointer rules
 - :sparkles: feat(examples): thicken infra-vars nested tfvars maps (EX-S04)
+- :sparkles: feat(examples): close REF-EX C1-C4 in topic-registry/service-catalog
 
 ### Fixes
 - :bug: fix(ci): pin ci-audit-test in the AUD-S18 check-stage list
