@@ -6,7 +6,7 @@
 #
 #   (1) REL-07  — the AUD-S01 fail-closed cassettes PASS by name (not "go test
 #                 exited 0", which a `-run` regex matching nothing also does).
-#   (2) RELSE-01/TEST-03 — `task check` is green with all 15 pinned stages
+#   (2) RELSE-01/TEST-03 — `task check` is green with all pinned stages
 #                 actually executed (incl. `changelog-verify`) and the measured
 #                 aggregate coverage at or above the epic's 91.0% bar.
 #   (3) RELSE-05 — the release job still runs the verify-green-on-tag-SHA gate,
@@ -122,9 +122,9 @@ S01_TESTS_CMD=(
   TestFoldSnapshotPathsIncompleteEnumeration
 )
 
-# (2) The 15 stages of `task check`. This list is the authority: the Taskfile's
+# (2) The stages of `task check`. This list is the authority: the Taskfile's
 # `check:` list must equal it, and a real `task check` transcript must show all
-# 15 having run. Grading on the exit code alone is what "aborts at the first
+# of them having run. Grading on the exit code alone is what "aborts at the first
 # failure" makes meaningless.
 CHECK_STAGES=(
   fmt
@@ -457,7 +457,7 @@ check_s01_cassettes() { # <transcript>
 # (2) RELSE-01 / TEST-03 — `task check` green at the new bar
 # ============================================================================
 
-# The Taskfile's `check:` list must be exactly the 15 pinned stages. Without
+# The Taskfile's `check:` list must be exactly the pinned stages. Without
 # this, deleting `- task: changelog-verify` reopens RELSE-01 with `task check`
 # still exiting 0 — the regression the whole story exists to prevent.
 check_check_wiring() { # <taskfile>
@@ -514,7 +514,7 @@ check_check_wiring() { # <taskfile>
 # Every pinned stage must have actually RUN. go-task prints `task: [<name>] <cmd>`
 # per stage; that transcript is the only evidence a stage executed, because
 # `task check` aborts at the first failure and the exit code cannot distinguish
-# "15 stages green" from "stage list truncated to 2".
+# "all stages green" from "stage list truncated to 2".
 check_check_stages() { # <transcript>
   local tr="$1" rc=0
   [[ -f "$tr" ]] || {
@@ -1559,7 +1559,7 @@ expect_red check_s01_cassettes "the -run pattern matched NO test (go test exits 
 echo
 
 # ---------------------------------------------------------------------------
-echo "== (2) RELSE-01 / TEST-03 — task check green, 15 stages, coverage >= ${COVERAGE_BAR}% =="
+echo "== (2) RELSE-01 / TEST-03 — task check green, ${#CHECK_STAGES[@]} stages, coverage >= ${COVERAGE_BAR}% =="
 
 expect_green check_check_wiring "Taskfile check: runs exactly the ${#CHECK_STAGES[@]} pinned stages" "$TASKFILE"
 expect_green check_coverage_floor "the single-sourced D-010 floor (Taskfile COVERAGE_MIN) is >= ${COVERAGE_BAR}" "$TASKFILE"
