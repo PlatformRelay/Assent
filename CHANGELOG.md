@@ -117,6 +117,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S05 lane
 - :memo: docs(openspec): correct test attribution in the REQ-EX-S05-05 amendment
 - :memo: docs(changelog): regenerate CHANGELOG.md after rebase onto origin/main
+- :memo: docs(planning): mark REF-EX C1-C8 landed; archetype-goldens manifest v2
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
@@ -125,6 +126,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :sparkles: feat(examples): thicken infra-vars nested tfvars maps (EX-S04)
 - :sparkles: feat(examples): close REF-EX C1-C4 in topic-registry/service-catalog
 - :sparkles: feat(examples): EX-S05 HCL honesty — govern .tf, pin the measured opaque decision
+- :sparkles: feat(examples): close REF-EX C6 placement allow-list (infra-vars)
+- :sparkles: feat(examples): close REF-EX C7 referenced-resource-ownership (gap demo)
 
 ### Fixes
 - :bug: fix(ci): pin ci-audit-test in the AUD-S18 check-stage list
@@ -140,6 +143,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(release): key the merge-skip proof on commit shape, not subject prefix
 - :white_check_mark: test(examples): close REQ-EX-S05-05 non-vacuity gap for infra-vars .tf governance
 - :white_check_mark: test(examples): close REQ-EX-S05-05's other disjunct (fixture deletion)
+- :white_check_mark: test(examples): close REF-EX C5 quota-ceiling-from-fact explicitly
+- :white_check_mark: test(examples): pin REF-EX C8 companion-file delete as REVIEW (known limitation)
 ## [0.2.0] - 2026-08-09
 
 ### Chores
