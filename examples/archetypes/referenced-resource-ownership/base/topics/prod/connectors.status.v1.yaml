@@ -1,0 +1,21 @@
+# REF-EX C7 (referenced-resource-ownership, judgment call (b)) — a GAP demo, not
+# a new builtin: an ACL entry naming another team's resource cannot be
+# authorized from the diff alone. facts.resource_owner.owner stubs the shipped
+# builtin/resource-owner shape (REF-GAP-1) as the ground truth. Vacuous when the
+# entry carries no acl.resource (this base has acl.grants but no acl.resource
+# yet; head adds resource/owner as LEAF keys under the same existing acl
+# mapping — adding acl as a whole new subtree would go opaque, E1-S05).
+name: connectors.status.v1
+owner: connectors-team
+partitions: 6
+replication_factor: 3
+retention_hours: 168
+cleanup_policy: delete
+schema:
+  format: avro
+  subject: connectors.status.v1-value
+description: >
+  Connector health/status events.
+acl:
+  grants:
+    connectors-team: read

@@ -1,0 +1,5 @@
+author:
+  login: alice
+  groups: [connectors-team, platform-team]
+resource_owner:
+  owner: platform-team

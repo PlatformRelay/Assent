@@ -1,0 +1,9 @@
+author:
+  login: alice
+  groups: [connectors-team, platform-team]
+quota:
+  max_partitions: 24
+schema:
+  valid: true
+resource_owner:
+  owner: platform-team
