@@ -1,0 +1,16 @@
+analytics.clicks.v1:
+  owner: analytics-team
+  partitions: 18
+  replication_factor: 3
+  retention_hours: 72
+  cleanup_policy: delete
+  schema:
+    format: avro
+    subject: analytics.clicks.v1-value
+    compatibility: BACKWARD
+    references:
+      analytics.common: 1
+  compaction:
+    strategy: delete
+  description: >
+    Clickstream events for the analytics domain, quota-ceiling C5 demonstrator.

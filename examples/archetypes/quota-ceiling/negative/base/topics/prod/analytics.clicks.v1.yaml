@@ -1,0 +1,11 @@
+name: analytics.clicks.v1
+owner: analytics-team
+partitions: 10
+replication_factor: 3
+retention_hours: 72
+cleanup_policy: delete
+schema:
+  format: avro
+  subject: analytics.clicks.v1-value
+description: >
+  Clickstream events for the analytics domain.

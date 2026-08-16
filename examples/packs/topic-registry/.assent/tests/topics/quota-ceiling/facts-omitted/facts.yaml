@@ -1,0 +1,14 @@
+# Deliberately omits `quota`: no provider resolved facts.quota.max_partitions.
+# REQ-EX-S07-01 edge — an omitted controlling fact must not APPROVE. Reading
+# facts.quota.max_partitions.value on the absent fact errors in cel-go
+# (internal/adoptertest.MapFacts never fabricates a resolved value for an absent
+# provider/name), and the engine fails the prove `when` safe -> onFailure
+# (challenge) -> REVIEW. This is existing E2 fail-safe behaviour (mirrored by
+# internal/adoptertest/testdata/repo/.assent/tests/capped/unresolved-fact/), pinned
+# here against the SAME quota-ceiling rule so the pattern's fail-safe edge is
+# demonstrated in-place rather than only in the harness's own hermetic testdata.
+author:
+  login: alice
+  groups: [analytics-team]
+schema:
+  valid: true
