@@ -559,12 +559,18 @@ check_coverage_bar() { # <transcript>
   local plain="$WORK/cov.plain"
   strip_ansi "$tr" >"$plain"
 
-  # Anchored at column 1: `go test -coverprofile` prints a per-PACKAGE
-  # `…  coverage: 92.3% of statements` on every ok line, and grading on the
-  # minimum of those would compare the worst package against the aggregate bar.
-  # Only the gate's own `echo "coverage: ${pct}% (required: …)"` starts the line.
+  # Anchored at column 1 AND on a digit right after the colon-space: `go test
+  # -coverprofile` prints a per-PACKAGE `…  coverage: 92.3% of statements` on
+  # every ok line (not at column 1, already excluded by the anchor), and
+  # EX-S08's dogfood-examples stage echoes ONE "coverage: OK — N rule(s),
+  # every rule tested in both polarities" line per example pack (at column 1,
+  # excluded only by the digit check — "OK" is not `[0-9]`). Grading on either
+  # impostor would either compare the worst package against the aggregate bar
+  # or count N-pack lines as N spurious "aggregate" measurements. Only the
+  # gate's own `echo "coverage: ${pct}% (required: …)"` (Taskfile.yml
+  # coverage:) starts the line with a digit.
   local hits="$WORK/hits.coverage"
-  awk 'index($0, "coverage: ") == 1 { print }' "$plain" >"$hits"
+  awk '/^coverage: [0-9]/ { print }' "$plain" >"$hits"
   local n
   n="$(wc -l <"$hits" | tr -d '[:space:]')"
   if ((n != 1)); then
@@ -1701,6 +1707,25 @@ mutate_awk "$m" \
   '{ print } /^coverage: /  { print "ok  	github.com/PlatformRelay/assent/internal/glob	0.2s	coverage: 62.5% of statements" }' \
   'coverage: 62.5% of statements'
 expect_green check_coverage_bar "a per-package coverage line does not displace the aggregate one" "$m"
+
+# EX-S08's dogfood-examples stage echoes its own "coverage: OK — N rule(s),
+# every rule tested in both polarities" line per example pack — ALSO anchored
+# at column 1, unlike the per-package control above. Without the digit anchor
+# these three impostors plus the real aggregate line make `n == 4`, the exact
+# regression this control pins (the bug this fix closes: reachable in
+# practice as soon as dogfood-examples ran more than zero packs, and reached
+# main unnoticed because check_check_wiring failed first and aborted the
+# script before this check ever ran).
+m="$WORK/check.synth.dogfoodcov"
+cp "$SYNTH_CHECK" "$m"
+mutate_awk "$m" \
+  '{ print } /^task: \[dogfood-examples\]/ {
+     print "coverage: OK — 6 rule(s), every rule tested in both polarities"
+     print "coverage: OK — 8 rule(s), every rule tested in both polarities"
+     print "coverage: OK — 9 rule(s), every rule tested in both polarities"
+   }' \
+  'coverage: OK — 6 rule(s), every rule tested in both polarities'
+expect_green check_coverage_bar "dogfood-examples' per-pack 'coverage: OK — N rule(s)' lines do not displace the aggregate one" "$m"
 
 echo
 
