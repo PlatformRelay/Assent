@@ -312,13 +312,40 @@ for f in "$WT" examples/README.md; do
 done
 
 if grep -qE '\.tf\b' "$WT"; then
-  if grep -qiE 'REVIEW|opaque|literal-only|known limitation|permanent v1 limitation' "$WT"; then
-    pass "REQ-EX-S09-03: $WT's .tf mention is paired with an honest REVIEW/opaque/limitation caveat"
+  # A bare "REVIEW|opaque" grep over the whole page is vacuous — those words already
+  # appear ~30 times in the console blocks above (every REVIEW-decision case line).
+  # Pin the STABLE SUBSTRING of the actual honest sentence instead, so softening or
+  # deleting that specific claim (not just any REVIEW/opaque word anywhere) reddens.
+  if grep -q 'opaque and falls back to REVIEW, never a partial parse' "$WT"; then
+    pass "REQ-EX-S09-03: $WT carries the measured .tf opaque/REVIEW sentence"
   else
-    fail "REQ-EX-S09-03: $WT mentions .tf without an honest caveat"
+    fail "REQ-EX-S09-03: $WT mentions .tf but lost the opaque/REVIEW-never-partial-parse sentence"
   fi
 else
   fail "REQ-EX-S09-03: $WT no longer mentions .tf at all — the honesty pin would be vacuous"
+fi
+
+# --- Step 1's rule-file inventory must match the shipped tree (same truth-lag class as
+# REQ-EX-S09-01/02: a stale parenthetical rule list is exactly the kind of drift this
+# story exists to kill, even though it is prose rather than a console block) -----------
+RULE_DIR="examples/packs/topic-registry/.assent/packs/topics/rules"
+real_rule_count=0
+missing_rule_files=0
+for rf in "$RULE_DIR"/*.yaml; do
+  [[ -f "$rf" ]] || continue
+  real_rule_count=$((real_rule_count + 1))
+  base="$(basename "$rf" .yaml)"
+  if ! grep -q "\`$base\`" "$WT"; then
+    echo "      $WT Step 1 does not name rule file \`$base\`" >&2
+    missing_rule_files=$((missing_rule_files + 1))
+  fi
+done
+if [[ "$real_rule_count" -eq 0 ]]; then
+  fail "EX-S09: $RULE_DIR has no rule files — the Step 1 inventory pin would be vacuous"
+elif [[ "$missing_rule_files" -ne 0 ]]; then
+  fail "EX-S09: $WT's Step 1 rule-file list is missing $missing_rule_files real rule file name(s)"
+else
+  pass "EX-S09: $WT Step 1 names all $real_rule_count real topic-registry rule files"
 fi
 
 if [[ "$fails" -ne 0 ]]; then
