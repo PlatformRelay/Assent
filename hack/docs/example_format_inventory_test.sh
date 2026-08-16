@@ -5,9 +5,10 @@
 # pack's governed format from class match.paths extensions (.yaml / .json /
 # .tfvars / .tf), and asserts examples/README.md names exactly those packs and
 # claims exactly those formats. A pack directory without .assent/tests/ is an
-# incomplete tree (hard error). Claiming cue / kafka-acl / HCL before a fixture
-# exists must go red; omitting a real pack from the README must go red the
-# other way.
+# incomplete tree (hard error). Claiming cue / kafka-acl / an unmapped token
+# (e.g. "hcl", which pack_formats never emits — the real, mapped token is "tf",
+# landed by EX-S05) must go red; omitting a real pack from the README must go
+# red the other way.
 #
 # WIRED: `task docs-gates` runs this script (REQ-EX-S01-05). Deleting that
 # invocation reddens the wiring pin here and in truthlag_pins_test.sh.
@@ -164,7 +165,7 @@ cat >"$GOOD_README" <<'EOF'
 # Examples
 - [`packs/`](packs/) — complete adopter policy trees (`topic-registry`, `service-catalog`,
   `infra-vars`).
-Input formats: yaml, json, tfvars.
+Input formats: yaml, json, tfvars, tf.
 EOF
 
 if inventory_ok "$ROOT" "$GOOD_README" >"$WORK/good.out" 2>"$WORK/good.err"; then
@@ -190,7 +191,7 @@ else
 fi
 
 CUE="$WORK/readme.cue.md"
-sed 's/tfvars\./tfvars, cue./' "$GOOD_README" >"$CUE"
+sed 's/tf\./tf, cue./' "$GOOD_README" >"$CUE"
 if inventory_ok "$ROOT" "$CUE" >"$WORK/cue.out" 2>"$WORK/cue.err"; then
   fail "claiming cue stayed green (REQ-EX-S01-04 vacuous)"
 else
@@ -198,7 +199,7 @@ else
 fi
 
 TOML="$WORK/readme.toml.md"
-sed 's/tfvars\./tfvars, toml./' "$GOOD_README" >"$TOML"
+sed 's/tf\./tf, toml./' "$GOOD_README" >"$TOML"
 if inventory_ok "$ROOT" "$TOML" >"$WORK/toml.out" 2>"$WORK/toml.err"; then
   fail "claiming toml stayed green (unrecognised token silently dropped — REQ-EX-S01-04 fail-open)"
 else
@@ -206,11 +207,11 @@ else
 fi
 
 HCL="$WORK/readme.hcl.md"
-sed 's/tfvars\./tfvars, hcl./' "$GOOD_README" >"$HCL"
+sed 's/tf\./tf, hcl./' "$GOOD_README" >"$HCL"
 if inventory_ok "$ROOT" "$HCL" >"$WORK/hcl.out" 2>"$WORK/hcl.err"; then
-  fail "claiming hcl before a .tf fixture stayed green"
+  fail "claiming an unrecognised hcl token stayed green"
 else
-  pass "claiming hcl / .tf before S05 reddens"
+  pass "REQ-EX-S01-04: claiming an unmapped hcl token reddens (S05 landed: tf is now a real, mapped token)"
 fi
 
 # Incomplete tree: a fourth pack dir with .assent/ but no tests. The README
@@ -243,8 +244,8 @@ if inventory_ok "$ROOT" "$ROOT/examples/README.md" >"$WORK/real.out" 2>"$WORK/re
   report="$(tr '\n' ' ' <"$WORK/real.out")"
   echo "$report"
   if echo "$report" | grep -q 'PACKS: infra-vars service-catalog topic-registry' \
-    && echo "$report" | grep -q 'FORMATS: json tfvars yaml'; then
-    pass "REQ-EX-S01-01: real tree reports the three packs and yaml/json/tfvars"
+    && echo "$report" | grep -q 'FORMATS: json tf tfvars yaml'; then
+    pass "REQ-EX-S01-01: real tree reports the three packs and yaml/json/tf/tfvars"
   else
     fail "REQ-EX-S01-01: unexpected report: $report"
   fi

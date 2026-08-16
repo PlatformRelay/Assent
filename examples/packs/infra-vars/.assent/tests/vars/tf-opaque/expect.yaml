@@ -1,0 +1,19 @@
+# MEASURED (EX-S05, REQ-EX-S05-02), not assumed. The mechanism is NOT "parseHCL
+# rejects the resource/module block" — internal/change/diff.go's baseProducerFor
+# only routes the .tfvars extension to the HCL parser; .tf falls through to the
+# YAML producer default, which cannot parse HCL syntax at all (this file's content
+# fails as YAML: "document root is not a mapping"). So EVERY .tf file is opaque
+# today regardless of content (verified: a literal-only, tfvars-shaped .tf body
+# with no blocks is opaque too) — confirmed by a scratch-copy discriminating test,
+# not by reading the code. The resulting ChangeSet is Opaque either way, so this
+# case still demonstrates the honesty goal (a governed Terraform file that cannot
+# be silently approved), just not via the block-shape mechanism the story
+# originally assumed.
+#
+# The adoptertest harness's undecidable guard (Evaluate in
+# internal/adoptertest/adoptertest.go) short-circuits an opaque/empty ChangeSet to
+# a bare REVIEW with NO findings — it does not synthesize the aggregate.changeset
+# finding the real `assent run` CLI path attaches via undecidableReview
+# (cmd/assent/run.go). Confirmed byte-stable under `assent test --update`.
+decision: REVIEW
+findings: []

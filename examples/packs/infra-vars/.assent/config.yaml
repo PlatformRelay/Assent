@@ -15,7 +15,17 @@ environments:
     match: { paths: ["envs/**"] }
 classes:
   - name: infra-vars
-    match: { paths: ["envs/**/*.tfvars"] }
+    # Terraform config files under envs/ are governed too (EX-S05), so they are never
+    # silently un-reviewed change — but MEASURED (not assumed): the value-tree
+    # producer dispatch (internal/change/diff.go's baseProducerFor) only routes the
+    # tfvars extension to the HCL parser; every other extension, including this one,
+    # defaults to the YAML producer, which cannot parse HCL syntax at all (block or
+    # bare literal) and hits the opaque-change fallback above for a YAML-shaped
+    # reason, not an HCL one. Every Terraform config file is opaque -> REVIEW today,
+    # regardless of content — see the vars/tf-opaque case. Routing this extension to
+    # the HCL producer (so a literal-only Terraform config file could structurally
+    # diff, matching tfvars) is future engine work, not yet built.
+    match: { paths: ["envs/**/*.tfvars", "envs/**/*.tf"] }
 providers:
   author:
     type: builtin/gitlab-groups
