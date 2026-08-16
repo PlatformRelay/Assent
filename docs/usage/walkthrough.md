@@ -10,22 +10,33 @@
 
 ## The repo
 
-`topic-registry` — one YAML file per Kafka topic:
+`topic-registry` — one YAML file per Kafka topic, map-at-root keyed by topic name.
+Trimmed from a real shipped fixture
+(`examples/packs/topic-registry/.assent/tests/topics/wildcard-grant/head/topics/prod/billing.invoices.v1.yaml`):
 
 ```yaml
-# topics/prod/orders.yaml
-name: orders
-owner: team-orders
-partitions: 12
-retentionMs: 604800000
+# topics/prod/billing.invoices.v1.yaml
+billing.invoices.v1:
+  owner: billing-team
+  partitions: 6
+  replication_factor: 3
+  retention_hours: 168
+  schema:
+    format: avro
+    subject: billing.invoices.v1-value
+    compatibility: BACKWARD
+  acl:
+    grants:
+      billing-team: read
+      finance-team: read
 ```
 
 Today every MR waits for a platform engineer. Goal: routine changes merge themselves.
 
-That flat snippet is illustrative, not the limit of what ships: the starter packs also
-govern nested YAML maps (`acl.grants`, keyed `consumers`), nested JSON objects, nested
-tfvars maps, and — opaquely, falling back to REVIEW — HCL `.tf` blocks. Step 3 below is
-real `assent test` output across all four.
+`partitions`, `replication_factor` and `retention_hours` are scalar fields; `acl.grants`
+and (on other topics) `consumers` are nested maps. The starter packs also govern nested
+JSON objects, nested tfvars maps, and — opaquely, falling back to REVIEW — HCL `.tf`
+blocks. Step 3 below is real `assent test` output across all four.
 
 ## Step 1 — scaffold a policy tree
 
@@ -40,10 +51,12 @@ assent lint .
 ```
 
 That gives you `.assent/config.yaml` (environments prod/dev by path, class
-`kafka-topic`), `.assent/bindings.yaml`, `.assent/packs/topics/` (ownership,
-bounded-change, non-destructive, schema-valid) and `.assent/tests/topics/` with a passing
-fixture for every rule — `assent lint` rejects a rule with no test case, so the two ship
-together by construction.
+`kafka-topic`), `.assent/bindings.yaml`, `.assent/packs/topics/rules/` — nine rule files
+today (`ownership`, `bounded-change`, `non-destructive`, `schema-valid`,
+`schema-compatibility`, `list-no-shrink`, `wildcard-grant`, `soft-delete`,
+`referenced-resource-ownership`) — and `.assent/tests/topics/` with a passing fixture for
+every rule — `assent lint` rejects a rule with no test case, so the two ship together by
+construction.
 
 Committed starter packs: [`examples/packs/`](https://github.com/PlatformRelay/assent/tree/main/examples/packs)
 (`topic-registry`, `service-catalog`, `infra-vars`).
