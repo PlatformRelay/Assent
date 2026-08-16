@@ -118,7 +118,8 @@ failing case prints the expected and actual decision plus the findings that diff
 matched; `1` a mismatch, write or load error; `2` usage, discovery, or the CI guard
 refusing `--update`.
 
-`topic-registry` is one of **four** formats the shipped packs govern nested structure in:
+`topic-registry` is one of **four** governed formats — three of them structurally
+diffed, with `.tf` governed only as an opaque whole (below):
 
 ```console
 $ assent test examples/packs/service-catalog
