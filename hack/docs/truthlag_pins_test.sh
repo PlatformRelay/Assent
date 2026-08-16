@@ -228,14 +228,20 @@ else
   fail "EX-S01: docs-gates does not run hack/docs/example_format_inventory_test.sh"
 fi
 
-# --- REQ-EX-S09-01 — every case name the walkthrough shows in console output is real ------
+# --- REQ-EX-S09-01 — every (case name, decision) pair the walkthrough shows is real -------
 #
 # The walkthrough's console blocks are supposed to be COPIED from a real `assent test`
 # run, not invented. This builds the binary (same pattern as hack/dogfood-examples.sh /
-# readme_smoke_test.sh) and runs it against every example pack, then diffs the case
-# names against every `PASS <case>` line the walkthrough shows. A hand-typed case name
-# that doesn't exist in the corpus (or a real case renamed without updating the doc)
-# reddens here, not just at eyeball-review time.
+# readme_smoke_test.sh) and runs it against every example pack, then diffs the
+# `name (DECISION)` pairs against every `PASS <case> (<decision>)` line the walkthrough
+# shows. NAME ALONE IS NOT ENOUGH: an earlier version of this pin extracted only the
+# case name (awk '{print $2}'), so a doc that renamed `PASS vars/tf-opaque (REVIEW)` to
+# `(APPROVE)` stayed green — the walkthrough's own prose claims tf-opaque and
+# companion-delete are "pinned as expected REVIEW, never a silent APPROVE", and the pin
+# did not actually check that. Comparing the full pair closes it, and generalizes past
+# just those two cases: ANY decision flip on ANY shown case now reddens. The comparison
+# is bidirectional (comm -23 AND comm -13): a real case silently missing from a console
+# block that claims to be a complete pack run is drift too, not just an invented one.
 WT=docs/usage/walkthrough.md
 BIN="${ASSENT_BIN:-bin/assent}"
 if [[ ! -x "$BIN" ]]; then
@@ -249,20 +255,24 @@ trap 'rm -f "$MIRROR_EXPECTED" "$REAL_CASES" "$WT_CASES"' EXIT
 
 for pack in topic-registry service-catalog infra-vars; do
   "$BIN" test "examples/packs/$pack" 2>/dev/null
-done | awk '{print $2}' | LC_ALL=C sort -u > "$REAL_CASES"
+done | awk '{print $2, $3}' | LC_ALL=C sort -u > "$REAL_CASES"
 
-grep -oE '^PASS [A-Za-z0-9/_-]+' "$WT" | awk '{print $2}' | LC_ALL=C sort -u > "$WT_CASES"
+grep -oE '^PASS [A-Za-z0-9/_-]+ \([A-Z]+\)' "$WT" | awk '{print $2, $3}' | LC_ALL=C sort -u > "$WT_CASES"
 
 wt_case_count="$(wc -l < "$WT_CASES" | tr -d ' ')"
 if [[ "$wt_case_count" -eq 0 ]]; then
-  fail "REQ-EX-S09-01: $WT has no 'PASS <case>' console lines to pin — vacuous"
+  fail "REQ-EX-S09-01: $WT has no 'PASS <case> (<decision>)' console lines to pin — vacuous"
 else
   missing_cases="$(comm -23 "$WT_CASES" "$REAL_CASES")"
+  extra_cases="$(comm -13 "$WT_CASES" "$REAL_CASES")"
   if [[ -n "$missing_cases" ]]; then
-    fail "REQ-EX-S09-01: $WT shows case name(s) absent from real 'assent test' output:"
+    fail "REQ-EX-S09-01: $WT shows case/decision pair(s) absent from real 'assent test' output (invented case, or a decision that doesn't match the real run):"
     printf '      %s\n' "$missing_cases" >&2
+  elif [[ -n "$extra_cases" ]]; then
+    fail "REQ-EX-S09-01: real 'assent test' output has case(s) the walkthrough's console blocks omit — a block claiming to be a complete run is now incomplete:"
+    printf '      %s\n' "$extra_cases" >&2
   else
-    pass "REQ-EX-S09-01: all $wt_case_count walkthrough console case names are real"
+    pass "REQ-EX-S09-01: all $wt_case_count walkthrough console (case, decision) pairs are real, and no real case is missing"
   fi
 fi
 
