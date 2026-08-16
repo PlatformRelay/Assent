@@ -135,6 +135,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S10 F6 fix
 - :memo: docs(changelog): regenerate CHANGELOG.md for the AUD-S18 CHECK_STAGES fix
 - :memo: docs(changelog): regenerate CHANGELOG.md for the check_coverage_bar narrowing fix
+- :memo: docs(changelog): regenerate CHANGELOG.md for the stale-'15' cosmetic fix
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
@@ -159,6 +160,7 @@ repository still gets a decision, never by following the link; no release carrie
 
 ### Refactoring
 - :recycle: refactor(examples): discover dogfood packs instead of a hardcoded 3-name loop
+- :art: style(audit): de-stale hardcoded '15 stages' literals in AUD-S18 gate
 
 ### Testing
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token
