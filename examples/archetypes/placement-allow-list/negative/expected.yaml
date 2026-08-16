@@ -1,0 +1,9 @@
+# instance_set standard-4 -> gpu-16, not on the stubbed allow-list.
+decision: REVIEW
+findings:
+  - rule: instance-set-allow-list
+    obligation: placement
+    effect: require-review
+    subject: infra-vars:orders-api
+    points: 0
+    code: placement.disallowed-instance-set

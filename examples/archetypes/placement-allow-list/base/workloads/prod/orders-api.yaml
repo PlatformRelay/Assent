@@ -1,0 +1,9 @@
+# REF-EX C6 (placement allow-list) — a value change is bounded by an allow-list
+# FACT the diff itself cannot see (an in-repo placement/capacity registry,
+# stubbed here; see builtin/repo-file, REF-GAP-2). Governed entry: one workload
+# per file.
+name: orders-api
+owner: orders-team
+instance_set: standard-4
+min_replicas: 3
+max_replicas: 12

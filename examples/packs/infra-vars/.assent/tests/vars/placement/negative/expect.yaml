@@ -1,0 +1,7 @@
+# orders-api instance_set standard-4 -> gpu-16, not on the stubbed
+# facts.placement.allowed.value list -> instance-set-allow-list fails -> REVIEW.
+decision: REVIEW
+findings:
+  - rule: instance-set-allow-list
+    obligation: placement
+    effect: require-review

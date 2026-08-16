@@ -5,9 +5,9 @@ bindings:
     environment: dev
     packs: [vars]
     risk: { threshold: 10 }
-    require: [ownership, bounded-change]
+    require: [ownership, bounded-change, placement]
   - class: infra-vars
     environment: prod
     packs: [vars]
     risk: { threshold: 4 }
-    require: [ownership, bounded-change]
+    require: [ownership, bounded-change, placement]

@@ -1,0 +1,4 @@
+# instance_set standard-4 -> standard-8, both on the stubbed allow-list.
+# Satisfied prove -> no finding.
+decision: APPROVE
+findings: []
