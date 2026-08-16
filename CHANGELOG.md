@@ -114,6 +114,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(adr): retcon ADR narrative to read as planned phases
 - :memo: docs(changelog): regenerate CHANGELOG.md from git-cliff
 - :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S05 lane
+- :memo: docs(openspec): correct test attribution in the REQ-EX-S05-05 amendment
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
