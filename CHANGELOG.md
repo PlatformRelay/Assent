@@ -131,6 +131,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token
 - :white_check_mark: test(release): key the merge-skip proof on commit shape, not subject prefix
 - :white_check_mark: test(examples): close REQ-EX-S05-05 non-vacuity gap for infra-vars .tf governance
+- :white_check_mark: test(examples): close REQ-EX-S05-05's other disjunct (fixture deletion)
 ## [0.2.0] - 2026-08-09
 
 ### Chores

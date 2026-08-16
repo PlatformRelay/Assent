@@ -454,8 +454,21 @@ Requirements:
   - Level: L1
 - **REQ-EX-S05-05** — Given the `.tf` fixture or class-path extension is deleted, when
   `--coverage` or inventory runs, then the gate is red (non-vacuity of the honesty case).
-  - Test: pack `--coverage` + inventory
-  - Verify: `./bin/assent test --coverage examples/packs/infra-vars`
+  Amendment (round-2 review): `--coverage` is architecturally blind to both mutations —
+  `catalogue.Input` deliberately omits `Config` (D-017 B10), so no `assent test`/
+  `--coverage` code path ever consults `Config.Classes`/`match.paths`, and `--coverage`
+  itself is rule-polarity-level, not case-count-level, so a deleted case simply vanishes
+  from the run without reddening anything. Non-vacuity is proven by inventory (the
+  class-path-extension disjunct: `hack/docs/example_format_inventory_test.sh` derives
+  its `FORMATS` list from `config.yaml`'s declared glob extensions) plus a dedicated Go
+  test (the fixture-deleted disjunct: `cmd/assent/examples_infravars_tf_governance_test.go`'s
+  `TestInfraVarsTFFixtureIsGovernedByItsClass` — `os.Stat`s the fixture files and
+  `glob.Match`s the class's declared paths against the fixture's path, the same matcher
+  `internal/core/classify`/`internal/core/aggregate` use) — never by `--coverage` alone.
+  - Test: pack `--coverage` + inventory + `go test ./cmd/assent/... -run TestInfraVarsTF`
+  - Verify: `./bin/assent test --coverage examples/packs/infra-vars`;
+    `bash hack/docs/example_format_inventory_test.sh`;
+    `go test ./cmd/assent/... -run TestInfraVarsTF -v`
   - Level: L1
 
 ---
