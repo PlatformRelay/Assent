@@ -153,19 +153,22 @@ CORE_FILE_MIN=20
 # (that reuse is REQ-EX-S10-06's job below). A regression in S01's own
 # extraction must not be invisible just because this gate trusts it blindly.
 #
-# Scoped STRICTLY to real `match: { paths: [...] }` YAML lines inside the
-# classes: block, not "any line in the classes: block". This is deliberate,
-# not merely a comment-strip pass: infra-vars' real config.yaml carries a
-# prose comment directly under its match: line reading "...matches only
-# *.tfvars and *.tf." — a naive "grab the whole classes: block, then grep for
-# *.ext tokens" extraction (the shape this function used to have, and the
-# shape hack/docs/example_format_inventory_test.sh's pack_formats still has)
-# would happily keep matching "*.tf" out of that COMMENT even after the real
-# match.paths entry lost it — the exact vacuity a mutation control built from
-# a synthetic comment-free fixture cannot catch, because it never contains
-# the confound. Anchoring on the `match: {` line shape structurally excludes
-# every comment line (they start with '#', never 'match:'), independent of
-# whether a stray "*.tf"-shaped substring appears in prose nearby.
+# Scoped STRICTLY to the BRACKETED `[...]` path-list on a real
+# `match: { paths: [...] }` YAML line inside the classes: block — not "any
+# line in the classes: block" (review F2), and not merely "the whole matched
+# line" either (review F6). infra-vars' real config.yaml carries prose
+# reading "...matches only *.tfvars and *.tf." both on a SEPARATE line below
+# match: (F2) and, in a scratch reproduction of this codebase's own everyday
+# comment style (see examples/packs/topic-registry/.assent/config.yaml:12's
+# environments: block for a real precedent), that same phrase can just as
+# naturally trail the match: line itself as an inline `# ...` comment (F6). A
+# naive "grab the whole classes: block, then grep for *.ext tokens anywhere"
+# extraction leaks both shapes; anchoring on the match: line but still
+# printing the WHOLE line only closes the separate-line shape. Extracting
+# ONLY the substring between `[` and `]` on the matched line closes both:
+# neither a comment on the line above/below nor a comment trailing the same
+# line can ever fall inside that substring, structurally, regardless of what
+# prose sits next to the real path list.
 check_formats() { # <root>
   local root="$1" rc=0
   local found="$WORK/formats.found"
@@ -185,7 +188,9 @@ check_formats() { # <root>
         s = $0
         sub(/^[[:space:]]+/, "", s)
         if (substr(s, 1, 1) == "#") next
-        if (s ~ /^match:[[:space:]]*\{[[:space:]]*paths:/) print s
+        if (s ~ /^match:[[:space:]]*\{[[:space:]]*paths:/) {
+          if (match(s, /\[[^]]*\]/)) print substr(s, RSTART, RLENGTH)
+        }
       }
     ' "$cfg" | grep -oE '\*\.[A-Za-z0-9]+' | sed -e 's/^\*\.//' -e 's/^yml$/yaml/' >>"$found"
   done
@@ -669,6 +674,46 @@ grep -Eq '^[[:space:]]*match:[[:space:]]*\{[[:space:]]*paths:.*\*\.tf"' "$REAL_M
 grep -Fq '*.tf' "$REAL_MUT_CFG" ||
   fail "sanity: the real config.yaml's KNOWN LIMITATION comment prose no longer mentions *.tf after the mutation — this control would no longer reproduce the comment-leak confound at all"
 expect_red check_formats "dropping the .tf class match alternative from the REAL infra-vars config.yaml (comment prose intact)" "format 'tf' is not covered" "$MUT_REAL_ROOT"
+
+# THE SAME-LINE repro (review F6): the separate-line control above proves the
+# match: anchor excludes OTHER lines, but a prior version of this function
+# printed the ENTIRE matched line before token-extraction, so a "*.tf"-shaped
+# substring trailing the SAME match:/paths: line (e.g. an inline `# legacy
+# note: ...` comment) still leaked through — and this codebase's own comment
+# style already puts trailing `#` comments directly on match: lines (see
+# examples/packs/topic-registry/.assent/config.yaml:12's environments: block:
+# `match: { paths: ["topics/**"] } # last match wins as default`), so this is
+# not a contrived shape. Scratch copy of the real infra-vars config.yaml,
+# with the KNOWN LIMITATION prose moved from its own line onto the tail of
+# the match: line itself, replacing the real .tf glob entry.
+MUT_SAMELINE_ROOT="$WORK/mutant-formats-sameline"
+rm -rf "$MUT_SAMELINE_ROOT"
+mkdir -p "$MUT_SAMELINE_ROOT/examples/packs"
+for p in "${PACKS[@]}"; do
+  mkdir -p "$MUT_SAMELINE_ROOT/examples/packs/$p/.assent"
+  cp "$ROOT/examples/packs/$p/.assent/config.yaml" "$MUT_SAMELINE_ROOT/examples/packs/$p/.assent/config.yaml"
+done
+SAMELINE_CFG="$MUT_SAMELINE_ROOT/examples/packs/infra-vars/.assent/config.yaml"
+sed -i.bak 's|\[\"envs/\*\*/\*\.tfvars\", \"envs/\*\*/\*\.tf\"\] }|["envs/**/*.tfvars"] }  # legacy note: used to also match *.tf|' "$SAMELINE_CFG"
+rm -f "$SAMELINE_CFG.bak"
+
+# Positive controls on the mutation itself — token-EXACT, not substring: a
+# naive `grep '\*\.tf'` matches the "tf" PREFIX of "*.tfvars" too (both
+# controls below hit this false-positive on first draft: "*.tfvars" always
+# contains the substring "*.tf"), which would make the sanity check pass
+# vacuously regardless of whether the mutation landed correctly.
+sameline_match="$(grep -F 'envs/**/*.tfvars' "$SAMELINE_CFG" | head -1)"
+[[ -n "$sameline_match" ]] || fail "sanity: could not locate the mutated match: line in $SAMELINE_CFG — the sed program's anchor text did not match anything"
+sameline_bracket_tokens="$WORK/sameline.bracket.tokens"
+printf '%s\n' "$sameline_match" | grep -oE '\[[^]]*\]' | grep -oE '\*\.[A-Za-z0-9]+' | sed -e 's/^\*\.//' >"$sameline_bracket_tokens"
+grep -Fxq 'tf' "$sameline_bracket_tokens" &&
+  fail "sanity: the bracketed path list still carries an exact 'tf' token after the mutation — the sed program did not land as intended"
+sameline_trailer="$WORK/sameline.trailer"
+printf '%s\n' "$sameline_match" | sed 's/^[^]]*\]//' >"$sameline_trailer"
+grep -Eq '\*\.tf([^A-Za-z0-9]|$)' "$sameline_trailer" ||
+  fail "sanity: the mutated match: line's trailing (post-bracket) content no longer carries a same-line '*.tf' mention — this control would no longer reproduce the same-line confound at all"
+
+expect_red check_formats "dropping the .tf class match alternative, replaced by a SAME-LINE trailing comment mentioning *.tf" "format 'tf' is not covered" "$MUT_SAMELINE_ROOT"
 echo
 
 echo "-- (2a) REQ-EX-S10-02: C1-C8 fixtures present --"
