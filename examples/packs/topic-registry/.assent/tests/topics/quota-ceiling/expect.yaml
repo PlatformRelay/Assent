@@ -4,5 +4,18 @@
 # facts.quota.max_partitions.value (D-071 deferral note) — this case just gives
 # the pattern its own discoverable name so C5 is not only implicit inside
 # bounded-change/. Satisfied prove -> no finding.
+#
+# MEASURED, not assumed: deleting this whole directory does NOT redden
+# `assent test --coverage examples/packs/topic-registry` — bounded-change/ and
+# bounded-change/negative/ already supply partition-change-bounds' both-polarity
+# --coverage credit, so this directory earns ZERO incremental --coverage
+# credit (verified by temporarily moving it out and re-running --coverage).
+# Its value is (a) discoverability — a reader grepping for "quota-ceiling" finds
+# a case, not just a comment inside bounded-change.yaml — and (b) facts-omitted/,
+# which DOES pin real, load-bearing engine behaviour (an unresolved quota fact
+# must fail safe to REVIEW): if that fail-safe ever regressed to APPROVE,
+# facts-omitted/ would FAIL and redden dogfood-examples, even though --coverage
+# alone would stay blind to it (REQ-EX-S05-05's amendment already established
+# --coverage is architecturally blind to fixture deletion/regression this way).
 decision: APPROVE
 findings: []
