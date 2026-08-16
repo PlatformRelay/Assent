@@ -122,6 +122,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(examples): state C5's measured zero incremental --coverage credit
 - :memo: docs(examples): note infra-vars has no fileEvents rule at all (C8)
 - :memo: docs(openspec): amend REQ-EX-S07-03/04 to match the measured implementation
+- :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S07 lane follow-ups
+- :memo: docs(changelog): regenerate CHANGELOG.md for the EX-S07 lane
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
