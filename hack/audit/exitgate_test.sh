@@ -133,6 +133,7 @@ CHECK_STAGES=(
   test
   coverage
   build
+  dogfood-examples
   dogfood-comparison
   compare-exitgate-test
   changelog-verify
@@ -141,6 +142,7 @@ CHECK_STAGES=(
   docs-gates
   lint-depguard-test
   lint-workflow-pins-test
+  dogfood-wiring-test
   ci-audit-test
 )
 
