@@ -107,6 +107,11 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(openspec): close F7/F8/F10/F11/F17/F18 from the PR #47 re-review
 - :memo: docs(openspec): specify Scorecard fuzzing and Best Practices residuals
 - :memo: specs(p5-ex): decompose complex in-tree examples epic
+- :memo: docs(decisions): record 8 operator rulings from 2026-08-16 session
+- :memo: docs(truth): annotate unenforced writes:false and retract built-in IdP claims
+- :memo: docs(adr): add ADR-0011 Amendment 4 — Rego/OPA rule-7 capability boundary
+- :memo: docs(adr): add ADR-0015 host-side credential resolver amendment
+- :memo: docs(adr): retcon ADR narrative to read as planned phases
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
