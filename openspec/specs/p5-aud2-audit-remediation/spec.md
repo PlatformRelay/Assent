@@ -48,7 +48,7 @@ Four defects survive on `main` at `b4f5054`, each confirmed by reading the code:
   `./internal/compare/...` **and** the comparison-corpus dogfood green. A regression that stops
   classifying challenge-effect deltas as stricter interventions merges through every wired gate.
 - **SEC-03 (P2, NEW)** — `hack/install.sh:114` runs `cosign verify-blob --bundle` with **no**
-  `--certificate-identity-regexp` / `--certificate-oidc-issuer`, while `SECURITY.md:82–93` pins
+  `--certificate-identity-regexp` / `--certificate-oidc-issuer`, while `SECURITY.md:80–98` pins
   both in its manual instructions. On cosign v2+ the flags are mandatory (the path errors out —
   so `--require-signature` is a *broken* promise) or, where it succeeds, **any** Fulcio identity
   is accepted and a mirror-swapped archive+bundle pair verifies clean.
@@ -98,8 +98,18 @@ invoked by nothing is not a gate).
 - `forge.ErrNotFound` + `errors.Is` discrimination as written in `loadResourceOwnerRegistry`
   (`cmd/assent/provider_host.go:281–285`) and `fileAtRefOrAbsent` (`cmd/assent/run.go:465–474`)
   — S02 mirrors one of them rather than authoring a third idiom.
-- `SECURITY.md:82–93`'s exact cosign flag pair — S03 mirrors it; the script must not invent a
-  different issuer or identity pattern.
+- `SECURITY.md:80–98`'s cosign flag pair (the `### Verify a tagged release` block) — S03
+  mirrors it rather than starting a second published truth, and a drift gate holds the two
+  byte-identical. **Amendment (implementation, AUD2-S03):** the published pair was itself wrong
+  when this epic was written, so "mirror it" could not stay literal. The Fulcio SAN carries the
+  repository's post-rename casing (`PlatformRelay/Assent` from v0.2.0 on; v0.1.0 signed as
+  `assent`) and cosign matches `--certificate-identity-regexp` case-sensitively (Go RE2), so the
+  published lowercase value rejected every release from v0.2.0 on — verified with real cosign
+  against the real v0.3.0 artifact. Both files now publish
+  `--certificate-identity-regexp '^https://github\.com/PlatformRelay/[Aa]ssent/'` (dots escaped:
+  they were metacharacters). The "must not invent a pattern" intent stands, restated: the pin is
+  **verified against committed real-SAN fixtures** decoded from the published bundles
+  (`hack/release/install_cosign_pin_test.sh` §4c/4d), never chosen freely.
 - `examples/comparison/promotion-gates/` suite + `cases/` + `records/` layout — S04's corpus entry.
 
 ---
@@ -328,19 +338,34 @@ installed.
 
 **Goal:** `hack/install.sh:114`'s `cosign verify-blob --bundle` gains
 `--certificate-oidc-issuer https://token.actions.githubusercontent.com` and
-`--certificate-identity-regexp '^https://github.com/PlatformRelay/assent/'` — byte-identical to
-the pair `SECURITY.md:82–93` already publishes — plus a gate that fails if the script and
-`SECURITY.md` ever drift apart.
+`--certificate-identity-regexp '^https://github\.com/PlatformRelay/[Aa]ssent/'` — published
+identically in `SECURITY.md:80–98` — plus a gate that fails if the script and `SECURITY.md`
+ever drift apart.
 
-**Operator input:** none. The issuer and identity pattern are already published; this story
-copies them, it does not choose them.
+**Amendment (implementation):** this Goal originally quoted
+`'^https://github.com/PlatformRelay/assent/'`, the value `SECURITY.md` published at the time, on
+the assumption that copying it was sufficient. It was not: the repository was renamed
+`PlatformRelay/assent` → `PlatformRelay/Assent` between v0.1.0 and v0.2.0, the keyless signing
+certificate's SAN carries GitHub's canonical casing, and cosign matches the identity regexp
+case-sensitively (Go RE2). The lowercase value therefore **rejected the project's own v0.2.0 and
+v0.3.0 artifacts** — `--require-signature` would have failed closed on genuine releases, and
+`SECURITY.md`'s copy-paste instructions were broken for adopters the same way (see D-153). The
+shipped value widens the casing and escapes the dots, and nothing else: the `^` anchor and the
+owner/repo scope are unchanged, so another owner, an `assent-mirror` typosquat, another forge and
+an unescaped-dot host (`githubXcom`) all still fail.
+
+**Operator input:** none. The issuer and identity pattern are published, not chosen — but
+"published" is not "correct": the pin is checked against the real Subject Alternative Names
+decoded from the v0.1.0/v0.2.0/v0.3.0 bundles, committed as offline fixtures.
 
 **Dependencies:** none.
 
 **Definition of done:** the script's cosign invocation carries both flags; a bundle signed by
 any other identity fails verification (proved with a stubbed `cosign` on `PATH` that asserts on
 the flags it receives, or a locally generated mismatching bundle — whichever the implementer
-demonstrates actually reddens); deleting either flag from the script reddens the drift gate.
+demonstrates actually reddens); deleting either flag from the script reddens the drift gate; and
+(amendment) the pinned regexp accepts every **real** published release identity, proved against
+committed SAN fixtures rather than self-made ones.
 
 **Not in scope:** changing the release workflow's signing identity; the checksum-manifest
 verification path in `SECURITY.md`; SEC-05 (PAT rotation, operator-only); adding cosign to any
