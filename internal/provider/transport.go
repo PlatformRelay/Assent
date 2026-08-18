@@ -140,9 +140,92 @@ func CallHTTP(ctx context.Context, url string, q FactQuery, timeout time.Duratio
 	return readBounded(resp.Body, MaxResponseBytes)
 }
 
+// maxStderrExcerptBytes bounds how much of an exec provider's stderr is kept to
+// explain a failure (REL-07). It is an ERROR-LEGIBILITY bound, not a response
+// bound: MaxResponseBytes above remains the single declared bound on the bytes a
+// provider may answer with, and stderr never becomes an answer (see CallExec).
+// The excerpt exists so an operator debugging a fail-closed REVIEW reads the
+// provider's own diagnostic instead of a bare "exit status 1"; 4 KiB is a few
+// dozen lines, past which more text stops helping and starts flooding CI logs.
+const maxStderrExcerptBytes = 4 << 10
+
+// boundedCapture is an io.Writer that accumulates a child process stream in
+// memory under a HARD cap, and then applies the readBounded verdict to what it
+// kept (AUD2-S01, finding REL-01). It exists because a plain bytes.Buffer as
+// cmd.Stdout is unbounded: opts.Timeout bounds wall clock, not memory, so a
+// runaway provider could exhaust the runner before any deadline fired.
+//
+// The cap and the verdict are deliberately the same object: removing the exec
+// bound means deleting this type's use, not silently loosening one half of it
+// while the other still looks correct.
+type boundedCapture struct {
+	limit int64 // bytes ALLOWED through; limit+1 is refused
+	buf   bytes.Buffer
+}
+
+func newBoundedCapture(limit int64) *boundedCapture { return &boundedCapture{limit: limit} }
+
+// Write keeps at most limit+1 bytes — exactly what readBounded needs to tell
+// "at the limit" (legitimate) from "over the limit" (refused) — and DISCARDS
+// the rest. It reports a full write for the discarded remainder on purpose: an
+// io.ErrShortWrite here would abort os/exec's copier and surface as a confusing
+// I/O error instead of the limit error the caller must see.
+func (c *boundedCapture) Write(p []byte) (int, error) {
+	n := len(p)
+	if room := c.limit + 1 - int64(c.buf.Len()); room > 0 {
+		if int64(n) > room {
+			p = p[:room]
+		}
+		c.buf.Write(p) // bytes.Buffer.Write never returns an error
+	}
+	return n, nil
+}
+
+// overflowed reports whether the stream had more bytes to give than the cap.
+func (c *boundedCapture) overflowed() bool { return int64(c.buf.Len()) > c.limit }
+
+// bytesOrError applies the shared bound semantics: at-limit is returned intact,
+// over-limit is an error with NO bytes so nothing can parse a truncated
+// document. Identical treatment to CallHTTP's response read, by construction.
+func (c *boundedCapture) bytesOrError() ([]byte, error) {
+	return readBounded(bytes.NewReader(c.buf.Bytes()), c.limit)
+}
+
+// excerpt renders the captured stream for an error message, marking truncation
+// so a reader never mistakes a cut-off diagnostic for the whole story.
+func (c *boundedCapture) excerpt() string {
+	raw := c.buf.Bytes()
+	truncated := c.overflowed()
+	if truncated {
+		raw = raw[:c.limit]
+	}
+	text := strings.TrimSpace(string(raw))
+	if text == "" {
+		return ""
+	}
+	if truncated {
+		text += " …(truncated)"
+	}
+	return text
+}
+
 // CallExec runs an exec provider with the FactQuery on stdin, a scrubbed
 // environment/argv, and a verified digest pin. Refuses before spawn when the
 // pin is missing or does not match the binary bytes (REQ-E5-S03-02).
+//
+// Three containment properties, all fail-closed (AUD2-S01):
+//   - stdout is BOUNDED at MaxResponseBytes exactly as CallHTTP's body read is
+//     (REL-01) — an over-limit provider yields an error and NO bytes, never a
+//     truncated parse, and cannot grow the runner's heap without limit;
+//   - cmd.WaitDelay is the operator's own timeout (REL-02), so a provider that
+//     forks a background grandchild inheriting stdout cannot hold cmd.Run open
+//     past ~2x the deadline; the resulting exec.ErrWaitDelay is an error like
+//     any other and classifies as unavailable;
+//   - stderr is captured into its OWN bounded buffer and folded into the
+//     returned error (REL-07), so a failure explains itself. It is NEVER
+//     concatenated into the returned bytes: ResolveFacts parses stdout as the
+//     provider's answer, and mixing the streams would let a chatty provider
+//     corrupt a decision input.
 func CallExec(ctx context.Context, opts ExecOpts, q FactQuery) ([]byte, error) {
 	if err := VerifyExecDigest(opts.Binary, opts.Digest); err != nil {
 		return nil, err
@@ -158,12 +241,29 @@ func CallExec(ctx context.Context, opts ExecOpts, q FactQuery) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, opts.Binary, args...)
 	cmd.Env = ScrubEnv(opts.Env)
 	cmd.Stdin = bytes.NewReader(body)
-	var out bytes.Buffer
-	cmd.Stdout = &out
+	stdout := newBoundedCapture(MaxResponseBytes)
+	stderr := newBoundedCapture(maxStderrExcerptBytes)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	// The single operator-declared timeout is also the wait bound: killing the
+	// child does not close a pipe its grandchildren still hold, so without this
+	// Wait blocks indefinitely (REL-02).
+	cmd.WaitDelay = opts.Timeout
 	if err := cmd.Run(); err != nil {
-		return out.Bytes(), err
+		return nil, execFailure(err, stderr)
 	}
-	return out.Bytes(), nil
+	return stdout.bytesOrError()
+}
+
+// execFailure folds the provider's own stderr diagnostic into the run error,
+// preserving the wrapped sentinel (exec.ErrWaitDelay, *exec.ExitError, …) so
+// callers can still discriminate with errors.Is/As.
+func execFailure(err error, stderr *boundedCapture) error {
+	excerpt := stderr.excerpt()
+	if excerpt == "" {
+		return err
+	}
+	return fmt.Errorf("%w: provider stderr: %s", err, excerpt)
 }
 
 // FileDigestSHA256 returns the sha256:<hex> digest of the file at path.
