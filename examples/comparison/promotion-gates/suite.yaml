@@ -19,6 +19,9 @@ spec:
     - caseId: score-threshold-change-accepted
       replayBundleDigest: 7a1c59d5c5b3ed12d5fcef2e1651f8e4734e5825688ecdf6e6b25c5920b8d5fa
       description: Score-threshold delta allowlisted under explicitly-accepted-deltas gate.
+    - caseId: challenge-intervention-added
+      replayBundleDigest: 6e68e17f1d48e682d010de4fac77b7413c8619c6ab6058c4899c8f68b32db815
+      description: Candidate adds a challenge-effect intervention the baseline APPROVE side lacks (AUD2-S04 / TEST-02).
   promotionGates:
     - gateId: zero-missed-destructive
       failOnKinds: [destructive-or-authorization-intervention-missed]
@@ -58,3 +61,9 @@ spec:
       rule: soft-bump
       subject: topic-registry:orders.events.v1
       rationale: reviewed score arithmetic tightening
+    - caseId: challenge-intervention-added
+      kind: stricter-intervention-added
+      rule: retention-ack
+      subject: topic-registry:orders.events.v1
+      obligation: retention-ack
+      rationale: reviewed retention-shrink challenge added by the candidate profile
