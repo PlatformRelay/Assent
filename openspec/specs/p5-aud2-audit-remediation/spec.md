@@ -130,7 +130,7 @@ a decision input. Both buffers are bounded so REL-01's fix is not reopened throu
 The audit offers both. Hard-fail is chosen because it is what D-130 already chose at the
 sibling call site eight lines of context away, and a second, laxer policy for the same class of
 error is precisely the "no second, laxer load path" defect this project keeps re-finding.
-`loadProviderHosts` already hard-fails on a malformed declaration (`provider_host.go:88–90`), so
+`resolveRunFacts` already hard-fails on a malformed declaration (`provider_host.go:88–90`), so
 failing on an unreadable forge is the *consistent* behaviour, not a new one. A `continue` stays
 for, and only for, `errors.Is(err, forge.ErrNotFound)`.
 
@@ -261,6 +261,14 @@ discriminator idiom is authored.
 
 **Operator input:** none. D-130 already ruled this class; this is its sibling call site.
 
+> **Symbol-name correction (2026-08-18).** This section originally named the function
+> `loadProviderHosts`, lifted from the audit's REL-03 prose. **No such symbol exists in the
+> tree** — `grep -rn loadProviderHosts` returns zero hits. The site described (same file, same
+> line range, the bare `continue` on `providers/<name>.json`) is the `declPath` fetch inside
+> **`resolveRunFacts`** (`cmd/assent/provider_host.go:82`), and that is what the REQs below
+> mean. An audit's prose is evidence, not authority: `grep`-confirm every symbol a spec asserts
+> before it lands.
+
 **Dependencies:** none. **This is a decision-path change** — the reviewer must treat it as
 engine-grade: it converts a class of silent REVIEWs into loud failures.
 
@@ -268,7 +276,7 @@ engine-grade: it converts a class of silent REVIEWs into loud failures.
 `providers/<name>.json` still skips that provider and the run proceeds exactly as today
 (byte-identical decision for the existing fixtures); the same fake returning a generic
 `errors.New("503 service unavailable")` — and separately a 401-shaped error — makes
-`loadProviderHosts` return an error rather than continue; reverting the `errors.Is` guard back
+`resolveRunFacts` return an error rather than continue; reverting the `errors.Is` guard back
 to a bare `continue` reddens both negative tests.
 
 **Not in scope:** retries or backoff (AUD-S11 already owns idempotent-GET retry); changing
@@ -279,19 +287,19 @@ to a bare `continue` reddens both negative tests.
 Requirements:
 
 - **REQ-AUD2-S02-01** — Given a forge port that returns `forge.ErrNotFound` for a provider
-  declaration, when `loadProviderHosts` runs, then that provider is skipped and no error is
+  declaration, when `resolveRunFacts` runs, then that provider is skipped and no error is
   returned (absence stays absence — today's behaviour preserved).
   - Test: `cmd/assent/provider_host_test.go` (fake port, not-found case)
   - Verify: `go test ./cmd/assent/...`
   - Level: L1
 - **REQ-AUD2-S02-02** — Given a forge port that returns a non-`ErrNotFound` error (5xx-shaped)
-  for a provider declaration, when `loadProviderHosts` runs, then it returns a non-nil error
+  for a provider declaration, when `resolveRunFacts` runs, then it returns a non-nil error
   naming the provider, the declaration path, and the ref.
   - Test: `cmd/assent/provider_host_test.go` (fake port, transport-error case)
   - Verify: `go test ./cmd/assent/...`
   - Level: L1
 - **REQ-AUD2-S02-03** — Given a forge port that returns an authorization-shaped error (401/403)
-  for a provider declaration, when `loadProviderHosts` runs, then it returns a non-nil error —
+  for a provider declaration, when `resolveRunFacts` runs, then it returns a non-nil error —
   a token-scope misconfiguration is never read as an absent file.
   - Test: `cmd/assent/provider_host_test.go` (fake port, unauthorized case)
   - Verify: `go test ./cmd/assent/...`
