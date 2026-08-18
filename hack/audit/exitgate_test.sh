@@ -139,6 +139,7 @@ CHECK_STAGES=(
   changelog-verify
   release-changelog-gate-test
   release-verify-tag-gate-test
+  release-install-cosign-pin-test
   docs-gates
   lint-depguard-test
   lint-workflow-pins-test
