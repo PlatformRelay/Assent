@@ -83,6 +83,9 @@ repository still gets a decision, never by following the link; no release carrie
 ### Documentation
 - :memo: docs(changelog): stamp the v0.3.0 section after tagging
 - :memo: docs(spec): decompose the 2026-08-18 audit Next wave as epic P5-AUD2 (D-152)
+
+### Fixes
+- :bug: docs(decisions): reference the AUD2 spec as a path, not an mkdocs link
 ## [0.3.0] - 2026-08-18
 
 ### Chores
