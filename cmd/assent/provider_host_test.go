@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -105,10 +106,19 @@ func TestProviderDeclarationForgeErrorAbortsResolveRunFacts(t *testing.T) {
 	}
 	// The message has to be actionable: WHICH provider, WHICH path, WHICH ref.
 	// Without the ref an operator cannot tell a target-ref read from a head read.
-	for _, want := range []string{`provider "quota"`, quotaDeclPath, `"main"`, "503"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error %q must contain %q (provider, declaration path, ref, forge failure)", err, want)
-		}
+	//
+	// Asserted as ONE CONTIGUOUS substring on purpose. brokenForge already renders
+	// the path and the ref inside the wrapped cause, so three separate Contains
+	// checks would pass against a bare `provider %q: %w` wrap — two of the three
+	// could not fail, and the test would measure the fake instead of the code.
+	// Only the outer wrap can produce this exact run of bytes.
+	wantWrap := fmt.Sprintf("provider %q declaration %q at ref %q", "quota", quotaDeclPath, "main")
+	if !strings.Contains(err.Error(), wantWrap) {
+		t.Fatalf("error %q must contain %q — the provider, the declaration path and the ref", err, wantWrap)
+	}
+	// ...and the forge's own cause must survive the wrap (%w, not %v-and-drop).
+	if !strings.Contains(err.Error(), "503") {
+		t.Fatalf("error %q must carry the forge's own failure", err)
 	}
 	// Fail-closed shape: no partial fact map escapes alongside the error, so no
 	// caller can evaluate a provider-configured policy on an empty Facts map.
