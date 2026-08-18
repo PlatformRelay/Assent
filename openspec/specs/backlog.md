@@ -734,6 +734,26 @@ Integrator-owned, not implementer-owned**: the changelog is regenerated *after* 
 > (INBOX 2026-08-16). AUD2's gate is a `task check` stage, and the **same commit** adds it to
 > `CHECK_STAGES`.
 
+**Found in flight, NOT an AUD2 story** (kept out of the table above on purpose: D-152 records
+AUD2 as five stories and AUD2-S05's exit gate dispositions S01–S04, so a sixth row would move
+that claim).
+
+| ID | Follow-up | Execution | Depends on | Why it is separate |
+| --- | --- | --- | --- | --- |
+| AUD2-F01 | SEC-03's twin: `hack/release/verify-artifacts.sh:124` runs the same **unpinned** `cosign verify-blob --bundle` on the maintainer/CI path | **[autonomous]** | AUD2-S03 (D-153's value) | found *by* S03, deliberately left alone there — not an owned path, and out of that story's stated scope |
+
+Sizing, from the S03 implementer's reading of the call site: `verify_cosign()`
+(`hack/release/verify-artifacts.sh:118–125`) has the byte-identical unpinned
+`cosign verify-blob --bundle "$bundle" "$archive"` shape, so the **same two flags with the same
+D-153 value** close it — one call site, no bundle-discovery change (`find_sigstore_bundle`
+already mirrors install.sh's candidate list). Three traps: **(1)** it runs via `task
+release-verify` inside `hack/release/exitgate_test.sh`, i.e. on the **push-only**
+`release-exitgate` job (RELSE-08), so the test needs the same offline **stubbed-cosign**
+treatment rather than a real cosign; **(2)** the snapshot path ships no bundles, so the cosign
+branch is skipped there and a naive test would be vacuous; **(3)** it must extend
+`hack/release/install_cosign_pin_test.sh`'s drift comparison as a **third file** (~10 lines)
+rather than start a second published truth (D-128).
+
 **AUD2 status: SPECIFIED.**
 
 ## Phases 3–5
