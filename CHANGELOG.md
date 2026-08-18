@@ -90,6 +90,11 @@ repository still gets a decision, never by following the link; no release carrie
 - build(deps): bump github.com/google/cel-go from 0.30.0 to 0.31.0
 - build(deps): bump goreleaser/goreleaser-action from 6.4.0 to 7.2.3
 - :fire: chore(deps): drop dormant Renovate; Dependabot is the updater
+- build(deps): bump github/codeql-action/upload-sarif
+- build(deps): bump golang.org/x/text from 0.40.0 to 0.41.0
+- build(deps): bump github/codeql-action/init from 4.37.6 to 4.37.7
+- build(deps): bump github/codeql-action/analyze from 4.37.6 to 4.37.7
+- build(deps): bump astral-sh/setup-uv from 9.0.0 to 10.0.1
 
 ### Documentation
 - :memo: docs(decisions): record D-126 (D-031 domain deferred) and D-127 (SEC-05 PAT rotation scheduled)
@@ -136,6 +141,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(changelog): regenerate CHANGELOG.md for the AUD-S18 CHECK_STAGES fix
 - :memo: docs(changelog): regenerate CHANGELOG.md for the check_coverage_bar narrowing fix
 - :memo: docs(changelog): regenerate CHANGELOG.md for the stale-'15' cosmetic fix
+- :memo: docs(backlog): track the D-145 writes-gate lane as WG-S01
+- :memo: docs(changelog): regenerate CHANGELOG.md for the dependabot bumps and audit fixes
 
 ### Features
 - :sparkles: feat(docs): gate example pack and format claims against dogfood
@@ -161,6 +168,9 @@ repository still gets a decision, never by following the link; no release carrie
 ### Refactoring
 - :recycle: refactor(examples): discover dogfood packs instead of a hardcoded 3-name loop
 - :art: style(audit): de-stale hardcoded '15 stages' literals in AUD-S18 gate
+
+### Security
+- :lock: build(go): pin toolchain go1.26.6 so builds ship a patched stdlib
 
 ### Testing
 - :white_check_mark: test(release): anchor the D-120 note check on its header sentence, not the bare token
