@@ -84,12 +84,15 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(changelog): stamp the v0.3.0 section after tagging
 - :memo: docs(spec): decompose the 2026-08-18 audit Next wave as epic P5-AUD2 (D-152)
 - :memo: docs(spec): AUD2-S02 names resolveRunFacts, not the nonexistent loadProviderHosts
+- :memo: docs(openspec): amend AUD2-S03 to the shipped pin and log D-153 (SEC-03)
 
 ### Fixes
 - :bug: docs(decisions): reference the AUD2 spec as a path, not an mkdocs link
 
 ### Security
 - :lock: fix(cmd): discriminate absent provider declaration from forge failure (REL-03)
+- :lock: fix(release): pin cosign signer identity and issuer in install.sh (SEC-03)
+- :lock: fix(release): widen the cosign identity pin to the real signer casing (SEC-03)
 
 ### Testing
 - :white_check_mark: test(cmd): assert the REL-03 error wrap as one contiguous substring
