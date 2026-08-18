@@ -3,6 +3,8 @@ module github.com/PlatformRelay/assent
 
 go 1.25.0
 
+toolchain go1.26.6
+
 require (
 	github.com/google/cel-go v0.31.0
 	github.com/hashicorp/hcl/v2 v2.24.0
