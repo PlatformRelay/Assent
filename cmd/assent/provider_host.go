@@ -81,8 +81,24 @@ func resolveRunFacts(
 		declPath := path.Join(declDir, name+".json")
 		raw, err := client.FileAtRef(project, declPath, targetRef)
 		if err != nil {
-			// Missing host declaration → skip (cannot know outputs; inventing
-			// unavailable keys would change CEL from "absent" to "false").
+			if !errors.Is(err, forge.ErrNotFound) {
+				// REL-03 / D-130, GUIDELINES §Safety 2: a broken forge is not an
+				// absent file. This used to `continue` on ANY error, so a 503, a
+				// throttle or a token scoped away from the governance repo was
+				// indistinguishable from "this provider declares nothing". The
+				// fail-safe DIRECTION held (no fact binds → CEL sees an absent
+				// attribute → REVIEW), but the PATH was invisible: the operator
+				// got a missing-attribute predicate error naming nothing, and a
+				// `has()`-tolerant policy silently took its fallback branch — a
+				// wrong decision reached without a diagnostic. Failing here is
+				// also the consistent choice: an UNREADABLE declaration now ends
+				// the run exactly as a MALFORMED one already does, six lines down.
+				return nil, nil, fmt.Errorf("provider %q declaration %q at ref %q: %w", name, declPath, targetRef, err)
+			}
+			// Genuinely absent host declaration → skip (cannot know outputs;
+			// inventing unavailable keys would change CEL from "absent" to
+			// "false"). `forge.ErrNotFound` is the neutral port sentinel for
+			// absence, which every adapter wraps with %w.
 			continue
 		}
 		hostCfg, err := provider.LoadProviderConfig(raw)
