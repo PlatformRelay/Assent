@@ -15,6 +15,15 @@
 # hack/install.sh copies it byte-identically. Section 3 below is a drift gate:
 # if either file is edited alone, this script reddens (REQ-AUD2-S03-04).
 #
+# REAL-IDENTITY FIXTURES (section 4c) — the assertion that matters most. The
+# first version of this pin copied SECURITY.md's published value faithfully and
+# was still WRONG: the repo was renamed PlatformRelay/assent -> PlatformRelay/
+# Assent between v0.1.0 and v0.2.0, cosign matches the identity regexp
+# case-sensitively, and so the published lowercase pin rejected the project's
+# own v0.2.0/v0.3.0 artifacts. Self-made fixtures cannot catch that, so the SANs
+# decoded from the REAL published bundles are committed here as test data and
+# every one of them must verify.
+#
 # ANTI-VACUITY DISCIPLINE (this repo has a documented history of gates that
 # cannot fail — D-124, AUD-S18). Every assertion here is a FUNCTION over a file
 # or a fixture, run twice: once against the real tree (must be GREEN) and once
@@ -160,7 +169,10 @@ echo "OK: hack/install.sh and SECURITY.md agree byte-for-byte (issuer=${inst_iss
 
 echo "== 3b. the drift comparison itself can fail (mutations, both directions) =="
 sec_mutant="$WORK/SECURITY.drift.md"
-sed "s|--certificate-oidc-issuer ${sec_issuer}|--certificate-oidc-issuer https://accounts.example.invalid|g" "$SECURITY" >"$sec_mutant"
+# The rewrite is flag-relative, never a sed pattern built from the pinned value:
+# the identity pin is itself a regexp ([Aa], escaped dots), so interpolating it
+# into a pattern would silently match nothing and the mutation would not land.
+sed -E "s|(--certificate-oidc-issuer )[^[:space:]]+|\\1https://accounts.example.invalid|g" "$SECURITY" >"$sec_mutant"
 grep -qF 'https://accounts.example.invalid' "$sec_mutant" || fail "mutation did not land: $sec_mutant has no rewritten issuer"
 mut_issuer="$(extract_issuer "$sec_mutant" | head -1)"
 if drift_free "$inst_issuer" "$inst_identity" "$mut_issuer" "$sec_identity"; then
@@ -169,7 +181,7 @@ fi
 echo "OK: rewriting SECURITY.md's issuer alone turns the drift gate red"
 
 inst_mutant="$WORK/install.drift.sh"
-sed "s|--certificate-identity-regexp '${inst_identity}'|--certificate-identity-regexp '^https://github.com/evil-mirror/assent/'|" "$INSTALL" >"$inst_mutant"
+sed -E "s|(--certificate-identity-regexp )'[^']*'|\\1'^https://github\\.com/evil-mirror/assent/'|" "$INSTALL" >"$inst_mutant"
 grep -qF 'evil-mirror' "$inst_mutant" || fail "mutation did not land: $inst_mutant has no rewritten identity regexp"
 mut_identity="$(extract_identity "$inst_mutant" | head -1)"
 if drift_free "$inst_issuer" "$mut_identity" "$sec_issuer" "$sec_identity"; then
@@ -226,16 +238,23 @@ STUB
 chmod +x "$WORK/bin/cosign"
 
 echo "== 4. stub cosign self-test (the harness must be able to say NO and YES) =="
-printf '{"certIdentity":"https://github.com/evil-mirror/assent/.github/workflows/release.yaml@refs/tags/v9.9.9","certIssuer":"%s"}\n' "$sec_issuer" >"$WORK/probe-evil.sigstore.json"
-if PATH="$WORK/bin:$PATH" cosign verify-blob --certificate-oidc-issuer "$sec_issuer" \
-    --certificate-identity-regexp "$sec_identity" --bundle "$WORK/probe-evil.sigstore.json" /dev/null >/dev/null 2>&1; then
-  fail "stub cosign ACCEPTED a foreign identity under the pinned regexp — the stub is broken and section 5 would be vacuous"
+# Deliberately SYNTHETIC values, not the project's pin: this section grades the
+# STUB. Driving it with the real pin would make a wrong pin surface here as
+# "the stub is broken", hiding the actual defect 4b/4c exist to name.
+probe_re='^https://example\.test/owner/repo/'
+probe_issuer='https://issuer.example.test'
+printf '{"certIdentity":"https://example.test/other/repo/wf.yaml@refs/tags/v1","certIssuer":"%s"}\n' "$probe_issuer" >"$WORK/probe-evil.sigstore.json"
+if PATH="$WORK/bin:$PATH" cosign verify-blob --certificate-oidc-issuer "$probe_issuer" \
+    --certificate-identity-regexp "$probe_re" --bundle "$WORK/probe-evil.sigstore.json" /dev/null >/dev/null 2>&1; then
+  fail "stub cosign ACCEPTED an identity outside the regexp it was handed — the stub is broken and every negative case below would be vacuous"
 fi
-printf '{"certIdentity":"https://github.com/PlatformRelay/assent/.github/workflows/release.yaml@refs/tags/v0.3.0","certIssuer":"%s"}\n' "$sec_issuer" >"$WORK/probe-good.sigstore.json"
-PATH="$WORK/bin:$PATH" cosign verify-blob --certificate-oidc-issuer "$sec_issuer" \
-  --certificate-identity-regexp "$sec_identity" --bundle "$WORK/probe-good.sigstore.json" /dev/null >/dev/null 2>&1 \
-  || fail "stub cosign REJECTED this project's own identity under the pinned regexp — the stub is broken and every green below would be meaningless"
-echo "OK: stub cosign rejects a foreign identity and accepts this project's own"
+printf '{"certIdentity":"https://example.test/owner/repo/wf.yaml@refs/tags/v1","certIssuer":"%s"}\n' "$probe_issuer" >"$WORK/probe-good.sigstore.json"
+PATH="$WORK/bin:$PATH" cosign verify-blob --certificate-oidc-issuer "$probe_issuer" \
+  --certificate-identity-regexp "$probe_re" --bundle "$WORK/probe-good.sigstore.json" /dev/null >/dev/null 2>&1 \
+  || fail "stub cosign REJECTED an identity that matches the regexp it was handed — the stub is broken and every green below would be meaningless"
+PATH="$WORK/bin:$PATH" cosign verify-blob --bundle "$WORK/probe-evil.sigstore.json" /dev/null >/dev/null 2>&1 \
+  || fail "stub cosign rejected an UNPINNED verification — it must model the permissive pre-fix branch, or section 5c proves nothing"
+echo "OK: stub cosign rejects a non-matching identity, accepts a matching one, and is permissive when unpinned"
 
 # make_case <dir> <identity> <issuer> — archive + checksums + sigstore bundle.
 make_case() {
@@ -271,7 +290,8 @@ run_install() {
   return "$rc"
 }
 
-GOOD_IDENTITY="https://github.com/PlatformRelay/assent/.github/workflows/release.yaml@refs/tags/v0.3.0"
+# The REAL v0.3.0 signer identity, decoded from the published bundle (see 4c).
+GOOD_IDENTITY="https://github.com/PlatformRelay/Assent/.github/workflows/release.yaml@refs/tags/v0.3.0"
 EVIL_IDENTITY="https://github.com/evil-mirror/assent/.github/workflows/release.yaml@refs/tags/v0.3.0"
 EVIL_ISSUER="https://accounts.example.invalid"
 
@@ -279,13 +299,84 @@ echo "== 4b. positive control: this project's own signature installs =="
 make_case "$WORK/case-good" "$GOOD_IDENTITY" "$sec_issuer"
 : >"$WORK/stub.log"
 run_install "$INSTALL" "$WORK/case-good" "$WORK/dest-good" \
-  || fail "install.sh --require-signature REJECTED a bundle carrying this project's own identity — the pin is too tight or the fixture is broken: $(cat "$WORK/case-good/err")"
+  || fail "install.sh --require-signature REJECTED a bundle carrying this project's REAL v0.3.0 signer identity (${GOOD_IDENTITY}) — the pinned regexp does not match the project's own releases; check the repo-name casing, the Fulcio SAN says PlatformRelay/Assent: $(cat "$WORK/case-good/err")"
 [[ -x "$WORK/dest-good/assent" ]] || fail "install.sh exited 0 but wrote no binary to the destination — the fixture is broken and the negative case below would prove nothing"
 grep -qF -- "identity_re=${sec_identity}" "$WORK/stub.log" \
   || fail "install.sh did not actually HAND cosign the identity regexp at runtime (stub log: $(cat "$WORK/stub.log")) — a flag present in the text but not in argv is not a pin"
 grep -qF -- "issuer=${sec_issuer}" "$WORK/stub.log" \
   || fail "install.sh did not actually hand cosign the OIDC issuer at runtime (stub log: $(cat "$WORK/stub.log"))"
 echo "OK: own-identity bundle installs, and both pins reached cosign's argv"
+
+echo "== 4c. REAL published-release identities (the assertion that would have caught the casing bug) =="
+# Public certificate contents, decoded from the .sigstore.json bundles GitHub
+# serves for each tag (`openssl x509 -inform DER -text` on the bundle's cert,
+# X509v3 Subject Alternative Name). Committed as FIXTURES on purpose: this gate
+# must stay offline, and a pin that is never matched against a real signer
+# identity can be confidently, greenly wrong — the lowercase-only value
+# SECURITY.md published until now verified v0.1.0 and REJECTED v0.2.0/v0.3.0,
+# because the repository was renamed PlatformRelay/assent -> PlatformRelay/Assent
+# and cosign matches --certificate-identity-regexp case-sensitively.
+#
+# Each fixture is checked twice: as a regexp match (bash ERE, which agrees with
+# cosign's Go RE2 on the anchors, escaped dots and character class used here)
+# AND end-to-end through the real install.sh with the stub cosign, which is what
+# actually proves the flag as install.sh spells it accepts/rejects the identity.
+REAL_SANS_ACCEPT=(
+  "https://github.com/PlatformRelay/Assent/.github/workflows/release.yaml@refs/tags/v0.3.0"
+  "https://github.com/PlatformRelay/Assent/.github/workflows/release.yaml@refs/tags/v0.2.0"
+  "https://github.com/PlatformRelay/assent/.github/workflows/release.yaml@refs/heads/main"
+)
+# Must NOT match: other owners, typosquats, another forge, a lost anchor, and an
+# unescaped-dot host (githubXcom matches only if the `.` was left un-escaped).
+REAL_SANS_REJECT=(
+  "https://github.com/evil-mirror/Assent/.github/workflows/release.yaml@refs/tags/v0.3.0"
+  "https://github.com/PlatformRelay/assent-mirror/.github/workflows/release.yaml@refs/tags/v0.3.0"
+  "https://github.com/PlatformRelayEvil/Assent/.github/workflows/release.yaml@refs/tags/v0.3.0"
+  "https://gitlab.com/PlatformRelay/Assent/.gitlab-ci.yml@refs/tags/v0.3.0"
+  "https://evil.example/https://github.com/PlatformRelay/Assent/.github/workflows/release.yaml@refs/tags/v0.3.0"
+  "https://githubXcom/PlatformRelay/Assent/.github/workflows/release.yaml@refs/tags/v0.3.0"
+)
+
+[[ "${#REAL_SANS_ACCEPT[@]}" -ge 3 && "${#REAL_SANS_REJECT[@]}" -ge 6 ]] \
+  || fail "the real-identity fixture tables were emptied — this is the assertion that catches signer-identity drift"
+
+i=0
+for san in "${REAL_SANS_ACCEPT[@]}"; do
+  i=$((i + 1))
+  [[ "$san" =~ $inst_identity ]] \
+    || fail "the pinned regexp ${inst_identity} REJECTS a REAL published release identity: ${san} — 'install.sh --require-signature' would fail closed against this project's own artifacts (the SEC-03 casing defect)"
+  make_case "$WORK/real-ok-$i" "$san" "$sec_issuer"
+  run_install "$INSTALL" "$WORK/real-ok-$i" "$WORK/dest-real-ok-$i" \
+    || fail "install.sh rejected the REAL release identity ${san} end-to-end: $(cat "$WORK/real-ok-$i/err")"
+  [[ -x "$WORK/dest-real-ok-$i/assent" ]] || fail "install.sh exited 0 for ${san} but installed nothing"
+  echo "OK: accepts real published identity ${san}"
+done
+
+i=0
+for san in "${REAL_SANS_REJECT[@]}"; do
+  i=$((i + 1))
+  if [[ "$san" =~ $inst_identity ]]; then
+    fail "the pinned regexp ${inst_identity} ACCEPTS ${san} — the pin is wider than the org/repo it is supposed to anchor"
+  fi
+  make_case "$WORK/real-no-$i" "$san" "$sec_issuer"
+  if run_install "$INSTALL" "$WORK/real-no-$i" "$WORK/dest-real-no-$i"; then
+    fail "install.sh --require-signature ACCEPTED ${san} end-to-end — a mirror installs"
+  fi
+  [[ ! -e "$WORK/dest-real-no-$i/assent" ]] || fail "install.sh failed for ${san} but still wrote a binary"
+  echo "OK: rejects ${san}"
+done
+
+echo "== 4d. the real-identity fixture check itself can fail (mutation) =="
+# Re-run the accept table against the OLD lowercase-only pin: it must reject the
+# v0.2.0/v0.3.0 identities. If it does not, this section proves nothing.
+old_pin='^https://github.com/PlatformRelay/assent/'
+rejected=0
+for san in "${REAL_SANS_ACCEPT[@]}"; do
+  [[ "$san" =~ $old_pin ]] || rejected=$((rejected + 1))
+done
+[[ "$rejected" -ge 2 ]] \
+  || fail "the pre-fix lowercase pin '${old_pin}' still matched every real identity — then this section could not have caught the casing bug and is decorative"
+echo "OK: the pre-fix lowercase pin rejects ${rejected} of ${#REAL_SANS_ACCEPT[@]} real published identities (that is the bug this section exists to catch)"
 
 echo "== 5. REQ-AUD2-S03-02: a foreign-identity bundle fails and installs NOTHING =="
 make_case "$WORK/case-evil" "$EVIL_IDENTITY" "$sec_issuer"
