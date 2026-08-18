@@ -45,3 +45,20 @@ spec:
       onFailure:
         effect: comment
         code: value-bumped
+    # AUD2-S04 (REQ-AUD2-S04-03): a challenge-effect intervention the baseline
+    # profile does not carry. It matches only the challenge-intervention-added
+    # case's /retentionMs pointer, so the other corpus cases are untouched.
+    - name: retention-ack
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/retentionMs"]
+          kinds: [modify]
+      prove:
+        obligation: retention-ack
+        when:
+          cel: "new >= old"
+          message: "retention must not shrink without an acknowledged challenge"
+      onFailure:
+        effect: challenge
+        code: retention.shrunk
