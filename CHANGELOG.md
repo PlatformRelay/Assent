@@ -93,6 +93,7 @@ repository still gets a decision, never by following the link; no release carrie
 
 ### Testing
 - :white_check_mark: test(cmd): assert the REL-03 error wrap as one contiguous substring
+- :test: test(compare): kill the surviving EffectChallenge intervention mutant (TEST-02)
 ## [0.3.0] - 2026-08-18
 
 ### Chores
