@@ -116,9 +116,17 @@ if [[ -n "$bundle" ]]; then
   # shipped with its own validly signed bundle would verify clean. The issuer and
   # identity regexp below are byte-identical to the pair SECURITY.md publishes;
   # hack/release/install_cosign_pin_test.sh reddens if the two ever drift apart.
+  #
+  # The [Aa] class is not cosmetic: the repository was renamed to PlatformRelay/
+  # Assent between v0.1.0 and v0.2.0, and the Fulcio SAN carries GitHub's
+  # canonical casing — v0.1.0's certificate says `assent`, v0.2.0/v0.3.0's say
+  # `Assent`. cosign matches this regexp case-SENSITIVELY, so a lowercase-only
+  # pin rejects the project's own current releases. The dots are escaped because
+  # this is a regexp, not a literal. The pin is still anchored at the org/repo:
+  # any other owner, or an `assent-mirror`-style typosquat, fails.
   cosign verify-blob \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-    --certificate-identity-regexp '^https://github.com/PlatformRelay/assent/' \
+    --certificate-identity-regexp '^https://github\.com/PlatformRelay/[Aa]ssent/' \
     --bundle "$bundle" "$ARCHIVE" >/dev/null \
     || die "cosign verification failed for ${ARCHIVE}"
 elif [[ "$REQUIRE_SIGNATURE" -eq 1 ]]; then

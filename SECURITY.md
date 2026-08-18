@@ -78,17 +78,21 @@ cd dist-verify
 sha256sum -c checksums.txt
 
 # 2) Cosign — per-archive bundles (keyless, GitHub Actions OIDC issuer)
+#    The identity pin is a REGEXP matched case-sensitively: the repository was
+#    renamed to PlatformRelay/Assent between v0.1.0 and v0.2.0, so v0.1.0's
+#    certificate says `assent` and v0.2.0+ say `Assent`. `[Aa]` covers both; the
+#    dots are escaped and the org/repo stays anchored, so a mirror still fails.
 ARCHIVE=assent_X.Y.Z_linux_amd64.tar.gz   # adjust OS/arch
 cosign verify-blob \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp '^https://github.com/PlatformRelay/assent/' \
+  --certificate-identity-regexp '^https://github\.com/PlatformRelay/[Aa]ssent/' \
   --bundle "${ARCHIVE}.sigstore.json" \
   "${ARCHIVE}"
 
 # Cosign — checksum manifest (covers archives + SBOMs listed inside)
 cosign verify-blob \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp '^https://github.com/PlatformRelay/assent/' \
+  --certificate-identity-regexp '^https://github\.com/PlatformRelay/[Aa]ssent/' \
   --bundle checksums.txt.sigstore.json \
   checksums.txt
 
