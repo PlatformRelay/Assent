@@ -92,7 +92,8 @@ func resolveRunFacts(
 				// `has()`-tolerant policy silently took its fallback branch — a
 				// wrong decision reached without a diagnostic. Failing here is
 				// also the consistent choice: an UNREADABLE declaration now ends
-				// the run exactly as a MALFORMED one already does, six lines down.
+				// the run exactly as a MALFORMED one already does, in the very
+				// next statement (LoadProviderConfig).
 				return nil, nil, fmt.Errorf("provider %q declaration %q at ref %q: %w", name, declPath, targetRef, err)
 			}
 			// Genuinely absent host declaration → skip (cannot know outputs;

@@ -87,6 +87,12 @@ repository still gets a decision, never by following the link; no release carrie
 
 ### Fixes
 - :bug: docs(decisions): reference the AUD2 spec as a path, not an mkdocs link
+
+### Security
+- :lock: fix(cmd): discriminate absent provider declaration from forge failure (REL-03)
+
+### Testing
+- :white_check_mark: test(cmd): assert the REL-03 error wrap as one contiguous substring
 ## [0.3.0] - 2026-08-18
 
 ### Chores
