@@ -80,6 +80,10 @@ repository still gets a decision, never by following the link; no release carrie
 
 ## Unreleased
 
+### Documentation
+- :memo: docs(changelog): stamp the v0.3.0 section after tagging
+## [0.3.0] - 2026-08-18
+
 ### Chores
 - build(deps): bump github/codeql-action/analyze from 4.37.4 to 4.37.6 (#33)
 - build(deps): bump raven-actions/actionlint from 2.1.2 to 2.2.0
