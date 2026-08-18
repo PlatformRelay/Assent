@@ -127,6 +127,11 @@ tasks:
       # Operator 2026-08-13: Dependabot is the updater; a reintroduced
       # renovate.json would otherwise merge green.
       - task: ci-audit-test
+      # AUD2-S05 (REQ-AUD2-S05-03): the P5-AUD2 exit gate. Pure text over the
+      # source, so it costs nothing here and can also run as an early step of
+      # the pull-request-visible `verify` job — which is the point: the four
+      # 2026-08-18 remediations must not be revertible behind a green PR.
+      - task: audit-aud2-exitgate-test
 
   ci-audit-test:
     desc: "E9-S04 + Dependabot-only: single CodeQL workflow; no Renovate config"
@@ -266,6 +271,11 @@ tasks:
     desc: "AUD2-S03 gate: hack/install.sh pins the cosign signer identity + OIDC issuer, no drift from SECURITY.md (REQ-AUD2-S03-01..05)"
     cmds:
       - bash hack/release/install_cosign_pin_test.sh
+
+  audit-aud2-exitgate-test:
+    desc: "AUD2-S05 exit gate: the four 2026-08-18 remediations (REL-01/02/07, REL-03, SEC-03, TEST-02) are still present (REQ-AUD2-S05-01..05)"
+    cmds:
+      - bash hack/audit/aud2_exitgate_test.sh
 
   audit-exitgate-test:
     desc: "AUD-S18 exit gate: 2026-08-06 audit conditions closed + gates green at the new bar (REQ-AUD-S18-01/02). NOT in `check` — it runs `task check` itself."

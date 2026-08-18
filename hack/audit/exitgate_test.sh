@@ -145,6 +145,11 @@ CHECK_STAGES=(
   lint-workflow-pins-test
   dogfood-wiring-test
   ci-audit-test
+  # AUD2-S05 (REQ-AUD2-S05-03): the P5-AUD2 exit gate — the four 2026-08-18
+  # remediations (REL-01/02/07, REL-03, SEC-03, TEST-02) asserted present. Added
+  # in the same commit as its `check:` line, which is what this array exists to
+  # force: the AUD-S18/RELSE-08 incident was exactly this pin going stale.
+  audit-aud2-exitgate-test
 )
 
 # (2) The epic's measured-coverage bar (AUD-S13 / judgment call (e)). The D-010
