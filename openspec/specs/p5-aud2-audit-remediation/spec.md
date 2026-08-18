@@ -17,7 +17,10 @@ lifted verbatim into the `Verify:` lines below. No story invents scope beyond it
 
 ## Problem
 
-Four defects survive on `main` at `b4f5054`, each confirmed by reading the code:
+Four defects survive on `main` at `b4f5054`, each confirmed by reading the code. **Every line
+number in this section is as of `b4f5054`** — the AUD2 fix lanes have since moved them (the
+cosign call, for one, is at `hack/install.sh:127` on `main` today), so read them as evidence of
+what the audit saw, not as a map of the current tree:
 
 - **REL-01 (P2, prior F2, byte-identical across three audits)** — `CallExec` collects child
   stdout into an unlimited `bytes.Buffer` (`internal/provider/transport.go:158–162`) while
@@ -48,8 +51,8 @@ Four defects survive on `main` at `b4f5054`, each confirmed by reading the code:
   `./internal/compare/...` **and** the comparison-corpus dogfood green. A regression that stops
   classifying challenge-effect deltas as stricter interventions merges through every wired gate.
 - **SEC-03 (P2, NEW)** — `hack/install.sh:114` runs `cosign verify-blob --bundle` with **no**
-  `--certificate-identity-regexp` / `--certificate-oidc-issuer`, while `SECURITY.md:80–98` pins
-  both in its manual instructions. On cosign v2+ the flags are mandatory (the path errors out —
+  `--certificate-identity-regexp` / `--certificate-oidc-issuer`, while `SECURITY.md:80–93` pins
+  both in its manual instructions (same era: both citations are `b4f5054`). On cosign v2+ the flags are mandatory (the path errors out —
   so `--require-signature` is a *broken* promise) or, where it succeeds, **any** Fulcio identity
   is accepted and a mirror-swapped archive+bundle pair verifies clean.
 
@@ -339,8 +342,10 @@ installed.
 **Goal:** `hack/install.sh:114`'s `cosign verify-blob --bundle` gains
 `--certificate-oidc-issuer https://token.actions.githubusercontent.com` and
 `--certificate-identity-regexp '^https://github\.com/PlatformRelay/[Aa]ssent/'` — published
-identically in `SECURITY.md:80–98` — plus a gate that fails if the script and `SECURITY.md`
-ever drift apart.
+identically in `SECURITY.md:80–93` — plus a gate that fails if the script and `SECURITY.md`
+ever drift apart. (Both citations are `b4f5054` line numbers, as in Problem above; on `main`
+today the call is `hack/install.sh:127` and the published block is `SECURITY.md:80–97`, grown by
+the casing explanation D-153 added.)
 
 **Amendment (implementation):** this Goal originally quoted
 `'^https://github.com/PlatformRelay/assent/'`, the value `SECURITY.md` published at the time, on
@@ -401,6 +406,23 @@ Requirements:
   - Test: the AUD2 exit gate (S05) or an existing wiring pin
   - Verify: `task check`
   - Level: L1
+- **REQ-AUD2-S03-06** *(added by AUD2-S05's spec-hygiene pass)* — Given the certificate Subject
+  Alternative Names decoded from the **real** published v0.1.0/v0.2.0/v0.3.0 bundles, committed
+  as offline fixtures, when the gate runs, then every one of them is accepted by the pinned
+  regexp — as a bash-ERE match **and** end-to-end through `install.sh` with the stub `cosign` —
+  and a table of near-miss identities (other owner, `assent-mirror` typosquat, another forge,
+  lost anchor, unescaped-dot host) is rejected by both; and given the pre-fix lowercase-only pin,
+  the same real-SAN table must show at least two REJECTIONS, so the section is proved capable of
+  catching the D-153 casing defect rather than being decorative. Emptying either fixture table
+  fails the gate.
+  - Test: `hack/release/install_cosign_pin_test.sh` §4c/§4d (real-SAN fixtures + their own
+    mutation control)
+  - Verify: `bash hack/release/install_cosign_pin_test.sh`
+  - Level: L1
+  - Why this is a REQ and not a Definition-of-done bullet: it was only a DoD line, so nothing
+    with a `Test:`/`Verify:` annotation pinned §4c/§4d against deletion — while D-153 itself
+    calls that fixture "the assertion that would have caught the defect". A pin the spec does
+    not name is a pin the next lane can delete without contradicting the spec.
 
 ---
 
@@ -510,9 +532,20 @@ Requirements:
 - **REQ-AUD2-S05-05** — Given the gate runs on a pull request, when CI executes, then it is
   part of the `verify` composite that PRs require — not only the push-only `release-exitgate`
   job (RELSE-08 not reproduced).
-  - Test: `hack/lint/workflow_pins_test.sh` or the AUD2 gate's own wiring stanza
+  - Test: `hack/audit/aud2_exitgate_test.sh` (`check_pr_wiring`, both polarities)
   - Verify: `task check`
   - Level: L1
+  - **What this REQ does and does not reach (AUD2-S05, stated so the gate does not overstate
+    itself).** *Reached in-tree:* the gate is a step of the `verify` job, which has no job-level
+    `if:` and therefore executes on every `pull_request`; the gate asserts that placement and
+    reddens both when the step is deleted and when the `verify` job grows
+    `release-exitgate`'s push-only condition. *Not reached in-tree, and deliberately not
+    asserted:* (a) whether `verify` is a **required** status check is a live branch-protection
+    setting no file can change — the operator half of RELSE-08, already listed under Not in
+    scope; and (b) the `task check` **stage** still does not run on pull requests, because the
+    only job that runs `task check` is `release-exitgate` and it keeps
+    `if: github.event_name != 'pull_request'`. The gate's PR coverage is the standalone script
+    invocation, not the stage.
 
 ---
 
@@ -522,9 +555,9 @@ Requirements:
 | --- | --- | --- |
 | S01 | `internal/provider/transport.go`, `internal/provider/transport_test.go` | `internal/provider/*` |
 | S02 | `cmd/assent/provider_host.go`, `cmd/assent/provider_host_test.go` | `cmd/assent/run.go`, `internal/forge/*` |
-| S03 | `hack/install.sh`, `hack/release/install_cosign_pin_test.sh` (new), `Taskfile.yml` (its own stage only) | `SECURITY.md` |
+| S03 | `hack/install.sh`, `SECURITY.md` (the published issuer/identity pair only), `hack/release/install_cosign_pin_test.sh` (new), `Taskfile.yml` (its own stage only), `hack/audit/exitgate_test.sh` (its own `CHECK_STAGES` entry only) | — |
 | S04 | `internal/compare/classify_intervention_test.go`, `examples/comparison/promotion-gates/**` | `internal/compare/classify_intervention.go` |
-| S05 | `hack/audit/aud2_exitgate_test.sh` (new), `hack/audit/exitgate_test.sh` (`CHECK_STAGES`), `Taskfile.yml`, `.github/workflows/verify.yaml` | all of the above |
+| S05 | `hack/audit/aud2_exitgate_test.sh` (new), `hack/audit/exitgate_test.sh` (its own `CHECK_STAGES` entry only), `Taskfile.yml` (its own stage only), `.github/workflows/verify.yaml` (its own `verify`-job step + the stale stage-count comment), this spec (the hygiene amendments noted below the table) | all of the above |
 
 **Integrator-owned, NOT implementer-owned — do not edit these in a lane:**
 `CHANGELOG.md` (regenerated with `task changelog-write` **after** the final rebase, because
@@ -533,8 +566,20 @@ construction) and `openspec/specs/backlog.md`'s AUD2 status column. Both are sha
 five lanes and have reddened `main` twice in three days when edited per-lane (INBOX
 2026-08-16, 2026-08-18/RELSE-01).
 
-S03 and S05 both touch `Taskfile.yml`. S05 depends on S01–S04 and therefore never runs
-concurrently with S03; S03 adds exactly one stage line and must not reorder others.
+S03 and S05 both touch `Taskfile.yml` **and** `hack/audit/exitgate_test.sh`: every lane that adds
+a `check:` stage must add its own `CHECK_STAGES` entry *in the same commit*, because the AUD-S18
+pin asserts the two lists are equal — that is the whole point of the pin, and a lane that
+"stays out of a shared file" instead reddens `main` (the AUD-S18/RELSE-08 incident). Both writes
+are therefore correct and unavoidable, and both are scoped to the lane's own one-line entry.
+S03 likewise writes `SECURITY.md`, not just reads it: SEC-03's one published truth lives there,
+and D-153's re-pin had to correct it. S05 depends on S01–S04 and therefore never runs
+concurrently with S03; neither may reorder existing stages.
+
+**S05 also carries the spec-hygiene amendments** surfaced by AUD2-S03's re-review, all inside
+this file: `REQ-AUD2-S03-06` (above) promotes the real-SAN fixture assertion from a
+Definition-of-done bullet to an annotated requirement; this table now records S03's `SECURITY.md` and
+`CHECK_STAGES` writes; and the Problem section's line numbers are now explicitly dated to
+`b4f5054` with the `SECURITY.md` range corrected to the same era.
 
 ---
 
