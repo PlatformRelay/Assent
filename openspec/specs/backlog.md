@@ -696,6 +696,46 @@ row. **Escalates back to P1 if unlanded at the next tag after v0.2.0's successor
 | --- | --- | --- | --- | --- |
 | WG-S01 | ⚠️ D-145: load covering profile on the run path; refuse `forge.Reconcile` when `WriteAllowed=false`; remove the docs stopgap annotation | **[autonomous · engine-grade · LGTM]** | spec-first proposal | published safety guarantee becomes true; verification target = zero forge writes against the fake under a `writes: false` profile (shape: `run_self_vouch_test.go`) |
 
+## Phase 5 — AUD2 audit remediation (2026-08-18) — the risk-reduction wave
+
+Full INVEST stories in [p5-aud2-audit-remediation/spec.md](p5-aud2-audit-remediation/spec.md).
+AUD2 is the **"Next (risk reduction)" wave** named by
+`agent-context/PROJECT-AUDIT-2026-08-18.md`. That audit's two P1 conditions (RELSE-01 changelog
+regen, SEC-01 `toolchain go1.26.6`) were closed the same day and **v0.3.0 shipped** — so AUD2
+carries **no release-condition story**, and that is a statement about the audit, not an omission.
+
+Every story closes a finding the audit stated **together with its own verification recipe**;
+those recipes are the `Verify:` lines in the spec, not invented ones. Three of the four findings
+exist because a passing suite did not notice them (REL-01 is byte-identical across three
+audits; TEST-02 is a mutation the auditor **demonstrated survives** every wired gate), so each
+story's DoD names the mutation that must redden.
+
+**Not claimed here:** the Later (hygiene) wave — TEST-01/03/04/05/06, SEC-04/05/06/07,
+RELSE-03/04, ARCH-02/03/05, REL-04/05/06, DOC-02..06 — and **WG-S01**, which carries the
+**LGTM** governance marker and is surfaced to the maintainer rather than auto-merged.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| AUD2-S01 | REL-01/02/07: exec transport trio — bound stdout at `MaxResponseBytes`, `WaitDelay`, capture stderr | **[autonomous]** | none | closes the exec/HTTP containment asymmetry; a wedged provider cannot outlive its deadline |
+| AUD2-S02 | ⚠️ REL-03: `errors.Is(err, forge.ErrNotFound)` discrimination on the provider-declaration fetch (D-130's sibling call site) | **[autonomous · engine-grade]** | none | a forge blip or token-scope misconfig can no longer masquerade as an absent declaration |
+| AUD2-S03 | SEC-03: pin cosign signer identity + OIDC issuer in `hack/install.sh`, with a `SECURITY.md` drift gate | **[autonomous]** | none | `--require-signature` becomes a real guarantee, not a passing no-op |
+| AUD2-S04 | TEST-02: kill the demonstrated `EffectChallenge` mutant (unit case + comparison-corpus entry) | **[autonomous]** | none | a wired gate reddens on the mutation the auditor proved survives |
+| AUD2-S05 | Exit gate: S01–S04 dispositioned, wired **PR-visibly** into `task check` + `CHECK_STAGES` | **[autonomous]** | S01–S04 | **the AUD2 exit gate**; the RELSE-08 blind spot is not reproduced |
+
+**Dependency order**: {S01 ∥ S02 ∥ S03 ∥ S04} — fully parallel, file-disjoint — → **S05**.
+Path ownership is tabled in the spec. **`CHANGELOG.md` and this file's AUD2 status column are
+Integrator-owned, not implementer-owned**: the changelog is regenerated *after* the final rebase
+(rebasing rewrites the SHAs `task changelog-write` reads), and per-lane edits to it reddened
+`main` twice in three days.
+
+> ⚠️ **S05 must not be wired the way AUD-S18 was.** The `release-exitgate` job carries
+> `if: github.event_name != 'pull_request'` (RELSE-08), so a gate wired only there is invisible
+> to every PR — which is exactly how AUD-S18's own stale `CHECK_STAGES` pin survived four merges
+> (INBOX 2026-08-16). AUD2's gate is a `task check` stage, and the **same commit** adds it to
+> `CHECK_STAGES`.
+
+**AUD2 status: SPECIFIED.**
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
