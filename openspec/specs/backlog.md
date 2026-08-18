@@ -681,6 +681,21 @@ S02 cannot start until the operator creates the bestpractices.dev project (INBOX
 | SEC-SC-S01 | Native Go fuzz targets on YAML/JSON/HCL differ (+ CI smoke) | **[autonomous]** | none | **do first** — Scorecard Fuzzing (#3); untrusted-byte crash/fail-open fence |
 | SEC-SC-S02 | OpenSSF Best Practices passing badge + honest evidence page | **[operator-gated]** | operator creates the bestpractices.dev project | Scorecard CII-Best-Practices (#6); no fake README badge |
 
+## Phase 5 — WG `writes: false` runtime gate (D-145)
+
+No spec yet — decompose spec-first (`openspec/` change proposal) before implementation, per
+AGENTS.md rule 4. D-145 resolved OQ-29 as option (a): `PolicyProfile.spec.writes: false` becomes
+runtime-enforced on `assent run`, as a third zero-write arm of the existing write switch
+(`cmd/assent/run.go`), refusing `forge.Reconcile` when `aggregate.CoverWithProfile` yields
+`Result.WriteAllowed == false`. The published stopgap annotation on
+`docs/architecture/policy-profiles.md` is removed by this lane and no earlier. Tracked here per
+PROJECT-AUDIT-2026-08-18 ARCH-01/DOC-01: the D-145 commitment previously existed in no backlog
+row. **Escalates back to P1 if unlanded at the next tag after v0.2.0's successor.**
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| WG-S01 | ⚠️ D-145: load covering profile on the run path; refuse `forge.Reconcile` when `WriteAllowed=false`; remove the docs stopgap annotation | **[autonomous · engine-grade · LGTM]** | spec-first proposal | published safety guarantee becomes true; verification target = zero forge writes against the fake under a `writes: false` profile (shape: `run_self_vouch_test.go`) |
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
