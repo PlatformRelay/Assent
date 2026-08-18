@@ -102,6 +102,11 @@ tasks:
       # which is skipped on pull_request — without this a regression merges green and only
       # reds main afterwards. Fast and offline (stubbed `gh`); needs jq.
       - task: release-verify-tag-gate-test
+      # AUD2-S03 (SEC-03): hack/install.sh's cosign signer pin. Offline (stubbed
+      # `cosign`), and the only gate that reads hack/install.sh's verify path —
+      # without this line an unpinned `cosign verify-blob` ships silently again,
+      # and SECURITY.md's published issuer/identity pair can drift away from it.
+      - task: release-install-cosign-pin-test
       # D-124: the AUD-S06 docs truth-lag gates shipped green and invoked by nothing,
       # which is the same manual-gate defect they exist to close. Sequential (not a
       # `deps:` entry) — go-task runs deps in parallel and readme_smoke_test.sh builds
@@ -256,6 +261,11 @@ tasks:
     desc: "AUD-S03 gate: verify-green-on-tag-SHA polarity table + release.yaml step order (REQ-AUD-S03-01/02)"
     cmds:
       - bash hack/release/verify_tag_gate_test.sh
+
+  release-install-cosign-pin-test:
+    desc: "AUD2-S03 gate: hack/install.sh pins the cosign signer identity + OIDC issuer, no drift from SECURITY.md (REQ-AUD2-S03-01..05)"
+    cmds:
+      - bash hack/release/install_cosign_pin_test.sh
 
   audit-exitgate-test:
     desc: "AUD-S18 exit gate: 2026-08-06 audit conditions closed + gates green at the new bar (REQ-AUD-S18-01/02). NOT in `check` — it runs `task check` itself."

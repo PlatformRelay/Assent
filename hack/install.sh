@@ -111,7 +111,15 @@ done
 
 if [[ -n "$bundle" ]]; then
   command -v cosign >/dev/null 2>&1 || die "cosign required to verify ${bundle} but not found on PATH"
-  cosign verify-blob --bundle "$bundle" "$ARCHIVE" >/dev/null \
+  # SEC-03 / REQ-AUD2-S03-01: pin the signer. Keyless verify-blob without an
+  # identity pin accepts ANY Fulcio certificate, so a mirror-swapped archive
+  # shipped with its own validly signed bundle would verify clean. The issuer and
+  # identity regexp below are byte-identical to the pair SECURITY.md publishes;
+  # hack/release/install_cosign_pin_test.sh reddens if the two ever drift apart.
+  cosign verify-blob \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    --certificate-identity-regexp '^https://github.com/PlatformRelay/assent/' \
+    --bundle "$bundle" "$ARCHIVE" >/dev/null \
     || die "cosign verification failed for ${ARCHIVE}"
 elif [[ "$REQUIRE_SIGNATURE" -eq 1 ]]; then
   die "--require-signature set but no .sigstore.json bundle found beside ${ARCHIVE}"
