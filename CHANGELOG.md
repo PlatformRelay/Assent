@@ -93,6 +93,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :lock: fix(cmd): discriminate absent provider declaration from forge failure (REL-03)
 - :lock: fix(release): pin cosign signer identity and issuer in install.sh (SEC-03)
 - :lock: fix(release): widen the cosign identity pin to the real signer casing (SEC-03)
+- :lock: fix(provider): bound exec stdout, set WaitDelay, capture stderr
 
 ### Testing
 - :white_check_mark: test(cmd): assert the REL-03 error wrap as one contiguous substring
