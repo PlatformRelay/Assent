@@ -754,7 +754,11 @@ branch is skipped there and a naive test would be vacuous; **(3)** it must exten
 `hack/release/install_cosign_pin_test.sh`'s drift comparison as a **third file** (~10 lines)
 rather than start a second published truth (D-128).
 
-**AUD2 status: SPECIFIED.**
+**AUD2 status: AUTONOMOUS COMPLETE** — S01–S05 landed. The four 2026-08-18 findings
+(REL-01/02/07, REL-03, SEC-03, TEST-02) are closed, and `audit-aud2-exitgate-test` pins them
+as the 19th `task check` stage — wired **PR-visibly** in the `verify` job, not only in the
+push-only `release-exitgate` job, so the RELSE-08 blind spot is not reproduced. **AUD2-F01
+remains OPEN** — it is a follow-up, not an AUD2 story (D-152).
 
 ## Phases 3–5
 

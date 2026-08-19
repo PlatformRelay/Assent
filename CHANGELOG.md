@@ -85,9 +85,21 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(spec): decompose the 2026-08-18 audit Next wave as epic P5-AUD2 (D-152)
 - :memo: docs(spec): AUD2-S02 names resolveRunFacts, not the nonexistent loadProviderHosts
 - :memo: docs(openspec): amend AUD2-S03 to the shipped pin and log D-153 (SEC-03)
+- :memo: docs(audit): document the AUD2 gate and correct stale line counts (F4, F6)
+- :memo: docs(backlog): mark P5-AUD2 complete (S01-S05 landed)
+
+### Features
+- :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
 
 ### Fixes
 - :bug: docs(decisions): reference the AUD2 spec as a path, not an mkdocs link
+- :bug: fix(audit): scope the REL-03 branch assertion to the guard block (F1)
+- :bug: fix(audit): measure the REL-03 guard's terminal path, not "a return appears"
+- :bug: fix(audit): assert no fall-through, not where the return sits
+- :bug: fix(audit): require an ALL-of FAIL quorum and refuse bash < 4.3
+
+### Refactoring
+- :recycle: refactor(audit): pin REL-03 and REL-07 by test name, demote source shape
 
 ### Security
 - :lock: fix(cmd): discriminate absent provider declaration from forge failure (REL-03)
@@ -98,6 +110,8 @@ repository still gets a decision, never by following the link; no release carrie
 ### Testing
 - :white_check_mark: test(cmd): assert the REL-03 error wrap as one contiguous substring
 - :test: test(compare): kill the surviving EffectChallenge intervention mutant (TEST-02)
+- :white_check_mark: test(audit): pin the AUD2 remediations behind a PR-visible exit gate
+- :white_check_mark: test(audit): assert verify.yaml still triggers on pull_request
 ## [0.3.0] - 2026-08-18
 
 ### Chores
