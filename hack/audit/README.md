@@ -131,8 +131,8 @@ still present in the tree. Every failure names the audit finding ID it reopens.
 
 | # | Asserts | Names on failure |
 | --- | --- | --- |
-| 1 | `CallExec` bounds child stdout at `MaxResponseBytes`, sets a non-zero `cmd.WaitDelay`, and captures a bounded stderr that it folds into the error it returns | `REL-01`, `REL-02`, `REL-07` |
-| 2 | `resolveRunFacts` discriminates `forge.ErrNotFound` on the provider-declaration fetch **and** its non-absent branch actually returns | `REL-03` |
+| 1 | `CallExec` bounds child stdout at `MaxResponseBytes`, sets a non-zero `cmd.WaitDelay`, and captures a bounded stderr that **every** return in its `cmd.Run()` failure branch carries | `REL-01`, `REL-02`, `REL-07` |
+| 2 | `resolveRunFacts` discriminates `forge.ErrNotFound` on the provider-declaration fetch **and** its guard cannot be entered without stopping the run (no fall-through at any depth) | `REL-03` |
 | 3 | `hack/install.sh` pins the cosign signer identity and OIDC issuer, byte-identically with `SECURITY.md` | `SEC-03` |
 | 4 | `isStricterInterventionEffect` still classifies `EffectChallenge`, and the named unit case that kills the auditor's demonstrated mutant still exists | `TEST-02` |
 | 5 | The gate is a `check:` stage, is pinned in `CHECK_STAGES`, and runs in the **pull-request-visible** `verify` job, undisarmed | `REQ-AUD2-S05-03/04/05` |
@@ -152,36 +152,59 @@ also appears in `CallHTTP`, `errors.Is(err, forge.ErrNotFound)` also appears in
 tests. A file-level `grep` for any of them stays **green on a reverted tree**. Every assertion
 therefore reads a function body extracted by name, with a positive control on a known-present
 anchor, a `^func ` count that refuses an over-extracted body, and a next-function-below guard.
-The `REL-03` branch assertion goes two levels further, because it is the one an independent
-reviewer got past three times, each time with a mutant that **compiles and is `gofmt`-clean**:
+The `REL-03` and `REL-07` branch assertions go further still, because between them they are the
+ones an independent reviewer got past four times — every mutant `gofmt`-clean, `go vet`-clean,
+`golangci-lint`-clean and compiling, and each one a real revert that `go test` catches:
 
-1. It reads only the guard **block**, not the function body. `resolveRunFacts` contains three
-   `return nil, nil, fmt.Errorf(` lines, so a body-wide grep is satisfied on every possible tree
-   — including the half-revert where the guard is kept and its body downgraded to `continue`.
-2. Inside that block it measures the guard's **terminal path**: the return must sit at exactly
-   the guard's body indent, one level deeper than the `if` and no deeper. A return nested under a
-   further condition — `if errors.Is(err, context.Canceled) { … }` followed by `continue` — is
-   real, uncommented code that a grep over the block accepts, while every 503, 401, 403 and
-   throttle is still skipped. `gofmt` is what makes that indentation load-bearing rather than
-   cosmetic.
-3. All greps inside the block run over a view with **line and block comments** stripped, since
-   the guard's own prose names both `LoadProviderConfig` and the `continue` it replaced — and
-   since quoting the required return inside a `/* … */` span otherwise satisfies the assertion.
-   The first version stripped `//` lines only and that camouflage worked; the comment filter is a
-   state machine now. It does not model Go string literals, which is fail-**closed** (the
-   assertion sees less code, never more).
+1. **Block, not body.** `resolveRunFacts` contains three `return nil, nil, fmt.Errorf(` lines and
+   `CallExec` returns in several places, so a body-wide grep for "a return that mentions X" is
+   satisfied on every possible tree — including the half-revert where the guard is kept and its
+   body downgraded to `continue`. Each assertion isolates the block it is about (the
+   `forge.ErrNotFound` guard; the `cmd.Run()` failure branch), brace-matched on indentation.
+2. **The terminal path, as a necessary condition.** Inside that block the required return must
+   sit at exactly the block's body indent, so a return reachable only under a further condition
+   does not count. This is necessary but **not sufficient**, and the README used to claim
+   otherwise: it measures indent *position*, and the polarity-swapped revert
+
+   ```go
+   if !errors.Is(err, context.Canceled) { continue }
+   return nil, nil, fmt.Errorf(...)
+   ```
+
+   puts a real return at exactly that indent while skipping every 503, 401, 403 and throttle. It
+   is also the *more* idiomatic of the two spellings.
+3. **No fall-through, which is the assertion that actually discriminates.** The property is not
+   "where does the return sit" but "can this block be entered and not stop the run". For `REL-03`
+   that is: no `continue`, `break` or `goto` anywhere inside the guard, at any depth — the
+   remediated guard contains none in code, while every revert shape needs one, because skipping
+   the provider *is* the defect. For `REL-07` it is the same idea in the fold's terms: no
+   `return` inside the `cmd.Run()` failure branch may omit the stderr sink, since such a path
+   hands the operator a bare `exit status 1` however the condition around it is spelled. One
+   assertion each, four mutants dead.
+4. **Two comment filters, because absence and presence fail in opposite directions.** Presence
+   assertions read `code_only`, which strips line *and* block comments aggressively: quoting the
+   required return inside a `/* … */` span otherwise satisfies them, and over-stripping there can
+   only cause a false RED. Absence assertions (item 3) invert that — over-stripping would hide
+   the very token being hunted and go falsely **green** — so they read `code_conservative`, which
+   strips only a leading `//` line or a leading `/*` span and never a trailing comment or a
+   mid-line marker, and therefore can only ever keep too much. Its one residual, a multi-line raw
+   string literal, is refused outright by a backtick check rather than assumed away.
+5. **Single assignment.** `rhs_of` reads the *first* assignment to `cmd.Stdout` / `cmd.Stderr` /
+   `cmd.WaitDelay`; Go runs the *last*. Appending a second assignment reverts the remediation
+   while every other check still reads the good statement, so each of those lvalues — and each
+   bounded-capture sink variable — must be assigned exactly once.
 
 ### Anti-vacuity discipline
 
 Held to the same bar as `exitgate_test.sh` and `hack/release/install_cosign_pin_test.sh`: every
 check is a **function** over file arguments, run against the real tree (must be green) *and*
 against a mutant carrying the very defect it exists to catch (must be red, and red **for its own
-stated reason** — `expect_red` pins a message fragment). 22 mutation controls run per invocation
+stated reason** — `expect_red` pins a message fragment). 26 mutation controls run per invocation
 and the count is asserted against a floor, so a skipped section fails the gate instead of
 quietly shrinking it. **What the PASS banner claims, precisely**: that those controls ran, that
 each went red for its own pinned message, and that every REQ-bearing assertion carries one — *not*
 that every finding the script can emit is controlled. The script emits roughly forty distinct
-findings; twenty-two carry a control, and the rest are extraction and positive-control failures
+findings; twenty-six carry a control, and the rest are extraction and positive-control failures
 whose own reason to exist is that they fire when a pattern stops matching. An exit gate whose
 banner overstates its coverage is the D-124 failure mode this epic exists to close, so the banner
 is worded to what is actually proved. Mutants are **file copies** under `mktemp -d`; `git checkout --` is never
