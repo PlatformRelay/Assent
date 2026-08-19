@@ -98,8 +98,19 @@ jobs:
       - run: CGO_ENABLED=0 go build ./...
       - name: dogfood examples (EX-S08 — shared discovery script; every examples/packs/<name> with .assent/tests gates itself green under the real `assent test` CLI)
         run: bash hack/dogfood-examples.sh
+      # -count=1 IS THE GATE, exactly as in Taskfile.yml's dogfood-comparison.
+      # examples/comparison is an EXTERNAL test package referencing only exported
+      # constants from internal/compare, so the compare logic is unreachable from
+      # the test binary the Go cache keys on (the linker strips it) and the real
+      # logic runs in a `go build -o … ./cmd/assent` subprocess outside the cache
+      # key. actions/setup-go restores GOCACHE across commits, so without this
+      # flag CI can print `ok … (cached)` and pass a PR on a tree where the
+      # corpus genuinely fails. Fix it HERE, per invocation — do NOT "fix" it by
+      # setting `cache: false` on setup-go: that would slow every job in every
+      # workflow to close one blind invocation. Pinned by
+      # hack/examples/dogfood_wiring_test.sh.
       - name: comparison corpus dogfood (PCS-S08 — examples/comparison validates and runs green)
-        run: go test ./examples/comparison/...
+        run: go test -count=1 ./examples/comparison/...
       - name: PCS compare exit gate (RELSE-03 — REQ-PCS-S09)
         run: bash hack/compare/exitgate_test.sh
       # AUD-S02 (REQ-AUD-S02-02) — CHANGELOG.md drift gate, main + schedule only.

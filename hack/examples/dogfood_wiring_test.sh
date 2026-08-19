@@ -15,7 +15,10 @@
 # 2026-08-19). `-count=1` is what makes that stage a gate at all — so it is
 # pinned here, with a mutation control that strips the flag from the COMMAND
 # LINE while leaving the explanatory comment in place, which is exactly how a
-# human would regress it.
+# human would regress it. Section 6 pins the SAME flag on verify.yaml's copy of
+# that invocation: actions/setup-go restores GOCACHE across commits, so the CI
+# half is blind in exactly the same way, and it is the half where a vacuous PASS
+# turns a red tree into a green PR.
 #
 # Follows the hack/release/changelog_gate_test.sh / example_format_inventory_test.sh
 # discipline: every "is it wired" assertion is re-run against a mutated copy
@@ -226,4 +229,67 @@ if check_lists_task "$mutant_dc" dogfood-comparison; then
 fi
 echo "OK: check runs dogfood-comparison, and deleting that line turns the assertion red"
 
-echo "PASS: dogfood wiring (REQ-EX-S08-02, REQ-EX-S08-03) — task check runs dogfood-examples after build; Taskfile.yml and verify.yaml both delegate to the shared discovery script; the cache-blind go test gates (${COUNT1_TASKS[*]}) carry -count=1"
+# ------------------------- 6. the CI half of the -count=1 pin (verify.yaml) --
+#
+# Taskfile.yml is only the local half. verify.yaml runs its OWN
+# `go test … ./examples/comparison/…`, and actions/setup-go restores the Go
+# build cache (where test results live) across commits, so an uncounted CI
+# invocation can serve `ok … (cached)` and turn a genuinely red tree into a
+# green PR. Same discipline as section 5: match the COMMAND, never a comment.
+
+# workflow_comparison_go_test_lines <file> — every line that RUNS `go test` over
+# examples/comparison. Anchored on the command shape (optional `- `, optional
+# `run: `) and stopping at `#`, so both `run:` steps and `run: |` block lines
+# match while a YAML comment mentioning the command cannot.
+workflow_comparison_go_test_lines() {
+  grep -nE '^[[:space:]]*(-[[:space:]]+)?(run:[[:space:]]*)?go test[^#]*\./examples/comparison' "$1" || true
+}
+
+# workflow_count1_pinned <file> — 0: every such command carries -count=1.
+# 1: at least one does not. 2: NO such command exists (vacuity, not success).
+workflow_count1_pinned() {
+  local line found=0
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    found=1
+    grep -qE '[[:space:]]-count=1([[:space:]]|$)' <<<"$line" || return 1
+  done < <(workflow_comparison_go_test_lines "$1")
+  ((found == 1)) || return 2
+  return 0
+}
+
+echo "== 6. verify.yaml runs the comparison corpus with -count=1 =="
+rc=0; workflow_count1_pinned "$WORKFLOW" || rc=$?
+case "$rc" in
+  0) echo "OK: every 'go test … ./examples/comparison…' in verify.yaml carries -count=1" ;;
+  2) fail "verify.yaml contains NO 'go test … ./examples/comparison…' command — either the CI dogfood step was deleted or it was respelled past this matcher; re-derive the pin rather than leaving it silently vacuous" ;;
+  *) fail "verify.yaml runs 'go test' over examples/comparison WITHOUT -count=1 — setup-go restores GOCACHE across commits, so that step can report 'ok … (cached)' and pass a PR on a tree where the corpus genuinely fails" ;;
+esac
+
+echo "== 6b. the workflow assertion is comment-blind (positive control) =="
+cat >"$WORK/wf-comment-only.yaml" <<'EOF'
+      # -count=1 is required here, honest
+      - name: comparison corpus dogfood
+        run: go test ./examples/comparison/...
+EOF
+rc=0; workflow_count1_pinned "$WORK/wf-comment-only.yaml" || rc=$?
+((rc != 0)) || fail "workflow_count1_pinned accepted a workflow whose -count=1 appears ONLY in a comment — the assertion is satisfiable by prose"
+((rc == 1)) || fail "the comment-only workflow control failed for the WRONG reason (rc=$rc, want 1 = flag missing from a present command)"
+echo "OK: a -count=1 that lives only in a YAML comment does NOT satisfy the workflow pin"
+
+echo "== 6c. the workflow assertion can fail (mutation: strip the flag, keep the comment) =="
+mutant_wf_c1="$WORK/verify.nocount1.yaml"
+sed -E 's/^([[:space:]]*(-[[:space:]]+)?(run:[[:space:]]*)?go test)[[:space:]]+-count=1/\1/' "$WORKFLOW" >"$mutant_wf_c1"
+if cmp -s "$WORKFLOW" "$mutant_wf_c1"; then
+  fail "mutation did not land: $mutant_wf_c1 is byte-identical to verify.yaml"
+fi
+grep -qE '^[[:space:]]*#.*-count=1' "$mutant_wf_c1" \
+  || fail "mutation is not the intended one: it stripped the explanatory -count=1 COMMENTS too, so 6c would not prove comment-blindness under mutation"
+[[ -n "$(workflow_comparison_go_test_lines "$mutant_wf_c1")" ]] \
+  || fail "mutation removed the comparison command entirely — the mutant would go red for vacuity (rc=2), not for the missing flag"
+rc=0; workflow_count1_pinned "$mutant_wf_c1" || rc=$?
+((rc != 0)) || fail "workflow_count1_pinned reports verify.yaml pinned with the flag stripped from its command line — the assertion is vacuous"
+((rc == 1)) || fail "the verify.yaml mutant went red for the WRONG reason (rc=$rc, want 1 = flag missing from a present command)"
+echo "OK: stripping -count=1 from verify.yaml's command line (comment intact) turns the pin red, for the flag and not for vacuity"
+
+echo "PASS: dogfood wiring (REQ-EX-S08-02, REQ-EX-S08-03) — task check runs dogfood-examples after build; Taskfile.yml and verify.yaml both delegate to the shared discovery script; the cache-blind go test gates (${COUNT1_TASKS[*]}) carry -count=1, in Taskfile.yml AND in verify.yaml"
