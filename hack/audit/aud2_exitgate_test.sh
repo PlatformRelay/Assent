@@ -139,6 +139,83 @@ code_only() {
   '
 }
 
+# code_conservative — the OTHER filter, for ABSENCE assertions.
+#
+# THE INVERSION, stated plainly because getting it wrong trades one unfailable
+# assertion for another. code_only above is tuned for PRESENCE assertions ("a
+# return must appear"): over-stripping there hides a return and causes a false
+# RED, which is safe. An ABSENCE assertion ("no `continue` may appear") has the
+# opposite polarity: over-stripping hides the very token being hunted and causes
+# a false GREEN. code_only's own documented weakness — it does not model Go
+# string literals, so `u := "http://x"` truncates the line — would therefore
+# become a way to smuggle a fall-through past the gate.
+#
+# So absence assertions use this filter instead, which can only ever keep TOO
+# MUCH. It removes a construct only when the construct is unambiguous without
+# parsing Go:
+#   * a line whose FIRST non-blank characters are `//` — everything after a
+#     leading `//` is comment, whatever quotes appear later on that line;
+#   * a span whose opening line's FIRST non-blank characters are `/*`, up to and
+#     including the line carrying `*/`.
+# A TRAILING `// ...` comment is deliberately NOT stripped, and a block comment
+# opened mid-line is deliberately NOT recognised: both would require deciding
+# whether the marker sits inside a string literal, and guessing wrong in the
+# stripping direction is the false-green this filter exists to rule out. The
+# cost is false REDs on prose that names a fall-through in a trailing comment —
+# fail-closed, and loud.
+#
+# Residual, named rather than assumed away: a multi-line RAW string literal
+# (backticks) whose interior line begins with `//` would still be stripped.
+# assert_no_raw_string below refuses any region containing a backtick, so that
+# case fails closed instead of silently weakening an absence assertion.
+code_conservative() {
+  awk '
+    inblock { if (index($0, "*/") > 0) { inblock = 0 }; next }
+    {
+      t = $0
+      sub(/^[ \t]+/, "", t)
+      if (substr(t, 1, 2) == "//") { next }
+      if (substr(t, 1, 2) == "/*") {
+        if (index(t, "*/") == 0) { inblock = 1 }
+        next
+      }
+      print
+    }
+  '
+}
+
+# assert_no_raw_string <region-file> <finding> — code_conservative's one
+# remaining ambiguity is a multi-line raw string literal. No such literal exists
+# in any region this gate reads; if one ever appears, fail closed and say why
+# rather than let an absence assertion quietly weaken.
+assert_no_raw_string() {
+  if grep -q '`' "$1"; then
+    echo "  $2: the isolated region contains a backtick — a multi-line raw string literal would let code_conservative strip a line that is not a comment, which is the one way an ABSENCE assertion here can go falsely green. Extend the filter before allowing this shape (AUD2-S05)" >&2
+    return 1
+  fi
+  return 0
+}
+
+# block_from <file> <ERE for the opening line> — the brace-matched block a line
+# opens: from the first line matching the pattern to the `}` at the SAME
+# indentation. gofmt (check stage 1) is what makes indentation load-bearing
+# rather than cosmetic, so no brace counting is needed.
+block_from() {
+  awk -v re="$2" '
+    !ing && $0 ~ re {
+      match($0, /^[ \t]*/)
+      indent = substr($0, 1, RLENGTH)
+      ing = 1
+      print
+      next
+    }
+    ing {
+      print
+      if ($0 == indent "}") exit
+    }
+  ' "$1"
+}
+
 # guard_block <body-file> — the `if !errors.Is(err, forge.ErrNotFound) { … }`
 # block, from its `if` line to the `}` at the SAME indentation. Brace-matched on
 # indentation rather than counting braces: gofmt guarantees the closing brace of
@@ -270,6 +347,13 @@ mutate() {
     fail "mutation harness: expected '$witness' in ${file#"$WORK"/} after mutation, but it is absent"
 }
 
+# assign_count <region-file> <lvalue-ERE> — how many times an lvalue is
+# assigned in a region. rhs_of reads the FIRST assignment; at runtime the LAST
+# one wins, so "assigned exactly once" is what makes reading the first sound.
+assign_count() {
+  grep -Ec "^[[:space:]]*$2[[:space:]]*:?=" "$1" || true
+}
+
 # assert_assignment_gone <mutant> <lvalue-ERE> <finding> — the mutation really
 # removed the ASSIGNMENT, not some prose mention of it. Deleting a doc comment
 # also "changes the file", which is why assert_changed alone is not enough.
@@ -333,6 +417,25 @@ check_exec_containment() { # <transport.go>
   # CallHTTP's MaxResponseBytes intact and still reddens.)
   body_of "$file" CallExec "$body" "REL-01/02/07" 'cmd.Run()' 'func execFailure' || return 1
 
+  # SINGLE-ASSIGNMENT DISCIPLINE, before anything reads a right-hand side.
+  # rhs_of takes the FIRST assignment; at runtime the LAST one wins. So
+  #     cmd.Stdout = stdout          // bounded, and what rhs_of reads
+  #     cmd.Stdout = &bytes.Buffer{} // what actually runs
+  # would pass every check below while REL-01 is fully reverted — the same
+  # "the assertion reads the wrong statement" family as the REL-03 findings.
+  # Each of these is assigned exactly once in the remediated function, so
+  # requiring exactly one is not a new constraint on the code, only on what this
+  # gate is willing to reason about.
+  local lv n_assign
+  for lv in 'cmd\.Stdout' 'cmd\.Stderr' 'cmd\.WaitDelay'; do
+    n_assign="$(assign_count "$body" "$lv")"
+    if [[ "$n_assign" -gt 1 ]]; then
+      echo "  REL-01/02/07: CallExec assigns ${lv//\\/} ${n_assign} times — rhs_of reads the FIRST and the LAST is what runs, so a later reassignment reverts the remediation while every check below still reads the good one (AUD2-S01)" >&2
+      rc=1
+    fi
+  done
+  ((rc == 0)) || return "$rc"
+
   # -- REL-01: stdout is bounded, and bounded by the SINGLE declared bound.
   local stdout_var
   stdout_var="$(rhs_of "$body" 'cmd\.Stdout')"
@@ -341,6 +444,9 @@ check_exec_containment() { # <transport.go>
     rc=1
   elif ! grep -Eq "^[[:space:]]*${stdout_var}[[:space:]]*:?=[[:space:]]*newBoundedCapture\(MaxResponseBytes\)" "$body"; then
     echo "  REL-01: CallExec's stdout sink '${stdout_var}' is not created by newBoundedCapture(MaxResponseBytes) — a runaway digest-pinned provider fills memory unbounded while CallHTTP, in the same file, is bounded fail-closed; opts.Timeout bounds wall-clock, not bytes (AUD2-S01)" >&2
+    rc=1
+  elif [[ "$(assign_count "$body" "$stdout_var")" -gt 1 ]]; then
+    echo "  REL-01: CallExec assigns the stdout sink '${stdout_var}' more than once — the bounded capture is created and then replaced, so the check above reads a statement that no longer decides anything (AUD2-S01)" >&2
     rc=1
   fi
 
@@ -377,8 +483,75 @@ check_exec_containment() { # <transport.go>
       echo "  REL-07: CallExec's stderr sink '${stderr_var}' is not a bounded capture — an unbounded stderr sink trades the REL-01 memory hole for the same hole on the other stream (AUD2-S01)" >&2
       rc=1
     fi
-    if ! grep -Eq "return .*[ ,(]${stderr_var}[ ,)]" "$body"; then
-      echo "  REL-07: CallExec captures stderr into '${stderr_var}' but never folds it into the error it returns — collected-and-discarded diagnostics leave REL-07 open with the capture still visible in the source (AUD2-S01)" >&2
+    if [[ "$(assign_count "$body" "$stderr_var")" -gt 1 ]]; then
+      echo "  REL-07: CallExec assigns the stderr sink '${stderr_var}' more than once — the bounded capture is created and then replaced (AUD2-S01)" >&2
+      rc=1
+    fi
+
+    # THE FOLD, scoped to the failure branch — not a body-wide grep.
+    #
+    # "A return mentioning stderr appears somewhere in CallExec" is the same
+    # unfailable shape the REL-03 findings were: it survives
+    #     if err := cmd.Run(); err != nil {
+    #         if errors.Is(err, context.DeadlineExceeded) {
+    #             return nil, execFailure(err, stderr)
+    #         }
+    #         return nil, err
+    #     }
+    # which reverts REL-07 for every real provider failure (exit status, signal,
+    # WaitDelay kill) while leaving one matching line behind. gofmt, vet, lint
+    # and build are all clean on it; only `go test` sees it.
+    #
+    # So: isolate the `cmd.Run()` failure branch, then assert BOTH halves.
+    local runblk="$WORK/block.cmdRun"
+    # Metacharacter-free pattern: block_from hands it to `awk -v`, which strips
+    # one level of escaping, so `\(` would arrive as an unbalanced group and
+    # mawk/gawk reject it outright. `cmd.Run` matches exactly one line here.
+    block_from "$body" 'cmd.Run' >"$runblk"
+    if [[ ! -s "$runblk" ]] || ! head -1 "$runblk" | grep -Fq 'cmd.Run()' ||
+      ! head -1 "$runblk" | grep -Fq 'err != nil'; then
+      echo "  REL-07: could not isolate CallExec's cmd.Run() failure branch (its opening line must carry both 'cmd.Run()' and 'err != nil') — the brace-matched extraction broke, so the fold assertions below would be vacuous (AUD2-S01)" >&2
+      return 1
+    fi
+    if [[ "$(wc -l <"$runblk")" -ge "$(wc -l <"$body")" ]]; then
+      echo "  REL-07: the isolated cmd.Run() failure branch is not smaller than the whole CallExec body — the scoping did not happen, so the fold assertion is body-wide again (AUD2-S01)" >&2
+      return 1
+    fi
+
+    # (a) PRESENCE, at the branch's body indent: the branch's own terminal path
+    # returns the folded error.
+    local run_indent run_body_indent
+    run_indent="$(sed -n "1s/^\\([[:space:]]*\\).*/\\1/p" "$runblk")"
+    run_body_indent="$(printf '%s\t' "$run_indent")"
+    if ! awk -v ind="$run_body_indent" -v v="$stderr_var" '
+          index($0, ind) == 1 {
+            rest = substr($0, length(ind) + 1)
+            if (rest ~ /^return / && index(rest, v) > 0) { found = 1 }
+          }
+          END { exit(found ? 0 : 1) }
+        ' "$runblk"; then
+      echo "  REL-07: CallExec captures stderr into '${stderr_var}' but its cmd.Run() failure branch does not return it on the branch's own terminal path — collected-and-discarded diagnostics leave REL-07 open with the capture still visible in the source (AUD2-S01)" >&2
+      rc=1
+    fi
+
+    # (b) ABSENCE, the half that survives a polarity swap: NO return inside that
+    # branch may omit the stderr sink. One that does is a path on which the
+    # operator gets a bare "exit status 1" again, wherever it sits and however
+    # the condition around it is spelled. Conservative view (see
+    # code_conservative): this is an absence assertion, so over-stripping would
+    # go falsely green.
+    local runblk_abs="$WORK/block.cmdRun.conservative"
+    code_conservative <"$runblk" >"$runblk_abs"
+    if [[ ! -s "$runblk_abs" ]] || ! grep -Fq 'cmd.Run()' "$runblk_abs"; then
+      echo "  REL-07: the conservative view of the cmd.Run() failure branch lost its own opening line — the filter is over-stripping, so the absence assertion would be vacuous (AUD2-S01)" >&2
+      return 1
+    fi
+    assert_no_raw_string "$runblk_abs" "REL-07" || return 1
+    local bare="$WORK/hits.rel07_bare_returns"
+    grep -nE '^[[:space:]]*return ' "$runblk_abs" | grep -vF -- "$stderr_var" >"$bare" || true
+    if [[ -s "$bare" ]]; then
+      echo "  REL-07: CallExec's cmd.Run() failure branch has a return that does NOT carry '${stderr_var}' — on that path the operator gets a bare 'exit status 1' with no provider diagnostic, which is REL-07 reverted however the surrounding condition is spelled (a nested errors.Is fold, or its polarity swap). A stderr-folding return elsewhere in the branch does not close this (AUD2-S01):" >&2
+      sed 's/^/    /' "$bare" >&2
       rc=1
     fi
   fi
@@ -458,15 +631,15 @@ check_notfound_discrimination() { # <provider_host.go>
     echo "  REL-03: the isolated guard block is not smaller than the whole resolveRunFacts body — the scoping did not happen" >&2
     return 1
   fi
-  # TERMINAL PATH, not "appears somewhere in the region". `grep`ping the guard
-  # block for a return still accepts a return that is only reachable under a
-  # further condition — a reviewer's second mutant nests it under
-  # `if errors.Is(err, context.Canceled) { … }` and then `continue`s, which
-  # restores REL-03 in full (every 503/401/403/throttle is skipped) with no
-  # comment trick at all, compiles, and is gofmt-clean. So the return must sit
-  # at EXACTLY the guard's body indent — one level deeper than the `if`, and no
-  # deeper — which is what "the guard's own branch returns" means structurally.
-  # gofmt makes that indentation load-bearing rather than cosmetic.
+  # (a) PRESENCE, at the guard's body indent. A return that is only reachable
+  # under a further condition sits one level deeper and does not count. This is
+  # necessary but — on its own — NOT sufficient: it measures indent POSITION,
+  # and the polarity-swapped revert
+  #     if !errors.Is(err, context.Canceled) { continue }
+  #     return nil, nil, fmt.Errorf(...)
+  # puts a real return at exactly this indent while skipping every 503/401/403.
+  # Assertion (b) below is the one that discriminates; this one stays because it
+  # is what names the defect precisely when (b) fires.
   local guard_indent body_indent
   guard_indent="$(sed -n '1s/^\([[:space:]]*\).*/\1/p' "$guard")"
   body_indent="$(printf '%s\t' "$guard_indent")"
@@ -476,6 +649,45 @@ check_notfound_discrimination() { # <provider_host.go>
         END { exit(found ? 0 : 1) }
       ' "$guard"; then
     echo "  REL-03: the forge.ErrNotFound guard in resolveRunFacts does not RETURN on its own terminal path — the discrimination is present but its non-absent branch falls through (a bare continue, a log-and-carry-on, or a return reachable only under a NESTED condition such as context.Canceled, which leaves every 503/401/403 skipped). That is the REL-03 defect restored with the guard left in place as camouflage. The sibling returns further down the function do NOT close this, and neither does a return quoted in a comment (AUD2-S02)" >&2
+    rc=1
+  fi
+
+  # (b) ABSENCE OF FALL-THROUGH — the assertion that actually discriminates, and
+  # the only one of the two that survives a polarity swap.
+  #
+  # The property is not "where does the return sit" but "can this guard be
+  # entered and NOT stop the run". Structurally that is: no `continue`, `break`
+  # or `goto` anywhere inside the guard, at any depth. The remediated guard
+  # contains none in code — its single mention of `continue` is in the prose
+  # explaining what it replaced — while EVERY revert shape needs one, because
+  # skipping the provider is the whole point of the defect. Four mutants, one
+  # assertion: the plain half-revert, the /* … */ camouflage, the nested
+  # `if errors.Is(err, context.Canceled) { return }` fail-open, and its polarity
+  # swap `if !errors.Is(err, context.Canceled) { continue }` — which is the more
+  # idiomatic guard-clause form, passes gofmt/vet/golangci-lint clean, and
+  # defeated assertion (a).
+  #
+  # This is an ABSENCE assertion, so it reads the CONSERVATIVE view (see
+  # code_conservative): over-stripping here would hide the token being hunted
+  # and go falsely green, the exact inversion of code_only's fail direction.
+  local guard_abs="$WORK/guard.resolveRunFacts.conservative"
+  guard_block "$body" | code_conservative >"$guard_abs"
+  if [[ ! -s "$guard_abs" ]]; then
+    echo "  REL-03: the conservative view of the guard block is empty — the absence assertion below would be vacuously satisfied, which is the one failure mode an absence check cannot tolerate" >&2
+    return 1
+  fi
+  assert_no_raw_string "$guard_abs" "REL-03" || return 1
+  # Positive control on the filter: it must still be showing us the guard's code.
+  grep -Fq 'errors.Is(err, forge.ErrNotFound)' "$guard_abs" \
+    || {
+      echo "  REL-03: the conservative view lost the guard line itself — the filter is over-stripping, so the absence assertion would be vacuous" >&2
+      return 1
+    }
+  local fallthrough="$WORK/hits.rel03_fallthrough"
+  grep -nE '^[[:space:]]*(continue|break|goto)([[:space:]]|$)' "$guard_abs" >"$fallthrough" || true
+  if [[ -s "$fallthrough" ]]; then
+    echo "  REL-03: the forge.ErrNotFound guard in resolveRunFacts contains a FALL-THROUGH statement — it can be entered without stopping the run, so a 503, a 401, a 403 or a throttle is skipped exactly as before the fix. This is the REL-03 defect however it is spelled: a bare continue, a return hidden behind a nested condition, or the idiomatic polarity swap 'if !errors.Is(err, context.Canceled) { continue }' followed by a return at the right indent (AUD2-S02):" >&2
+    sed 's/^/    /' "$fallthrough" >&2
     rc=1
   fi
   return "$rc"
@@ -823,7 +1035,93 @@ m="$WORK/transport.rel07fold.go"
 cp "$TRANSPORT" "$m"
 mutate "$m" 's|return nil, execFailure(err, stderr)|return nil, err|' 'return nil, err'
 expect_red check_exec_containment "stderr is captured but discarded instead of folded into the returned error (REL-07)" \
-  "never folds it into the error it returns" "$m"
+  "does not return it on the branch's own terminal path" "$m"
+
+# ---- REL-07 NESTED FOLD: the fold survives only for one error kind ----------
+# Review round 3, the REL-03 finding's sibling. The old body-wide grep ("a
+# return mentioning stderr appears somewhere in CallExec") accepts this: the
+# fold is real, and reachable only for context.DeadlineExceeded. Every actual
+# provider failure — non-zero exit, signal, the WaitDelay kill — takes
+# `return nil, err` and the operator is back to a bare "exit status 1".
+# gofmt/vet/lint/build clean; only `go test` and this gate see it.
+m="$WORK/transport.rel07nested.go"
+cp "$TRANSPORT" "$m"
+cat >"$WORK/rep.rel07nested" <<'GOREP'
+if errors.Is(err, context.DeadlineExceeded) {
+	return nil, execFailure(err, stderr)
+}
+return nil, err
+GOREP
+awk '
+  FNR == NR { line[++n] = $0; next }
+  done != 1 && $0 ~ /return nil, execFailure/ {
+    match($0, /^[ \t]*/); ind = substr($0, 1, RLENGTH)
+    for (i = 1; i <= n; i++) print ind line[i]
+    done = 1; next
+  }
+  { print }
+' "$WORK/rep.rel07nested" "$TRANSPORT" >"$m"
+assert_changed "$TRANSPORT" "$m"
+# THE precondition: a body-wide grep for a stderr-carrying return is STILL green
+# on this mutant. That survival is what makes the control prove scoping.
+grep -Eq "return .*[ ,(]stderr[ ,)]" "$m" ||
+  fail "mutation harness: the REL-07 nested-fold mutant has no surviving stderr-carrying return — then the old body-wide grep would also have caught it and this control proves nothing"
+echo "OK: the REL-07 nested-fold mutant KEEPS a stderr-carrying return, so the old body-wide grep stays green on it — only the branch-scoped assertions refuse it"
+expect_red check_exec_containment "the stderr fold is reachable only for context.DeadlineExceeded; every real provider failure returns a bare error (REL-07 nested fail-open)" \
+  "has a return that does NOT carry 'stderr'" "$m"
+
+# ---- REL-07 POLARITY SWAP: the same revert, written as a guard clause -------
+# The shape that defeats an indent rule: the stderr fold now sits at the
+# branch's own terminal path, and the bare return is the nested one. Assertion
+# (a) accepts it; only the absence half — no return in this branch may omit the
+# sink — refuses it.
+m="$WORK/transport.rel07polarity.go"
+cp "$TRANSPORT" "$m"
+cat >"$WORK/rep.rel07polarity" <<'GOREP'
+if !errors.Is(err, context.DeadlineExceeded) {
+	return nil, err
+}
+return nil, execFailure(err, stderr)
+GOREP
+awk '
+  FNR == NR { line[++n] = $0; next }
+  done != 1 && $0 ~ /return nil, execFailure/ {
+    match($0, /^[ \t]*/); ind = substr($0, 1, RLENGTH)
+    for (i = 1; i <= n; i++) print ind line[i]
+    done = 1; next
+  }
+  { print }
+' "$WORK/rep.rel07polarity" "$TRANSPORT" >"$m"
+assert_changed "$TRANSPORT" "$m"
+grep -Eq "^[[:space:]]+return nil, execFailure\(err, stderr\)\$" "$m" ||
+  fail "mutation harness: the REL-07 polarity mutant lost its terminal-path fold — then the presence half would already have caught it and this control does not prove the absence half discriminates"
+echo "OK: the REL-07 polarity mutant puts the stderr fold on the branch's terminal path — the presence half accepts it; only the absence half refuses it"
+expect_red check_exec_containment "REL-07 polarity swap: 'if !errors.Is(err, context.DeadlineExceeded) { return nil, err }' then the fold — a full revert that is gofmt/vet/lint clean" \
+  "has a return that does NOT carry 'stderr'" "$m"
+
+# ---- REL-01 REASSIGNMENT: the good statement stays, a later one overrides ---
+# rhs_of reads the FIRST assignment; Go runs the LAST. This mutant leaves the
+# bounded capture and `cmd.Stdout = stdout` exactly as written and appends a
+# second assignment, so every pre-existing REL-01 check reads a statement that
+# no longer decides anything.
+m="$WORK/transport.rel01reassign.go"
+cp "$TRANSPORT" "$m"
+awk '
+  done != 1 && /^[[:space:]]*cmd\.Stdout[[:space:]]*=/ {
+    print
+    match($0, /^[ \t]*/)
+    print substr($0, 1, RLENGTH) "cmd.Stdout = &bytes.Buffer{}"
+    done = 1
+    next
+  }
+  { print }
+' "$TRANSPORT" >"$m"
+assert_changed "$TRANSPORT" "$m"
+grep -Eq "^[[:space:]]*stdout :?= newBoundedCapture\(MaxResponseBytes\)" "$m" ||
+  fail "mutation harness: the REL-01 reassignment mutant lost the bounded-capture statement — then the existing REL-01 check would already have caught it and this control proves nothing about last-write-wins"
+echo "OK: the REL-01 reassignment mutant KEEPS 'stdout := newBoundedCapture(MaxResponseBytes)' and 'cmd.Stdout = stdout' intact — every pre-existing REL-01 check still reads the good statement"
+expect_red check_exec_containment "cmd.Stdout is assigned a second time after the bounded capture — last write wins and REL-01 is reverted while the good statement remains (REL-01)" \
+  "rhs_of reads the FIRST and the LAST is what runs" "$m"
 
 # ---- REL-03: the guard deleted at the call site, decoy left intact ----------
 m="$WORK/provider_host.rel03.go"
@@ -907,6 +1205,37 @@ grep -Eq '^[[:space:]]*return nil, nil, fmt\.Errorf\(' "$guard_probe" ||
 echo "OK: the nested-if mutant's guard block DOES contain a real, uncommented return — only the terminal-path indent check can tell it is unreachable for every forge error"
 expect_red check_notfound_discrimination "the guard's return is reachable only under a nested context.Canceled condition, everything else continues (REL-03 nested fail-open)" \
   "REL-03: the forge.ErrNotFound guard in resolveRunFacts does not RETURN" "$m"
+
+# ---- REL-03 CAMOUFLAGE 3: the POLARITY SWAP, the one that beat indent rules ---
+# Review round 3. Semantically identical to camouflage 2, but written as the
+# more idiomatic guard clause — so the return lands at EXACTLY the guard's body
+# indent and assertion (a) accepts it:
+#     if !errors.Is(err, context.Canceled) { continue }
+#     return nil, nil, fmt.Errorf(...)
+# gofmt -l silent, `task fmt` no change, go vet clean, golangci-lint 0 issues,
+# go build OK — and every forge error except context.Canceled is skipped
+# (`go test ./cmd/assent` fails the forge-error and 401/403 cases). Only the
+# absence-of-fall-through assertion (b) sees it.
+m="$WORK/provider_host.rel03polarity.go"
+cp "$PROVIDER_HOST" "$m"
+printf 'if !errors.Is(err, context.Canceled) {\n\tcontinue\n}\nreturn nil, nil, fmt.Errorf("provider %%q declaration %%q at ref %%q: %%w", name, declPath, targetRef, err)\n' >"$WORK/rep.polarity"
+splice_first_return "$m" "$WORK/rep.polarity"
+assert_changed "$PROVIDER_HOST" "$m"
+# THE precondition that makes this control mean something: assertion (a) — the
+# terminal-path indent rule — must ACCEPT this mutant. If it did not, the
+# control would be re-proving (a) instead of proving (b).
+polarity_guard="$WORK/guard.polarity"
+extract_func "$m" resolveRunFacts | guard_block /dev/stdin | code_only >"$polarity_guard"
+polarity_indent="$(sed -n '1s/^\([[:space:]]*\).*/\1/p' "$polarity_guard")"
+awk -v ind="$(printf '%s\t' "$polarity_indent")" '
+      index($0, ind) == 1 &&
+      substr($0, length(ind) + 1) ~ /^return nil, nil, fmt\.Errorf\(/ { found = 1 }
+      END { exit(found ? 0 : 1) }
+    ' "$polarity_guard" ||
+  fail "mutation harness: the polarity-swap mutant has no return at the guard's body indent — then the terminal-path rule would already have caught it and this control does not prove the absence assertion is what discriminates"
+echo "OK: the polarity-swap mutant puts a real, uncommented return at EXACTLY the guard's body indent — the indent rule accepts it; only the absence-of-fall-through assertion refuses it"
+expect_red check_notfound_discrimination "the idiomatic polarity swap: 'if !errors.Is(err, context.Canceled) { continue }' then a return at the right indent — a full REL-03 revert that is gofmt/vet/lint clean" \
+  "REL-03: the forge.ErrNotFound guard in resolveRunFacts contains a FALL-THROUGH statement" "$m"
 
 # ---- SEC-03: the identity pin deleted, and the two files drifted apart ------
 m="$WORK/install.sec03.sh"
@@ -1035,12 +1364,12 @@ done
 
 # The floor is a FLOOR, and the banner below says exactly that. An earlier
 # wording claimed the controls proved "every assertion" could fail; this script
-# emits roughly forty distinct findings and twenty-two of them carry a control,
+# emits roughly forty distinct findings and twenty-six of them carry a control,
 # so that claim overstated the gate's own coverage — the D-124 failure mode this
 # epic exists to close, in the gate built to close it. What IS asserted: every
 # control that exists ran, each went red for its own pinned message, and every
 # REQ-bearing assertion (REQ-AUD2-S05-02/03/04/05 and the four findings) has one.
-((MUTATIONS_PROVED >= 22)) ||
+((MUTATIONS_PROVED >= 26)) ||
   fail "only ${MUTATIONS_PROVED} mutation controls ran, fewer than the pinned floor — a section was skipped, so REQ-AUD2-S05-02's evidence is incomplete"
 
 # ============================================================================
