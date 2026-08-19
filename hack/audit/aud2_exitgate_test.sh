@@ -479,6 +479,21 @@ check_pr_wiring() { # <verify.yaml>
     echo "  REQ-AUD2-S05-05: missing $wf" >&2
     return 1
   }
+  # The job-level guard is not the only way to lose PR reach: deleting
+  # `pull_request` from the workflow's own `on:` block removes it for every job
+  # at once, and every assertion below would stay green while the gate's entire
+  # pull-request coverage disappeared.
+  local trigger="$WORK/on.block"
+  awk '/^on:/ { ino = 1; next } ino && /^[A-Za-z]/ { ino = 0 } ino { print }' "$wf" >"$trigger"
+  if [[ ! -s "$trigger" ]]; then
+    echo "  REQ-AUD2-S05-05: the workflow's 'on:' block extracted empty — the trigger assertion would be vacuous" >&2
+    return 1
+  fi
+  if ! grep -qE '^[[:space:]]+pull_request:' "$trigger"; then
+    echo "  REQ-AUD2-S05-05: verify.yaml no longer triggers on pull_request — the gate's step and the job's missing if: are both irrelevant, because the workflow never runs on a PR at all (RELSE-08 by another route)" >&2
+    return 1
+  fi
+
   local job="$WORK/job.verify"
   extract_job "$wf" verify >"$job"
   if [[ ! -s "$job" ]] || ! grep -q '^    steps:' "$job"; then
@@ -668,6 +683,17 @@ fi
 expect_red check_pr_wiring "the verify job grew release-exitgate's push-only if: while still carrying the step (RELSE-08 reproduced)" \
   "JOB-LEVEL if:" "$m"
 
+m="$WORK/verify.nopr.yaml"
+# The step stays, the job keeps no if:, and the gate still loses every pull
+# request — because the WORKFLOW stopped triggering on them.
+grep -vE '^[[:space:]]+pull_request:[[:space:]]*$' "$WORKFLOW" >"$m"
+assert_changed "$WORKFLOW" "$m"
+if ! grep -Fq "$SELF" "$m"; then
+  fail "mutation harness: the no-pull_request mutant lost the ${SELF} step — this control must keep the step present, or it grades absence instead of trigger reach"
+fi
+expect_red check_pr_wiring "the workflow stopped triggering on pull_request while the step stayed wired" \
+  "no longer triggers on pull_request" "$m"
+
 # ============================================================================
 # Wiring, real tree
 # ============================================================================
@@ -678,7 +704,7 @@ expect_green check_task_wiring "'task check' runs ${STAGE}, which invokes ${SELF
 expect_green check_stage_pinned "${STAGE} is pinned in CHECK_STAGES (AUD-S18 grades it)" "$AUD_GATE"
 expect_green check_pr_wiring "the pull-request-visible 'verify' job runs ${SELF}, undisarmed" "$WORKFLOW"
 
-((MUTATIONS_PROVED >= 12)) ||
+((MUTATIONS_PROVED >= 15)) ||
   fail "only ${MUTATIONS_PROVED} mutation controls ran — REQ-AUD2-S05-02 requires every assertion to be proved capable of failing; a section was skipped"
 
 # ============================================================================
