@@ -106,6 +106,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :lock: fix(release): pin cosign signer identity and issuer in install.sh (SEC-03)
 - :lock: fix(release): widen the cosign identity pin to the real signer casing (SEC-03)
 - :lock: fix(provider): bound exec stdout, set WaitDelay, capture stderr
+- :lock: fix(release): pin cosign signer identity on the maintainer verify path (AUD2-F01)
 
 ### Testing
 - :white_check_mark: test(cmd): assert the REL-03 error wrap as one contiguous substring
