@@ -1,4 +1,7 @@
-# `hack/audit` — the P5-AUD exit gate
+# `hack/audit` — the audit exit gates
+
+Two gates live here, one per audit wave: `exitgate_test.sh` (2026-08-06, P5-AUD) and
+`aud2_exitgate_test.sh` (2026-08-18, P5-AUD2).
 
 ## `exitgate_test.sh`
 
@@ -9,7 +12,7 @@ epic's bar still holds. Every failure names the audit finding ID it reopens.
 | # | Asserts | Names on failure |
 | --- | --- | --- |
 | 1 | The AUD-S01 fail-closed cassettes PASS **by name** (not "`go test` exited 0", which a `-run` regex matching nothing also does) | `REL-07` |
-| 2 | `task check` green with all **14** pinned stages actually executed — including `changelog-verify` — and measured `./internal/...` coverage at or above the 91.0% bar | `RELSE-01`, `TEST-03` |
+| 2 | `task check` green with all **19** pinned stages actually executed — including `changelog-verify` — and measured `./internal/...` coverage at or above the 91.0% bar | `RELSE-01`, `TEST-03` |
 | 3 | The release job still runs the verify-green-on-tag-SHA gate, before anything is built/signed/published, and undisarmed | `RELSE-05` |
 | 4 | The AUD-S05/S06 truth pins pass and no retired pre-release phrase has resurfaced on a front-of-house surface | `DOC-05`…`DOC-11` |
 | 5 | The determinism double-run gate is green **and** every test its `-run` patterns name really ran, twice | `AUD-S18 determinism` |
@@ -117,3 +120,77 @@ derived from, an evidence line that interpolates `${pct}` rather than a literal,
 comparison that still reads `{{.COVERAGE_MIN}}`. `lint-workflow-pins-test:` is pinned to its
 script the same way. Same mechanism as `hack/release/changelog_gate_test.sh`, which already pins
 four other stage bodies — `coverage:` was not one of them.
+
+---
+
+## `aud2_exitgate_test.sh`
+
+`bash hack/audit/aud2_exitgate_test.sh` is the **AUD2-S05 exit gate** (REQ-AUD2-S05-01..05): one
+invocation that proves the four remediations of the 2026-08-18 audit's *risk-reduction* wave are
+still present in the tree. Every failure names the audit finding ID it reopens.
+
+| # | Asserts | Names on failure |
+| --- | --- | --- |
+| 1 | `CallExec` bounds child stdout at `MaxResponseBytes`, sets a non-zero `cmd.WaitDelay`, and captures a bounded stderr that it folds into the error it returns | `REL-01`, `REL-02`, `REL-07` |
+| 2 | `resolveRunFacts` discriminates `forge.ErrNotFound` on the provider-declaration fetch **and** its non-absent branch actually returns | `REL-03` |
+| 3 | `hack/install.sh` pins the cosign signer identity and OIDC issuer, byte-identically with `SECURITY.md` | `SEC-03` |
+| 4 | `isStricterInterventionEffect` still classifies `EffectChallenge`, and the named unit case that kills the auditor's demonstrated mutant still exists | `TEST-02` |
+| 5 | The gate is a `check:` stage, is pinned in `CHECK_STAGES`, and runs in the **pull-request-visible** `verify` job, undisarmed | `REQ-AUD2-S05-03/04/05` |
+
+Unlike `exitgate_test.sh`, this one **is** a `task check` stage (`audit-aud2-exitgate-test`, the
+19th) and is also an early step of `verify.yaml`'s `verify` job. That placement is the point: it
+is pure text over the source, needs no toolchain, and therefore runs on **pull requests** —
+`release-exitgate`, where the AUD-S18 gate lives, carries `if: github.event_name != 'pull_request'`
+and that blind spot (RELSE-08) is what let AUD-S18's own stale `CHECK_STAGES` pin merge green four
+times.
+
+### Scoping is the whole gate
+
+Three of the four remediations have a **decoy occurrence in the same file**: `MaxResponseBytes`
+also appears in `CallHTTP`, `errors.Is(err, forge.ErrNotFound)` also appears in
+`loadResourceOwnerRegistry` (the D-130 guard), and `EffectChallenge` is all over the compare
+tests. A file-level `grep` for any of them stays **green on a reverted tree**. Every assertion
+therefore reads a function body extracted by name, with a positive control on a known-present
+anchor, a `^func ` count that refuses an over-extracted body, and a next-function-below guard.
+The `REL-03` branch assertion goes one level further and reads only the guard **block**, because
+`resolveRunFacts` contains three `return nil, nil, fmt.Errorf(` lines — a body-wide grep for that
+pattern is satisfied on every possible tree, including the compiling, gofmt-clean half-revert
+where the guard is kept and its body is downgraded to `continue`. All greps inside that block run
+over a comment-stripped view, since the guard's own prose names both `LoadProviderConfig` and the
+`continue` it replaced.
+
+### Anti-vacuity discipline
+
+Held to the same bar as `exitgate_test.sh` and `hack/release/install_cosign_pin_test.sh`: every
+check is a **function** over file arguments, run against the real tree (must be green) *and*
+against a mutant carrying the very defect it exists to catch (must be red, and red **for its own
+stated reason** — `expect_red` pins a message fragment). 17 mutation controls run per invocation
+and the count is asserted against a floor, so a skipped section fails the gate instead of
+quietly shrinking it. Mutants are **file copies** under `mktemp -d`; `git checkout --` is never
+used, because it reverts to `HEAD` — which can be behind the working tree, making a "mutation" a
+no-op or a real edit. Mutations are **surgical**: the `REL-01` mutant leaves `CallHTTP`'s
+`MaxResponseBytes` intact and the `REL-03` mutants leave the D-130 guard intact, and the gate
+asserts those survivals, so a red can only come from reading the right function.
+
+Portability: the gate runs on `ubuntu-latest` for every PR, so it is exercised under GNU
+coreutils as well as BSD:
+
+```sh
+docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:stable-slim bash hack/audit/aud2_exitgate_test.sh
+```
+
+Note for anyone extending it: `awk -v` strips one level of escaping, so a pattern passed that way
+must not contain escaped parentheses — `\(` arrives as an unbalanced group and mawk/gawk reject
+it outright, while `\.` silently becomes "any character".
+
+### What it does not certify
+
+Release readiness, and not even the whole 2026-08-18 audit — only the four *risk-reduction*
+findings. The **Later (hygiene)** wave (TEST-01/03/04/05/06, SEC-04..07, RELSE-03/04, ARCH-02/03/05,
+REL-04/05/06, DOC-02..06) and **WG-S01 / D-145** stay open in the audit report and the backlog.
+It also does not make itself a *required* check: whether the `verify` workflow blocks a merge is a
+live branch-protection setting no in-tree change can reach — the operator half of **RELSE-08** —
+and the `task check` **stage** still does not run on PRs, because the only job that runs
+`task check` is `release-exitgate`. The gate's PR coverage is the standalone script invocation,
+not the stage. `check_pr_wiring` asserts exactly what it can: the step exists in the `verify` job,
+that job carries no job-level `if:`, and the workflow's `on:` block still contains `pull_request`.
