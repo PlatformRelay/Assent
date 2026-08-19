@@ -11,9 +11,29 @@
 #   own validly signed bundle verifies clean and `--require-signature` promises
 #   something it does not deliver.
 #
-# ONE PUBLISHED TRUTH. The issuer/identity pair is published in SECURITY.md;
-# hack/install.sh copies it byte-identically. Section 3 below is a drift gate:
-# if either file is edited alone, this script reddens (REQ-AUD2-S03-04).
+# ONE PUBLISHED TRUTH, THREE FILES. The issuer/identity pair is published in
+# SECURITY.md; hack/install.sh (the adopter path) and
+# hack/release/verify-artifacts.sh (the maintainer/CI path, run by `task
+# release-verify`) copy it byte-identically. Section 3 below is a drift gate over
+# all three: if any one of them is edited alone, this script reddens
+# (REQ-AUD2-S03-04, AUD2-F01).
+#
+# AUD2-F01 — SEC-03's twin on the maintainer path. AUD2-S03 fixed hack/install.sh
+# and deliberately left hack/release/verify-artifacts.sh's byte-identical
+# unpinned `cosign verify-blob --bundle "$bundle" "$archive"` alone (out of that
+# story's scope; D-153 records the residue). So the same hole survived on the
+# path maintainers and CI use to check a release before it ships. It is closed
+# here against the SAME published value and inside the SAME drift gate, rather
+# than by starting a second published truth (D-128).
+#
+# THE VACUITY TRAP FOR THAT FILE. verify-artifacts.sh only reaches cosign when a
+# .sigstore.json bundle sits beside an archive; on the SNAPSHOT path dist/ ships
+# no bundles at all, so the cosign branch is skipped entirely and a naive
+# end-to-end test would pass green without ever executing the changed line.
+# Sections 5d-5g are therefore written so the discriminator is the stub's argv
+# LOG, not the script's exit code: 5d requires the log to be non-empty and to
+# carry both pinned values, and 5e is the paired control showing that a
+# bundle-less dist (i.e. the snapshot shape) leaves that same log EMPTY.
 #
 # REAL-IDENTITY FIXTURES (section 4c) — the assertion that matters most. The
 # first version of this pin copied SECURITY.md's published value faithfully and
@@ -46,6 +66,7 @@ cd "$ROOT"
 
 INSTALL="$ROOT/hack/install.sh"
 SECURITY="$ROOT/SECURITY.md"
+VERIFY="$ROOT/hack/release/verify-artifacts.sh"
 TASKFILE="$ROOT/Taskfile.yml"
 AUDIT_GATE="$ROOT/hack/audit/exitgate_test.sh"
 STAGE="release-install-cosign-pin-test"
@@ -122,6 +143,14 @@ cosign_invocation "$INSTALL" >"$WORK/invocation"
 grep -qF -- '--bundle' "$WORK/invocation" || fail "the extracted cosign invocation does not contain the known-present --bundle flag — the awk fold is wrong"
 echo "OK: cosign invocation extracted from hack/install.sh ($(wc -l <"$WORK/invocation" | tr -d ' ') command(s)), anchored on --bundle"
 
+[[ -f "$VERIFY" ]] || fail "hack/release/verify-artifacts.sh missing"
+[[ -x "$VERIFY" ]] || fail "hack/release/verify-artifacts.sh is not executable"
+
+cosign_invocation "$VERIFY" >"$WORK/invocation.verify"
+[[ -s "$WORK/invocation.verify" ]] || fail "no 'cosign verify-blob' invocation found in hack/release/verify-artifacts.sh — extraction broke, every maintainer-path flag assertion would be vacuous (AUD2-F01)"
+grep -qF -- '--bundle' "$WORK/invocation.verify" || fail "the cosign invocation extracted from hack/release/verify-artifacts.sh does not contain the known-present --bundle flag — the awk fold is wrong"
+echo "OK: cosign invocation extracted from hack/release/verify-artifacts.sh ($(wc -l <"$WORK/invocation.verify" | tr -d ' ') command(s)), anchored on --bundle"
+
 sec_issuer="$(one_value "$SECURITY" extract_issuer "SECURITY.md issuer")"
 sec_identity="$(one_value "$SECURITY" extract_identity "SECURITY.md identity regexp")"
 echo "OK: SECURITY.md publishes issuer=${sec_issuer} identity=${sec_identity}"
@@ -135,29 +164,45 @@ has_flag "$INSTALL" '--certificate-identity-regexp' \
   || fail "hack/install.sh's cosign verify-blob has no --certificate-identity-regexp — a mirror-swapped archive with its own valid bundle verifies clean (SEC-03, REQ-AUD2-S03-01)"
 echo "OK: both --certificate-oidc-issuer and --certificate-identity-regexp are in the invocation"
 
+echo "== 1b. AUD2-F01: verify-artifacts.sh's cosign call carries both pins too =="
+has_flag "$VERIFY" '--certificate-oidc-issuer' \
+  || fail "hack/release/verify-artifacts.sh's cosign verify-blob has no --certificate-oidc-issuer — 'task release-verify' accepts any issuer, so SEC-03 survives on the maintainer/CI path (AUD2-F01)"
+has_flag "$VERIFY" '--certificate-identity-regexp' \
+  || fail "hack/release/verify-artifacts.sh's cosign verify-blob has no --certificate-identity-regexp — a mirror-swapped archive+bundle pair verifies clean on the maintainer/CI path, and --require-signature promises something it does not deliver (AUD2-F01)"
+echo "OK: the maintainer/CI path pins both flags as well"
+
 # ------------------------------------------- 2. REQ-AUD2-S03-03 (non-vacuity) --
 
-echo "== 2. REQ-AUD2-S03-03: deleting either flag from install.sh reddens section 1 =="
-for flag in --certificate-oidc-issuer --certificate-identity-regexp; do
-  mutant="$WORK/install.no${flag}.sh"
-  grep -vF -- "$flag" "$INSTALL" >"$mutant"
-  chmod +x "$mutant"
-  if grep -qF -- "$flag" "$mutant"; then
-    fail "mutation did not land: $flag is still present in $mutant"
-  fi
-  [[ "$(wc -l <"$mutant")" -lt "$(wc -l <"$INSTALL")" ]] \
-    || fail "mutation did not land: $mutant has the same line count as hack/install.sh"
-  if has_flag "$mutant" "$flag"; then
-    fail "has_flag still reports $flag present in a script with that line deleted — the assertion is vacuous"
-  fi
-  echo "OK: deleting $flag makes the flag assertion red"
+echo "== 2. REQ-AUD2-S03-03 / AUD2-F01: deleting either flag from either script reddens section 1 =="
+# Every mutation below is made on a TEMP COPY. Never undo a mutation with
+# `git checkout --`: that reverts to HEAD rather than to the working tree, and it
+# has silently eaten uncommitted work in a prior lane.
+for target in "install.sh:$INSTALL" "verify-artifacts.sh:$VERIFY"; do
+  label="${target%%:*}"
+  src="${target#*:}"
+  for flag in --certificate-oidc-issuer --certificate-identity-regexp; do
+    mutant="$WORK/${label}.no${flag}"
+    grep -vF -- "$flag" "$src" >"$mutant"
+    chmod +x "$mutant"
+    if grep -qF -- "$flag" "$mutant"; then
+      fail "mutation did not land: $flag is still present in $mutant"
+    fi
+    [[ "$(wc -l <"$mutant")" -lt "$(wc -l <"$src")" ]] \
+      || fail "mutation did not land: $mutant has the same line count as ${src#"$ROOT"/}"
+    if has_flag "$mutant" "$flag"; then
+      fail "has_flag still reports $flag present in a copy of $label with that line deleted — the assertion is vacuous"
+    fi
+    echo "OK: deleting $flag from $label makes the flag assertion red"
+  done
 done
 
 # --------------------------------------------- 3. REQ-AUD2-S03-04 (drift gate) --
 
-echo "== 3. REQ-AUD2-S03-04: install.sh and SECURITY.md publish ONE truth =="
+echo "== 3. REQ-AUD2-S03-04 / AUD2-F01: THREE files publish ONE truth =="
 inst_issuer="$(one_value "$INSTALL" extract_issuer "hack/install.sh issuer")"
 inst_identity="$(one_value "$INSTALL" extract_identity "hack/install.sh identity regexp")"
+ver_issuer="$(one_value "$VERIFY" extract_issuer "hack/release/verify-artifacts.sh issuer")"
+ver_identity="$(one_value "$VERIFY" extract_identity "hack/release/verify-artifacts.sh identity regexp")"
 
 drift_free() { # <issuer-a> <identity-a> <issuer-b> <identity-b>
   [[ "$1" == "$3" && "$2" == "$4" ]]
@@ -165,7 +210,11 @@ drift_free() { # <issuer-a> <identity-a> <issuer-b> <identity-b>
 
 drift_free "$inst_issuer" "$inst_identity" "$sec_issuer" "$sec_identity" || fail \
   "DRIFT: hack/install.sh pins issuer=${inst_issuer} identity=${inst_identity} but SECURITY.md publishes issuer=${sec_issuer} identity=${sec_identity} — adopters following the published instructions and adopters running install.sh would verify against different signers (REQ-AUD2-S03-04)"
-echo "OK: hack/install.sh and SECURITY.md agree byte-for-byte (issuer=${inst_issuer}, identity=${inst_identity})"
+drift_free "$ver_issuer" "$ver_identity" "$sec_issuer" "$sec_identity" || fail \
+  "DRIFT: hack/release/verify-artifacts.sh pins issuer=${ver_issuer} identity=${ver_identity} but SECURITY.md publishes issuer=${sec_issuer} identity=${sec_identity} — the maintainer/CI release check and the published adopter recipe would verify against different signers (AUD2-F01)"
+drift_free "$inst_issuer" "$inst_identity" "$ver_issuer" "$ver_identity" || fail \
+  "DRIFT: hack/install.sh pins issuer=${inst_issuer} identity=${inst_identity} but hack/release/verify-artifacts.sh pins issuer=${ver_issuer} identity=${ver_identity} — the adopter path and the maintainer path would verify against different signers (AUD2-F01)"
+echo "OK: hack/install.sh, SECURITY.md and hack/release/verify-artifacts.sh agree byte-for-byte (issuer=${inst_issuer}, identity=${inst_identity})"
 
 echo "== 3b. the drift comparison itself can fail (mutations, both directions) =="
 sec_mutant="$WORK/SECURITY.drift.md"
@@ -188,6 +237,29 @@ if drift_free "$inst_issuer" "$mut_identity" "$sec_issuer" "$sec_identity"; then
   fail "the drift comparison stayed green with a rewritten install.sh identity regexp — the drift gate is vacuous"
 fi
 echo "OK: rewriting hack/install.sh's identity regexp alone turns the drift gate red"
+
+echo "== 3c. AUD2-F01: the THIRD file is really in the comparison (mutations, both fields) =="
+# Flag-relative rewrites again — the pin is itself a regexp ([Aa], escaped dots),
+# so interpolating it into a sed pattern would match nothing and the mutation
+# would not land. Temp copies only; the tracked file is never touched.
+ver_mutant_id="$WORK/verify-artifacts.drift-identity.sh"
+sed -E "s|(--certificate-identity-regexp )'[^']*'|\\1'^https://github\\.com/evil-mirror/assent/'|" "$VERIFY" >"$ver_mutant_id"
+grep -qF 'evil-mirror' "$ver_mutant_id" || fail "mutation did not land: $ver_mutant_id has no rewritten identity regexp"
+mut_ver_identity="$(extract_identity "$ver_mutant_id" | head -1)"
+[[ "$mut_ver_identity" != "$ver_identity" ]] || fail "mutation did not land: $ver_mutant_id still extracts the real identity pin"
+if drift_free "$inst_issuer" "$inst_identity" "$ver_issuer" "$mut_ver_identity"; then
+  fail "the drift comparison stayed green with a rewritten verify-artifacts.sh identity regexp — the third file is not actually compared (AUD2-F01)"
+fi
+
+ver_mutant_iss="$WORK/verify-artifacts.drift-issuer.sh"
+sed -E "s|(--certificate-oidc-issuer )[^[:space:]]+|\\1https://accounts.example.invalid|" "$VERIFY" >"$ver_mutant_iss"
+grep -qF 'https://accounts.example.invalid' "$ver_mutant_iss" || fail "mutation did not land: $ver_mutant_iss has no rewritten issuer"
+mut_ver_issuer="$(extract_issuer "$ver_mutant_iss" | head -1)"
+[[ "$mut_ver_issuer" != "$ver_issuer" ]] || fail "mutation did not land: $ver_mutant_iss still extracts the real issuer pin"
+if drift_free "$mut_ver_issuer" "$ver_identity" "$sec_issuer" "$sec_identity"; then
+  fail "the drift comparison stayed green with a rewritten verify-artifacts.sh issuer — the third file is not actually compared (AUD2-F01)"
+fi
+echo "OK: rewriting either field in hack/release/verify-artifacts.sh alone turns the drift gate red"
 
 # ------------------------------ 4/5. behaviour: stub cosign, both polarities --
 
@@ -421,6 +493,117 @@ run_install "$mutant_iss" "$WORK/case-issuer2" "$WORK/dest-issuer2" \
 [[ -x "$WORK/dest-issuer2/assent" ]] || fail "the issuer-less mutant exited 0 but installed nothing"
 echo "OK: deleting --certificate-oidc-issuer re-opens the issuer half — that pin is load-bearing too"
 
+# ------------------------- 5d-5g. AUD2-F01: the maintainer path, behaviourally --
+
+# make_dist_case <dir> <identity> <issuer> [nobundle] — a dist/ directory in the
+# shape verify-artifacts.sh expects: one archive, checksums.txt, and (unless
+# `nobundle`) a .sigstore.json beside the archive. The archive name carries a
+# semver so resolve_expected_version infers 9.9.9, and the fixture binary reports
+# exactly `assent 9.9.9`, so the run reaches the END of the script rather than
+# dying on the version check for an unrelated reason.
+make_dist_case() {
+  local dir="$1" identity="$2" issuer="$3" mode="${4:-bundle}"
+  local archive="assent_9.9.9_linux_amd64.tar.gz"
+  mkdir -p "$dir/payload"
+  printf '#!/usr/bin/env bash\necho "assent 9.9.9"\n' >"$dir/payload/assent"
+  chmod +x "$dir/payload/assent"
+  tar -czf "$dir/$archive" -C "$dir/payload" assent
+  rm -rf "$dir/payload"
+  (
+    cd "$dir"
+    if command -v sha256sum >/dev/null 2>&1; then
+      sha256sum "$archive" >checksums.txt
+    else
+      shasum -a 256 "$archive" >checksums.txt
+    fi
+  )
+  if [[ "$mode" != "nobundle" ]]; then
+    printf '{"certIdentity":"%s","certIssuer":"%s"}\n' "$identity" "$issuer" \
+      >"$dir/${archive}.sigstore.json"
+  fi
+}
+
+# run_verify <script> <dist-dir> — verify-artifacts.sh with --require-signature
+# and the stub cosign first on PATH; returns the script's exit code.
+run_verify() {
+  local script="$1" dir="$2" rc=0
+  set +e
+  PATH="$WORK/bin:$PATH" COSIGN_STUB_LOG="$WORK/stub.log" "$script" \
+    --dist "$dir" --require-signature >"$dir/out" 2>"$dir/err"
+  rc=$?
+  set -e
+  return "$rc"
+}
+
+echo "== 5d. AUD2-F01: verify-artifacts.sh hands cosign BOTH pins at runtime =="
+make_dist_case "$WORK/dist-good" "$GOOD_IDENTITY" "$sec_issuer"
+: >"$WORK/stub.log"
+run_verify "$VERIFY" "$WORK/dist-good" \
+  || fail "verify-artifacts.sh --require-signature REJECTED a bundle carrying this project's REAL v0.3.0 signer identity (${GOOD_IDENTITY}): $(cat "$WORK/dist-good/err")"
+# THE anti-vacuity assertion for this file (see the header): an empty stub log
+# means the cosign branch was never entered, which is exactly what the snapshot
+# path looks like — everything below it would then be proving nothing.
+[[ -s "$WORK/stub.log" ]] \
+  || fail "verify-artifacts.sh exited 0 WITHOUT ever invoking cosign — the bundle branch was skipped (the snapshot-path shape), so this whole section is vacuous (AUD2-F01)"
+grep -qF -- 'assent_9.9.9_linux_amd64.tar.gz.sigstore.json' "$WORK/stub.log" \
+  || fail "cosign ran but not on the fixture bundle (stub log: $(cat "$WORK/stub.log"))"
+grep -qF -- "identity_re=${sec_identity}" "$WORK/stub.log" \
+  || fail "verify-artifacts.sh did not actually HAND cosign the identity regexp at runtime (stub log: $(cat "$WORK/stub.log")) — a flag present in the text but not in argv is not a pin (AUD2-F01)"
+grep -qF -- "issuer=${sec_issuer}" "$WORK/stub.log" \
+  || fail "verify-artifacts.sh did not actually hand cosign the OIDC issuer at runtime (stub log: $(cat "$WORK/stub.log"))"
+echo "OK: the maintainer path verified the fixture and both pins reached cosign's argv"
+
+echo "== 5e. AUD2-F01 vacuity control: a bundle-less dist never reaches cosign =="
+# The paired control for 5d. Without it, `[[ -s stub.log ]]` could be green for
+# reasons unrelated to the branch under test. This is the snapshot shape (D-110:
+# snapshots ship no bundles), and it must leave the log EMPTY.
+make_dist_case "$WORK/dist-nobundle" "" "" nobundle
+: >"$WORK/stub.log"
+if run_verify "$VERIFY" "$WORK/dist-nobundle"; then
+  fail "verify-artifacts.sh --require-signature accepted a dist with no .sigstore.json bundle"
+fi
+[[ ! -s "$WORK/stub.log" ]] \
+  || fail "cosign was invoked for a dist that carries no bundle — the stub log cannot discriminate 'reached the pinned call' from 'skipped it', so 5d's non-vacuity argument collapses"
+echo "OK: no bundle -> cosign never runs and the log stays empty, so 5d's non-empty log really does mean the pinned call executed"
+
+echo "== 5f. AUD2-F01: a foreign-identity bundle fails the maintainer check =="
+make_dist_case "$WORK/dist-evil" "$EVIL_IDENTITY" "$sec_issuer"
+: >"$WORK/stub.log"
+if run_verify "$VERIFY" "$WORK/dist-evil"; then
+  fail "verify-artifacts.sh --require-signature ACCEPTED an archive signed by ${EVIL_IDENTITY} — 'task release-verify' would green-light a mirror-swapped release (AUD2-F01)"
+fi
+# The checksum is verified BEFORE cosign, so a bare non-zero could be a SHA
+# failure; the die message is what proves cosign is the reason.
+grep -qi 'cosign verification failed' "$WORK/dist-evil/err" \
+  || fail "verify-artifacts.sh failed for the wrong reason (expected the cosign die message): $(cat "$WORK/dist-evil/err")"
+[[ -s "$WORK/stub.log" ]] || fail "the foreign-identity run never reached cosign — its red is not the pin's doing"
+echo "OK: foreign identity -> exit non-zero with the cosign die message"
+
+echo "== 5g. AUD2-F01: with the pin deleted, the same archive VERIFIES CLEAN =="
+# The finding itself, reproduced on the maintainer path: the mutant is the
+# pre-fix verify-artifacts.sh, and it green-lights the very archive 5f rejects.
+ver_mut_id="$WORK/verify-artifacts.mut-identity.sh"
+grep -vF -- '--certificate-identity-regexp' "$VERIFY" >"$ver_mut_id"
+chmod +x "$ver_mut_id"
+make_dist_case "$WORK/dist-evil2" "$EVIL_IDENTITY" "$sec_issuer"
+run_verify "$ver_mut_id" "$WORK/dist-evil2" \
+  || fail "the un-pinned mutant ALSO rejected the foreign bundle — then 5f's red is not caused by --certificate-identity-regexp and this section proves nothing: $(cat "$WORK/dist-evil2/err")"
+grep -qF 'verify-artifacts: ok' "$WORK/dist-evil2/out" \
+  || fail "the un-pinned mutant exited 0 but printed no success line — the demonstration is inconclusive: $(cat "$WORK/dist-evil2/out")"
+echo "OK: deleting --certificate-identity-regexp re-opens SEC-03 on the maintainer path — the pin is load-bearing"
+
+ver_mut_iss="$WORK/verify-artifacts.mut-issuer.sh"
+grep -vF -- '--certificate-oidc-issuer' "$VERIFY" >"$ver_mut_iss"
+chmod +x "$ver_mut_iss"
+make_dist_case "$WORK/dist-issuer" "$GOOD_IDENTITY" "$EVIL_ISSUER"
+if run_verify "$VERIFY" "$WORK/dist-issuer"; then
+  fail "verify-artifacts.sh accepted a bundle whose OIDC issuer is ${EVIL_ISSUER} — the issuer pin is not reaching cosign (AUD2-F01)"
+fi
+make_dist_case "$WORK/dist-issuer2" "$GOOD_IDENTITY" "$EVIL_ISSUER"
+run_verify "$ver_mut_iss" "$WORK/dist-issuer2" \
+  || fail "the issuer-less mutant ALSO rejected the wrong-issuer bundle — the issuer red is not caused by --certificate-oidc-issuer: $(cat "$WORK/dist-issuer2/err")"
+echo "OK: the issuer pin on the maintainer path is load-bearing too"
+
 # ----------------------------------------------- 6. REQ-AUD2-S03-05 (wiring) --
 
 echo "== 6. REQ-AUD2-S03-05: this gate is invoked by 'task check' (D-124) =="
@@ -463,4 +646,4 @@ grep -qE "^[[:space:]]+${STAGE}\$" "$AUDIT_GATE" \
   || fail "'$STAGE' is not in CHECK_STAGES in hack/audit/exitgate_test.sh — the release exit gate would not grade it (AUD-S18)"
 echo "OK: $STAGE is pinned in CHECK_STAGES"
 
-echo "PASS: install_cosign_pin_test.sh — SEC-03 closed (REQ-AUD2-S03-01..05): hack/install.sh pins issuer=${inst_issuer} identity=${inst_identity}, byte-identical to SECURITY.md; a foreign-signed bundle fails closed with nothing installed; both pins proved load-bearing by mutation; the gate is wired into task check"
+echo "PASS: install_cosign_pin_test.sh — SEC-03 closed on BOTH paths (REQ-AUD2-S03-01..05 + AUD2-F01): hack/install.sh and hack/release/verify-artifacts.sh pin issuer=${inst_issuer} identity=${inst_identity}, byte-identical to SECURITY.md; a foreign-signed bundle fails closed with nothing installed and fails the maintainer check too; all four pins proved load-bearing by mutation; the gate is wired into task check"

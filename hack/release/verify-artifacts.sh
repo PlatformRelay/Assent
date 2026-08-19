@@ -121,7 +121,27 @@ verify_cosign() {
   if bundle="$(find_sigstore_bundle "$archive")"; then
     command -v cosign >/dev/null 2>&1 \
       || die "cosign required to verify ${bundle} but not found on PATH"
-    cosign verify-blob --bundle "$bundle" "$archive" >/dev/null \
+    # AUD2-F01, SEC-03's twin on the maintainer/CI path. This call used to run
+    # unpinned, exactly as hack/install.sh's did before AUD2-S03: keyless
+    # verify-blob without a signer pin either errors out on cosign v2 or accepts
+    # ANY Fulcio certificate, so a mirror-swapped archive shipped with its own
+    # validly signed bundle verified clean here and `--require-signature`
+    # promised something it did not deliver.
+    #
+    # The pair below is the ONE published truth (D-153): byte-identical to
+    # SECURITY.md's copy-paste recipe and to hack/install.sh, and
+    # hack/release/install_cosign_pin_test.sh reddens if any of the three drifts.
+    #
+    # The [Aa] class is not cosmetic: the repository was renamed to
+    # PlatformRelay/Assent between v0.1.0 and v0.2.0, the Fulcio SAN carries
+    # GitHub's canonical casing, and cosign matches this regexp case-SENSITIVELY
+    # — a lowercase-only pin rejects the project's own current releases. The dots
+    # are escaped because this is a regexp, not a literal. The pin stays anchored
+    # at the org/repo, so any other owner or an `assent-mirror` typosquat fails.
+    cosign verify-blob \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      --certificate-identity-regexp '^https://github\.com/PlatformRelay/[Aa]ssent/' \
+      --bundle "$bundle" "$archive" >/dev/null \
       || die "cosign verification failed for ${archive}"
     echo "verify-artifacts: cosign ok $(basename "$archive")" >&2
   elif [[ "$REQUIRE_SIGNATURE" -eq 1 ]]; then
