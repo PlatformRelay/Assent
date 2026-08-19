@@ -37,6 +37,20 @@ jobs:
       # toolchain, so it runs first and fails in seconds.
       - name: workflow supply-chain pins (AUD-S09 — SEC-04)
         run: bash hack/lint/workflow_pins_test.sh
+      - name: dogfood + -count=1 wiring pin (EX-S08 — REQ-EX-S08-02/03)
+        # RELSE-08, following the AUD2-S05 precedent below. This gate otherwise
+        # reaches CI only through `task check` -> release-exitgate, whose
+        # `if: github.event_name != 'pull_request'` means a PR that strips
+        # `-count=1` from THIS FILE would merge green and redden main
+        # afterwards — the gate's own thesis failing to apply to the gate.
+        # Pure text over Taskfile.yml + this workflow, no toolchain, so it
+        # belongs here beside workflow_pins_test.sh and before setup-go.
+        # Keep it argument-free and undisarmed: the script asserts its own step
+        # (section 7) is present, unargumented and free of
+        # `if:`/`continue-on-error:`, so weakening this reddens it. These
+        # comment lines live INSIDE the step on purpose, as the AUD2 step
+        # documents.
+        run: bash hack/examples/dogfood_wiring_test.sh
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable # go.mod stays the minimum; CI runs latest stable (govulncheck needs it)
@@ -98,18 +112,22 @@ jobs:
       - run: CGO_ENABLED=0 go build ./...
       - name: dogfood examples (EX-S08 — shared discovery script; every examples/packs/<name> with .assent/tests gates itself green under the real `assent test` CLI)
         run: bash hack/dogfood-examples.sh
-      # -count=1 IS THE GATE, exactly as in Taskfile.yml's dogfood-comparison.
-      # examples/comparison is an EXTERNAL test package referencing only exported
-      # constants from internal/compare, so the compare logic is unreachable from
-      # the test binary the Go cache keys on (the linker strips it) and the real
-      # logic runs in a `go build -o … ./cmd/assent` subprocess outside the cache
-      # key. actions/setup-go restores GOCACHE across commits, so without this
-      # flag CI can print `ok … (cached)` and pass a PR on a tree where the
-      # corpus genuinely fails. Fix it HERE, per invocation — do NOT "fix" it by
-      # setting `cache: false` on setup-go: that would slow every job in every
-      # workflow to close one blind invocation. Pinned by
-      # hack/examples/dogfood_wiring_test.sh.
       - name: comparison corpus dogfood (PCS-S08 — examples/comparison validates and runs green)
+        # -count=1 IS THE GATE, exactly as in Taskfile.yml's dogfood-comparison.
+        # examples/comparison is an EXTERNAL test package referencing only
+        # exported constants from internal/compare, so the compare logic is
+        # unreachable from the test binary the Go cache keys on (the linker
+        # strips it) and the real logic runs in a `go build -o … ./cmd/assent`
+        # subprocess outside the cache key. actions/setup-go restores GOCACHE
+        # across commits, so without this flag this step reports `ok … (cached)`
+        # and contributes NOTHING to the PR: not the JSON-schema validation of
+        # the suite docs, not the corpusGateCoverage gate-ID map, not
+        # TestCompareCorpusGateFailurePath. (The corpus OUTCOME stays defended
+        # on PRs by hack/compare/exitgate_test.sh, which drives the built binary
+        # through bash with no Go test cache in the path.) Fix it HERE, per
+        # invocation — do NOT "fix" it by setting `cache: false` on setup-go:
+        # that would slow every job in every workflow to close one blind
+        # invocation. Pinned by hack/examples/dogfood_wiring_test.sh.
         run: go test -count=1 ./examples/comparison/...
       - name: PCS compare exit gate (RELSE-03 — REQ-PCS-S09)
         run: bash hack/compare/exitgate_test.sh
