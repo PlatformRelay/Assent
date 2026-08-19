@@ -97,6 +97,10 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(audit): measure the REL-03 guard's terminal path, not "a return appears"
 - :bug: fix(audit): assert no fall-through, not where the return sits
 - :bug: fix(audit): require an ALL-of FAIL quorum and refuse bash < 4.3
+- :bug: fix(taskfile): -count=1 on the cache-blind dogfood-comparison and e2e gates
+- :bug: fix(ci): -count=1 on verify.yaml's comparison corpus dogfood
+- :bug: fix(ci): run the -count=1 wiring pin in the PR-visible verify job
+- :bug: fix(ci): pin COUNT1-F01 and refuse a merged gate step
 
 ### Refactoring
 - :recycle: refactor(audit): pin REL-03 and REL-07 by test name, demote source shape

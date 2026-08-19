@@ -168,14 +168,21 @@ echo "OK: $SCRIPT present and executable"
 #             schemas/ (read in-process, so testlog records it) against
 #             `git show origin/main:…` run as a SUBPROCESS (invisible), and
 #             internal/provider/isolation_test.go `go build`s a fixture at
-#             runtime. Those are logged as a follow-up, NOT fixed here:
-#             isolating them means carving packages out of `test`/`coverage`
-#             and losing the honest cache for the whole tree. examples/
-#             comparison is also cached here under a separate (-race) entry;
-#             that is covered because dogfood-comparison re-runs the same
-#             package with -count=1 in the same `task check`.
-#   coverage  in-process subjects; `-coverprofile` results DO cache, but the
-#             profile is regenerated faithfully, so the gated number is honest.
+#             runtime. Tracked as backlog row COUNT1-F01
+#             (openspec/specs/backlog.md, "Found in flight" block), NOT fixed
+#             here: isolating them means carving packages out of
+#             `test`/`coverage` and losing an otherwise-honest whole-tree
+#             cache. examples/comparison is also cached here under a separate
+#             (-race) entry; that is covered because dogfood-comparison re-runs
+#             the same package with -count=1 in the same `task check`.
+#   coverage  NOT "in-process subjects" — `./internal/...` contains both
+#             packages the `test` bullet just named (COUNT1-F01 applies here
+#             verbatim; the same two blind spots, the same reason for leaving
+#             them). The verdict rests on something else entirely: the gated
+#             number is honest because a cached `-coverprofile` run REGENERATES
+#             the profile faithfully (measured: the cached run reprints the
+#             identical total), so what this gate reads as evidence is never a
+#             stale number even when a cached package result is stale.
 #
 # `determinism` needs no pin: `-count=2` is uncacheable by construction.
 COUNT1_TASKS=(dogfood-comparison e2e)
@@ -391,6 +398,21 @@ pr_step_pinned() {
   [[ -n "$runline" ]] || return 5
   isolate_step_at "$WORK/job.verify" "$runline" >"$WORK/step.self" || return 6
   { [[ -s "$WORK/step.self" ]] && grep -qE '^      - ' "$WORK/step.self"; } || return 6
+  # Isolation bound, the same defect hack/lint/workflow_pins_test.sh:433-440
+  # closes with a 1..6 LINE cap. Without a bound, deleting only this step's
+  # `- name:` line merges it into the neighbouring step and the isolated region
+  # silently becomes that other step's body plus ours — a malformed workflow
+  # this function called fine (measured: rc=0). A line cap is the wrong shape
+  # here: this step carries a long comment block, so the honest size (14) and
+  # the merged size (15) are one line apart and any cap that admits the first
+  # admits the second. The structural invariant is what actionlint itself
+  # flags — a step has exactly ONE `run:` key — and it holds whatever the
+  # comments do. (Also caught independently by workflow_pins_test.sh's own
+  # "got 15 lines, expected 1..6" and by actionlint's `key "run" is
+  # duplicated`, so this is a bound made explicit, not a hole being closed.)
+  local n_run
+  n_run="$(grep -cE '^        run:' "$WORK/step.self" || true)"
+  ((n_run == 1)) || return 6
   grep -qE "^[[:space:]]*run:[[:space:]]*bash[[:space:]]+${SELF_RE}[[:space:]]*\$" "$WORK/step.self" || return 7
   grep -qE '^[[:space:]]*(if|continue-on-error):' "$WORK/step.self" && return 8
   return 0
@@ -411,6 +433,12 @@ case "$rc" in
 esac
 
 echo "== 7b. every branch of the PR-visibility pin proved capable of going RED =="
+# Bound, stated rather than implied: rc=3 (verify job block unextractable —
+# reachable by renaming the `verify:` job) has NO control here. rc=6 is
+# controlled for the reachable route (a step merged into its neighbour by a
+# deleted `- name:`); its other route, a region that is not a step at all,
+# needs a workflow actionlint cannot parse and so is unreachable through green
+# CI. Every other branch below is controlled.
 expect_rc() { # <want> <file> <label>
   local want="$1" f="$2" label="$3" got=0
   pr_step_pinned "$f" || got=$?
@@ -431,6 +459,15 @@ sed "s|^\([[:space:]]*\)run: bash ${SELF_REL}\$|\\1# run: bash ${SELF_REL}  # te
 cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: the run line was not commented out"
 grep -qF -- "$SELF_REL" "$m" || fail "mutation is not the intended one: the mutant no longer mentions the script at all, so it does not test comment-vs-command"
 expect_rc 5 "$m" "the invocation was COMMENTED OUT while the step comments still name the script"
+
+# R2-03: deleting ONLY the step's `- name:` line merges it into the neighbouring
+# step. Before the one-`run:`-key invariant this returned 0 on a malformed
+# workflow; it must now be rejected as an isolation failure.
+m="$WORK/verify.noname.yaml"
+grep -v 'name: dogfood + -count=1 wiring pin' "$WORKFLOW" >"$m"
+cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: the step's '- name:' line is still present"
+grep -qF -- "run: bash $SELF_REL" "$m" || fail "mutation is not the intended one: it removed the invocation too, which is the rc=5 control again"
+expect_rc 6 "$m" "the step's '- name:' was deleted, merging it into the neighbouring step (two run: keys)"
 
 m="$WORK/verify.args.yaml"
 sed "s|run: bash ${SELF_REL}\$|run: bash ${SELF_REL} --quick|" "$WORKFLOW" >"$m"

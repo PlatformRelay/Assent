@@ -741,6 +741,7 @@ that claim).
 | ID | Follow-up | Execution | Depends on | Why it is separate |
 | --- | --- | --- | --- | --- |
 | AUD2-F01 | **DONE** — SEC-03's twin: `hack/release/verify-artifacts.sh:124` ran the same **unpinned** `cosign verify-blob --bundle` on the maintainer/CI path; `verify_cosign()` now pins the D-153 issuer/identity pair and `hack/release/install_cosign_pin_test.sh` grades it as the **third** file of the one drift gate | **[autonomous]** | AUD2-S03 (D-153's value) | found *by* S03, deliberately left alone there — not an owned path, and out of that story's stated scope |
+| COUNT1-F01 | Two `go test` cache blind spots left inside `task test` / `task coverage` (`./...` and `./internal/...`): `internal/schemadrift` compares local `schemas/` against `git show origin/main:…` in a **subprocess**, and `internal/provider/isolation_test.go:29` `go build`s `./testdata/maliciousexec` at runtime | **[autonomous]** | — | found *by* the `-count=1` lane, deliberately left alone there: fixing them means carving packages out of `test`/`coverage` and losing an otherwise-honest whole-tree cache |
 
 Sizing, from the S03 implementer's reading of the call site: `verify_cosign()`
 (`hack/release/verify-artifacts.sh:118–125`) has the byte-identical unpinned
@@ -753,6 +754,21 @@ treatment rather than a real cosign; **(2)** the snapshot path ships no bundles,
 branch is skipped there and a naive test would be vacuous; **(3)** it must extend
 `hack/release/install_cosign_pin_test.sh`'s drift comparison as a **third file** (~10 lines)
 rather than start a second published truth (D-128).
+
+Sizing, from the `-count=1` lane's measurements. **schemadrift is the real one**: the local
+`schemas/` files are read in-process, so testlog records them and a local edit *does* invalidate
+— but the baseline half is `git show origin/main:schemas/…` (`internal/schemadrift/drift_test.go:16,30`,
+`d120_test.go:27`) run as a subprocess, which testlog cannot see. A cached PASS therefore goes
+stale the moment `origin/main` moves with **no local schema edit**, which is exactly when a drift
+gate is supposed to speak. **provider is narrower**: the production subject (`internal/provider`)
+*is* linked into the test binary, so production changes invalidate normally; only edits to the
+`testdata/maliciousexec` **fixture** are invisible. Two traps for whoever takes it: **(1)** the
+obvious fix — `-count=1` on `test`/`coverage` — is the WRONG one, because it discards an honest
+whole-tree cache to close two packages; scope it to the affected packages or make the subprocess
+inputs visible to testlog instead; **(2)** `task coverage` is affected by inheritance
+(`./internal/...` contains both packages), but its *gated number* stays honest either way — a
+cached `-coverprofile` run regenerates the profile faithfully — so do not justify a change there
+with the coverage percentage.
 
 **AUD2 status: AUTONOMOUS COMPLETE** — S01–S05 landed. The four 2026-08-18 findings
 (REL-01/02/07, REL-03, SEC-03, TEST-02) are closed, and `audit-aud2-exitgate-test` pins them
@@ -768,7 +784,10 @@ pinned values, and §5e is the paired control proving a bundle-less (snapshot-sh
 leaves it empty. Mutation-proved red: each flag deleted from `verify-artifacts.sh`, the pre-fix
 both-flags-missing shape, either field drifted from the other two files, the file disagreeing
 with itself, and — the one that matters — both flags left textually in place while the cosign
-branch is never entered.
+branch is never entered. **COUNT1-F01 is now the one OPEN follow-up** — likewise not an AUD2
+story (D-152), so the five-story claim is untouched by it either. It is also stage-neutral:
+the `-count=1` lane that logged it added a *step* to the `verify` job and rewrote `Taskfile.yml`
+recipes, not a `task check` stage, so `CHECK_STAGES` stays 19 there too.
 
 ## Phases 3–5
 
