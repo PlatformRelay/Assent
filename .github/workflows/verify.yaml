@@ -37,22 +37,27 @@ jobs:
       # toolchain, so it runs first and fails in seconds.
       - name: workflow supply-chain pins (AUD-S09 — SEC-04)
         run: bash hack/lint/workflow_pins_test.sh
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable # go.mod stays the minimum; CI runs latest stable (govulncheck needs it)
       - name: AUD2 exit gate (AUD2-S05 — REQ-AUD2-S05-01..05)
         # The four 2026-08-18 remediations (REL-01/02/07, REL-03, SEC-03,
         # TEST-02) are still present. It runs HERE, in the job that fires on
         # pull_request — NOT only in release-exitgate, whose
         # `if: github.event_name != 'pull_request'` is RELSE-08, the blind spot
         # that let AUD-S18's stale CHECK_STAGES pin merge green four times.
-        # Pure text over the source, so it needs no toolchain and fails in
-        # seconds. Keep it undisarmed: the gate asserts its own step carries no
-        # `if:`/`continue-on-error:`, so weakening this reddens it.
+        # POSITION IS LOAD-BEARING: this gate runs `go test` against reverted
+        # copies of the tree, so it must come AFTER actions/setup-go. It sat
+        # above it until now — with `toolchain go1.26.6` in go.mod the first
+        # `go test` would have had to download a toolchain with no Go cache
+        # present, and this branch has never had a CI run to reveal it.
+        # Keep it undisarmed and argument-free: the gate asserts its own step
+        # carries no `if:`/`continue-on-error:` and no arguments (`--text-only`
+        # would skip the behavioural runs), so weakening this reddens it.
         # These comment lines live INSIDE the step on purpose — hack/lint/
         # workflow_pins_test.sh isolates the step ABOVE up to the next `- `
         # marker and caps it at six lines.
         run: bash hack/audit/aud2_exitgate_test.sh
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: stable # go.mod stays the minimum; CI runs latest stable (govulncheck needs it)
       - run: go vet ./...
       - run: go vet -tags e2e ./... # compile+vet e2e-tagged wiring (test/e2e, P4-E1-S09)
       - name: golangci-lint (incl. gosec)

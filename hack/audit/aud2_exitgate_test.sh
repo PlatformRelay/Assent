@@ -17,14 +17,21 @@
 #                 still carries EffectChallenge, and the named unit case that
 #                 kills the auditor's demonstrated mutant still exists.
 #
-# WHY THIS GATE IS TEXTUAL AND NOT A TEST RUN. Each remediation already has its
-# own behavioural tests, which `task test` runs. What those tests do NOT do is
-# survive their own deletion: TEST-02 is precisely the finding that a fix can be
-# reverted with every wired gate still green. This gate is the anti-revert pin —
-# a cheap, toolchain-free assertion over the source, which is why it can run as
-# an early step of the PR-visible `verify` job (REQ-AUD2-S05-05) instead of only
-# inside the push-only release-exitgate job (RELSE-08, the blind spot that hid
-# AUD-S18's stale pin for four merges).
+# WHAT THIS GATE COSTS, corrected. It was a pure-text gate for five rounds and
+# that sentence outlived the fact: it now RUNS `go test` twice, against reverted
+# copies of the tree, and takes ~50s (measured 52s here, 38.6s by the reviewer) with the Go toolchain and
+# git on PATH. `--text-only` is the mode that is still toolchain-free, and it is
+# explicitly NOT what `task check` or CI invoke — both are asserted to pass no
+# arguments, because that mode certifies nothing about REL-03/REL-07.
+#
+# WHY IT RUNS IN THE PR-VISIBLE JOB. Not because it is cheap — because the
+# remediations must not be revertible behind a green PR. `task test` already
+# runs these tests, but what tests do NOT do is survive their own deletion or
+# hollowing: TEST-02 is precisely the finding that a fix can be reverted with
+# every wired gate still green. So the gate lives in the `verify` job
+# (REQ-AUD2-S05-05) rather than only in the push-only release-exitgate job
+# (RELSE-08, the blind spot that hid AUD-S18's stale pin for four merges), and
+# it is placed AFTER actions/setup-go there, since it needs a Go toolchain.
 #
 # SCOPING IS THE WHOLE GAME HERE. Three of the four assertions have a decoy in
 # the very same file:
@@ -51,6 +58,22 @@
 # reverts to HEAD, which can be behind the working tree, so a "mutation" would
 # silently be a no-op or, worse, a real edit to the tree.
 set -euo pipefail
+
+# BASH >= 4.3 REQUIRED, ASSERTED FIRST — before anything else can partially run.
+# This script uses namerefs (`local -n`) to pass array names into check functions.
+# Stock macOS /bin/bash is 3.2, which has no namerefs: it aborted at the first
+# nameref, after one section header had already printed, and EXITED 0. A tree
+# with every AUD2 remediation reverted would then pass `task check` stage 19 for
+# anyone whose `bash` resolves to 3.2 — and AGENTS.md rule 4 makes a green local
+# `task check` a per-commit precondition, so that is not a theoretical path. CI
+# is ubuntu/bash 5, so nothing merges through it; the anti-vacuity gate silently
+# certifying nothing on a maintainer's machine is the defect regardless.
+if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3))); then
+  echo "FAIL: hack/audit/aud2_exitgate_test.sh requires bash >= 4.3 (namerefs); this is bash ${BASH_VERSION}." >&2
+  echo "  Refusing to run rather than aborting mid-way and exiting 0 — an exit gate that certifies nothing must say so." >&2
+  echo "  On macOS: run it under a modern bash (e.g. \`brew install bash\`), which is what 'task check' and CI use." >&2
+  exit 1
+fi
 
 # MODES. Default: everything, including the behavioural mutation runs, which
 # need the Go toolchain and git. `--text-only`: the pure-text layer plus its full
@@ -151,6 +174,19 @@ REL03_SRC="cmd/assent/provider_host.go"
 REL03_REVERT=$'s|^\t\t\tif !errors.Is(err, forge.ErrNotFound) {|\t\t\tif !errors.Is(err, forge.ErrNotFound) \&\& errors.Is(err, context.Canceled) {|'
 REL03_REVERT_WITNESS='errors.Is(err, context.Canceled)'
 REL03_RUN='TestProviderDeclarationForgeErrorAbortsResolveRunFacts|TestProviderDeclarationUnauthorizedAbortsResolveRunFacts'
+# THE QUORUM. Every one of these must appear in a `--- FAIL:` line when the
+# revert is applied. "At least one pinned test failed" was the previous rule and
+# it is weaker than the claim built on it: gutting ONLY
+# TestProviderDeclarationUnauthorizedAbortsResolveRunFacts (a no-op body, the
+# case table kept as live code so the text pins stay green) left the other test
+# failing, satisfied the quorum, and passed the gate at exit 0 with production
+# source untouched. Subtests are pinned too, so dropping just the 401 case is
+# caught at case granularity rather than only at function granularity.
+REL03_MUSTFAIL=(
+  TestProviderDeclarationForgeErrorAbortsResolveRunFacts
+  TestProviderDeclarationUnauthorizedAbortsResolveRunFacts/401
+  TestProviderDeclarationUnauthorizedAbortsResolveRunFacts/403
+)
 
 # REL-07: drop the fold. `err` is in scope, so this compiles as written and is
 # exactly the pre-fix behaviour — a bare "exit status 1" with no diagnostic.
@@ -159,6 +195,18 @@ REL07_SRC="internal/provider/transport.go"
 REL07_REVERT='s|return nil, execFailure(err, stderr)|return nil, err|'
 REL07_REVERT_WITNESS='return nil, err'
 REL07_RUN='TestExecStderrFoldedIntoError'
+# ASYMMETRY, and it is deliberate: do NOT require all three REL-07 subtests.
+# Under the fold-dropping revert, `stderr_never_merged_into_facts` LEGITIMATELY
+# PASSES — it asserts stderr does not leak into the fact map, which stays true
+# when the fold is removed. Demanding it would make the gate red for a property
+# the revert does not break, i.e. an assertion that cannot be satisfied by any
+# correct tree. Only the two canaries that DO detect the revert are pinned; the
+# third is still held by the case pin in check_named_tests, which requires it to
+# exist. Measured, not assumed: see the transcript names in the commit body.
+REL07_MUSTFAIL=(
+  TestExecStderrFoldedIntoError/nonzero_exit_reports_stderr
+  TestExecStderrFoldedIntoError/runaway_stderr_is_bounded_and_truncated
+)
 
 
 WORK="$(mktemp -d)"
@@ -543,7 +591,9 @@ go_test_named() {
 check_behavioural_revert() {
   local finding="$1" tag="$2" rel="$3" prog="$4" witness="$5" run="$6" pkg="$7" fn_list="$8" remediation="$9"
   local overlay="${10:-}"
+  local mustfail_list="${11:?check_behavioural_revert: a must-fail quorum list is required}"
   local -n fns="$fn_list"
+  local -n mustfail="$mustfail_list"
   local clean mut out_clean out_mut fn rc=0
 
   clean="$(mutation_tree "${tag}-control")"
@@ -562,7 +612,7 @@ check_behavioural_revert() {
     return 1
   fi
   for fn in "${fns[@]}"; do
-    if ! grep -Fq -- "--- PASS: ${fn}" "$out_clean"; then
+    if ! grep -Fq -- "--- PASS: ${fn} " "$out_clean"; then
       echo "  ${finding}: '${fn}' did not report '--- PASS:' on an unmutated copy — it was renamed, deleted or skipped. \`go test\` exits 0 both when a -run pattern matches nothing and when a test calls t.Skip, so grading its exit code alone would treat a disabled test as a passing one (AUD2-S05 behavioural pin)" >&2
       rc=1
     fi
@@ -589,13 +639,20 @@ check_behavioural_revert() {
       echo "  ${finding}: the reverted copy failed to BUILD rather than failing its tests — that is not evidence about behaviour, and this control must not be allowed to pass on it. Fix the revert program so it produces compiling code (AUD2-S05 behavioural pin)" >&2
       rc=1
     else
-      local named=0
-      for fn in "${fns[@]}"; do
-        grep -Fq -- "--- FAIL: ${fn}" "$out_mut" && named=1
+      # QUORUM: EVERY entry of the finding's must-fail list, not "at least one".
+      # The trailing space matters — `--- FAIL: X ` must not be satisfied by
+      # `--- FAIL: X/401`, or a function-level pin would be met by one of its
+      # own subtests.
+      local missing="$WORK/quorum.${tag}.missing"
+      : >"$missing"
+      for fn in "${mustfail[@]}"; do
+        grep -Fq -- "--- FAIL: ${fn} " "$out_mut" || printf '%s\n' "$fn" >>"$missing"
       done
-      if ((named == 0)); then
-        echo "  ${finding}: the reverted copy is red, but NO pinned test is named in a '--- FAIL:' line — something else failed, so this run does not show that the pinned tests detect ${remediation} (AUD2-S05 behavioural pin)" >&2
-        sed 's/^/    /' <(grep -E "^--- FAIL:" "$out_mut" | head -5) >&2
+      if [[ -s "$missing" ]]; then
+        echo "  ${finding}: the reverted copy is red, but these pinned tests did NOT report '--- FAIL:' — they no longer detect ${remediation}, and a sibling failing in their place does not close that. Emptying ONE test's body while its siblings still fail is exactly the escape this quorum exists to refuse (AUD2-S05 behavioural pin):" >&2
+        sed 's/^/      missing: /' "$missing" >&2
+        echo "    what the reverted copy actually reported:" >&2
+        sed 's/^/      /' <(grep -E '^[[:space:]]*--- (FAIL|PASS|SKIP):' "$out_mut" | head -8) >&2
         rc=1
       fi
     fi
@@ -1337,10 +1394,10 @@ if ((TEXT_ONLY == 1)); then
 else
   expect_green check_behavioural_revert "the REL-03 tests FAIL when the condition-narrowing revert is applied to a copy of the tree" \
     "REL-03" rel03 "$REL03_SRC" "$REL03_REVERT" "$REL03_REVERT_WITNESS" "$REL03_RUN" "$REL03_PKG" REL03_TESTS \
-    "the forge-error/absent-file discrimination in resolveRunFacts"
+    "the forge-error/absent-file discrimination in resolveRunFacts" "" REL03_MUSTFAIL
   expect_green check_behavioural_revert "the REL-07 tests FAIL when the stderr fold is dropped in a copy of the tree" \
     "REL-07" rel07 "$REL07_SRC" "$REL07_REVERT" "$REL07_REVERT_WITNESS" "$REL07_RUN" "$REL07_PKG" REL07_TESTS \
-    "the stderr fold in CallExec"
+    "the stderr fold in CallExec" "" REL07_MUSTFAIL
 fi
 
 echo "== (5) REQ-AUD2-S05-02 — every assertion above proved capable of going RED =="
@@ -1803,7 +1860,7 @@ if ((TEXT_ONLY == 0)); then
   expect_red check_behavioural_revert "the pinned REL-03 tests keep their names but t.Skip their bodies — 'go test' exits 0 and reports --- SKIP:, never --- PASS:" \
     "did not report '--- PASS:'" \
     "REL-03" rel03skip "$REL03_SRC" "$REL03_REVERT" "$REL03_REVERT_WITNESS" "$REL03_RUN" "$REL03_PKG" REL03_TESTS \
-    "the forge-error/absent-file discrimination in resolveRunFacts" "${REL03_TEST_FILE}=${gut}"
+    "the forge-error/absent-file discrimination in resolveRunFacts" "${REL03_TEST_FILE}=${gut}" REL03_MUSTFAIL
 
   gut2="$WORK/provider_host_test.noop.go"
   awk '
@@ -1828,7 +1885,7 @@ if ((TEXT_ONLY == 0)); then
   expect_red check_behavioural_revert "the pinned REL-03 tests keep their names and PASS, but their bodies assert nothing — the revert no longer makes them fail" \
     "they no longer detect the defect they exist to detect" \
     "REL-03" rel03noop "$REL03_SRC" "$REL03_REVERT" "$REL03_REVERT_WITNESS" "$REL03_RUN" "$REL03_PKG" REL03_TESTS \
-    "the forge-error/absent-file discrimination in resolveRunFacts" "${REL03_TEST_FILE}=${gut2}"
+    "the forge-error/absent-file discrimination in resolveRunFacts" "${REL03_TEST_FILE}=${gut2}" REL03_MUSTFAIL
 
   gut3="$WORK/transport_test.noop.go"
   awk '
@@ -1850,14 +1907,80 @@ if ((TEXT_ONLY == 0)); then
   expect_red check_behavioural_revert "the pinned REL-07 test keeps its name and PASSes, but its body asserts nothing — dropping the stderr fold no longer makes it fail" \
     "they no longer detect the defect they exist to detect" \
     "REL-07" rel07noop "$REL07_SRC" "$REL07_REVERT" "$REL07_REVERT_WITNESS" "$REL07_RUN" "$REL07_PKG" REL07_TESTS \
-    "the stderr fold in CallExec" "${REL07_TEST_FILE}=${gut3}"
+    "the stderr fold in CallExec" "${REL07_TEST_FILE}=${gut3}" REL07_MUSTFAIL
+
+  # ---- QUORUM ESCAPE 1: gut ONE of the two REL-03 tests -------------------
+  # Round six. Production source untouched; only
+  # TestProviderDeclarationUnauthorizedAbortsResolveRunFacts is emptied, with
+  # `_ = []int{401, 403}` left as LIVE CODE so the case pin stays green too.
+  # Its sibling still fails under the revert, so an "at least one pinned test
+  # failed" quorum was satisfied and the gate exited 0 — the whole 401/403 auth
+  # branch silently undefended. Only an ALL-of quorum refuses this.
+  gut4="$WORK/provider_host_test.onegutted.go"
+  awk '
+    /^func TestProviderDeclarationUnauthorizedAbortsResolveRunFacts\(/ {
+      print
+      print "\t_ = []int{401, 403}"
+      print "\t_ = t"
+      gutting = 1
+      next
+    }
+    gutting {
+      if ($0 == "}") { print "}"; gutting = 0 }
+      next
+    }
+    { print }
+  ' "$ROOT/$REL03_TEST_FILE" >"$gut4"
+  grep -Fq '_ = []int{401, 403}' "$gut4" ||
+    fail "mutation harness: the one-gutted mutant did not land"
+  grep -Fq "func ${REL03_TESTS[0]}(" "$gut4" ||
+    fail "mutation harness: the one-gutted mutant lost the SIBLING test — the whole point is that the sibling still fails and satisfies a weak quorum"
+  check_named_tests "REL-03" "$gut4" REL03_TESTS REL03_SUBTESTS "x" 2>/dev/null ||
+    fail "mutation harness: check_named_tests reds on the one-gutted mutant — then this control grades the name/case pins, not the quorum. The case table must stay in LIVE code for it to mean anything"
+  echo "OK: the one-gutted mutant passes every NAME and CASE pin (the []int{401, 403} table is live code, not a comment) and its sibling still fails under the revert — only an ALL-of quorum can refuse it"
+  expect_red check_behavioural_revert "one of the two REL-03 tests is emptied while its sibling still fails — a weak 'at least one' quorum was satisfied by the sibling" \
+    "did NOT report '--- FAIL:'" \
+    "REL-03" rel03onegut "$REL03_SRC" "$REL03_REVERT" "$REL03_REVERT_WITNESS" "$REL03_RUN" "$REL03_PKG" REL03_TESTS \
+    "the forge-error/absent-file discrimination in resolveRunFacts" "${REL03_TEST_FILE}=${gut4}" REL03_MUSTFAIL
+
+  # ---- QUORUM ESCAPE 2: empty REL-07's actual canary subtest ---------------
+  # `nonzero_exit_reports_stderr` IS the behavioural defence of the fold. Empty
+  # its body, keep its name: the function-level `--- FAIL:` line still appears
+  # (its sibling runaway_stderr_is_bounded_and_truncated still fails), the case
+  # pin still matches the t.Run name, and the gate exited 0. The subtest-level
+  # quorum is what sees it.
+  gut5="$WORK/transport_test.canaryemptied.go"
+  awk '
+    /t\.Run\("nonzero_exit_reports_stderr"/ {
+      print
+      print "\t\t_ = q"
+      gutting = 1
+      next
+    }
+    gutting {
+      if ($0 == "\t})") { print "\t})"; gutting = 0 }
+      next
+    }
+    { print }
+  ' "$ROOT/$REL07_TEST_FILE" >"$gut5"
+  grep -Fq 't.Run("nonzero_exit_reports_stderr"' "$gut5" ||
+    fail "mutation harness: the canary-emptied mutant lost the subtest NAME — then the case pin catches it and this control says nothing about the quorum"
+  grep -Fq 'runaway_stderr_is_bounded_and_truncated' "$gut5" ||
+    fail "mutation harness: the canary-emptied mutant lost the sibling subtest — the point is that the sibling still fails and produces a function-level --- FAIL: line"
+  check_named_tests "REL-07" "$gut5" REL07_TESTS REL07_SUBTESTS "x" 2>/dev/null ||
+    fail "mutation harness: check_named_tests reds on the canary-emptied mutant — then this control grades the case pins, not the quorum"
+  echo "OK: the canary-emptied mutant keeps every name and case pin, and its sibling still fails — only the SUBTEST-level quorum can refuse it"
+  expect_red check_behavioural_revert "REL-07's canary subtest nonzero_exit_reports_stderr is emptied while its sibling still fails — the function-level FAIL line is still emitted" \
+    "did NOT report '--- FAIL:'" \
+    "REL-07" rel07canary "$REL07_SRC" "$REL07_REVERT" "$REL07_REVERT_WITNESS" "$REL07_RUN" "$REL07_PKG" REL07_TESTS \
+    "the stderr fold in CallExec" "${REL07_TEST_FILE}=${gut5}" REL07_MUSTFAIL
 
   # The harness must also refuse a mutant that merely fails to COMPILE: "the
   # reverted copy is red" is not evidence about behaviour.
   expect_red check_behavioural_revert "the revert program produces code that does not build — red for the wrong reason" \
     "failed to BUILD rather than failing its tests" \
     "REL-07" rel07nobuild "$REL07_SRC" 's|return nil, execFailure(err, stderr)|return nil, notAThing(err)|' \
-    'notAThing(err)' "$REL07_RUN" "$REL07_PKG" REL07_TESTS "the stderr fold in CallExec"
+    'notAThing(err)' "$REL07_RUN" "$REL07_PKG" REL07_TESTS "the stderr fold in CallExec" "" REL07_MUSTFAIL
 fi
 
 echo "== (6) REQ-AUD2-S05-03/04/05 — this gate is wired where it can be seen =="
@@ -1959,7 +2082,7 @@ done
 
 # The floor is a FLOOR, and the banner below says exactly that. An earlier
 # wording claimed the controls proved "every assertion" could fail; this script
-# emits roughly forty distinct findings and thirty-six of them carry a control,
+# emits roughly forty distinct findings and thirty-eight of them carry a control,
 # so that claim overstated the gate's own coverage — the D-124 failure mode this
 # epic exists to close, in the gate built to close it. What IS asserted: every
 # control that exists ran, each went red for its own pinned message, and every
@@ -1967,7 +2090,7 @@ done
 # Mode-aware floor: --text-only legitimately skips the four behavioural
 # controls, and a single number would either pass a truncated full run or red
 # every text-only run. Both floors are pinned so neither mode can quietly shrink.
-CONTROL_FLOOR=36
+CONTROL_FLOOR=38
 ((TEXT_ONLY == 0)) || CONTROL_FLOOR=32
 ((MUTATIONS_PROVED >= CONTROL_FLOOR)) ||
   fail "only ${MUTATIONS_PROVED} mutation controls ran in $([[ $TEXT_ONLY == 1 ]] && echo --text-only || echo full) mode, fewer than the pinned floor of ${CONTROL_FLOOR} — a section was skipped, so REQ-AUD2-S05-02's evidence is incomplete"

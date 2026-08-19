@@ -138,11 +138,14 @@ still present in the tree. Every failure names the audit finding ID it reopens.
 | 5 | The gate is a `check:` stage, is pinned in `CHECK_STAGES`, and runs in the **pull-request-visible** `verify` job, undisarmed | `REQ-AUD2-S05-03/04/05` |
 
 Unlike `exitgate_test.sh`, this one **is** a `task check` stage (`audit-aud2-exitgate-test`, the
-19th) and is also an early step of `verify.yaml`'s `verify` job. That placement is the point: it
-is pure text over the source, needs no toolchain, and therefore runs on **pull requests** —
-`release-exitgate`, where the AUD-S18 gate lives, carries `if: github.event_name != 'pull_request'`
-and that blind spot (RELSE-08) is what let AUD-S18's own stale `CHECK_STAGES` pin merge green four
-times.
+19th) and is also a step of `verify.yaml`'s `verify` job. That placement is the point, and the
+reason is *not* that the gate is cheap — it runs `go test` against reverted copies of the tree
+and takes ~40-50s. It is that the `verify` job is the one that fires on **pull requests**, while
+`release-exitgate`, where the AUD-S18 gate lives, carries
+`if: github.event_name != 'pull_request'` — the RELSE-08 blind spot that let AUD-S18's own stale
+`CHECK_STAGES` pin merge green four times. Because it needs a Go toolchain, the step sits **after**
+`actions/setup-go` in that job; only `--text-only` is toolchain-free, and neither wiring site is
+allowed to pass it.
 
 ### What actually holds each remediation closed
 
@@ -190,7 +193,7 @@ This terminates the escape class: it is indifferent to how the production revert
 out (`t.Skip`, a no-op body, a deleted assertion), because it reports what the tests **do**.
 Nothing is written to the real tree. Measured cost: the tracked-file copy is ~1,200 files / 8.6 MB
 and is effectively instant; the two `go test -run <pinned>` runs take a few seconds each. The
-whole gate runs in ~40s, at `check:` stage 19, after `task test` has already built the packages.
+whole gate runs in ~40-50s, at `check:` stage 19, after `task test` has already built the packages.
 
 The name and case pins are kept beside it — they say *which* test or case was lost, which a
 go-test transcript does not — but they are a pre-check, not the property. Case pins now read a
@@ -208,7 +211,7 @@ docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:stable-slim bash hack/audit/aud2
 ```
 
 Its PASS banner says plainly that it certifies **nothing** about whether `REL-03` and `REL-07` are
-still held closed. The control floor is mode-aware (36 full, 32 text-only) so neither mode can
+still held closed. The control floor is mode-aware (38 full, 32 text-only) so neither mode can
 quietly shrink, and both the `task check` stage and the `verify.yaml` step are asserted to invoke
 the script with **no arguments**, so the flag cannot be used to disarm the gate where it counts.
 
@@ -280,12 +283,12 @@ ones an independent reviewer got past four times — every mutant `gofmt`-clean,
 Held to the same bar as `exitgate_test.sh` and `hack/release/install_cosign_pin_test.sh`: every
 check is a **function** over file arguments, run against the real tree (must be green) *and*
 against a mutant carrying the very defect it exists to catch (must be red, and red **for its own
-stated reason** — `expect_red` pins a message fragment). 36 mutation controls run per invocation (32 under `--text-only`)
+stated reason** — `expect_red` pins a message fragment). 38 mutation controls run per invocation (32 under `--text-only`)
 and the count is asserted against a floor, so a skipped section fails the gate instead of
 quietly shrinking it. **What the PASS banner claims, precisely**: that those controls ran, that
 each went red for its own pinned message, and that every REQ-bearing assertion carries one — *not*
 that every finding the script can emit is controlled. The script emits roughly forty distinct
-findings; thirty-six carry a control, and the rest are extraction and positive-control failures
+findings; thirty-eight carry a control, and the rest are extraction and positive-control failures
 whose own reason to exist is that they fire when a pattern stops matching. An exit gate whose
 banner overstates its coverage is the D-124 failure mode this epic exists to close, so the banner
 is worded to what is actually proved. Mutants are **file copies** under `mktemp -d`; `git checkout --` is never
