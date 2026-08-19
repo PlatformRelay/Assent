@@ -41,7 +41,7 @@ what the audit saw, not as a map of the current tree:
   including retry-exhausted 5xx and deterministic 401/403. The typed sentinel
   (`forge.ErrNotFound`) and a correct discriminator both already exist in this very repo —
   `fileAtRefOrAbsent` (`cmd/assent/run.go:465–474`) and, in the *same file* at
-  `provider_host.go:281–285`, `loadResourceOwnerRegistry`, which D-130 fixed for exactly this
+  `provider_host.go:282–286`, `loadResourceOwnerRegistry`, which D-130 fixed for exactly this
   conflation. This call site uses neither. The fail-closed *direction* holds (a missing CEL
   attribute → REVIEW), but a forge blip or a token-scope misconfiguration silently converts
   approvable MRs to REVIEW with a misleading `predicate.error`, and a `has()`-tolerant policy
@@ -93,15 +93,16 @@ resource-owner registry — S02 is the *same* fix at the *sibling* call site), *
 source per gate number), **D-110** (sigstore bundles beside archives), **D-124** (a gate
 invoked by nothing is not a gate).
 
-**Reuse, explicitly — none of these are to be re-derived:**
+**Reuse, explicitly — none of these are to be re-derived** (line numbers, like Problem's, are as
+of `b4f5054`)**:**
 - `readBounded` + `MaxResponseBytes` (`internal/provider/transport.go:100–116`) — S01's bound.
 - The three HTTP bound tests (`internal/provider/transport_test.go:52–182`: over-limit refused
   and the limit named in the error, exactly-at-limit accepted, bound stays MB-order) — S01
   mirrors their **shape** for exec.
 - `forge.ErrNotFound` + `errors.Is` discrimination as written in `loadResourceOwnerRegistry`
-  (`cmd/assent/provider_host.go:281–285`) and `fileAtRefOrAbsent` (`cmd/assent/run.go:465–474`)
+  (`cmd/assent/provider_host.go:282–286`) and `fileAtRefOrAbsent` (`cmd/assent/run.go:465–474`)
   — S02 mirrors one of them rather than authoring a third idiom.
-- `SECURITY.md:80–98`'s cosign flag pair (the `### Verify a tagged release` block) — S03
+- `SECURITY.md:80–93`'s cosign flag pair (the `### Verify a tagged release` block) — S03
   mirrors it rather than starting a second published truth, and a drift gate holds the two
   byte-identical. **Amendment (implementation, AUD2-S03):** the published pair was itself wrong
   when this epic was written, so "mirror it" could not stay literal. The Fulcio SAN carries the
@@ -269,7 +270,7 @@ cannot silently masquerade as "this provider declares nothing" and quietly chang
 **Goal:** at `cmd/assent/provider_host.go:82–86`, `continue` **only** when
 `errors.Is(err, forge.ErrNotFound)`; every other `FileAtRef` error returns a wrapped error
 naming the provider, the declaration path, and the ref — the identical shape
-`loadResourceOwnerRegistry` already uses at `provider_host.go:281–285` (D-130). No new
+`loadResourceOwnerRegistry` already uses at `provider_host.go:282–286` (D-130). No new
 discriminator idiom is authored.
 
 **Operator input:** none. D-130 already ruled this class; this is its sibling call site.
