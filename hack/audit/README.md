@@ -131,8 +131,8 @@ still present in the tree. Every failure names the audit finding ID it reopens.
 
 | # | Asserts | Names on failure |
 | --- | --- | --- |
-| 1 | `CallExec` bounds child stdout at `MaxResponseBytes` and sets a non-zero `cmd.WaitDelay` (source pins); its stderr fold is held by `TestExecStderrFoldedIntoError` and its three cases, pinned by name | `REL-01`, `REL-02`, `REL-07` |
-| 2 | `resolveRunFacts` discriminates `forge.ErrNotFound`; the discrimination is held by two named behavioural tests and the `[]int{401, 403}` case table, pinned by name | `REL-03` |
+| 1 | `CallExec` bounds child stdout at `MaxResponseBytes` and sets a non-zero `cmd.WaitDelay` (source pins); its stderr fold is held by a **behavioural mutation run** — drop the fold in a copy of the tree, `TestExecStderrFoldedIntoError` must fail | `REL-01`, `REL-02`, `REL-07` |
+| 2 | `resolveRunFacts` discriminates `forge.ErrNotFound`, held by a **behavioural mutation run** — narrow the guard's condition in a copy of the tree, the two named tests must fail | `REL-03` |
 | 3 | `hack/install.sh` pins the cosign signer identity and OIDC issuer, byte-identically with `SECURITY.md` | `SEC-03` |
 | 4 | `isStricterInterventionEffect` still classifies `EffectChallenge`, and the named unit case that kills the auditor's demonstrated mutant still exists | `TEST-02` |
 | 5 | The gate is a `check:` stage, is pinned in `CHECK_STAGES`, and runs in the **pull-request-visible** `verify` job, undisarmed | `REQ-AUD2-S05-03/04/05` |
@@ -153,22 +153,64 @@ Not the same mechanism for all four, and the difference matters:
 | `SEC-03` | source pins over `hack/install.sh` + `SECURITY.md`, plus the behavioural stub-`cosign` gate in `hack/release/install_cosign_pin_test.sh` | — |
 | `REL-01`, `REL-02` | source pins over `CallExec` (bounded sink by constructor, non-zero `WaitDelay`, single assignment) | — |
 | `TEST-02` | the named unit case, pinned by name | the `EffectChallenge` term in the classifier |
-| `REL-03`, `REL-07` | **named behavioural tests, pinned by name here, composed with `go test`** | source-shape heuristics with two recorded blind spots |
+| `REL-03`, `REL-07` | **a behavioural mutation run** — the revert applied to a throwaway copy of the tree, the pinned tests required to FAIL against it | name/case pins (fast, precise pre-check) and source-shape heuristics |
 
-The composition for the last row is the point, and it is written into the script so nobody
-"simplifies" one half away:
+**Correction, recorded because this README asserted it twice and it was false.** An earlier
+version claimed "a revert that *keeps* the tests is caught by `go test`; one that *deletes or
+renames* them is caught by the name pins", and presented that as a partition. It is not one.
+Keeping the names and **emptying the bodies** is a third case, and it defeated both halves at
+once:
 
-* a revert that **keeps** the tests is caught by `go test` — check stage 4, which runs *before*
-  this gate at stage 19, and again as a step of the same pull-request-visible `verify` job;
-* a revert that **deletes or renames** the tests is caught here, by the name pins — `go test`
-  reports a deleted test as success, so that half is structurally invisible to it.
+```go
+func TestProviderDeclarationForgeErrorAbortsResolveRunFacts(t *testing.T) {
+	t.Skip("temporarily disabled")
+}
+```
 
-Neither half can be defeated by restructuring production source, which is exactly what every
-mutant that beat the source-shape checks does. The pins cover the test *functions*
-(`TestProviderDeclarationForgeErrorAbortsResolveRunFacts`,
-`TestProviderDeclarationUnauthorizedAbortsResolveRunFacts`, `TestExecStderrFoldedIntoError`) and
-their *cases* (the `[]int{401, 403}` auth table; the three `t.Run` names), because a dropped case
-narrows coverage while every function name survives.
+With that plus the one-line condition narrowing: `gofmt` silent, `go build` OK, `go vet` OK,
+`go test ./cmd/assent/` **ok**, and the gate **green** — REL-03 fully reverted. `t.Skip("flaky")`
+is a routine event, not a contrivance, and there is no third backstop here: `cmd/` sits outside
+`./internal/...`, so the coverage floor does not move when those tests are gutted.
+
+**What replaced it.** The gate now *measures* the property instead of reading text or names. For
+each of `REL-03` and `REL-07` it copies the working tree's tracked files to `$WORK`, applies the
+revert **to the copy**, and runs the pinned tests against it — requiring them to **fail**, as
+tests, naming a pinned test in a `--- FAIL:` line. Three ways that can go wrong are refused
+explicitly:
+
+* the pinned tests must first **`--- PASS:` by name** on an unmutated copy — `go test` exits 0
+  both when a `-run` pattern matches nothing and when a test calls `t.Skip`, so an exit code
+  would treat a disabled test as a passing one;
+* a `[build failed]` transcript on the reverted copy is **refused** — "the mutant does not
+  compile" is not evidence about behaviour;
+* the reverted run must fail *and* name a pinned test, not some neighbour.
+
+This terminates the escape class: it is indifferent to how the production revert is spelled
+(condition narrowing, polarity swap, string-literal return) *and* to how a test might be hollowed
+out (`t.Skip`, a no-op body, a deleted assertion), because it reports what the tests **do**.
+Nothing is written to the real tree. Measured cost: the tracked-file copy is ~1,200 files / 8.6 MB
+and is effectively instant; the two `go test -run <pinned>` runs take a few seconds each. The
+whole gate runs in ~40s, at `check:` stage 19, after `task test` has already built the packages.
+
+The name and case pins are kept beside it — they say *which* test or case was lost, which a
+go-test transcript does not — but they are a pre-check, not the property. Case pins now read a
+**comment-stripped** view: `[]int{401, 403}` was previously satisfied out of a Go comment left
+behind by a gutted body.
+
+### `--text-only`
+
+`bash hack/audit/aud2_exitgate_test.sh --text-only` runs the pattern layer plus its **full**
+mutation harness, skipping only the behavioural runs (which need Go and git). It exists so the
+patterns can be exercised under Linux/GNU grep + mawk:
+
+```sh
+docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:stable-slim bash hack/audit/aud2_exitgate_test.sh --text-only
+```
+
+Its PASS banner says plainly that it certifies **nothing** about whether `REL-03` and `REL-07` are
+still held closed. The control floor is mode-aware (36 full, 32 text-only) so neither mode can
+quietly shrink, and both the `task check` stage and the `verify.yaml` step are asserted to invoke
+the script with **no arguments**, so the flag cannot be used to disarm the gate where it counts.
 
 ### Scoping is the whole gate
 
@@ -238,12 +280,12 @@ ones an independent reviewer got past four times — every mutant `gofmt`-clean,
 Held to the same bar as `exitgate_test.sh` and `hack/release/install_cosign_pin_test.sh`: every
 check is a **function** over file arguments, run against the real tree (must be green) *and*
 against a mutant carrying the very defect it exists to catch (must be red, and red **for its own
-stated reason** — `expect_red` pins a message fragment). 30 mutation controls run per invocation
+stated reason** — `expect_red` pins a message fragment). 36 mutation controls run per invocation (32 under `--text-only`)
 and the count is asserted against a floor, so a skipped section fails the gate instead of
 quietly shrinking it. **What the PASS banner claims, precisely**: that those controls ran, that
 each went red for its own pinned message, and that every REQ-bearing assertion carries one — *not*
 that every finding the script can emit is controlled. The script emits roughly forty distinct
-findings; thirty carry a control, and the rest are extraction and positive-control failures
+findings; thirty-six carry a control, and the rest are extraction and positive-control failures
 whose own reason to exist is that they fire when a pattern stops matching. An exit gate whose
 banner overstates its coverage is the D-124 failure mode this epic exists to close, so the banner
 is worded to what is actually proved. Mutants are **file copies** under `mktemp -d`; `git checkout --` is never

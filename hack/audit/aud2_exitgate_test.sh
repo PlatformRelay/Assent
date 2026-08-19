@@ -52,6 +52,24 @@
 # silently be a no-op or, worse, a real edit to the tree.
 set -euo pipefail
 
+# MODES. Default: everything, including the behavioural mutation runs, which
+# need the Go toolchain and git. `--text-only`: the pure-text layer plus its full
+# mutation harness, for exercising the patterns under Linux/GNU grep + mawk in a
+# container that has neither. The wiring checks assert that `task check` and
+# verify.yaml invoke this script with NO arguments, so the flag cannot be used to
+# disarm the gate where it counts (the AUD-S18 idiom, same reason).
+TEXT_ONLY=0
+while (($# > 0)); do
+  case "$1" in
+  --text-only) TEXT_ONLY=1 ;;
+  *)
+    echo "usage: $0 [--text-only]" >&2
+    exit 2
+    ;;
+  esac
+  shift
+done
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
@@ -90,15 +108,13 @@ CHALLENGE_TEST="TestClassifyStricterInterventionAddedChallengeEffect"
 # and the source-shape checks are demoted to a secondary heuristic that names the
 # defect precisely on the shapes it does recognise.
 #
-# THE COMPOSITION, stated so nobody later "simplifies" one half away:
-#   * a revert that KEEPS these tests is caught by `go test`, which runs as
-#     check stage 4 — before this gate's stage 19 — and again in the same
-#     pull-request-visible `verify` job;
-#   * a revert that DELETES or renames them is caught here, by the name pins.
-# Neither half can be defeated by restructuring production source, which is
-# exactly what every mutant that beat the shape checks does. The reviewer's
-# closing demonstration was to revert REL-03 *and* delete its two tests: green
-# `go test`, green gate. That gap is what these pins close.
+# WHAT THESE NAME PINS ARE, PRECISELY — corrected after round five claimed more.
+# "A revert that keeps the tests is caught by `go test`; one that deletes them is
+# caught by the name pin" was presented as a partition and is not one: KEEPING
+# the names while emptying the bodies is a third case, and it defeated both
+# halves. These pins are therefore a fast, precisely-worded pre-check — they say
+# WHICH test or case was lost, which a go-test transcript does not — and the
+# behavioural mutation run below is the actual property.
 REL03_TEST_FILE="cmd/assent/provider_host_test.go"
 REL03_TESTS=(
   TestProviderDeclarationForgeErrorAbortsResolveRunFacts
@@ -117,6 +133,33 @@ REL07_SUBTESTS=(
   't.Run("stderr_never_merged_into_facts"'
   't.Run("runaway_stderr_is_bounded_and_truncated"'
 )
+
+# The reverts the behavioural run applies to a COPY of the tree. Each must
+# COMPILE — a mutant that does not build proves nothing about behaviour, and
+# check_behavioural_revert refuses a `[build failed]` transcript explicitly.
+#
+# REL-03: the condition narrowing that beat every source-shape heuristic. One
+# line, gofmt/vet/build clean, `context` is already imported by that file.
+REL03_PKG="./cmd/assent/"
+REL03_SRC="cmd/assent/provider_host.go"
+# INDENT-ANCHORED so the revert lands on the provider-declaration guard ONLY.
+# The identical guard in loadResourceOwnerRegistry (D-130) sits at one tab; this
+# one is inside `for` + `if err != nil` at three. An unanchored program reverts
+# both, and the run would then be red partly for a finding this control is not
+# about — check_behavioural_revert's "a PINNED test must be named in a --- FAIL:
+# line" catches that, but a mutant should mean what it says.
+REL03_REVERT=$'s|^\t\t\tif !errors.Is(err, forge.ErrNotFound) {|\t\t\tif !errors.Is(err, forge.ErrNotFound) \&\& errors.Is(err, context.Canceled) {|'
+REL03_REVERT_WITNESS='errors.Is(err, context.Canceled)'
+REL03_RUN='TestProviderDeclarationForgeErrorAbortsResolveRunFacts|TestProviderDeclarationUnauthorizedAbortsResolveRunFacts'
+
+# REL-07: drop the fold. `err` is in scope, so this compiles as written and is
+# exactly the pre-fix behaviour — a bare "exit status 1" with no diagnostic.
+REL07_PKG="./internal/provider/"
+REL07_SRC="internal/provider/transport.go"
+REL07_REVERT='s|return nil, execFailure(err, stderr)|return nil, err|'
+REL07_REVERT_WITNESS='return nil, err'
+REL07_RUN='TestExecStderrFoldedIntoError'
+
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -394,6 +437,172 @@ mutate() {
     fail "mutation harness: expected '$witness' in ${file#"$WORK"/} after mutation, but it is absent"
 }
 
+# ============================================================================
+# BEHAVIOURAL MUTATION RUN — the primary evidence for REL-03 and REL-07
+# ============================================================================
+#
+# WHY THIS EXISTS. Round five pinned these two remediations by TEST NAME, on the
+# reasoning that `go test` catches a revert that keeps the tests and the name pin
+# catches one that deletes them. A reviewer then kept the names and emptied the
+# bodies —
+#     func TestProviderDeclarationForgeErrorAbortsResolveRunFacts(t *testing.T) {
+#         t.Skip("temporarily disabled")
+#     }
+# — applied the one-line condition narrowing, and got `gofmt` silent, `go build`
+# OK, `go vet` OK, `go test ./cmd/assent/` OK and this gate GREEN, with REL-03
+# fully reverted. A NAME IS NOT A BEHAVIOUR, and "keeps the tests" vs "deletes
+# the tests" was never a partition: gutting them is a third case that both halves
+# missed. `t.Skip("flaky")` is a routine event, not a contrivance. There is also
+# no third backstop for REL-03: cmd/ sits outside ./internal/..., so the coverage
+# floor moves not at all when those tests are gutted.
+#
+# So the property is measured, not read: copy the tree, apply the revert to the
+# COPY, run the pinned tests against the copy, and require them to FAIL. That
+# terminates the class — it tests behaviour rather than text or names, and it is
+# indifferent to how either the production revert or the test gutting is spelled.
+#
+# Cost, measured: the tree copy is ~1,200 tracked files / 8.6 MB and takes well
+# under a second; each `go test -run <pinned>` over one package takes ~1-2s. Both
+# findings together add ~4s to a stage that already runs after `task test`.
+#
+# NOTHING IS WRITTEN TO THE REAL TREE. Every mutation lands in $WORK.
+
+# mutation_tree <tag> — a throwaway copy of the WORKING TREE's tracked files.
+# Tracked-only (git ls-files) to skip .git and build junk, but the CONTENT comes
+# from the working tree, so the copy grades what is about to be committed rather
+# than what HEAD already holds.
+mutation_tree() {
+  local dir="$WORK/tree-$1"
+  if [[ -d "$dir" ]]; then
+    printf '%s\n' "$dir"
+    return 0
+  fi
+  mkdir -p "$dir"
+  if [[ ! -s "$WORK/tracked.tar" ]]; then
+    (cd "$ROOT" && git ls-files -z | tar -cf - --null -T -) >"$WORK/tracked.tar"
+  fi
+  tar -xf "$WORK/tracked.tar" -C "$dir"
+  printf '%s\n' "$dir"
+}
+
+# drop_unused_imports <tree> <pkg> <file-rel> — emptying a test body orphans the
+# imports it used, and Go rejects an unused import. The reviewer's own mutant
+# "dropped the now-unused imports"; this does the same thing deterministically
+# instead of hardcoding a list: compile, read back the `"x" imported and not
+# used` diagnostics, delete exactly those import lines, repeat. Bounded, and it
+# returns quietly on any other error so the caller still grades the real
+# transcript rather than this loop's opinion of it.
+drop_unused_imports() {
+  local tree="$1" pkg="$2" rel="$3" i out unused imp
+  for ((i = 0; i < 12; i++)); do
+    out="$WORK/imports.$$.$i"
+    (cd "$tree" && go build "$pkg" && go vet "$pkg") >"$out" 2>&1 && return 0
+    unused="$(sed -nE 's/.*"([^"]+)" imported and not used.*/\1/p' "$out" | sort -u)"
+    [[ -n "$unused" ]] || return 0
+    while IFS= read -r imp; do
+      [[ -n "$imp" ]] || continue
+      awk -v q="\"${imp}\"" '
+        {
+          t = $0
+          sub(/^[ \t]+/, "", t)
+          if (t == q) { next }
+          if (t ~ ("^[A-Za-z0-9_.]+ " q "$")) { next }
+          print
+        }
+      ' "$tree/$rel" >"$tree/$rel.imp"
+      mv "$tree/$rel.imp" "$tree/$rel"
+    done <<<"$unused"
+  done
+  return 0
+}
+
+# go_test_named <tree> <run-regex> <pkg> <out> — `go test -v -run` in a copy.
+# Returns go test's own exit code; the caller grades the transcript, never the
+# exit code alone (a build failure also exits non-zero and proves nothing about
+# behaviour).
+go_test_named() {
+  local tree="$1" run="$2" pkg="$3" out="$4" rc=0
+  (cd "$tree" && go test -count=1 -timeout 120s -v -run "$run" "$pkg") >"$out" 2>&1 || rc=$?
+  return "$rc"
+}
+
+# check_behavioural_revert <finding> <tag> <file-rel> <sed-program> <witness>
+#                          <run-regex> <pkg> <fn-list-name> <remediation>
+# The pinned tests must actually DETECT the revert. Three graded runs:
+#   (1) positive control — the pinned tests PASS by name on an unmutated copy.
+#       This is also what catches a gutted body that still returns success only
+#       because it does nothing: see the emptiness probe below.
+#   (2) the revert applied to a second copy — the pinned tests must FAIL, and
+#       fail as TESTS: a `[build failed]` transcript is refused explicitly,
+#       because "the mutant does not compile" is not evidence about behaviour.
+#   (3) at least one FAIL line must name a PINNED test, not some neighbour.
+# Optional 10th argument OVERLAY, "<repo-relative path>=<replacement file>",
+# copied into BOTH the control copy and the reverted copy before either runs.
+# That is how the gutted-test controls work: they do not touch production source
+# at all, they replace the test file and let the run report what that costs.
+check_behavioural_revert() {
+  local finding="$1" tag="$2" rel="$3" prog="$4" witness="$5" run="$6" pkg="$7" fn_list="$8" remediation="$9"
+  local overlay="${10:-}"
+  local -n fns="$fn_list"
+  local clean mut out_clean out_mut fn rc=0
+
+  clean="$(mutation_tree "${tag}-control")"
+  if [[ -n "$overlay" ]]; then
+    cp "${overlay#*=}" "$clean/${overlay%%=*}"
+    drop_unused_imports "$clean" "$pkg" "${overlay%%=*}"
+  fi
+  out_clean="$WORK/gotest.${tag}.clean"
+  if go_test_named "$clean" "$run" "$pkg" "$out_clean"; then :; else
+    if grep -Fq 'build failed' "$out_clean"; then
+      echo "  ${finding}: the pinned tests do not BUILD on an unmutated copy of the tree — this gate cannot measure anything until that is fixed (AUD2-S05 behavioural pin)" >&2
+    else
+      echo "  ${finding}: the pinned tests are RED on an unmutated copy of the tree — ${remediation} is already broken, or the tests are (AUD2-S05 behavioural pin)" >&2
+    fi
+    sed 's/^/    /' <(grep -E "^(---|\s+---|FAIL|ok)" "$out_clean" | head -8) >&2
+    return 1
+  fi
+  for fn in "${fns[@]}"; do
+    if ! grep -Fq -- "--- PASS: ${fn}" "$out_clean"; then
+      echo "  ${finding}: '${fn}' did not report '--- PASS:' on an unmutated copy — it was renamed, deleted or skipped. \`go test\` exits 0 both when a -run pattern matches nothing and when a test calls t.Skip, so grading its exit code alone would treat a disabled test as a passing one (AUD2-S05 behavioural pin)" >&2
+      rc=1
+    fi
+  done
+  ((rc == 0)) || return "$rc"
+
+  mut="$(mutation_tree "${tag}-reverted")"
+  if [[ -n "$overlay" ]]; then
+    cp "${overlay#*=}" "$mut/${overlay%%=*}"
+    drop_unused_imports "$mut" "$pkg" "${overlay%%=*}"
+  fi
+  local target="$mut/$rel"
+  sed "$prog" "$target" >"$target.mut" && mv "$target.mut" "$target"
+  if ! grep -Fq -- "$witness" "$target"; then
+    fail "mutation harness (${finding}): the behavioural revert did not land in ${rel} — expected '${witness}' after applying the sed program, so the run below would grade an unmutated copy and pass for the wrong reason"
+  fi
+
+  out_mut="$WORK/gotest.${tag}.mut"
+  if go_test_named "$mut" "$run" "$pkg" "$out_mut"; then
+    echo "  ${finding}: the pinned tests still PASS with ${remediation} REVERTED in a copy of the tree — they no longer detect the defect they exist to detect. A name that survives with an emptied body (t.Skip, a no-op loop, a deleted assertion) is not a behaviour, and neither \`go test\` nor a name pin can tell the difference. This is the ONLY assertion here that measures the remediation rather than reading it (AUD2-S05 behavioural pin). Revert applied: ${witness}" >&2
+    rc=1
+  else
+    if grep -Fq 'build failed' "$out_mut"; then
+      echo "  ${finding}: the reverted copy failed to BUILD rather than failing its tests — that is not evidence about behaviour, and this control must not be allowed to pass on it. Fix the revert program so it produces compiling code (AUD2-S05 behavioural pin)" >&2
+      rc=1
+    else
+      local named=0
+      for fn in "${fns[@]}"; do
+        grep -Fq -- "--- FAIL: ${fn}" "$out_mut" && named=1
+      done
+      if ((named == 0)); then
+        echo "  ${finding}: the reverted copy is red, but NO pinned test is named in a '--- FAIL:' line — something else failed, so this run does not show that the pinned tests detect ${remediation} (AUD2-S05 behavioural pin)" >&2
+        sed 's/^/    /' <(grep -E "^--- FAIL:" "$out_mut" | head -5) >&2
+        rc=1
+      fi
+    fi
+  fi
+  return "$rc"
+}
+
 # check_named_tests <finding> <repo-relative test file> <fn-list-name>
 #                   <subtest-list-name> <remediation>
 # The primary pin: the named behavioural tests still exist, by name, in the named
@@ -412,14 +621,12 @@ check_named_tests() {
     echo "  ${finding}: ${rel} does not exist — the behavioural tests that hold ${remediation} closed are gone, and 'go test' reports a deleted test as success (AUD2-S05 primary pin)" >&2
     return 1
   fi
-  # Positive control on the file, so a truncated or renamed-away file cannot
-  # satisfy the pins by containing nothing at all.
-  local n_tests
-  n_tests="$(grep -cE '^func Test' "$file" || true)"
-  if [[ "$n_tests" -eq 0 ]]; then
-    echo "  ${finding}: ${rel} contains no 'func Test' at all — the file survives in name only, so every pin below would be graded against an empty corpus" >&2
-    return 1
-  fi
+  # There is deliberately NO `grep -cE "^func Test" >= 1` corpus control here.
+  # It cannot independently fail: any file satisfying a `func <pinned>(` pin
+  # necessarily contains a `^func Test` line, so it would be an assertion that
+  # is true whenever the assertions after it are — the D-124 species this epic
+  # exists to close. The real defence against an emptied corpus is the
+  # behavioural run, which reports what the tests DO.
   local -n fns="$fn_list"
   local -n subs="$sub_list"
   local fn sub
@@ -429,9 +636,21 @@ check_named_tests() {
       rc=1
     fi
   done
+  # F4: the case pins read a COMMENT-STRIPPED view. `[]int{401, 403}` was
+  # satisfied out of a Go comment by a gutted test whose body had been replaced
+  # with `// coverage note: this used to iterate []int{401, 403}` — every
+  # production-source assertion in this script already filters comments, and
+  # this one did not. code_conservative (not code_only) because these are
+  # PRESENCE assertions over a test file: over-stripping causes a false RED.
+  local code_view="$WORK/testfile.code.$(basename "$rel")"
+  code_conservative <"$file" >"$code_view"
+  if [[ ! -s "$code_view" ]]; then
+    echo "  ${finding}: the comment-stripped view of ${rel} is empty — the filter is over-stripping, so the case pins below would be graded against nothing" >&2
+    return 1
+  fi
   for sub in "${subs[@]}"; do
-    if ! grep -Fq -- "$sub" "$file"; then
-      echo "  ${finding}: the case pin '${sub}' is absent from ${rel} — a case can be dropped without touching any test function name, which narrows the coverage that holds ${remediation} closed while every function-level pin stays green (AUD2-S05 primary pin)" >&2
+    if ! grep -Fq -- "$sub" "$code_view"; then
+      echo "  ${finding}: the case pin '${sub}' is absent from the CODE of ${rel} — a case can be dropped without touching any test function name, which narrows the coverage that holds ${remediation} closed while every function-level pin stays green. Comments do not count: a gutted body that leaves the table behind in prose satisfies nothing here (AUD2-S05 primary pin)" >&2
       rc=1
     fi
   done
@@ -508,7 +727,9 @@ check_exec_containment() { # <transport.go>
   # CallHTTP's MaxResponseBytes intact and still reddens.)
   body_of "$file" CallExec "$body" "REL-01/02/07" 'cmd.Run()' 'func execFailure' || return 1
 
-  # ---- PRIMARY: the named behavioural tests still exist ---------------------
+  # ---- PRIMARY (2): the named tests and their cases still exist -------------
+  # PRIMARY (1), the behavioural run, is a separate top-level check — see the
+  # note in check_notfound_discrimination for why it is not inlined here.
   check_named_tests "REL-07" "$REL07_TEST_FILE" REL07_TESTS REL07_SUBTESTS \
     "the stderr fold in CallExec" || rc=1
 
@@ -672,7 +893,11 @@ check_exec_containment() { # <transport.go>
 check_notfound_discrimination() { # <provider_host.go>
   local file="$1" rc=0
   local body="$WORK/body.resolveRunFacts"
-  # ---- PRIMARY: the named behavioural tests still exist ---------------------
+  # ---- PRIMARY (2): the named tests and their cases still exist -------------
+  # The behavioural run (PRIMARY (1)) is a SEPARATE top-level check, not part of
+  # this function: this one is re-invoked against mutant FILES by a dozen
+  # controls, and running a `go test` per invocation took the gate from 4s to
+  # 65s. It also has nothing to say about a mutated copy of one source file.
   check_named_tests "REL-03" "$REL03_TEST_FILE" REL03_TESTS REL03_SUBTESTS \
     "the forge-error/absent-file discrimination in resolveRunFacts" || rc=1
 
@@ -954,6 +1179,10 @@ check_task_wiring() { # <taskfile>
   elif ! grep -Fq "$SELF" "$def"; then
     echo "  REQ-AUD2-S05-03: the '${STAGE}' task does not invoke ${SELF} — the stage name is wired but the gate is not" >&2
     rc=1
+  elif ! grep -qE "bash ${SELF//\//\\/}[[:space:]]*\$" "$def"; then
+    echo "  REQ-AUD2-S05-03: the '${STAGE}' task invokes ${SELF} WITH ARGUMENTS — '--text-only' skips the behavioural mutation runs, which are the only assertions here that measure REL-03 and REL-07 rather than reading their source text. An argument-carrying invocation is a disarmed gate (the AUD-S18 idiom, same reason):" >&2
+    sed 's/^/    /' <(grep -F "$SELF" "$def") >&2
+    rc=1
   fi
   return "$rc"
 }
@@ -1061,6 +1290,13 @@ check_pr_wiring() { # <verify.yaml>
     echo "  REQ-AUD2-S05-05: could not isolate the AUD2 gate step in the verify job — the extraction broke, so the disarm assertion would be vacuous" >&2
     return 1
   fi
+  # Same argument ban as the Taskfile stage: `--text-only` in CI would leave the
+  # behavioural runs unexecuted on every pull request.
+  if ! grep -qE "bash ${SELF//\//\\/}[[:space:]]*\$" "$step"; then
+    echo "  REQ-AUD2-S05-05: the AUD2 gate step invokes ${SELF} WITH ARGUMENTS — '--text-only' skips the behavioural mutation runs, so the step would look wired while certifying nothing about REL-03 and REL-07:" >&2
+    sed 's/^/    /' <(grep -F "$SELF" "$step") >&2
+    rc=1
+  fi
   local disarmed="$WORK/hits.disarmed"
   grep -nE '^[[:space:]]*(if|continue-on-error):' "$step" >"$disarmed" || true
   if [[ -s "$disarmed" ]]; then
@@ -1091,6 +1327,22 @@ echo "== (4) TEST-02 — AUD2-S04: EffectChallenge classified, and named-tested 
 expect_green check_challenge_classification "isStricterInterventionEffect keeps EffectChallenge and ${CHALLENGE_TEST} defends it" "$CLASSIFY" "$CLASSIFY_TEST"
 
 echo
+echo "== (4b) REL-03 / REL-07 — the pinned tests still DETECT their revert =="
+if ((TEXT_ONLY == 1)); then
+  echo "SKIP (--text-only): the behavioural mutation runs need the Go toolchain and git."
+  echo "  This mode certifies the PATTERNS and their mutation harness only. It says NOTHING"
+  echo "  about whether REL-03 and REL-07 are still held closed — a name pin cannot tell a"
+  echo "  live test from an emptied one. 'task check' and verify.yaml invoke this script with"
+  echo "  NO arguments, and the wiring checks below refuse an argument-carrying invocation."
+else
+  expect_green check_behavioural_revert "the REL-03 tests FAIL when the condition-narrowing revert is applied to a copy of the tree" \
+    "REL-03" rel03 "$REL03_SRC" "$REL03_REVERT" "$REL03_REVERT_WITNESS" "$REL03_RUN" "$REL03_PKG" REL03_TESTS \
+    "the forge-error/absent-file discrimination in resolveRunFacts"
+  expect_green check_behavioural_revert "the REL-07 tests FAIL when the stderr fold is dropped in a copy of the tree" \
+    "REL-07" rel07 "$REL07_SRC" "$REL07_REVERT" "$REL07_REVERT_WITNESS" "$REL07_RUN" "$REL07_PKG" REL07_TESTS \
+    "the stderr fold in CallExec"
+fi
+
 echo "== (5) REQ-AUD2-S05-02 — every assertion above proved capable of going RED =="
 
 # ---- REL-01: stdout back to an unbounded buffer -----------------------------
@@ -1509,6 +1761,105 @@ expect_red check_challenge_classification "the named EffectChallenge unit case w
 # broken. Green first means the REQ-named message always wins.
 
 echo
+# ---- GUTTED TEST BODIES: a name is not a behaviour --------------------------
+# The round-five escape, as executable controls. Both keep every pinned NAME and
+# every pinned case string, so check_named_tests stays green on them; both leave
+# production source untouched until the revert is applied by the run itself.
+# They are caught by different halves, which is why both are here:
+#   * t.Skip  -> `go test` reports `--- SKIP:`, never `--- PASS:`, so the
+#     unmutated control run catches it before the revert is even applied;
+#   * a no-op body -> reports `--- PASS:` and keeps passing WITH the revert
+#     applied, so only the reverted run catches it.
+# `go test` exits 0 for both. So does a name pin. So did this gate, one round ago.
+if ((TEXT_ONLY == 0)); then
+  gut="$WORK/provider_host_test.skipped.go"
+  awk '
+    /^func TestProviderDeclarationForgeErrorAbortsResolveRunFacts\(/ ||
+    /^func TestProviderDeclarationUnauthorizedAbortsResolveRunFacts\(/ {
+      print
+      print "\tt.Skip(\"temporarily disabled\")"
+      print "\t// coverage note: this used to iterate []int{401, 403}"
+      gutting = 1
+      depth = 1
+      next
+    }
+    gutting {
+      if ($0 == "}") { print "}"; gutting = 0 }
+      next
+    }
+    { print }
+  ' "$ROOT/$REL03_TEST_FILE" >"$gut"
+  grep -Fq 't.Skip("temporarily disabled")' "$gut" ||
+    fail "mutation harness: the t.Skip gutting did not land in the REL-03 test file"
+  for fn in "${REL03_TESTS[@]}"; do
+    grep -Fq "func ${fn}(" "$gut" ||
+      fail "mutation harness: the t.Skip mutant lost the NAME ${fn} — then check_named_tests catches it and this control proves nothing about names surviving"
+  done
+  grep -Fq '[]int{401, 403}' "$gut" ||
+    fail "mutation harness: the t.Skip mutant lost the case pin text — it must survive (in a comment) for this control to show that a case pin can be satisfied by prose"
+  check_named_tests "REL-03" "$gut" REL03_TESTS REL03_SUBTESTS "x" 2>/dev/null &&
+    echo "OK: the t.Skip mutant keeps every pinned NAME and case string — check_named_tests is GREEN on it, which is exactly the gap the behavioural run closes" ||
+    echo "OK: check_named_tests already refuses the t.Skip mutant (the case pin now reads code, not comments) — the behavioural run below is the independent second half"
+  expect_red check_behavioural_revert "the pinned REL-03 tests keep their names but t.Skip their bodies — 'go test' exits 0 and reports --- SKIP:, never --- PASS:" \
+    "did not report '--- PASS:'" \
+    "REL-03" rel03skip "$REL03_SRC" "$REL03_REVERT" "$REL03_REVERT_WITNESS" "$REL03_RUN" "$REL03_PKG" REL03_TESTS \
+    "the forge-error/absent-file discrimination in resolveRunFacts" "${REL03_TEST_FILE}=${gut}"
+
+  gut2="$WORK/provider_host_test.noop.go"
+  awk '
+    /^func TestProviderDeclarationForgeErrorAbortsResolveRunFacts\(/ ||
+    /^func TestProviderDeclarationUnauthorizedAbortsResolveRunFacts\(/ {
+      print
+      print "\t_ = t"
+      print "\t// coverage note: this used to iterate []int{401, 403}"
+      gutting = 1
+      next
+    }
+    gutting {
+      if ($0 == "}") { print "}"; gutting = 0 }
+      next
+    }
+    { print }
+  ' "$ROOT/$REL03_TEST_FILE" >"$gut2"
+  grep -Fq '_ = t' "$gut2" || fail "mutation harness: the no-op gutting did not land"
+  grep -Fq 't.Skip' "$gut2" &&
+    fail "mutation harness: the no-op mutant contains t.Skip — then it is the previous control again, and it would be caught by the --- PASS: check rather than by the reverted run"
+  echo "OK: the no-op mutant has NO t.Skip — it reports '--- PASS:' like a live test, so only the REVERTED run can tell it is empty"
+  expect_red check_behavioural_revert "the pinned REL-03 tests keep their names and PASS, but their bodies assert nothing — the revert no longer makes them fail" \
+    "they no longer detect the defect they exist to detect" \
+    "REL-03" rel03noop "$REL03_SRC" "$REL03_REVERT" "$REL03_REVERT_WITNESS" "$REL03_RUN" "$REL03_PKG" REL03_TESTS \
+    "the forge-error/absent-file discrimination in resolveRunFacts" "${REL03_TEST_FILE}=${gut2}"
+
+  gut3="$WORK/transport_test.noop.go"
+  awk '
+    /^func TestExecStderrFoldedIntoError\(/ {
+      print
+      print "\t_ = t"
+      gutting = 1
+      next
+    }
+    gutting {
+      if ($0 == "}") { print "}"; gutting = 0 }
+      next
+    }
+    { print }
+  ' "$ROOT/$REL07_TEST_FILE" >"$gut3"
+  grep -Fq '_ = t' "$gut3" || fail "mutation harness: the REL-07 no-op gutting did not land"
+  grep -Fq "func ${REL07_TESTS[0]}(" "$gut3" ||
+    fail "mutation harness: the REL-07 no-op mutant lost the test NAME — then the name pin catches it and this control says nothing"
+  expect_red check_behavioural_revert "the pinned REL-07 test keeps its name and PASSes, but its body asserts nothing — dropping the stderr fold no longer makes it fail" \
+    "they no longer detect the defect they exist to detect" \
+    "REL-07" rel07noop "$REL07_SRC" "$REL07_REVERT" "$REL07_REVERT_WITNESS" "$REL07_RUN" "$REL07_PKG" REL07_TESTS \
+    "the stderr fold in CallExec" "${REL07_TEST_FILE}=${gut3}"
+
+  # The harness must also refuse a mutant that merely fails to COMPILE: "the
+  # reverted copy is red" is not evidence about behaviour.
+  expect_red check_behavioural_revert "the revert program produces code that does not build — red for the wrong reason" \
+    "failed to BUILD rather than failing its tests" \
+    "REL-07" rel07nobuild "$REL07_SRC" 's|return nil, execFailure(err, stderr)|return nil, notAThing(err)|' \
+    'notAThing(err)' "$REL07_RUN" "$REL07_PKG" REL07_TESTS "the stderr fold in CallExec"
+fi
+
 echo "== (6) REQ-AUD2-S05-03/04/05 — this gate is wired where it can be seen =="
 expect_green check_task_wiring "'task check' runs ${STAGE}, which invokes ${SELF}" "$TASKFILE"
 expect_green check_stage_pinned "${STAGE} is pinned in CHECK_STAGES (AUD-S18 grades it)" "$AUD_GATE"
@@ -1533,6 +1884,17 @@ grep -qE "^[[:space:]]+- task: ${STAGE}\$" "$m" ||
   fail "mutation harness: the gutted Taskfile also lost the '- task: ${STAGE}' line — then it is the previous mutation again and proves nothing about the stage BODY"
 expect_red check_task_wiring "the ${STAGE} stage is still wired and named, but its body no longer runs ${SELF} (REQ-AUD2-S05-03)" \
   "does not invoke" "$m"
+
+# The stage runs the gate, and runs it DISARMED: `--text-only` skips the two
+# behavioural mutation runs, which are the only assertions that measure REL-03
+# and REL-07 instead of reading their source. Everything else stays green.
+m="$WORK/Taskfile.textonly.yml"
+sed "s|bash ${SELF}|bash ${SELF} --text-only|" "$TASKFILE" >"$m"
+assert_changed "$TASKFILE" "$m"
+grep -Fq "$SELF" "$m" ||
+  fail "mutation harness: the --text-only mutant lost the gate invocation — this control must keep it, or it grades absence instead of disarmament"
+expect_red check_task_wiring "'task check' runs the gate with --text-only, skipping the behavioural runs (REQ-AUD2-S05-03)" \
+  "WITH ARGUMENTS" "$m"
 
 m="$WORK/exitgate.nopin.sh"
 grep -vE "^[[:space:]]+${STAGE}\$" "$AUD_GATE" >"$m"
@@ -1569,6 +1931,14 @@ fi
 expect_red check_pr_wiring "the workflow stopped triggering on pull_request while the step stayed wired" \
   "no longer triggers on pull_request" "$m"
 
+m="$WORK/verify.textonly.yaml"
+sed "s|bash ${SELF}|bash ${SELF} --text-only|" "$WORKFLOW" >"$m"
+assert_changed "$WORKFLOW" "$m"
+grep -Fq "$SELF" "$m" ||
+  fail "mutation harness: the --text-only workflow mutant lost the step — it must stay present for this control to grade disarmament"
+expect_red check_pr_wiring "the verify job runs the gate with --text-only — wired, PR-visible, and certifying nothing about REL-03/REL-07 (REQ-AUD2-S05-05)" \
+  "WITH ARGUMENTS" "$m"
+
 # REQ-AUD2-S05-05's core property, previously asserted but never controlled: the
 # step is present, the job runs on PRs, and the step is DISARMED — a red gate
 # then does not fail the check. `continue-on-error:` and `if:` are the two
@@ -1589,13 +1959,18 @@ done
 
 # The floor is a FLOOR, and the banner below says exactly that. An earlier
 # wording claimed the controls proved "every assertion" could fail; this script
-# emits roughly forty distinct findings and thirty of them carry a control,
+# emits roughly forty distinct findings and thirty-six of them carry a control,
 # so that claim overstated the gate's own coverage — the D-124 failure mode this
 # epic exists to close, in the gate built to close it. What IS asserted: every
 # control that exists ran, each went red for its own pinned message, and every
 # REQ-bearing assertion (REQ-AUD2-S05-02/03/04/05 and the four findings) has one.
-((MUTATIONS_PROVED >= 30)) ||
-  fail "only ${MUTATIONS_PROVED} mutation controls ran, fewer than the pinned floor — a section was skipped, so REQ-AUD2-S05-02's evidence is incomplete"
+# Mode-aware floor: --text-only legitimately skips the four behavioural
+# controls, and a single number would either pass a truncated full run or red
+# every text-only run. Both floors are pinned so neither mode can quietly shrink.
+CONTROL_FLOOR=36
+((TEXT_ONLY == 0)) || CONTROL_FLOOR=32
+((MUTATIONS_PROVED >= CONTROL_FLOOR)) ||
+  fail "only ${MUTATIONS_PROVED} mutation controls ran in $([[ $TEXT_ONLY == 1 ]] && echo --text-only || echo full) mode, fewer than the pinned floor of ${CONTROL_FLOOR} — a section was skipped, so REQ-AUD2-S05-02's evidence is incomplete"
 
 # ============================================================================
 # REQ-AUD2-S05-01 — the disposition statement
@@ -1610,6 +1985,14 @@ echo "  REL-03  (AUD2-S02) CLOSED — resolveRunFacts discriminates ErrNotFound;
 echo "  SEC-03  (AUD2-S03) CLOSED — hack/install.sh pins the signer identity + OIDC issuer, no drift from SECURITY.md"
 echo "  TEST-02 (AUD2-S04) CLOSED — EffectChallenge is classified and ${CHALLENGE_TEST} defends it"
 echo
+if ((TEXT_ONLY == 1)); then
+  echo "PASS (--text-only): the PATTERN layer and its mutation harness only."
+  echo "  This run did NOT execute the behavioural mutation runs, so it certifies NOTHING about"
+  echo "  whether REL-03 and REL-07 are still held closed: their name pins cannot tell a live"
+  echo "  test from an emptied one. Run with no arguments for that. 'task check' and verify.yaml"
+  echo "  both invoke this script with no arguments, and the wiring checks above refuse otherwise."
+  exit 0
+fi
 echo "PASS: aud2_exitgate_test.sh — all four AUD2 remediations dispositioned (REL-01/02/07, REL-03, SEC-03, TEST-02)."
-echo "  HOW each is held closed, precisely: SEC-03 and REL-01/02 by source pins over hack/install.sh and CallExec; TEST-02, REL-03 and REL-07 by NAMED-TEST pins here composed with 'go test' at check stage 4 — a revert that keeps those tests reds there, a revert that deletes or renames them reds here. The REL-03/REL-07 source-shape checks are secondary HEURISTICS with two recorded blind spots (a condition narrowing in the guard's own if; a bare return whose message text merely contains the sink identifier); neither is what this gate relies on."
+echo "  HOW each is held closed, precisely: SEC-03 and REL-01/02 by source pins over hack/install.sh and CallExec; TEST-02 by its named unit case. REL-03 and REL-07 by a BEHAVIOURAL MUTATION RUN — the revert is applied to a throwaway copy of the tree and the pinned tests must FAIL against it — which is indifferent to how the production revert is spelled AND to how the tests might be hollowed out (t.Skip, a no-op body, a deleted assertion all make it red). The name/case pins beside it are a fast, precisely-worded pre-check, not the property; the source-shape checks are secondary heuristics with two recorded blind spots."
 echo "  ${MUTATIONS_PROVED} mutation controls ran (floor-asserted), each red for its own stated reason, covering every REQ-bearing assertion here — NOT every finding this script can emit. The gate is wired into 'task check', pinned in CHECK_STAGES, and run by the pull-request-visible verify job."
