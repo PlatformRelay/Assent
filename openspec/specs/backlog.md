@@ -740,7 +740,7 @@ that claim).
 
 | ID | Follow-up | Execution | Depends on | Why it is separate |
 | --- | --- | --- | --- | --- |
-| AUD2-F01 | SEC-03's twin: `hack/release/verify-artifacts.sh:124` runs the same **unpinned** `cosign verify-blob --bundle` on the maintainer/CI path | **[autonomous]** | AUD2-S03 (D-153's value) | found *by* S03, deliberately left alone there — not an owned path, and out of that story's stated scope |
+| AUD2-F01 | **DONE** — SEC-03's twin: `hack/release/verify-artifacts.sh:124` ran the same **unpinned** `cosign verify-blob --bundle` on the maintainer/CI path; `verify_cosign()` now pins the D-153 issuer/identity pair and `hack/release/install_cosign_pin_test.sh` grades it as the **third** file of the one drift gate | **[autonomous]** | AUD2-S03 (D-153's value) | found *by* S03, deliberately left alone there — not an owned path, and out of that story's stated scope |
 
 Sizing, from the S03 implementer's reading of the call site: `verify_cosign()`
 (`hack/release/verify-artifacts.sh:118–125`) has the byte-identical unpinned
@@ -757,8 +757,18 @@ rather than start a second published truth (D-128).
 **AUD2 status: AUTONOMOUS COMPLETE** — S01–S05 landed. The four 2026-08-18 findings
 (REL-01/02/07, REL-03, SEC-03, TEST-02) are closed, and `audit-aud2-exitgate-test` pins them
 as the 19th `task check` stage — wired **PR-visibly** in the `verify` job, not only in the
-push-only `release-exitgate` job, so the RELSE-08 blind spot is not reproduced. **AUD2-F01
-remains OPEN** — it is a follow-up, not an AUD2 story (D-152).
+push-only `release-exitgate` job, so the RELSE-08 blind spot is not reproduced. **AUD2-F01 is
+now CLOSED too** — still a follow-up rather than an AUD2 story (D-152), so the five-story claim
+stands. It added no stage: `CHECK_STAGES` is unchanged at 19, because the fix extends the
+existing `release-install-cosign-pin-test` gate instead of starting a second published truth
+(D-128). All three traps above were handled: the new sections are offline against the same
+stubbed `cosign`, and the vacuity trap is closed by making the discriminator the **stub's argv
+log** rather than the exit code — §5d requires that log to be non-empty and to carry both
+pinned values, and §5e is the paired control proving a bundle-less (snapshot-shaped) `dist/`
+leaves it empty. Mutation-proved red: each flag deleted from `verify-artifacts.sh`, the pre-fix
+both-flags-missing shape, either field drifted from the other two files, the file disagreeing
+with itself, and — the one that matters — both flags left textually in place while the cosign
+branch is never entered.
 
 ## Phases 3–5
 
