@@ -7,6 +7,16 @@
 #   REQ-EX-S08-03: `task check` runs dogfood-examples (after build); deleting
 #   that line from check: must redden this pin.
 #
+# Section 5 extends the same discipline to a SECOND way a dogfood gate can be
+# invoked-by-nothing: `task dogfood-comparison` runs `go test` over an EXTERNAL
+# test package whose real subject is a binary the test builds at runtime, so the
+# Go test cache key is blind to production changes and the stage can print
+# `ok … (cached)` and exit 0 on a tree where the test genuinely fails (measured
+# 2026-08-19). `-count=1` is what makes that stage a gate at all — so it is
+# pinned here, with a mutation control that strips the flag from the COMMAND
+# LINE while leaving the explanatory comment in place, which is exactly how a
+# human would regress it.
+#
 # Follows the hack/release/changelog_gate_test.sh / example_format_inventory_test.sh
 # discipline: every "is it wired" assertion is re-run against a mutated copy
 # with the wiring deleted, so the assertion is proven capable of failing
@@ -131,4 +141,89 @@ echo "== 4. hack/dogfood-examples.sh exists and is executable =="
 [[ -x "$ROOT/$SCRIPT" ]] || fail "$SCRIPT is not executable"
 echo "OK: $SCRIPT present and executable"
 
-echo "PASS: dogfood wiring (REQ-EX-S08-02, REQ-EX-S08-03) — task check runs dogfood-examples after build; Taskfile.yml and verify.yaml both delegate to the shared discovery script"
+# --------------------------------- 5. -count=1 on cache-blind `go test` gates --
+#
+# COUNT1_TASKS: Taskfile tasks whose `go test` subject is NOT the test binary the
+# cache keys on — it is a binary built (or prebuilt) at runtime and driven as a
+# subprocess. For those the cache key is blind to the code under test, so a
+# cached PASS is vacuous and `-count=1` is load-bearing:
+#
+#   dogfood-comparison  examples/comparison/validate_test.go is an EXTERNAL test
+#                       package referencing only exported constants from
+#                       internal/compare; the compare logic is unreachable from
+#                       the test binary (linker strips it) and runs instead in a
+#                       `go build -o … ./cmd/assent` subprocess.
+#   e2e                 test/e2e drives a PREBUILT bin/assent against a live
+#                       GitLab endpoint; neither the binary bytes nor the forge
+#                       state is in the cache key.
+#
+# Deliberately NOT listed: `test` (whole-tree `go test -race ./...` — in-process
+# subjects, honest cache, and a real time saver) and `coverage` (in-process
+# subjects; `-coverprofile` results do cache but the profile is reproduced
+# faithfully). `determinism` needs no pin: `-count=2` is uncacheable by
+# construction.
+COUNT1_TASKS=(dogfood-comparison e2e)
+
+# count1_pinned <file> <task> — the task's `go test` COMMAND LINE carries
+# -count=1. Anchored on the `- go test` command shape and stopping at `#`, so a
+# comment that merely mentions -count=1 can never satisfy it.
+count1_pinned() {
+  extract_block "$1" "$2" \
+    | grep -qE '^[[:space:]]*-[[:space:]]+go test[^#]*[[:space:]]-count=1([[:space:]]|$)'
+}
+
+echo "== 5. -count=1 pins on cache-blind go test gates =="
+for t in "${COUNT1_TASKS[@]}"; do
+  extract_block "$TASKFILE" "$t" >"$WORK/def.$t"
+  [[ -s "$WORK/def.$t" ]] || fail "Taskfile task '$t' is missing or extracted EMPTY — the -count=1 assertion below would be vacuous"
+  grep -qE '^[[:space:]]*-[[:space:]]+go test' "$WORK/def.$t" \
+    || fail "Taskfile task '$t' no longer runs a 'go test' command — re-derive whether it is still cache-blind before deleting this pin"
+  count1_pinned "$TASKFILE" "$t" \
+    || fail "Taskfile task '$t' runs 'go test' WITHOUT -count=1 — its subject is a runtime-built/prebuilt binary the Go test cache key cannot see, so the stage can report 'ok … (cached)' and exit 0 on a tree where the test genuinely fails"
+  echo "OK: $t runs go test with -count=1"
+done
+
+echo "== 5b. the -count=1 assertion is comment-blind (positive control) =="
+cat >"$WORK/comment-only.yml" <<'EOF'
+  dogfood-comparison:
+    cmds:
+      # -count=1 is required here, honest
+      - go test ./examples/comparison/...
+
+  next-task:
+EOF
+if count1_pinned "$WORK/comment-only.yml" dogfood-comparison; then
+  fail "count1_pinned accepted a task whose -count=1 appears ONLY in a comment — the assertion is satisfiable by prose and therefore vacuous"
+fi
+echo "OK: a -count=1 that lives only in a comment does NOT satisfy the pin"
+
+echo "== 5c. the -count=1 assertion can fail (mutation: strip the flag, keep the comment) =="
+mutant_c1="$WORK/Taskfile.nocount1.yml"
+sed -E 's/^([[:space:]]*-[[:space:]]+go test)[[:space:]]+-count=1/\1/' "$TASKFILE" >"$mutant_c1"
+if cmp -s "$TASKFILE" "$mutant_c1"; then
+  fail "mutation did not land: $mutant_c1 is byte-identical to Taskfile.yml"
+fi
+grep -qE '^[[:space:]]*#.*-count=1' "$mutant_c1" \
+  || fail "mutation is not the intended one: it removed the explanatory -count=1 COMMENTS too, so 5c would not prove comment-blindness under mutation"
+for t in "${COUNT1_TASKS[@]}"; do
+  if grep -qE '^[[:space:]]*-[[:space:]]+go test[^#]*[[:space:]]-count=1' <(extract_block "$mutant_c1" "$t"); then
+    fail "mutation did not land for '$t': the command line still carries -count=1 in $mutant_c1"
+  fi
+  if count1_pinned "$mutant_c1" "$t"; then
+    fail "count1_pinned reports '$t' pinned in a Taskfile with the flag stripped from its command line — the assertion is vacuous"
+  fi
+done
+echo "OK: stripping -count=1 from the command lines (comments intact) turns the pin red for: ${COUNT1_TASKS[*]}"
+
+echo "== 5d. task check still runs dogfood-comparison (an unwired gate cannot be saved by -count=1) =="
+check_lists_task "$TASKFILE" dogfood-comparison \
+  || fail "'task check' does not run 'dogfood-comparison' — the gate is defined but invoked by nothing"
+mutant_dc="$WORK/Taskfile.no-comparison.yml"
+grep -vE '^[[:space:]]+- task: dogfood-comparison$' "$TASKFILE" >"$mutant_dc"
+[[ "$(wc -l <"$mutant_dc")" -lt "$(wc -l <"$TASKFILE")" ]] || fail "mutation did not land: $mutant_dc has the same line count as Taskfile.yml"
+if check_lists_task "$mutant_dc" dogfood-comparison; then
+  fail "check_lists_task reports dogfood-comparison wired in a Taskfile with that line deleted — the assertion is vacuous"
+fi
+echo "OK: check runs dogfood-comparison, and deleting that line turns the assertion red"
+
+echo "PASS: dogfood wiring (REQ-EX-S08-02, REQ-EX-S08-03) — task check runs dogfood-examples after build; Taskfile.yml and verify.yaml both delegate to the shared discovery script; the cache-blind go test gates (${COUNT1_TASKS[*]}) carry -count=1"

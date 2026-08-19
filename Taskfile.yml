@@ -66,7 +66,22 @@ tasks:
   dogfood-comparison:
     desc: "Dogfood gate (PCS-S08): comparison corpus validates and runs green under assent compare --suite"
     cmds:
-      - go test ./examples/comparison/...
+      # -count=1 IS THE GATE. Without it this stage reports `ok … (cached)` and
+      # exits 0 on a tree where the same test genuinely fails. The Go test cache
+      # keys on the test BINARY's content ID, and examples/comparison is an
+      # EXTERNAL test package that references only exported constants from
+      # internal/compare (GateZeroMissedDestructive, ExitCodeForGate) — the
+      # comparison logic itself is unreachable from that binary and the linker
+      # strips it, so the content ID does not move when internal/compare
+      # changes. The real logic runs in a subprocess the test builds at runtime
+      # (`go build -o … ./cmd/assent`), entirely outside the cache key. Measured
+      # 2026-08-19: deleting `|| e == aggregate.EffectChallenge` from
+      # isStricterInterventionEffect left this stage green-and-cached while
+      # `-count=1` on the identical tree failed with exit status 6. Corpus DATA
+      # edits do invalidate (copyDir os.ReadFile's them, so testlog records
+      # them); production code changes do not. Pinned by
+      # hack/examples/dogfood_wiring_test.sh.
+      - go test -count=1 ./examples/comparison/...
 
   check:
     desc: "Gate: fmt + vet + lint + test + build (must pass before every commit)"
@@ -192,7 +207,15 @@ tasks:
   e2e:
     desc: E2E tests against a real GitLab (build tag e2e) — see test/e2e/README.md
     cmds:
-      - go test -tags e2e ./test/e2e/...
+      # -count=1 for the same reason as dogfood-comparison: this suite's subject
+      # is a PREBUILT bin/assent (test/e2e/skeleton_test.go) driven against a
+      # live GitLab endpoint named by ASSENT_E2E_GITLAB. Neither the binary's
+      # bytes nor the forge's state is in the test cache key, so a cached PASS
+      # would assert nothing about the run the operator just asked for. Costs
+      # nothing: this task is never part of `task check` and the suite skips
+      # unless the endpoint env var is set. Pinned by
+      # hack/examples/dogfood_wiring_test.sh.
+      - go test -count=1 -tags e2e ./test/e2e/...
 
   docs:
     desc: Serve the docs site locally
