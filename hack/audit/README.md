@@ -131,8 +131,8 @@ still present in the tree. Every failure names the audit finding ID it reopens.
 
 | # | Asserts | Names on failure |
 | --- | --- | --- |
-| 1 | `CallExec` bounds child stdout at `MaxResponseBytes`, sets a non-zero `cmd.WaitDelay`, and captures a bounded stderr that **every** return in its `cmd.Run()` failure branch carries | `REL-01`, `REL-02`, `REL-07` |
-| 2 | `resolveRunFacts` discriminates `forge.ErrNotFound` on the provider-declaration fetch **and** its guard cannot be entered without stopping the run (no fall-through at any depth) | `REL-03` |
+| 1 | `CallExec` bounds child stdout at `MaxResponseBytes` and sets a non-zero `cmd.WaitDelay` (source pins); its stderr fold is held by `TestExecStderrFoldedIntoError` and its three cases, pinned by name | `REL-01`, `REL-02`, `REL-07` |
+| 2 | `resolveRunFacts` discriminates `forge.ErrNotFound`; the discrimination is held by two named behavioural tests and the `[]int{401, 403}` case table, pinned by name | `REL-03` |
 | 3 | `hack/install.sh` pins the cosign signer identity and OIDC issuer, byte-identically with `SECURITY.md` | `SEC-03` |
 | 4 | `isStricterInterventionEffect` still classifies `EffectChallenge`, and the named unit case that kills the auditor's demonstrated mutant still exists | `TEST-02` |
 | 5 | The gate is a `check:` stage, is pinned in `CHECK_STAGES`, and runs in the **pull-request-visible** `verify` job, undisarmed | `REQ-AUD2-S05-03/04/05` |
@@ -143,6 +143,32 @@ is pure text over the source, needs no toolchain, and therefore runs on **pull r
 `release-exitgate`, where the AUD-S18 gate lives, carries `if: github.event_name != 'pull_request'`
 and that blind spot (RELSE-08) is what let AUD-S18's own stale `CHECK_STAGES` pin merge green four
 times.
+
+### What actually holds each remediation closed
+
+Not the same mechanism for all four, and the difference matters:
+
+| Remediation | Held closed by | Secondary |
+| --- | --- | --- |
+| `SEC-03` | source pins over `hack/install.sh` + `SECURITY.md`, plus the behavioural stub-`cosign` gate in `hack/release/install_cosign_pin_test.sh` | — |
+| `REL-01`, `REL-02` | source pins over `CallExec` (bounded sink by constructor, non-zero `WaitDelay`, single assignment) | — |
+| `TEST-02` | the named unit case, pinned by name | the `EffectChallenge` term in the classifier |
+| `REL-03`, `REL-07` | **named behavioural tests, pinned by name here, composed with `go test`** | source-shape heuristics with two recorded blind spots |
+
+The composition for the last row is the point, and it is written into the script so nobody
+"simplifies" one half away:
+
+* a revert that **keeps** the tests is caught by `go test` — check stage 4, which runs *before*
+  this gate at stage 19, and again as a step of the same pull-request-visible `verify` job;
+* a revert that **deletes or renames** the tests is caught here, by the name pins — `go test`
+  reports a deleted test as success, so that half is structurally invisible to it.
+
+Neither half can be defeated by restructuring production source, which is exactly what every
+mutant that beat the source-shape checks does. The pins cover the test *functions*
+(`TestProviderDeclarationForgeErrorAbortsResolveRunFacts`,
+`TestProviderDeclarationUnauthorizedAbortsResolveRunFacts`, `TestExecStderrFoldedIntoError`) and
+their *cases* (the `[]int{401, 403}` auth table; the three `t.Run` names), because a dropped case
+narrows coverage while every function name survives.
 
 ### Scoping is the whole gate
 
@@ -173,22 +199,35 @@ ones an independent reviewer got past four times — every mutant `gofmt`-clean,
 
    puts a real return at exactly that indent while skipping every 503, 401, 403 and throttle. It
    is also the *more* idiomatic of the two spellings.
-3. **No fall-through, which is the assertion that actually discriminates.** The property is not
-   "where does the return sit" but "can this block be entered and not stop the run". For `REL-03`
-   that is: no `continue`, `break` or `goto` anywhere inside the guard, at any depth — the
-   remediated guard contains none in code, while every revert shape needs one, because skipping
-   the provider *is* the defect. For `REL-07` it is the same idea in the fold's terms: no
-   `return` inside the `cmd.Run()` failure branch may omit the stderr sink, since such a path
-   hands the operator a bare `exit status 1` however the condition around it is spelled. One
-   assertion each, four mutants dead.
+3. **No fall-through / no sink-less return** — the strongest of the shape rules, and still only
+   a heuristic. For `REL-03`: no `continue`, `break` or `goto` anywhere inside the guard, at any
+   depth. For `REL-07`: no `return` inside the `cmd.Run()` failure branch that omits the stderr
+   sink. Between them these kill six revert shapes. They do **not** decide whether the function
+   still fails closed, and two mutants prove it, both recorded as executable controls in the
+   script rather than left as prose:
+
+   * a one-line **condition narrowing** in the guard's own `if` —
+     `if !errors.Is(err, forge.ErrNotFound) && errors.Is(err, context.Canceled) {` — has no
+     fall-through at all and returns at the correct indent;
+   * a **bare return whose message text contains the identifier** —
+     `return nil, fmt.Errorf("provider exec failed (stderr suppressed): %w", err)` — satisfies
+     both halves of the `REL-07` rule, because both halves are substring tests, not data flow.
+
+   The second one is why no further filter work can close this: it is an ordinary double-quoted
+   string literal, not a comment. Recognising "does this function still fail closed" from text
+   means re-implementing Go's type checker and data flow, and four rounds of shape-by-shape
+   patching were each broken by a fresh reviewer, twice with idiomatic one-liners.
 4. **Two comment filters, because absence and presence fail in opposite directions.** Presence
    assertions read `code_only`, which strips line *and* block comments aggressively: quoting the
    required return inside a `/* … */` span otherwise satisfies them, and over-stripping there can
    only cause a false RED. Absence assertions (item 3) invert that — over-stripping would hide
    the very token being hunted and go falsely **green** — so they read `code_conservative`, which
    strips only a leading `//` line or a leading `/*` span and never a trailing comment or a
-   mid-line marker, and therefore can only ever keep too much. Its one residual, a multi-line raw
-   string literal, is refused outright by a backtick check rather than assumed away.
+   mid-line marker, and therefore can only ever keep too much. Two residuals, neither assumed
+   away: a multi-line raw string literal is refused outright by a backtick check; and the
+   fail-closed argument itself **does not hold for `REL-07`'s absence rule**, because that rule
+   is a *negated* match — extra kept text is fail-**open** there. That is one more reason the
+   `REL-07` property is pinned by test name and not by this filter.
 5. **Single assignment.** `rhs_of` reads the *first* assignment to `cmd.Stdout` / `cmd.Stderr` /
    `cmd.WaitDelay`; Go runs the *last*. Appending a second assignment reverts the remediation
    while every other check still reads the good statement, so each of those lvalues — and each
@@ -199,12 +238,12 @@ ones an independent reviewer got past four times — every mutant `gofmt`-clean,
 Held to the same bar as `exitgate_test.sh` and `hack/release/install_cosign_pin_test.sh`: every
 check is a **function** over file arguments, run against the real tree (must be green) *and*
 against a mutant carrying the very defect it exists to catch (must be red, and red **for its own
-stated reason** — `expect_red` pins a message fragment). 26 mutation controls run per invocation
+stated reason** — `expect_red` pins a message fragment). 30 mutation controls run per invocation
 and the count is asserted against a floor, so a skipped section fails the gate instead of
 quietly shrinking it. **What the PASS banner claims, precisely**: that those controls ran, that
 each went red for its own pinned message, and that every REQ-bearing assertion carries one — *not*
 that every finding the script can emit is controlled. The script emits roughly forty distinct
-findings; twenty-six carry a control, and the rest are extraction and positive-control failures
+findings; thirty carry a control, and the rest are extraction and positive-control failures
 whose own reason to exist is that they fire when a pattern stops matching. An exit gate whose
 banner overstates its coverage is the D-124 failure mode this epic exists to close, so the banner
 is worded to what is actually proved. Mutants are **file copies** under `mktemp -d`; `git checkout --` is never
