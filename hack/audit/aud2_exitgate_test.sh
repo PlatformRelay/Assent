@@ -94,8 +94,49 @@ extract_func() {
 
 # code_only — filter dropping whole-line Go comments from stdin, so an assertion
 # can never be satisfied by prose that merely mentions the construct it wants.
+#
+# Strips BOTH comment forms. The first version stripped `//` lines only, and an
+# independent reviewer immediately built a gofmt-clean, compiling half-revert
+# that hid the required return inside a `/* ... */` span — so the claim "a
+# return quoted in a comment cannot satisfy the assertion" was false as written.
+# Block spans carry across lines, hence the state machine rather than a grep.
+#
+# It does not model Go string literals: a `//` or `/*` inside a quoted string
+# would over-strip. That direction is fail-CLOSED (the assertion sees less code,
+# never more), and no such literal exists in the region this filter is applied
+# to, so the simpler scanner is the safer one.
 code_only() {
-  grep -vE '^[[:space:]]*//' || true
+  awk '
+    {
+      line = $0
+      out = ""
+      while (length(line) > 0) {
+        if (inblock) {
+          p = index(line, "*/")
+          if (p == 0) { line = ""; break }
+          line = substr(line, p + 2)
+          inblock = 0
+          continue
+        }
+        pb = index(line, "/*")
+        pl = index(line, "//")
+        if (pl > 0 && (pb == 0 || pl < pb)) {
+          out = out substr(line, 1, pl - 1)
+          line = ""
+          break
+        }
+        if (pb > 0) {
+          out = out substr(line, 1, pb - 1)
+          line = substr(line, pb + 2)
+          inblock = 1
+          continue
+        }
+        out = out line
+        line = ""
+      }
+      print out
+    }
+  '
 }
 
 # guard_block <body-file> — the `if !errors.Is(err, forge.ErrNotFound) { … }`
@@ -190,6 +231,28 @@ downgrade_first_return() {
     }
     { print }
   ' "$file" >"$file.mut"
+  mv "$file.mut" "$file"
+}
+
+# splice_first_return <file> <replacement-file> — replace the FIRST
+# `return nil, nil, fmt…` line with the replacement file's lines, each prefixed
+# with the replaced line's own indentation (so the replacement is written
+# RELATIVE, with its own leading tabs for nesting). Used to build the two
+# camouflaged half-reverts: a return hidden in a block comment, and a return
+# reachable only under a nested condition. Both compile and are gofmt-clean.
+splice_first_return() {
+  local file="$1" rep="$2"
+  awk '
+    FNR == NR { line[++n] = $0; next }
+    done != 1 && $0 ~ /^[[:space:]]*return nil, nil, fmt/ {
+      match($0, /^[ \t]*/)
+      ind = substr($0, 1, RLENGTH)
+      for (i = 1; i <= n; i++) print ind line[i]
+      done = 1
+      next
+    }
+    { print }
+  ' "$rep" "$file" >"$file.mut"
   mv "$file.mut" "$file"
 }
 
@@ -360,10 +423,12 @@ check_notfound_discrimination() { # <provider_host.go>
   # passed. Reading only between the guard's `if` and its matching `}` is what
   # makes the assertion capable of failing at all.
   local guard="$WORK/guard.resolveRunFacts"
-  # Comment lines are stripped: this guard's own prose names both
-  # LoadProviderConfig and the `continue` it replaced, so a raw-text control
-  # would fire on the documentation instead of the code — and a `return …
-  # fmt.Errorf(` quoted in a comment must never satisfy the assertion either.
+  # Line AND block comments are stripped (code_only): this guard's own prose
+  # names both LoadProviderConfig and the `continue` it replaced, so a raw-text
+  # control would fire on the documentation instead of the code — and a
+  # `return … fmt.Errorf(` quoted in a comment must not satisfy the assertion.
+  # Both forms are handled because a reviewer's `/* … */` camouflage mutant got
+  # past the line-only version; see the block-comment control in section (5).
   guard_block "$body" | code_only >"$guard"
   if [[ ! -s "$guard" ]]; then
     echo "  REL-03: could not isolate the forge.ErrNotFound guard block inside resolveRunFacts — the brace-matched extraction broke, so the branch assertion below would be vacuous" >&2
@@ -393,8 +458,24 @@ check_notfound_discrimination() { # <provider_host.go>
     echo "  REL-03: the isolated guard block is not smaller than the whole resolveRunFacts body — the scoping did not happen" >&2
     return 1
   fi
-  if ! grep -Eq '^[[:space:]]*return nil, nil, fmt\.Errorf\(' "$guard"; then
-    echo "  REL-03: the forge.ErrNotFound guard in resolveRunFacts does not RETURN — the discrimination is present but its non-absent branch falls through (a bare continue, or a log-and-carry-on), which is the REL-03 defect restored with the guard left in place as camouflage. The sibling returns further down the function do NOT close this (AUD2-S02)" >&2
+  # TERMINAL PATH, not "appears somewhere in the region". `grep`ping the guard
+  # block for a return still accepts a return that is only reachable under a
+  # further condition — a reviewer's second mutant nests it under
+  # `if errors.Is(err, context.Canceled) { … }` and then `continue`s, which
+  # restores REL-03 in full (every 503/401/403/throttle is skipped) with no
+  # comment trick at all, compiles, and is gofmt-clean. So the return must sit
+  # at EXACTLY the guard's body indent — one level deeper than the `if`, and no
+  # deeper — which is what "the guard's own branch returns" means structurally.
+  # gofmt makes that indentation load-bearing rather than cosmetic.
+  local guard_indent body_indent
+  guard_indent="$(sed -n '1s/^\([[:space:]]*\).*/\1/p' "$guard")"
+  body_indent="$(printf '%s\t' "$guard_indent")"
+  if ! awk -v ind="$body_indent" '
+        index($0, ind) == 1 &&
+        substr($0, length(ind) + 1) ~ /^return nil, nil, fmt\.Errorf\(/ { found = 1 }
+        END { exit(found ? 0 : 1) }
+      ' "$guard"; then
+    echo "  REL-03: the forge.ErrNotFound guard in resolveRunFacts does not RETURN on its own terminal path — the discrimination is present but its non-absent branch falls through (a bare continue, a log-and-carry-on, or a return reachable only under a NESTED condition such as context.Canceled, which leaves every 503/401/403 skipped). That is the REL-03 defect restored with the guard left in place as camouflage. The sibling returns further down the function do NOT close this, and neither does a return quoted in a comment (AUD2-S02)" >&2
     rc=1
   fi
   return "$rc"
@@ -784,6 +865,49 @@ echo "OK: the REL-03 half-revert keeps the guard AND ${half_returns} sibling 're
 expect_red check_notfound_discrimination "the forge.ErrNotFound guard is kept but its body is downgraded to 'continue' — REL-03 restored behind an intact-looking guard" \
   "REL-03: the forge.ErrNotFound guard in resolveRunFacts does not RETURN" "$m"
 
+# ---- REL-03 CAMOUFLAGE 1: the return survives only inside a block comment ----
+# Review round 2. code_only used to strip `//` lines only, so quoting the return
+# inside a `/* … */` span satisfied the assertion while REL-03 was fully
+# restored — and it made the script's own "a return in a comment cannot satisfy
+# this" claim false. Compiles, gofmt-clean, no behavioural change from the plain
+# half-revert.
+m="$WORK/provider_host.rel03comment.go"
+cp "$PROVIDER_HOST" "$m"
+cat >"$WORK/rep.blockcomment" <<'GOREP'
+/*
+return nil, nil, fmt.Errorf("provider %q declaration %q at ref %q: %w", name, declPath, targetRef, err)
+*/
+continue
+GOREP
+splice_first_return "$m" "$WORK/rep.blockcomment"
+assert_changed "$PROVIDER_HOST" "$m"
+grep -Fq '/*' "$m" || fail "mutation harness: the block-comment camouflage did not land — no /* span in the mutant"
+grep -Fq 'return nil, nil, fmt.Errorf("provider %q declaration %q at ref %q: %w"' "$m" ||
+  fail "mutation harness: the block-comment camouflage lost the quoted return — then it is the plain half-revert again and proves nothing about comment stripping"
+echo "OK: the block-comment mutant still CONTAINS the required return text — only code_only's /* … */ stripping can tell it is not code"
+expect_red check_notfound_discrimination "the guard's return survives only inside a /* … */ block comment (REL-03 behind comment camouflage)" \
+  "REL-03: the forge.ErrNotFound guard in resolveRunFacts does not RETURN" "$m"
+
+# ---- REL-03 CAMOUFLAGE 2: the return is reachable only under a nested if -----
+# The one that needs no comment trick, and the reason the assertion measures the
+# guard's TERMINAL path rather than "a return appears in the region". The return
+# is real code at a real indent — but only `context.Canceled` reaches it; every
+# 503, 401, 403 and throttle falls through to `continue`, which is REL-03 in
+# full. Compiles, gofmt-clean, and a naive grep over the guard block is green.
+m="$WORK/provider_host.rel03nested.go"
+cp "$PROVIDER_HOST" "$m"
+printf 'if errors.Is(err, context.Canceled) {\n\treturn nil, nil, fmt.Errorf("provider %%q declaration %%q at ref %%q: %%w", name, declPath, targetRef, err)\n}\ncontinue\n' >"$WORK/rep.nested"
+splice_first_return "$m" "$WORK/rep.nested"
+assert_changed "$PROVIDER_HOST" "$m"
+grep -Fq 'errors.Is(err, context.Canceled)' "$m" || fail "mutation harness: the nested-if camouflage did not land"
+guard_probe="$WORK/guard.nested"
+extract_func "$m" resolveRunFacts | guard_block /dev/stdin | code_only >"$guard_probe"
+grep -Eq '^[[:space:]]*return nil, nil, fmt\.Errorf\(' "$guard_probe" ||
+  fail "mutation harness: the nested-if mutant's guard block carries no return at all — then it is the plain half-revert again and proves nothing about terminal-path scoping"
+echo "OK: the nested-if mutant's guard block DOES contain a real, uncommented return — only the terminal-path indent check can tell it is unreachable for every forge error"
+expect_red check_notfound_discrimination "the guard's return is reachable only under a nested context.Canceled condition, everything else continues (REL-03 nested fail-open)" \
+  "REL-03: the forge.ErrNotFound guard in resolveRunFacts does not RETURN" "$m"
+
 # ---- SEC-03: the identity pin deleted, and the two files drifted apart ------
 m="$WORK/install.sec03.sh"
 cp "$INSTALL" "$m"
@@ -843,6 +967,19 @@ assert_changed "$TASKFILE" "$m"
 expect_red check_task_wiring "'- task: ${STAGE}' was deleted from check: (REQ-AUD2-S05-04)" \
   "'task check' does not run" "$m"
 
+# REQ-AUD2-S05-03's SECOND half, previously asserted but never controlled: the
+# stage stays wired and stays named, and its body stops invoking this script.
+# `task check` is still green, the stage banner still prints, and nothing is
+# graded — the AUD-S18 stage-body lesson (a gutted `coverage:` body kept four
+# structural pins green) applied to this gate's own stage.
+m="$WORK/Taskfile.gutted.yml"
+sed "s|bash ${SELF}|true # gutted|" "$TASKFILE" >"$m"
+assert_changed "$TASKFILE" "$m"
+grep -qE "^[[:space:]]+- task: ${STAGE}\$" "$m" ||
+  fail "mutation harness: the gutted Taskfile also lost the '- task: ${STAGE}' line — then it is the previous mutation again and proves nothing about the stage BODY"
+expect_red check_task_wiring "the ${STAGE} stage is still wired and named, but its body no longer runs ${SELF} (REQ-AUD2-S05-03)" \
+  "does not invoke" "$m"
+
 m="$WORK/exitgate.nopin.sh"
 grep -vE "^[[:space:]]+${STAGE}\$" "$AUD_GATE" >"$m"
 assert_changed "$AUD_GATE" "$m"
@@ -878,9 +1015,33 @@ fi
 expect_red check_pr_wiring "the workflow stopped triggering on pull_request while the step stayed wired" \
   "no longer triggers on pull_request" "$m"
 
+# REQ-AUD2-S05-05's core property, previously asserted but never controlled: the
+# step is present, the job runs on PRs, and the step is DISARMED — a red gate
+# then does not fail the check. `continue-on-error:` and `if:` are the two
+# spellings; both are pinned, because actionlint is green on both.
+for disarm in "continue-on-error: true" "if: false"; do
+  m="$WORK/verify.disarmed.${disarm%%:*}.yaml"
+  awk -v self="$SELF" -v d="        $disarm" '
+    { print }
+    index($0, self) > 0 { print d }
+  ' "$WORKFLOW" >"$m"
+  assert_changed "$WORKFLOW" "$m"
+  grep -Fq "$SELF" "$m" ||
+    fail "mutation harness: the disarm mutant lost the ${SELF} step — this control must keep the step PRESENT, or it grades absence instead of disarmament"
+  expect_red check_pr_wiring "the AUD2 gate step is present on PRs but DISARMED with '${disarm}' (REQ-AUD2-S05-05)" \
+    "DISARMED" "$m"
+done
 
-((MUTATIONS_PROVED >= 17)) ||
-  fail "only ${MUTATIONS_PROVED} mutation controls ran — REQ-AUD2-S05-02 requires every assertion to be proved capable of failing; a section was skipped"
+
+# The floor is a FLOOR, and the banner below says exactly that. An earlier
+# wording claimed the controls proved "every assertion" could fail; this script
+# emits roughly forty distinct findings and twenty-two of them carry a control,
+# so that claim overstated the gate's own coverage — the D-124 failure mode this
+# epic exists to close, in the gate built to close it. What IS asserted: every
+# control that exists ran, each went red for its own pinned message, and every
+# REQ-bearing assertion (REQ-AUD2-S05-02/03/04/05 and the four findings) has one.
+((MUTATIONS_PROVED >= 22)) ||
+  fail "only ${MUTATIONS_PROVED} mutation controls ran, fewer than the pinned floor — a section was skipped, so REQ-AUD2-S05-02's evidence is incomplete"
 
 # ============================================================================
 # REQ-AUD2-S05-01 — the disposition statement
@@ -895,4 +1056,4 @@ echo "  REL-03  (AUD2-S02) CLOSED — resolveRunFacts skips only on forge.ErrNot
 echo "  SEC-03  (AUD2-S03) CLOSED — hack/install.sh pins the signer identity + OIDC issuer, no drift from SECURITY.md"
 echo "  TEST-02 (AUD2-S04) CLOSED — EffectChallenge is classified and ${CHALLENGE_TEST} defends it"
 echo
-echo "PASS: aud2_exitgate_test.sh — all four AUD2 remediations present (REL-01/02/07, REL-03, SEC-03, TEST-02), ${MUTATIONS_PROVED} mutation controls proved every assertion can fail, and the gate is wired into 'task check', pinned in CHECK_STAGES, and run by the pull-request-visible verify job"
+echo "PASS: aud2_exitgate_test.sh — all four AUD2 remediations present (REL-01/02/07, REL-03, SEC-03, TEST-02); ${MUTATIONS_PROVED} mutation controls ran (floor-asserted), each red for its own stated reason, covering every REQ-bearing assertion here — NOT every finding this script can emit; and the gate is wired into 'task check', pinned in CHECK_STAGES, and run by the pull-request-visible verify job"
