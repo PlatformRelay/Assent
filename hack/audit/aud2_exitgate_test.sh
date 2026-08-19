@@ -71,6 +71,53 @@ SELF="hack/audit/aud2_exitgate_test.sh"
 # The named unit case AUD2-S04 added; TEST-02 is closed by its existence.
 CHALLENGE_TEST="TestClassifyStricterInterventionAddedChallengeEffect"
 
+# THE PRIMARY PIN for REL-03 and REL-07, and the reason this gate stopped trying
+# to re-derive those two remediations from unparsed Go source text.
+#
+# Four rounds of source-shape assertions were each defeated by a fresh reviewer
+# within the hour, twice by idiomatic one-liners that need no camouflage at all:
+# a condition NARROWING in the guard's own `if`
+#     if !errors.Is(err, forge.ErrNotFound) && errors.Is(err, context.Canceled) {
+# (no fall-through, return at the right indent), and a bare return whose text
+# merely CONTAINS the sink identifier
+#     return nil, fmt.Errorf("provider exec failed (stderr suppressed): %w", err)
+# The second one is decisive: it is a plain double-quoted string literal, so no
+# comment filter and no filter polarity can fix it. Recognising "does this
+# function still fail closed" from text means re-implementing Go's type checker
+# and data flow; the space of spellings does not shrink as patches accumulate.
+#
+# So the property is pinned the way TEST-02 already pins its own — BY TEST NAME —
+# and the source-shape checks are demoted to a secondary heuristic that names the
+# defect precisely on the shapes it does recognise.
+#
+# THE COMPOSITION, stated so nobody later "simplifies" one half away:
+#   * a revert that KEEPS these tests is caught by `go test`, which runs as
+#     check stage 4 — before this gate's stage 19 — and again in the same
+#     pull-request-visible `verify` job;
+#   * a revert that DELETES or renames them is caught here, by the name pins.
+# Neither half can be defeated by restructuring production source, which is
+# exactly what every mutant that beat the shape checks does. The reviewer's
+# closing demonstration was to revert REL-03 *and* delete its two tests: green
+# `go test`, green gate. That gap is what these pins close.
+REL03_TEST_FILE="cmd/assent/provider_host_test.go"
+REL03_TESTS=(
+  TestProviderDeclarationForgeErrorAbortsResolveRunFacts
+  TestProviderDeclarationUnauthorizedAbortsResolveRunFacts
+)
+# Case-level pins, matched VERBATIM (grep -F) rather than auto-quoted, because
+# the two files spell their cases differently: the REL-03 subtests are driven by
+# `strconv.Itoa(status)` over an int table, the REL-07 ones are literal t.Run
+# names. Each entry below is exactly the text that must survive.
+REL03_SUBTESTS=('[]int{401, 403}')
+
+REL07_TEST_FILE="internal/provider/transport_test.go"
+REL07_TESTS=(TestExecStderrFoldedIntoError)
+REL07_SUBTESTS=(
+  't.Run("nonzero_exit_reports_stderr"'
+  't.Run("stderr_never_merged_into_facts"'
+  't.Run("runaway_stderr_is_bounded_and_truncated"'
+)
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -347,6 +394,50 @@ mutate() {
     fail "mutation harness: expected '$witness' in ${file#"$WORK"/} after mutation, but it is absent"
 }
 
+# check_named_tests <finding> <repo-relative test file> <fn-list-name>
+#                   <subtest-list-name> <remediation>
+# The primary pin: the named behavioural tests still exist, by name, in the named
+# file — the same idiom TEST-02 is pinned by, and the half of the composition
+# that a revert-plus-delete-the-tests cannot walk around. It deliberately does
+# NOT run them: `go test` is check stage 4 and a step of the same PR-visible
+# `verify` job, so a revert that keeps the tests is already red before this gate
+# runs. What is unique here is catching their DELETION or RENAME, which `go test`
+# reports as success.
+check_named_tests() {
+  local finding="$1" rel="$2" fn_list="$3" sub_list="$4" remediation="$5" rc=0
+  # An absolute path is a mutant copy under $WORK; a relative one is the tree.
+  local file="$ROOT/$rel"
+  [[ "$rel" == /* ]] && file="$rel"
+  if [[ ! -f "$file" ]]; then
+    echo "  ${finding}: ${rel} does not exist — the behavioural tests that hold ${remediation} closed are gone, and 'go test' reports a deleted test as success (AUD2-S05 primary pin)" >&2
+    return 1
+  fi
+  # Positive control on the file, so a truncated or renamed-away file cannot
+  # satisfy the pins by containing nothing at all.
+  local n_tests
+  n_tests="$(grep -cE '^func Test' "$file" || true)"
+  if [[ "$n_tests" -eq 0 ]]; then
+    echo "  ${finding}: ${rel} contains no 'func Test' at all — the file survives in name only, so every pin below would be graded against an empty corpus" >&2
+    return 1
+  fi
+  local -n fns="$fn_list"
+  local -n subs="$sub_list"
+  local fn sub
+  for fn in "${fns[@]}"; do
+    if ! grep -Fq "func ${fn}(" "$file"; then
+      echo "  ${finding}: the named behavioural test ${fn} is absent from ${rel} — deleting or renaming it is invisible to 'go test' (a test that does not exist cannot fail), so ${remediation} would then be held closed by nothing but this gate's source-shape heuristics, which are documented as insufficient on their own (AUD2-S05 primary pin)" >&2
+      rc=1
+    fi
+  done
+  for sub in "${subs[@]}"; do
+    if ! grep -Fq -- "$sub" "$file"; then
+      echo "  ${finding}: the case pin '${sub}' is absent from ${rel} — a case can be dropped without touching any test function name, which narrows the coverage that holds ${remediation} closed while every function-level pin stays green (AUD2-S05 primary pin)" >&2
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
 # assign_count <region-file> <lvalue-ERE> — how many times an lvalue is
 # assigned in a region. rhs_of reads the FIRST assignment; at runtime the LAST
 # one wins, so "assigned exactly once" is what makes reading the first sound.
@@ -417,6 +508,10 @@ check_exec_containment() { # <transport.go>
   # CallHTTP's MaxResponseBytes intact and still reddens.)
   body_of "$file" CallExec "$body" "REL-01/02/07" 'cmd.Run()' 'func execFailure' || return 1
 
+  # ---- PRIMARY: the named behavioural tests still exist ---------------------
+  check_named_tests "REL-07" "$REL07_TEST_FILE" REL07_TESTS REL07_SUBTESTS \
+    "the stderr fold in CallExec" || rc=1
+
   # SINGLE-ASSIGNMENT DISCIPLINE, before anything reads a right-hand side.
   # rhs_of takes the FIRST assignment; at runtime the LAST one wins. So
   #     cmd.Stdout = stdout          // bounded, and what rhs_of reads
@@ -426,15 +521,19 @@ check_exec_containment() { # <transport.go>
   # Each of these is assigned exactly once in the remediated function, so
   # requiring exactly one is not a new constraint on the code, only on what this
   # gate is willing to reason about.
-  local lv n_assign
+  local lv n_assign assign_rc=0
   for lv in 'cmd\.Stdout' 'cmd\.Stderr' 'cmd\.WaitDelay'; do
     n_assign="$(assign_count "$body" "$lv")"
     if [[ "$n_assign" -gt 1 ]]; then
       echo "  REL-01/02/07: CallExec assigns ${lv//\\/} ${n_assign} times — rhs_of reads the FIRST and the LAST is what runs, so a later reassignment reverts the remediation while every check below still reads the good one (AUD2-S01)" >&2
       rc=1
+      assign_rc=1
     fi
   done
-  ((rc == 0)) || return "$rc"
+  # Only the ASSIGNMENT ambiguity short-circuits: rhs_of below would otherwise
+  # read a statement that does not decide anything. A failed primary pin must
+  # not stop the heuristics from running and naming what else is wrong.
+  ((assign_rc == 0)) || return 1
 
   # -- REL-01: stdout is bounded, and bounded by the SINGLE declared bound.
   local stdout_var
@@ -460,7 +559,9 @@ check_exec_containment() { # <transport.go>
     # A literal `== "0"` compare would ACCEPT `time.Duration(0)` and
     # `0 * time.Second`, both of which are the same wait-forever zero. Rule: if
     # the right-hand side carries digits and every one of them is a zero, the
-    # value is zero however it is spelled. `opts.Timeout` carries no digits and
+    # value is zero however the LITERAL is spelled. (A zero reached through a
+    # named variable or a helper call is not caught — a residual, not a claim.)
+    # `opts.Timeout` carries no digits and
     # is unaffected; `30 * time.Second` carries a non-zero digit and is
     # accepted. A field named e.g. `v0.Timeout` would be refused — fail-closed,
     # and the fix is to name the assertion's exception, not to widen the rule.
@@ -550,7 +651,7 @@ check_exec_containment() { # <transport.go>
     local bare="$WORK/hits.rel07_bare_returns"
     grep -nE '^[[:space:]]*return ' "$runblk_abs" | grep -vF -- "$stderr_var" >"$bare" || true
     if [[ -s "$bare" ]]; then
-      echo "  REL-07: CallExec's cmd.Run() failure branch has a return that does NOT carry '${stderr_var}' — on that path the operator gets a bare 'exit status 1' with no provider diagnostic, which is REL-07 reverted however the surrounding condition is spelled (a nested errors.Is fold, or its polarity swap). A stderr-folding return elsewhere in the branch does not close this (AUD2-S01):" >&2
+      echo "  REL-07: CallExec's cmd.Run() failure branch has a return that does NOT carry '${stderr_var}' — on that path the operator gets a bare 'exit status 1' with no provider diagnostic, which is REL-07 reverted in one of the shapes this HEURISTIC recognises (a nested errors.Is fold, or its polarity swap). It is a SUBSTRING test, not data flow: a bare return whose message merely contains the text 'stderr' passes it, and no comment filter can change that because a string literal is not a comment. The named-test pin above, not this check, is what holds REL-07 closed. A stderr-folding return elsewhere in the branch does not close this either (AUD2-S01):" >&2
       sed 's/^/    /' "$bare" >&2
       rc=1
     fi
@@ -571,11 +672,16 @@ check_exec_containment() { # <transport.go>
 check_notfound_discrimination() { # <provider_host.go>
   local file="$1" rc=0
   local body="$WORK/body.resolveRunFacts"
+  # ---- PRIMARY: the named behavioural tests still exist ---------------------
+  check_named_tests "REL-03" "$REL03_TEST_FILE" REL03_TESTS REL03_SUBTESTS \
+    "the forge-error/absent-file discrimination in resolveRunFacts" || rc=1
+
   # Anchor: the FileAtRef call itself. Over-extraction guard:
   # loadResourceOwnerRegistry, further down the same file, carries the identical
   # errors.Is guard (D-130) — it is both the next-function-below check and the
   # decoy this assertion must not be reading.
   body_of "$file" resolveRunFacts "$body" "REL-03" 'FileAtRef' 'func loadResourceOwnerRegistry' || return 1
+  # rc may already be 1 from the primary pin; the heuristics below only add to it.
 
   if ! grep -Fq 'errors.Is(err, forge.ErrNotFound)' "$body"; then
     echo "  REL-03: resolveRunFacts does not discriminate forge.ErrNotFound on the provider-declaration fetch — every FileAtRef error (retry-exhausted 5xx, deterministic 401/403) is treated as 'declaration absent' and skipped, so a forge blip silently converts approvable MRs to REVIEW by an invisible path. NOTE: the identical guard in loadResourceOwnerRegistry does NOT close this; the finding is at this call site (AUD2-S02)" >&2
@@ -631,6 +737,19 @@ check_notfound_discrimination() { # <provider_host.go>
     echo "  REL-03: the isolated guard block is not smaller than the whole resolveRunFacts body — the scoping did not happen" >&2
     return 1
   fi
+  # ---- SECONDARY: source-shape HEURISTICS ----------------------------------
+  # Everything from here down is a heuristic, and is documented as one. It
+  # recognises the revert shapes it knows — a bare `continue`, a return quoted
+  # in a comment, a return behind a nested condition, the polarity swap — and
+  # names the defect precisely when it fires, which a test failure does not do.
+  # It does NOT decide whether resolveRunFacts still fails closed: a one-line
+  # condition narrowing in the guard's own `if`
+  #     if !errors.Is(err, forge.ErrNotFound) && errors.Is(err, context.Canceled) {
+  # has no fall-through, returns at the correct body indent, and passes every
+  # check below while reverting REL-03 in full. The named-test pin above plus
+  # `go test` (check stage 4, and a step of the same PR-visible verify job) is
+  # what actually holds this closed. Do not re-promote these to "the property".
+
   # (a) PRESENCE, at the guard's body indent. A return that is only reachable
   # under a further condition sits one level deeper and does not count. This is
   # necessary but — on its own — NOT sufficient: it measures indent POSITION,
@@ -686,7 +805,7 @@ check_notfound_discrimination() { # <provider_host.go>
   local fallthrough="$WORK/hits.rel03_fallthrough"
   grep -nE '^[[:space:]]*(continue|break|goto)([[:space:]]|$)' "$guard_abs" >"$fallthrough" || true
   if [[ -s "$fallthrough" ]]; then
-    echo "  REL-03: the forge.ErrNotFound guard in resolveRunFacts contains a FALL-THROUGH statement — it can be entered without stopping the run, so a 503, a 401, a 403 or a throttle is skipped exactly as before the fix. This is the REL-03 defect however it is spelled: a bare continue, a return hidden behind a nested condition, or the idiomatic polarity swap 'if !errors.Is(err, context.Canceled) { continue }' followed by a return at the right indent (AUD2-S02):" >&2
+    echo "  REL-03: the forge.ErrNotFound guard in resolveRunFacts contains a FALL-THROUGH statement — it can be entered without stopping the run, so a 503, a 401, a 403 or a throttle is skipped exactly as before the fix. This is the REL-03 defect in one of the shapes this HEURISTIC recognises: a bare continue, a return hidden behind a nested condition, or the polarity swap 'if !errors.Is(err, context.Canceled) { continue }' followed by a return at the right indent. It does NOT recognise every spelling — a condition narrowing in the guard's own if has no fall-through at all — which is why the named-test pin above, not this check, is what holds REL-03 closed (AUD2-S02):" >&2
     sed 's/^/    /' "$fallthrough" >&2
     rc=1
   fi
@@ -1033,7 +1152,15 @@ expect_red check_exec_containment "CallExec never wires cmd.Stderr (REL-07)" \
 
 m="$WORK/transport.rel07fold.go"
 cp "$TRANSPORT" "$m"
-mutate "$m" 's|return nil, execFailure(err, stderr)|return nil, err|' 'return nil, err'
+# Witness is the CallExec-scoped absence of the fold, not the presence of
+# `return nil, err` — that string already occurs twice above in the same
+# function, so the old witness made a no-op sed look like a landed mutation and
+# reddened with "mutation harness: sed did not change" instead of naming REL-07.
+sed 's|return nil, execFailure(err, stderr)|return nil, err|' "$TRANSPORT" >"$m"
+assert_changed "$TRANSPORT" "$m"
+if extract_func "$m" CallExec | grep -Fq 'execFailure('; then
+  fail "mutation harness (REL-07): CallExec still calls execFailure in ${m#"$WORK"/} — the fold-removal mutation did not land"
+fi
 expect_red check_exec_containment "stderr is captured but discarded instead of folded into the returned error (REL-07)" \
   "does not return it on the branch's own terminal path" "$m"
 
@@ -1043,7 +1170,12 @@ expect_red check_exec_containment "stderr is captured but discarded instead of f
 # fold is real, and reachable only for context.DeadlineExceeded. Every actual
 # provider failure — non-zero exit, signal, the WaitDelay kill — takes
 # `return nil, err` and the operator is back to a bare "exit status 1".
-# gofmt/vet/lint/build clean; only `go test` and this gate see it.
+# NOTE, corrected: as spliced here this mutant does NOT compile — transport.go
+# does not import `errors`, and the control does not add the import because it
+# grades TEXT, which is all the assertion under test reads. The equivalent
+# revert written by hand (with the import) is gofmt/vet/lint/build clean; that
+# was verified separately, on the real tree. Do not read this control as a
+# compile check.
 m="$WORK/transport.rel07nested.go"
 cp "$TRANSPORT" "$m"
 cat >"$WORK/rep.rel07nested" <<'GOREP'
@@ -1096,7 +1228,7 @@ assert_changed "$TRANSPORT" "$m"
 grep -Eq "^[[:space:]]+return nil, execFailure\(err, stderr\)\$" "$m" ||
   fail "mutation harness: the REL-07 polarity mutant lost its terminal-path fold — then the presence half would already have caught it and this control does not prove the absence half discriminates"
 echo "OK: the REL-07 polarity mutant puts the stderr fold on the branch's terminal path — the presence half accepts it; only the absence half refuses it"
-expect_red check_exec_containment "REL-07 polarity swap: 'if !errors.Is(err, context.DeadlineExceeded) { return nil, err }' then the fold — a full revert that is gofmt/vet/lint clean" \
+expect_red check_exec_containment "REL-07 polarity swap: 'if !errors.Is(err, context.DeadlineExceeded) { return nil, err }' then the fold — a full revert (text-only mutant; the hand-written equivalent with the errors import is gofmt/vet/lint/build clean)" \
   "has a return that does NOT carry 'stderr'" "$m"
 
 # ---- REL-01 REASSIGNMENT: the good statement stays, a later one overrides ---
@@ -1122,6 +1254,52 @@ grep -Eq "^[[:space:]]*stdout :?= newBoundedCapture\(MaxResponseBytes\)" "$m" ||
 echo "OK: the REL-01 reassignment mutant KEEPS 'stdout := newBoundedCapture(MaxResponseBytes)' and 'cmd.Stdout = stdout' intact — every pre-existing REL-01 check still reads the good statement"
 expect_red check_exec_containment "cmd.Stdout is assigned a second time after the bounded capture — last write wins and REL-01 is reverted while the good statement remains (REL-01)" \
   "rhs_of reads the FIRST and the LAST is what runs" "$m"
+
+# ---- REL-07 STRING-LITERAL BARE RETURN: why no filter can fix this ----------
+# The mutant that settles it. Both halves of the fold assertion are SUBSTRING
+# tests over text, not data-flow analysis: presence asks "a return line at this
+# indent mentioning `stderr`", absence asks "no return line lacking `stderr`".
+# A bare return whose MESSAGE happens to contain the identifier satisfies both:
+#     return nil, fmt.Errorf("provider exec failed (stderr suppressed): %w", err)
+# It is an ordinary double-quoted string literal — not a comment — so neither
+# code_only nor code_conservative nor any third filter polarity touches it, and
+# it also invalidates the "keeping too much is fail-closed" argument for THIS
+# assertion specifically: the absence half is a NEGATED match, so extra kept
+# text is fail-OPEN. What holds REL-07 closed is the named-test pin plus
+# `go test`; this control records the blind spot executably.
+m="$WORK/transport.rel07strlit.go"
+cp "$TRANSPORT" "$m"
+mutate "$m" 's|return nil, execFailure(err, stderr)|return nil, fmt.Errorf("provider exec failed (stderr suppressed): %w", err)|' \
+  'stderr suppressed'
+# Scoped to CallExec: `func execFailure` itself lives below it and always stays.
+if extract_func "$m" CallExec | grep -Fq 'execFailure('; then
+  fail "mutation harness: the REL-07 string-literal mutant's CallExec still calls execFailure — the fold was not actually removed"
+fi
+echo "OK: the REL-07 string-literal mutant removes the fold from CallExec entirely and keeps only the identifier's TEXT inside a double-quoted message"
+if check_exec_containment "$m" 2>/dev/null; then
+  echo "OK: KNOWN BLIND SPOT recorded — a bare return whose message merely contains the identifier passes both halves of the fold heuristic, exactly as documented. No comment filter can fix a string literal; the named-test pin plus 'go test' is what holds REL-07 closed."
+else
+  fail "the string-literal bare return is now REJECTED by the fold heuristic. That may be an improvement, but this control pins the DOCUMENTED blind spot: update check_exec_containment's comments, hack/audit/README.md and this control before claiming the wider guarantee."
+fi
+
+# ---- REL-07 TEST DELETION -----------------------------------------------
+m="$WORK/transport_test.renamed.go"
+cp "$ROOT/$REL07_TEST_FILE" "$m"
+mutate "$m" "s/func ${REL07_TESTS[0]}(/func disabled${REL07_TESTS[0]}(/" "func disabled${REL07_TESTS[0]}("
+[[ "$(grep -cE '^func Test' "$m")" -ge 1 ]] ||
+  fail "mutation harness: the REL-07 test-rename mutant has no 'func Test' left — it would trip the corpus positive control instead of the name pin"
+echo "OK: the REL-07 test-rename mutant still declares other 'func Test's — only the NAME pin sees the loss"
+expect_red check_named_tests "the named test ${REL07_TESTS[0]} was renamed away — with the fold heuristic blind to a string-literal revert, this is the pin that remains (REL-07 primary pin)" \
+  "is absent from" "REL-07" "$m" REL07_TESTS REL07_SUBTESTS "the stderr fold in CallExec"
+
+m="$WORK/transport_test.nocase.go"
+cp "$ROOT/$REL07_TEST_FILE" "$m"
+mutate "$m" 's|t.Run("stderr_never_merged_into_facts"|t.Run("disabled_stderr_never_merged_into_facts"|' 'disabled_stderr_never_merged_into_facts'
+grep -Fq "func ${REL07_TESTS[0]}(" "$m" ||
+  fail "mutation harness: the dropped-case mutant lost the test function too — then the function pin catches it and this control says nothing about case coverage"
+echo "OK: the REL-07 dropped-case mutant keeps the pinned test FUNCTION — only the case pin sees the lost subtest"
+expect_red check_named_tests "a pinned subtest case was renamed away while the test function survived (REL-07 primary pin)" \
+  "is absent from" "REL-07" "$m" REL07_TESTS REL07_SUBTESTS "the stderr fold in CallExec"
 
 # ---- REL-03: the guard deleted at the call site, decoy left intact ----------
 m="$WORK/provider_host.rel03.go"
@@ -1236,6 +1414,53 @@ awk -v ind="$(printf '%s\t' "$polarity_indent")" '
 echo "OK: the polarity-swap mutant puts a real, uncommented return at EXACTLY the guard's body indent — the indent rule accepts it; only the absence-of-fall-through assertion refuses it"
 expect_red check_notfound_discrimination "the idiomatic polarity swap: 'if !errors.Is(err, context.Canceled) { continue }' then a return at the right indent — a full REL-03 revert that is gofmt/vet/lint clean" \
   "REL-03: the forge.ErrNotFound guard in resolveRunFacts contains a FALL-THROUGH statement" "$m"
+
+# ---- REL-03 TEST DELETION: the half `go test` structurally cannot catch ------
+# The reviewer's closing demonstration: revert REL-03 AND delete its behavioural
+# tests. `go test ./cmd/assent/` is then GREEN — a test that does not exist
+# cannot fail — and every source-shape heuristic can be walked around by
+# restructuring production code. This control is why the named-test pin is the
+# PRIMARY assertion and not a nicety.
+m="$WORK/provider_host_test.renamed.go"
+cp "$ROOT/$REL03_TEST_FILE" "$m"
+mutate "$m" "s/func ${REL03_TESTS[0]}(/func disabled${REL03_TESTS[0]}(/" "func disabled${REL03_TESTS[0]}("
+# It must still be a plausible test file: this control grades the NAME pin, not
+# "the file went missing", which the corpus positive control already covers.
+[[ "$(grep -cE '^func Test' "$m")" -ge 1 ]] ||
+  fail "mutation harness: the REL-03 test-rename mutant has no 'func Test' left — it would trip the corpus positive control instead of the name pin, and prove nothing about renaming"
+echo "OK: the REL-03 test-rename mutant still declares other 'func Test's — only the NAME pin can tell that the one holding REL-03 closed is gone"
+expect_red check_named_tests "the named test ${REL03_TESTS[0]} was renamed away — 'go test' reports a deleted test as SUCCESS (REL-03 primary pin)" \
+  "is absent from" "REL-03" "$m" REL03_TESTS REL03_SUBTESTS "the forge-error/absent-file discrimination in resolveRunFacts"
+
+# A dropped table CASE is the quieter version: every function name survives.
+m="$WORK/provider_host_test.nocase.go"
+cp "$ROOT/$REL03_TEST_FILE" "$m"
+mutate "$m" 's|\[\]int{401, 403}|[]int{403}|' '[]int{403}'
+grep -Fq "func ${REL03_TESTS[1]}(" "$m" ||
+  fail "mutation harness: the dropped-case mutant lost the test function too — then the function pin catches it and this control says nothing about case coverage"
+echo "OK: the dropped-case mutant keeps every pinned test FUNCTION — only the case pin sees that 401 is no longer exercised"
+expect_red check_named_tests "the 401 case was dropped from the auth table while every test function name survived (REL-03 primary pin)" \
+  "is absent from" "REL-03" "$m" REL03_TESTS REL03_SUBTESTS "the forge-error/absent-file discrimination in resolveRunFacts"
+
+# ---- REL-03 CONDITION NARROWING: the shape heuristics' documented blind spot -
+# One line, no camouflage, no fall-through, return at the correct body indent:
+#     if !errors.Is(err, forge.ErrNotFound) && errors.Is(err, context.Canceled) {
+# gofmt/vet/build clean, and it reverts REL-03 in full. It passes EVERY
+# source-shape heuristic below — deliberately NOT patched around, because the
+# space of such spellings does not shrink and four rounds of trying proved it.
+# It is caught by `go test` (check stage 4, and a step of the same PR-visible
+# verify job), whose named tests this gate pins. Recording the blind spot as an
+# executable fact rather than a comment means a future "simplification" that
+# drops the name pin turns this control red instead of passing quietly.
+m="$WORK/provider_host.rel03narrow.go"
+cp "$PROVIDER_HOST" "$m"
+mutate "$m" 's|if !errors.Is(err, forge.ErrNotFound) {|if !errors.Is(err, forge.ErrNotFound) \&\& errors.Is(err, context.Canceled) {|' \
+  'errors.Is(err, context.Canceled)'
+if check_notfound_discrimination "$m" 2>/dev/null; then
+  echo "OK: KNOWN BLIND SPOT recorded — the condition-narrowing revert passes every source-shape heuristic, exactly as documented. What holds it closed is the named-test pin above plus 'go test', not this function's text analysis."
+else
+  fail "the condition-narrowing revert is now REJECTED by the source-shape heuristics. That may be an improvement, but this control pins the DOCUMENTED blind spot: update check_notfound_discrimination's comments, hack/audit/README.md and this control before claiming the wider guarantee."
+fi
 
 # ---- SEC-03: the identity pin deleted, and the two files drifted apart ------
 m="$WORK/install.sec03.sh"
@@ -1364,12 +1589,12 @@ done
 
 # The floor is a FLOOR, and the banner below says exactly that. An earlier
 # wording claimed the controls proved "every assertion" could fail; this script
-# emits roughly forty distinct findings and twenty-six of them carry a control,
+# emits roughly forty distinct findings and thirty of them carry a control,
 # so that claim overstated the gate's own coverage — the D-124 failure mode this
 # epic exists to close, in the gate built to close it. What IS asserted: every
 # control that exists ran, each went red for its own pinned message, and every
 # REQ-bearing assertion (REQ-AUD2-S05-02/03/04/05 and the four findings) has one.
-((MUTATIONS_PROVED >= 26)) ||
+((MUTATIONS_PROVED >= 30)) ||
   fail "only ${MUTATIONS_PROVED} mutation controls ran, fewer than the pinned floor — a section was skipped, so REQ-AUD2-S05-02's evidence is incomplete"
 
 # ============================================================================
@@ -1380,9 +1605,11 @@ echo
 echo "== AUD2 findings dispositioned (REQ-AUD2-S05-01) =="
 echo "  REL-01  (AUD2-S01) CLOSED — CallExec's stdout is bounded at MaxResponseBytes"
 echo "  REL-02  (AUD2-S01) CLOSED — CallExec sets cmd.WaitDelay = opts.Timeout"
-echo "  REL-07  (AUD2-S01) CLOSED — CallExec captures stderr and folds it into the error"
-echo "  REL-03  (AUD2-S02) CLOSED — resolveRunFacts skips only on forge.ErrNotFound"
+echo "  REL-07  (AUD2-S01) CLOSED — CallExec captures stderr; the fold is held by ${REL07_TESTS[0]} (pinned by name) + go test, with a source-shape heuristic as secondary"
+echo "  REL-03  (AUD2-S02) CLOSED — resolveRunFacts discriminates ErrNotFound; held by ${#REL03_TESTS[@]} named tests (pinned) + go test, with a source-shape heuristic as secondary"
 echo "  SEC-03  (AUD2-S03) CLOSED — hack/install.sh pins the signer identity + OIDC issuer, no drift from SECURITY.md"
 echo "  TEST-02 (AUD2-S04) CLOSED — EffectChallenge is classified and ${CHALLENGE_TEST} defends it"
 echo
-echo "PASS: aud2_exitgate_test.sh — all four AUD2 remediations present (REL-01/02/07, REL-03, SEC-03, TEST-02); ${MUTATIONS_PROVED} mutation controls ran (floor-asserted), each red for its own stated reason, covering every REQ-bearing assertion here — NOT every finding this script can emit; and the gate is wired into 'task check', pinned in CHECK_STAGES, and run by the pull-request-visible verify job"
+echo "PASS: aud2_exitgate_test.sh — all four AUD2 remediations dispositioned (REL-01/02/07, REL-03, SEC-03, TEST-02)."
+echo "  HOW each is held closed, precisely: SEC-03 and REL-01/02 by source pins over hack/install.sh and CallExec; TEST-02, REL-03 and REL-07 by NAMED-TEST pins here composed with 'go test' at check stage 4 — a revert that keeps those tests reds there, a revert that deletes or renames them reds here. The REL-03/REL-07 source-shape checks are secondary HEURISTICS with two recorded blind spots (a condition narrowing in the guard's own if; a bare return whose message text merely contains the sink identifier); neither is what this gate relies on."
+echo "  ${MUTATIONS_PROVED} mutation controls ran (floor-asserted), each red for its own stated reason, covering every REQ-bearing assertion here — NOT every finding this script can emit. The gate is wired into 'task check', pinned in CHECK_STAGES, and run by the pull-request-visible verify job."
