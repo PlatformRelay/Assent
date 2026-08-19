@@ -152,21 +152,39 @@ also appears in `CallHTTP`, `errors.Is(err, forge.ErrNotFound)` also appears in
 tests. A file-level `grep` for any of them stays **green on a reverted tree**. Every assertion
 therefore reads a function body extracted by name, with a positive control on a known-present
 anchor, a `^func ` count that refuses an over-extracted body, and a next-function-below guard.
-The `REL-03` branch assertion goes one level further and reads only the guard **block**, because
-`resolveRunFacts` contains three `return nil, nil, fmt.Errorf(` lines — a body-wide grep for that
-pattern is satisfied on every possible tree, including the compiling, gofmt-clean half-revert
-where the guard is kept and its body is downgraded to `continue`. All greps inside that block run
-over a comment-stripped view, since the guard's own prose names both `LoadProviderConfig` and the
-`continue` it replaced.
+The `REL-03` branch assertion goes two levels further, because it is the one an independent
+reviewer got past three times, each time with a mutant that **compiles and is `gofmt`-clean**:
+
+1. It reads only the guard **block**, not the function body. `resolveRunFacts` contains three
+   `return nil, nil, fmt.Errorf(` lines, so a body-wide grep is satisfied on every possible tree
+   — including the half-revert where the guard is kept and its body downgraded to `continue`.
+2. Inside that block it measures the guard's **terminal path**: the return must sit at exactly
+   the guard's body indent, one level deeper than the `if` and no deeper. A return nested under a
+   further condition — `if errors.Is(err, context.Canceled) { … }` followed by `continue` — is
+   real, uncommented code that a grep over the block accepts, while every 503, 401, 403 and
+   throttle is still skipped. `gofmt` is what makes that indentation load-bearing rather than
+   cosmetic.
+3. All greps inside the block run over a view with **line and block comments** stripped, since
+   the guard's own prose names both `LoadProviderConfig` and the `continue` it replaced — and
+   since quoting the required return inside a `/* … */` span otherwise satisfies the assertion.
+   The first version stripped `//` lines only and that camouflage worked; the comment filter is a
+   state machine now. It does not model Go string literals, which is fail-**closed** (the
+   assertion sees less code, never more).
 
 ### Anti-vacuity discipline
 
 Held to the same bar as `exitgate_test.sh` and `hack/release/install_cosign_pin_test.sh`: every
 check is a **function** over file arguments, run against the real tree (must be green) *and*
 against a mutant carrying the very defect it exists to catch (must be red, and red **for its own
-stated reason** — `expect_red` pins a message fragment). 17 mutation controls run per invocation
+stated reason** — `expect_red` pins a message fragment). 22 mutation controls run per invocation
 and the count is asserted against a floor, so a skipped section fails the gate instead of
-quietly shrinking it. Mutants are **file copies** under `mktemp -d`; `git checkout --` is never
+quietly shrinking it. **What the PASS banner claims, precisely**: that those controls ran, that
+each went red for its own pinned message, and that every REQ-bearing assertion carries one — *not*
+that every finding the script can emit is controlled. The script emits roughly forty distinct
+findings; twenty-two carry a control, and the rest are extraction and positive-control failures
+whose own reason to exist is that they fire when a pattern stops matching. An exit gate whose
+banner overstates its coverage is the D-124 failure mode this epic exists to close, so the banner
+is worded to what is actually proved. Mutants are **file copies** under `mktemp -d`; `git checkout --` is never
 used, because it reverts to `HEAD` — which can be behind the working tree, making a "mutation" a
 no-op or a real edit. Mutations are **surgical**: the `REL-01` mutant leaves `CallHTTP`'s
 `MaxResponseBytes` intact and the `REL-03` mutants leave the D-130 guard intact, and the gate
