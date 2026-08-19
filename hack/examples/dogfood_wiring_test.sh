@@ -160,11 +160,24 @@ echo "OK: $SCRIPT present and executable"
 #                       GitLab endpoint; neither the binary bytes nor the forge
 #                       state is in the cache key.
 #
-# Deliberately NOT listed: `test` (whole-tree `go test -race ./...` — in-process
-# subjects, honest cache, and a real time saver) and `coverage` (in-process
-# subjects; `-coverprofile` results do cache but the profile is reproduced
-# faithfully). `determinism` needs no pin: `-count=2` is uncacheable by
-# construction.
+# Deliberately NOT listed, with the true reason rather than a tidy one:
+#
+#   test      whole-tree `go test -race ./...`. Its subjects are OVERWHELMINGLY
+#             in-process, the cache is honest for them, and it is a real time
+#             saver — but not uniformly: internal/schemadrift compares local
+#             schemas/ (read in-process, so testlog records it) against
+#             `git show origin/main:…` run as a SUBPROCESS (invisible), and
+#             internal/provider/isolation_test.go `go build`s a fixture at
+#             runtime. Those are logged as a follow-up, NOT fixed here:
+#             isolating them means carving packages out of `test`/`coverage`
+#             and losing the honest cache for the whole tree. examples/
+#             comparison is also cached here under a separate (-race) entry;
+#             that is covered because dogfood-comparison re-runs the same
+#             package with -count=1 in the same `task check`.
+#   coverage  in-process subjects; `-coverprofile` results DO cache, but the
+#             profile is regenerated faithfully, so the gated number is honest.
+#
+# `determinism` needs no pin: `-count=2` is uncacheable by construction.
 COUNT1_TASKS=(dogfood-comparison e2e)
 
 # count1_pinned <file> <task> — the task's `go test` COMMAND LINE carries
@@ -252,7 +265,12 @@ workflow_count1_pinned() {
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     found=1
-    grep -qE '[[:space:]]-count=1([[:space:]]|$)' <<<"$line" || return 1
+    # Anchored on the COMMAND and stopping at `#`, exactly like count1_pinned:
+    # a whole-line comment cannot reach this function at all, and a TRAILING
+    # `# -count=1` on an uncounted command must not satisfy it either (review
+    # finding F2 — the whole-line grep this replaces accepted precisely that).
+    grep -qE '(-[[:space:]]+)?(run:[[:space:]]*)?go test[^#]*[[:space:]]-count=1([[:space:]]|$)' \
+      <<<"$line" || return 1
   done < <(workflow_comparison_go_test_lines "$1")
   ((found == 1)) || return 2
   return 0
@@ -275,7 +293,25 @@ EOF
 rc=0; workflow_count1_pinned "$WORK/wf-comment-only.yaml" || rc=$?
 ((rc != 0)) || fail "workflow_count1_pinned accepted a workflow whose -count=1 appears ONLY in a comment — the assertion is satisfiable by prose"
 ((rc == 1)) || fail "the comment-only workflow control failed for the WRONG reason (rc=$rc, want 1 = flag missing from a present command)"
-echo "OK: a -count=1 that lives only in a YAML comment does NOT satisfy the workflow pin"
+echo "OK: a -count=1 that lives only in a whole-line YAML comment does NOT satisfy the workflow pin"
+
+echo "== 6b2. …and neither does a TRAILING comment on an uncounted command (F2) =="
+cat >"$WORK/wf-trailing-comment.yaml" <<'EOF'
+      - name: comparison corpus dogfood
+        run: go test ./examples/comparison/... # -count=1
+EOF
+rc=0; workflow_count1_pinned "$WORK/wf-trailing-comment.yaml" || rc=$?
+((rc != 0)) || fail "workflow_count1_pinned accepted 'go test ./examples/comparison/... # -count=1' — the flag is in a TRAILING COMMENT and the command in CI is genuinely uncounted (F2)"
+((rc == 1)) || fail "the trailing-comment control failed for the WRONG reason (rc=$rc, want 1 = flag missing from a present command)"
+# The counterpart: a real flag plus an unrelated trailing comment must still PASS,
+# so the fix is comment-BLIND, not comment-HOSTILE.
+cat >"$WORK/wf-flag-plus-comment.yaml" <<'EOF'
+      - name: comparison corpus dogfood
+        run: go test -count=1 ./examples/comparison/... # cache is blind here
+EOF
+rc=0; workflow_count1_pinned "$WORK/wf-flag-plus-comment.yaml" || rc=$?
+((rc == 0)) || fail "workflow_count1_pinned REJECTED a genuinely counted command that carries an unrelated trailing comment (rc=$rc) — the matcher is comment-hostile, not comment-blind"
+echo "OK: a trailing '# -count=1' does not satisfy the pin, while a real flag beside a trailing comment still does"
 
 echo "== 6c. the workflow assertion can fail (mutation: strip the flag, keep the comment) =="
 mutant_wf_c1="$WORK/verify.nocount1.yaml"
@@ -292,4 +328,128 @@ rc=0; workflow_count1_pinned "$mutant_wf_c1" || rc=$?
 ((rc == 1)) || fail "the verify.yaml mutant went red for the WRONG reason (rc=$rc, want 1 = flag missing from a present command)"
 echo "OK: stripping -count=1 from verify.yaml's command line (comment intact) turns the pin red, for the flag and not for vacuity"
 
-echo "PASS: dogfood wiring (REQ-EX-S08-02, REQ-EX-S08-03) — task check runs dogfood-examples after build; Taskfile.yml and verify.yaml both delegate to the shared discovery script; the cache-blind go test gates (${COUNT1_TASKS[*]}) carry -count=1, in Taskfile.yml AND in verify.yaml"
+# --------------------- 7. this gate's OWN PR-visible step (RELSE-08) --
+#
+# Review finding F1: every assertion above is worthless on a pull request if the
+# only path from this script to CI is `task check` -> release-exitgate, which
+# carries `if: github.event_name != 'pull_request'`. A PR that strips -count=1
+# from verify.yaml would then merge green and redden main afterwards — the
+# lane's own thesis failing to apply to the lane. Mirrors the AUD2-S05 pin in
+# hack/audit/aud2_exitgate_test.sh: the step must exist in the PR-visible
+# `verify` job, be argument-free, and carry no `if:`/`continue-on-error:`; the
+# job must carry no job-level `if:`; and the workflow must still trigger on
+# pull_request at all.
+
+SELF_REL="hack/examples/dogfood_wiring_test.sh"
+
+# extract_on_block <workflow> — the body of the top-level `on:` mapping.
+extract_on_block() {
+  awk '/^on:/ { ino = 1; next } ino && /^[A-Za-z]/ { ino = 0 } ino { print }' "$1"
+}
+
+# extract_job <workflow> <job> — the body of a 2-space-indented jobs: entry.
+extract_job() {
+  awk -v name="$2" '
+    $0 == "  " name ":" { inb = 1; next }
+    inb && /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ { inb = 0 }
+    inb { print }
+  ' "$1"
+}
+
+# isolate_step_at <job-block-file> <line no> — the step containing that line,
+# from its `- ` marker to the next one.
+isolate_step_at() {
+  local blockfile="$1" hitline="$2" start end
+  start="$(grep -nE '^      - ' "$blockfile" | cut -d: -f1 | awk -v h="$hitline" '$1 <= h { s = $1 } END { print s }')"
+  [[ -n "$start" ]] || return 1
+  end="$(awk -v s="$start" 'NR > s && /^      - / { print NR; exit }' "$blockfile")"
+  [[ -n "$end" ]] || end="$(($(wc -l <"$blockfile") + 1))"
+  sed -n "${start},$((end - 1))p" "$blockfile"
+}
+
+# SELF_RE — SELF_REL as an ERE (the dot in `.sh` must not be a wildcard).
+SELF_RE="${SELF_REL//./\\.}"
+
+# pr_step_pinned <workflow> — 0 when this gate runs, undisarmed, in a
+# pull-request-visible job. Distinct codes so a mutation control can prove it
+# went red for ITS reason: 2 no pull_request trigger, 3 job block unextractable,
+# 4 job-level if:, 5 step absent, 6 step unisolatable, 7 arguments, 8 disarmed.
+pr_step_pinned() {
+  local wf="$1"
+  extract_on_block "$wf" >"$WORK/on.block"
+  [[ -s "$WORK/on.block" ]] || return 2
+  grep -qE '^[[:space:]]+pull_request:' "$WORK/on.block" || return 2
+  extract_job "$wf" verify >"$WORK/job.verify"
+  { [[ -s "$WORK/job.verify" ]] && grep -q '^    steps:' "$WORK/job.verify"; } || return 3
+  grep -qE '^    if:' "$WORK/job.verify" && return 4
+  # Anchored on a `run:` COMMAND, never a mention: verify.yaml's step comments
+  # name this script ("Pinned by hack/examples/dogfood_wiring_test.sh"), and a
+  # fixed-string search would let those comments satisfy the presence check
+  # after the real invocation was deleted. Measured while building 7b.
+  local runline
+  runline="$(grep -nE "^[[:space:]]*run:[[:space:]]*bash[[:space:]]+${SELF_RE}([[:space:]]|\$)" "$WORK/job.verify" | head -1 | cut -d: -f1)"
+  [[ -n "$runline" ]] || return 5
+  isolate_step_at "$WORK/job.verify" "$runline" >"$WORK/step.self" || return 6
+  { [[ -s "$WORK/step.self" ]] && grep -qE '^      - ' "$WORK/step.self"; } || return 6
+  grep -qE "^[[:space:]]*run:[[:space:]]*bash[[:space:]]+${SELF_RE}[[:space:]]*\$" "$WORK/step.self" || return 7
+  grep -qE '^[[:space:]]*(if|continue-on-error):' "$WORK/step.self" && return 8
+  return 0
+}
+
+echo "== 7. this gate runs in the pull-request-visible verify job, undisarmed =="
+rc=0; pr_step_pinned "$WORKFLOW" || rc=$?
+case "$rc" in
+  0) echo "OK: the 'verify' job (which fires on pull_request) runs $SELF_REL, argument-free and undisarmed" ;;
+  2) fail "verify.yaml no longer triggers on pull_request — every pin in this script would reach CI only via release-exitgate, which skips PRs (RELSE-08)" ;;
+  3) fail "the 'verify' job block extracted empty or without 'steps:' — the PR-visibility assertions would be vacuous" ;;
+  4) fail "the 'verify' job carries a JOB-LEVEL if: — if it skips pull requests this gate is push-only exactly like release-exitgate, and RELSE-08 is reproduced" ;;
+  5) fail "the pull-request-visible 'verify' job does not invoke $SELF_REL — this gate would run only via release-exitgate (skipped on PRs), so a PR that strips -count=1 from verify.yaml merges green and reddens main afterwards (RELSE-08)" ;;
+  6) fail "could not isolate this gate's step in the verify job — the extraction broke, so the disarm assertions would be vacuous" ;;
+  7) fail "the step invokes $SELF_REL WITH ARGUMENTS — an argument-carrying invocation is how a wired-looking step is hollowed out" ;;
+  8) fail "the step is present but DISARMED — an 'if:' or 'continue-on-error:' means a red gate does not fail the PR" ;;
+  *) fail "pr_step_pinned returned an unmapped code $rc" ;;
+esac
+
+echo "== 7b. every branch of the PR-visibility pin proved capable of going RED =="
+expect_rc() { # <want> <file> <label>
+  local want="$1" f="$2" label="$3" got=0
+  pr_step_pinned "$f" || got=$?
+  ((got == want)) || fail "mutation control '$label': pr_step_pinned returned $got, want $want — the branch is not the one this mutation exercises"
+  echo "OK: mutation control — $label (rc=$want)"
+}
+
+m="$WORK/verify.nostep.yaml"
+grep -vF -- "run: bash $SELF_REL" "$WORKFLOW" >"$m"
+[[ "$(wc -l <"$m")" -lt "$(wc -l <"$WORKFLOW")" ]] || fail "mutation did not land: the step's run line is still present"
+expect_rc 5 "$m" "the gate's step was deleted from the verify job"
+
+# The subtler half of the same branch, and a bug this control CAUGHT: the run
+# line is gone but the step comments still NAME the script. A fixed-string
+# presence check calls that wired.
+m="$WORK/verify.commentonly.yaml"
+sed "s|^\([[:space:]]*\)run: bash ${SELF_REL}\$|\\1# run: bash ${SELF_REL}  # temporarily disabled|" "$WORKFLOW" >"$m"
+cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: the run line was not commented out"
+grep -qF -- "$SELF_REL" "$m" || fail "mutation is not the intended one: the mutant no longer mentions the script at all, so it does not test comment-vs-command"
+expect_rc 5 "$m" "the invocation was COMMENTED OUT while the step comments still name the script"
+
+m="$WORK/verify.args.yaml"
+sed "s|run: bash ${SELF_REL}\$|run: bash ${SELF_REL} --quick|" "$WORKFLOW" >"$m"
+cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: no argument was appended to the gate invocation"
+expect_rc 7 "$m" "the step still runs the gate, but with an argument"
+
+m="$WORK/verify.disarmed.yaml"
+awk -v self="run: bash $SELF_REL" '{ if (index($0, self) > 0) print "        continue-on-error: true"; print }' "$WORKFLOW" >"$m"
+cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: continue-on-error was not inserted"
+expect_rc 8 "$m" "the step was made advisory with continue-on-error"
+
+m="$WORK/verify.jobif.yaml"
+awk '{ print; if ($0 == "  verify:") print "    if: github.event_name != '"'"'pull_request'"'"'" }' "$WORKFLOW" >"$m"
+cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: the job-level if: was not inserted"
+expect_rc 4 "$m" "the verify JOB was given release-exitgate's push-only guard"
+
+m="$WORK/verify.nopr.yaml"
+grep -vE '^[[:space:]]+pull_request:[[:space:]]*$' "$WORKFLOW" >"$m"
+[[ "$(wc -l <"$m")" -lt "$(wc -l <"$WORKFLOW")" ]] || fail "mutation did not land: pull_request: is still in the on: block"
+expect_rc 2 "$m" "the workflow stopped triggering on pull_request at all"
+
+echo "PASS: dogfood wiring (REQ-EX-S08-02, REQ-EX-S08-03) — task check runs dogfood-examples after build; Taskfile.yml and verify.yaml both delegate to the shared discovery script; the cache-blind go test gates (${COUNT1_TASKS[*]}) carry -count=1, in Taskfile.yml AND in verify.yaml; and this gate itself runs undisarmed in the pull-request-visible verify job"
