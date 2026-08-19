@@ -127,9 +127,11 @@ tasks:
       # Operator 2026-08-13: Dependabot is the updater; a reintroduced
       # renovate.json would otherwise merge green.
       - task: ci-audit-test
-      # AUD2-S05 (REQ-AUD2-S05-03): the P5-AUD2 exit gate. Pure text over the
-      # source, so it costs nothing here and can also run as an early step of
-      # the pull-request-visible `verify` job — which is the point: the four
+      # AUD2-S05 (REQ-AUD2-S05-03): the P5-AUD2 exit gate. NOT free — it runs
+      # `go test` against reverted copies of the tree (~40-50s), which is the only
+      # way it can tell a live test from a hollowed-out one. Placed last, after
+      # `test` has already built the packages. It also runs in the
+      # pull-request-visible `verify` job, which is the point: the four
       # 2026-08-18 remediations must not be revertible behind a green PR.
       - task: audit-aud2-exitgate-test
 
