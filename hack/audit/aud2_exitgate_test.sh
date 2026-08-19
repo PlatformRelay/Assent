@@ -92,11 +92,46 @@ extract_func() {
   ' "$1"
 }
 
-# body_of <file> <func> <out> <finding> <anchor> <decoy-header> — extract with
-# both controls. Returns non-zero (naming <finding>) if the extraction produced
-# nothing, lost its anchor, or swallowed the decoy function.
+# code_only — filter dropping whole-line Go comments from stdin, so an assertion
+# can never be satisfied by prose that merely mentions the construct it wants.
+code_only() {
+  grep -vE '^[[:space:]]*//' || true
+}
+
+# guard_block <body-file> — the `if !errors.Is(err, forge.ErrNotFound) { … }`
+# block, from its `if` line to the `}` at the SAME indentation. Brace-matched on
+# indentation rather than counting braces: gofmt guarantees the closing brace of
+# a block sits at the block's own indent, and the whole tree is gofmt-clean
+# (`task fmt` is check stage 1).
+guard_block() {
+  awk '
+    !ing && /if !errors\.Is\(err, forge\.ErrNotFound\)/ {
+      match($0, /^[ \t]*/)
+      indent = substr($0, 1, RLENGTH)
+      ing = 1
+      print
+      next
+    }
+    ing {
+      print
+      if ($0 == indent "}") exit
+    }
+  ' "$1"
+}
+
+# body_of <file> <func> <out> <finding> <anchor> <next-func-header> — extract
+# with all three controls. Returns non-zero (naming <finding>) if the extraction
+# produced nothing, lost its anchor, or ran past the end of the function.
+#
+# On the <next-func-header> argument: extract_func only ever reads DOWNWARD from
+# its target's `func` line, so a guard naming a function that sits ABOVE the
+# target can never fire — a control that cannot fail, which is the same species
+# of defect this gate exists to catch. The argument must therefore name the
+# function immediately BELOW the target (or be empty when the target is the last
+# function in the file, as isStricterInterventionEffect is). The `^func ` count
+# below is the direction-independent backstop and is live in every case.
 body_of() {
-  local file="$1" fn="$2" out="$3" finding="$4" anchor="$5" decoy="$6"
+  local file="$1" fn="$2" out="$3" finding="$4" anchor="$5" next_fn="$6"
   if [[ ! -f "$file" ]]; then
     echo "  ${finding}: missing ${file#"$ROOT"/}" >&2
     return 1
@@ -110,8 +145,16 @@ body_of() {
     echo "  ${finding}: the extracted ${fn} body does not contain the known-present anchor '${anchor}' — the extraction is wrong, so the assertions below would be vacuous" >&2
     return 1
   fi
-  if [[ -n "$decoy" ]] && grep -Fq -- "$decoy" "$out"; then
-    echo "  ${finding}: the extracted ${fn} body ALSO contains '${decoy}' — the extraction ran past the end of the function and into a neighbour that carries a decoy occurrence, so a same-file grep is what is really being graded" >&2
+  # Direction-independent over-extraction control: a body that swallowed a
+  # neighbour carries two `func` headers, whichever side the neighbour is on.
+  local n_func
+  n_func="$(grep -cE '^func ' "$out" || true)"
+  if [[ "$n_func" -ne 1 ]]; then
+    echo "  ${finding}: the extracted ${fn} body carries ${n_func} top-level 'func' header(s), not 1 — the extraction ran past the end of the function, so a same-file grep is what is really being graded, not this function" >&2
+    return 1
+  fi
+  if [[ -n "$next_fn" ]] && grep -Fq -- "$next_fn" "$out"; then
+    echo "  ${finding}: the extracted ${fn} body ALSO contains '${next_fn}', the function immediately below it — the extraction ran past the closing brace (AUD2-S05: this guard names the function BELOW the target on purpose; extract_func only reads downward, so naming one above it would be a control that cannot fire)" >&2
     return 1
   fi
   return 0
@@ -129,6 +172,24 @@ rhs_of() {
 delete_first() {
   local file="$1" re="$2"
   awk -v re="$re" 'done != 1 && $0 ~ re { done = 1; next } { print }' "$file" >"$file.mut"
+  mv "$file.mut" "$file"
+}
+
+# downgrade_first_return <file> <ERE> — replace the FIRST line matching the
+# pattern with a `continue` at the same indentation. This is the HALF-REVERT
+# shape: the guard stays, its body stops stopping the run. It compiles and it is
+# gofmt-clean, which is exactly why a body-wide grep could not see it.
+downgrade_first_return() {
+  local file="$1" re="$2"
+  awk -v re="$re" '
+    done != 1 && $0 ~ re {
+      match($0, /^[ \t]*/)
+      print substr($0, 1, RLENGTH) "continue"
+      done = 1
+      next
+    }
+    { print }
+  ' "$file" >"$file.mut"
   mv "$file.mut" "$file"
 }
 
@@ -202,8 +263,12 @@ check_exec_containment() { # <transport.go>
   local file="$1" rc=0
   local body="$WORK/body.CallExec"
   # Anchor: cmd.Run() is the call every version of this function has made.
-  # Decoy: CallHTTP is where MaxResponseBytes legitimately appears already.
-  body_of "$file" CallExec "$body" "REL-01/02/07" 'cmd.Run()' 'func CallHTTP' || return 1
+  # Over-extraction guard: execFailure is the function immediately BELOW
+  # CallExec. (CallHTTP, which carries the MaxResponseBytes decoy, sits ABOVE —
+  # naming it here would have been a guard that can never fire. The scoping
+  # proof against that decoy is the REL-01 mutation control, which leaves
+  # CallHTTP's MaxResponseBytes intact and still reddens.)
+  body_of "$file" CallExec "$body" "REL-01/02/07" 'cmd.Run()' 'func execFailure' || return 1
 
   # -- REL-01: stdout is bounded, and bounded by the SINGLE declared bound.
   local stdout_var
@@ -222,9 +287,20 @@ check_exec_containment() { # <transport.go>
   if [[ -z "$wait_rhs" ]]; then
     echo "  REL-02: CallExec sets no cmd.WaitDelay — on context timeout cmd.Run() blocks until every writer to the stdout pipe closes, so a provider that forks a background grandchild hangs 'assent run' past its deadline with no decision, no diagnostic and no 'unavailable' classification (AUD2-S01)" >&2
     rc=1
-  elif [[ "$wait_rhs" == "0" ]]; then
-    echo "  REL-02: CallExec sets cmd.WaitDelay = 0, which is Go's 'wait forever' zero value — the REL-02 hang is reopened while the assignment still looks present (AUD2-S01)" >&2
-    rc=1
+  else
+    # A literal `== "0"` compare would ACCEPT `time.Duration(0)` and
+    # `0 * time.Second`, both of which are the same wait-forever zero. Rule: if
+    # the right-hand side carries digits and every one of them is a zero, the
+    # value is zero however it is spelled. `opts.Timeout` carries no digits and
+    # is unaffected; `30 * time.Second` carries a non-zero digit and is
+    # accepted. A field named e.g. `v0.Timeout` would be refused — fail-closed,
+    # and the fix is to name the assertion's exception, not to widen the rule.
+    local wait_digits
+    wait_digits="$(printf '%s' "$wait_rhs" | tr -cd '0-9')"
+    if [[ -n "$wait_digits" && "$wait_digits" =~ ^0+$ ]]; then
+      echo "  REL-02: CallExec sets cmd.WaitDelay = ${wait_rhs}, which is Go's 'wait forever' zero however it is spelled (0, time.Duration(0), 0 * time.Second) — the REL-02 hang is reopened while the assignment still looks present (AUD2-S01)" >&2
+      rc=1
+    fi
   fi
 
   # -- REL-07: stderr is captured, bounded, and reaches the caller's error.
@@ -259,18 +335,66 @@ check_exec_containment() { # <transport.go>
 check_notfound_discrimination() { # <provider_host.go>
   local file="$1" rc=0
   local body="$WORK/body.resolveRunFacts"
-  # Anchor: the FileAtRef call itself. Decoy: loadResourceOwnerRegistry further
-  # down the same file carries the identical errors.Is guard (D-130).
+  # Anchor: the FileAtRef call itself. Over-extraction guard:
+  # loadResourceOwnerRegistry, further down the same file, carries the identical
+  # errors.Is guard (D-130) — it is both the next-function-below check and the
+  # decoy this assertion must not be reading.
   body_of "$file" resolveRunFacts "$body" "REL-03" 'FileAtRef' 'func loadResourceOwnerRegistry' || return 1
 
   if ! grep -Fq 'errors.Is(err, forge.ErrNotFound)' "$body"; then
     echo "  REL-03: resolveRunFacts does not discriminate forge.ErrNotFound on the provider-declaration fetch — every FileAtRef error (retry-exhausted 5xx, deterministic 401/403) is treated as 'declaration absent' and skipped, so a forge blip silently converts approvable MRs to REVIEW by an invisible path. NOTE: the identical guard in loadResourceOwnerRegistry does NOT close this; the finding is at this call site (AUD2-S02)" >&2
-    rc=1
+    return 1
   fi
-  # Discrimination is only half of it: the non-absent branch must actually stop
+
+  # Discrimination is only half of it: the non-absent branch must actually STOP
   # the run rather than fall through to the same `continue`.
-  if ! grep -Eq '^[[:space:]]*return nil, nil, fmt\.Errorf\(' "$body"; then
-    echo "  REL-03: resolveRunFacts has no error return on the provider-declaration path — a discriminated non-ErrNotFound error that is not returned is the same silent skip with extra steps (AUD2-S02)" >&2
+  #
+  # THIS ASSERTION IS SCOPED TO THE GUARD BLOCK, not to the function body, and
+  # that is the whole point. resolveRunFacts contains THREE
+  # `return nil, nil, fmt.Errorf(` lines — the guard's own, the
+  # LoadProviderConfig malformed-declaration path, and the provider-call path.
+  # A body-wide grep for that pattern is satisfied on every possible tree,
+  # including a half-reverted one where the guard is kept and its body is
+  # downgraded back to `continue`: a compiling, gofmt-clean restoration of the
+  # exact REL-03 defect that an independent reviewer built and that this gate
+  # passed. Reading only between the guard's `if` and its matching `}` is what
+  # makes the assertion capable of failing at all.
+  local guard="$WORK/guard.resolveRunFacts"
+  # Comment lines are stripped: this guard's own prose names both
+  # LoadProviderConfig and the `continue` it replaced, so a raw-text control
+  # would fire on the documentation instead of the code — and a `return …
+  # fmt.Errorf(` quoted in a comment must never satisfy the assertion either.
+  guard_block "$body" | code_only >"$guard"
+  if [[ ! -s "$guard" ]]; then
+    echo "  REL-03: could not isolate the forge.ErrNotFound guard block inside resolveRunFacts — the brace-matched extraction broke, so the branch assertion below would be vacuous" >&2
+    return 1
+  fi
+  # Positive control: the isolated region is the GUARD and nothing more. It must
+  # open with the guard line, and it must NOT have swallowed the two sibling
+  # error returns that follow it (LoadProviderConfig's is the first of them) —
+  # if it had, this assertion would be body-wide again by another route.
+  head -1 "$guard" | grep -Fq 'errors.Is(err, forge.ErrNotFound)' \
+    || {
+      echo "  REL-03: the isolated region does not START with the forge.ErrNotFound guard — the wrong block was extracted, so the branch assertion would be vacuous" >&2
+      return 1
+    }
+  # Over-extraction control, on CODE: the statement that immediately follows the
+  # guard is the LoadProviderConfig load, and it carries the second of the
+  # function's three error returns. If it is inside the isolated region, the
+  # assertion below is body-wide again by another route.
+  if grep -Eq '^[[:space:]]*hostCfg, err :?= ' "$guard" || grep -Eq '^[[:space:]]*[^/]*LoadProviderConfig\(' "$guard"; then
+    echo "  REL-03: the isolated guard block ran past its closing brace and swallowed the LoadProviderConfig path — its error return would satisfy this assertion for the wrong reason, exactly the body-wide grep this scoping replaces" >&2
+    return 1
+  fi
+  # The isolated region must also be strictly smaller than the body it came
+  # from: a 'guard block' equal to the whole function is the body-wide grep
+  # wearing a different name.
+  if [[ "$(wc -l <"$guard")" -ge "$(wc -l <"$body")" ]]; then
+    echo "  REL-03: the isolated guard block is not smaller than the whole resolveRunFacts body — the scoping did not happen" >&2
+    return 1
+  fi
+  if ! grep -Eq '^[[:space:]]*return nil, nil, fmt\.Errorf\(' "$guard"; then
+    echo "  REL-03: the forge.ErrNotFound guard in resolveRunFacts does not RETURN — the discrimination is present but its non-absent branch falls through (a bare continue, or a log-and-carry-on), which is the REL-03 defect restored with the guard left in place as camouflage. The sibling returns further down the function do NOT close this (AUD2-S02)" >&2
     rc=1
   fi
   return "$rc"
@@ -359,9 +483,12 @@ check_cosign_pin() { # <install.sh> <SECURITY.md>
 check_challenge_classification() { # <classify_intervention.go> <classify_intervention_test.go>
   local src="$1" tst="$2" rc=0
   local body="$WORK/body.isStricterInterventionEffect"
-  # Anchor: EffectBlock, present in every version. Decoy: the sibling predicate
-  # isMissedInterventionEffect sits immediately above it.
-  body_of "$src" isStricterInterventionEffect "$body" "TEST-02" 'aggregate.EffectBlock' 'func isMissedInterventionEffect' || return 1
+  # Anchor: EffectBlock, present in every version. No next-function argument:
+  # isStricterInterventionEffect is the LAST function in the file, so there is
+  # nothing below it to swallow and the `^func ` count is the live control here.
+  # (Its sibling isMissedInterventionEffect sits ABOVE it, so naming it would be
+  # a guard that can never fire.)
+  body_of "$src" isStricterInterventionEffect "$body" "TEST-02" 'aggregate.EffectBlock' '' || return 1
 
   if ! grep -Fq 'aggregate.EffectChallenge' "$body"; then
     echo "  TEST-02: isStricterInterventionEffect no longer classifies aggregate.EffectChallenge as a stricter intervention — 'assent compare' stops grading challenge-effect deltas, which is exactly the mutant the auditor demonstrated merges through every wired gate (AUD2-S04)" >&2
@@ -585,6 +712,23 @@ mutate "$m" 's|cmd.WaitDelay = opts.Timeout|cmd.WaitDelay = 0|' 'cmd.WaitDelay =
 expect_red check_exec_containment "cmd.WaitDelay is assigned Go's wait-forever zero value (REL-02)" \
   "REL-02: CallExec sets cmd.WaitDelay = 0" "$m"
 
+# The same zero, spelled so that a literal string compare would accept it. This
+# is the control that keeps the digit rule above honest.
+m="$WORK/transport.rel02typedzero.go"
+cp "$TRANSPORT" "$m"
+mutate "$m" 's|cmd.WaitDelay = opts.Timeout|cmd.WaitDelay = 0 * time.Second|' 'cmd.WaitDelay = 0 * time.Second'
+expect_red check_exec_containment "cmd.WaitDelay is assigned a typed wait-forever zero (0 * time.Second) that a literal compare would accept (REL-02)" \
+  "REL-02: CallExec sets cmd.WaitDelay = 0 * time.Second" "$m"
+
+# Non-vacuity of the digit rule in the OTHER direction: a real non-zero bound
+# must still be accepted, or the rule would red every honest tree.
+m="$WORK/transport.rel02nonzero.go"
+cp "$TRANSPORT" "$m"
+mutate "$m" 's|cmd.WaitDelay = opts.Timeout|cmd.WaitDelay = 30 * time.Second|' 'cmd.WaitDelay = 30 * time.Second'
+check_exec_containment "$m" >/dev/null 2>&1 \
+  || fail "the zero-value rule REJECTED a real non-zero bound (30 * time.Second) — it is over-broad and would red an honest tree"
+echo "OK: the wait-forever rule accepts a real non-zero bound (30 * time.Second) — it refuses zeros, not arithmetic"
+
 # ---- REL-07: stderr unwired, and stderr captured-then-discarded -------------
 m="$WORK/transport.rel07.go"
 cp "$TRANSPORT" "$m"
@@ -617,6 +761,28 @@ decoys="$(grep -c 'errors.Is(err, forge.ErrNotFound)' "$m" || true)"
 echo "OK: the REL-03 mutant still carries $decoys decoy errors.Is(err, forge.ErrNotFound) occurrence(s) — a file-level grep stays green on it"
 expect_red check_notfound_discrimination "resolveRunFacts treats every FileAtRef error as 'declaration absent' again (REL-03), with the D-130 decoy guard still present" \
   "REL-03: resolveRunFacts does not discriminate" "$m"
+
+# ---- REL-03 HALF-REVERT: the guard is kept, its body stops stopping the run --
+# The mutation an independent reviewer used to show the previous, body-wide
+# version of the branch assertion could not fail on ANY tree: resolveRunFacts
+# has three `return nil, nil, fmt.Errorf(` lines, so a body-wide grep is
+# satisfied even here — where the guard is intact, compiles, is gofmt-clean, and
+# the REL-03 defect is fully restored. Only the guard-scoped assertion sees it.
+m="$WORK/provider_host.rel03half.go"
+cp "$PROVIDER_HOST" "$m"
+# Paren-free pattern: awk -v strips one level of escaping, so an escaped `\(`
+# arrives as an unbalanced group ("illegal primary in regular expression").
+downgrade_first_return "$m" '^[[:space:]]*return nil, nil, fmt'
+assert_changed "$PROVIDER_HOST" "$m"
+if ! grep -Fq 'if !errors.Is(err, forge.ErrNotFound)' "$m"; then
+  fail "mutation harness: the REL-03 half-revert lost the guard line — then it is the previous mutation again and proves nothing new about the branch assertion"
+fi
+half_returns="$(grep -c 'return nil, nil, fmt.Errorf(' "$m" || true)"
+[[ "$half_returns" -ge 2 ]] ||
+  fail "mutation harness: the REL-03 half-revert left only ${half_returns} 'return nil, nil, fmt.Errorf(' line(s) — the point of this control is that the SIBLING returns survive, so a body-wide grep stays green on it"
+echo "OK: the REL-03 half-revert keeps the guard AND ${half_returns} sibling 'return nil, nil, fmt.Errorf(' line(s) — a body-wide grep stays green on it"
+expect_red check_notfound_discrimination "the forge.ErrNotFound guard is kept but its body is downgraded to 'continue' — REL-03 restored behind an intact-looking guard" \
+  "REL-03: the forge.ErrNotFound guard in resolveRunFacts does not RETURN" "$m"
 
 # ---- SEC-03: the identity pin deleted, and the two files drifted apart ------
 m="$WORK/install.sec03.sh"
@@ -652,7 +818,25 @@ mutate "$m" "s/func ${CHALLENGE_TEST}(/func disabled${CHALLENGE_TEST}(/" "func d
 expect_red check_challenge_classification "the named EffectChallenge unit case was renamed away (TEST-02)" \
   "is absent from" "$CLASSIFY" "$m"
 
-# ---- wiring mutations ------------------------------------------------------
+
+# ============================================================================
+# (6) Wiring — REAL TREE FIRST, then its mutations
+# ============================================================================
+
+# Order matters, and it is the same order sections 1-4 use. If the real-tree
+# greens ran AFTER the mutants, a genuinely reverted `check:` line / CHECK_STAGES
+# entry / verify.yaml step would surface as the harness's own
+# "mutation did not land: <file> is byte-identical to its source" — fail-closed,
+# but pointing the maintainer at the harness instead of naming the REQ that was
+# broken. Green first means the REQ-named message always wins.
+
+echo
+echo "== (6) REQ-AUD2-S05-03/04/05 — this gate is wired where it can be seen =="
+expect_green check_task_wiring "'task check' runs ${STAGE}, which invokes ${SELF}" "$TASKFILE"
+expect_green check_stage_pinned "${STAGE} is pinned in CHECK_STAGES (AUD-S18 grades it)" "$AUD_GATE"
+expect_green check_pr_wiring "the pull-request-visible 'verify' job runs ${SELF}, undisarmed" "$WORKFLOW"
+
+echo "== (6b) the wiring assertions proved capable of going RED =="
 m="$WORK/Taskfile.nostage.yml"
 grep -vE "^[[:space:]]+- task: ${STAGE}\$" "$TASKFILE" >"$m"
 assert_changed "$TASKFILE" "$m"
@@ -694,17 +878,8 @@ fi
 expect_red check_pr_wiring "the workflow stopped triggering on pull_request while the step stayed wired" \
   "no longer triggers on pull_request" "$m"
 
-# ============================================================================
-# Wiring, real tree
-# ============================================================================
 
-echo
-echo "== (6) REQ-AUD2-S05-03/04/05 — this gate is wired where it can be seen =="
-expect_green check_task_wiring "'task check' runs ${STAGE}, which invokes ${SELF}" "$TASKFILE"
-expect_green check_stage_pinned "${STAGE} is pinned in CHECK_STAGES (AUD-S18 grades it)" "$AUD_GATE"
-expect_green check_pr_wiring "the pull-request-visible 'verify' job runs ${SELF}, undisarmed" "$WORKFLOW"
-
-((MUTATIONS_PROVED >= 15)) ||
+((MUTATIONS_PROVED >= 17)) ||
   fail "only ${MUTATIONS_PROVED} mutation controls ran — REQ-AUD2-S05-02 requires every assertion to be proved capable of failing; a section was skipped"
 
 # ============================================================================
