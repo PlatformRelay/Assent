@@ -33,6 +33,21 @@ TASKFILE="$ROOT/Taskfile.yml"
 WORKFLOW="$ROOT/.github/workflows/verify.yaml"
 SCRIPT="hack/dogfood-examples.sh"
 
+# D-157 — the PR-reach and step-wiring checks are SHARED with the other two
+# PR-visible text gates (hack/lint/workflow_pins_test.sh,
+# hack/audit/aud2_exitgate_test.sh). Sourced, not executed; it returns codes and
+# prints nothing, so the wording below stays this script's own. Guarded rather
+# than assumed: under `set -e` a missing helper would abort this script
+# mid-section, and a gate that stops half-way must say so instead of exiting on
+# whatever code the failed source left behind.
+PR_REACH_LIB="$ROOT/hack/lib/pr_reach.sh"
+if [[ ! -f "$PR_REACH_LIB" ]]; then
+  echo "FAIL: missing $PR_REACH_LIB — the shared PR-reach/step-wiring helper (D-157). Refusing to run rather than skipping section 7." >&2
+  exit 1
+fi
+# shellcheck source=../lib/pr_reach.sh
+. "$PR_REACH_LIB"
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -349,73 +364,30 @@ echo "OK: stripping -count=1 from verify.yaml's command line (comment intact) tu
 
 SELF_REL="hack/examples/dogfood_wiring_test.sh"
 
-# extract_on_block <workflow> — the body of the top-level `on:` mapping.
-extract_on_block() {
-  awk '/^on:/ { ino = 1; next } ino && /^[A-Za-z]/ { ino = 0 } ino { print }' "$1"
-}
-
-# extract_job <workflow> <job> — the body of a 2-space-indented jobs: entry.
-extract_job() {
-  awk -v name="$2" '
-    $0 == "  " name ":" { inb = 1; next }
-    inb && /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ { inb = 0 }
-    inb { print }
-  ' "$1"
-}
-
-# isolate_step_at <job-block-file> <line no> — the step containing that line,
-# from its `- ` marker to the next one.
-isolate_step_at() {
-  local blockfile="$1" hitline="$2" start end
-  start="$(grep -nE '^      - ' "$blockfile" | cut -d: -f1 | awk -v h="$hitline" '$1 <= h { s = $1 } END { print s }')"
-  [[ -n "$start" ]] || return 1
-  end="$(awk -v s="$start" 'NR > s && /^      - / { print NR; exit }' "$blockfile")"
-  [[ -n "$end" ]] || end="$(($(wc -l <"$blockfile") + 1))"
-  sed -n "${start},$((end - 1))p" "$blockfile"
-}
-
-# SELF_RE — SELF_REL as an ERE (the dot in `.sh` must not be a wildcard).
-SELF_RE="${SELF_REL//./\\.}"
-
 # pr_step_pinned <workflow> — 0 when this gate runs, undisarmed, in a
 # pull-request-visible job. Distinct codes so a mutation control can prove it
-# went red for ITS reason: 2 no pull_request trigger, 3 job block unextractable,
-# 4 job-level if:, 5 step absent, 6 step unisolatable, 7 arguments, 8 disarmed.
+# went red for ITS reason. The whole body now delegates to hack/lib/pr_reach.sh
+# (D-157): the on:/job/step readers that used to live here were copied into two
+# sibling gates, one of which had already drifted weaker, and the PR-reach test
+# was a bare `grep -qE '^[[:space:]]+pull_request:'` that a reviewer defeated
+# with a `paths:`-filtered trigger (measured rc=0). The codes are unchanged for
+# 2..8 — 9..13 are the ones the old check could not distinguish at all:
+#
+#   2  no top-level pull_request trigger      9  job-level needs:
+#   3  job block unextractable               10  on: shape not evaluable
+#   4  job-level if:                         11  pull_request has paths:
+#   5  step absent (no run: COMMAND)         12  pull_request types: too narrow
+#   6  step unisolatable                     13  pull_request branch filter
+#   7  arguments                                 excludes main
+#   8  disarmed
 pr_step_pinned() {
-  local wf="$1"
-  extract_on_block "$wf" >"$WORK/on.block"
-  [[ -s "$WORK/on.block" ]] || return 2
-  grep -qE '^[[:space:]]+pull_request:' "$WORK/on.block" || return 2
-  extract_job "$wf" verify >"$WORK/job.verify"
-  { [[ -s "$WORK/job.verify" ]] && grep -q '^    steps:' "$WORK/job.verify"; } || return 3
-  grep -qE '^    if:' "$WORK/job.verify" && return 4
-  # Anchored on a `run:` COMMAND, never a mention: verify.yaml's step comments
-  # name this script ("Pinned by hack/examples/dogfood_wiring_test.sh"), and a
-  # fixed-string search would let those comments satisfy the presence check
-  # after the real invocation was deleted. Measured while building 7b.
-  local runline
-  runline="$(grep -nE "^[[:space:]]*run:[[:space:]]*bash[[:space:]]+${SELF_RE}([[:space:]]|\$)" "$WORK/job.verify" | head -1 | cut -d: -f1)"
-  [[ -n "$runline" ]] || return 5
-  isolate_step_at "$WORK/job.verify" "$runline" >"$WORK/step.self" || return 6
-  { [[ -s "$WORK/step.self" ]] && grep -qE '^      - ' "$WORK/step.self"; } || return 6
-  # Isolation bound, the same defect hack/lint/workflow_pins_test.sh:433-440
-  # closes with a 1..6 LINE cap. Without a bound, deleting only this step's
-  # `- name:` line merges it into the neighbouring step and the isolated region
-  # silently becomes that other step's body plus ours — a malformed workflow
-  # this function called fine (measured: rc=0). A line cap is the wrong shape
-  # here: this step carries a long comment block, so the honest size (14) and
-  # the merged size (15) are one line apart and any cap that admits the first
-  # admits the second. The structural invariant is what actionlint itself
-  # flags — a step has exactly ONE `run:` key — and it holds whatever the
-  # comments do. (Also caught independently by workflow_pins_test.sh's own
-  # "got 15 lines, expected 1..6" and by actionlint's `key "run" is
-  # duplicated`, so this is a bound made explicit, not a hole being closed.)
-  local n_run
-  n_run="$(grep -cE '^        run:' "$WORK/step.self" || true)"
-  ((n_run == 1)) || return 6
-  grep -qE "^[[:space:]]*run:[[:space:]]*bash[[:space:]]+${SELF_RE}[[:space:]]*\$" "$WORK/step.self" || return 7
-  grep -qE '^[[:space:]]*(if|continue-on-error):' "$WORK/step.self" && return 8
-  return 0
+  local wf="$1" rc=0
+  assent_pr_reach "$wf" "$WORK" || rc=$?
+  if ((rc != 0)); then
+    return "$rc"
+  fi
+  assent_step_wired "$wf" "$ASSENT_PR_JOB" "$SELF_REL" "$WORK" || rc=$?
+  return "$rc"
 }
 
 echo "== 7. this gate runs in the pull-request-visible verify job, undisarmed =="
@@ -429,16 +401,23 @@ case "$rc" in
   6) fail "could not isolate this gate's step in the verify job — the extraction broke, so the disarm assertions would be vacuous" ;;
   7) fail "the step invokes $SELF_REL WITH ARGUMENTS — an argument-carrying invocation is how a wired-looking step is hollowed out" ;;
   8) fail "the step is present but DISARMED — an 'if:' or 'continue-on-error:' means a red gate does not fail the PR" ;;
+  9) fail "the 'verify' job carries a JOB-LEVEL needs: — a dependency that skips on pull requests skips this job with it, so the gate is push-only by proxy while the step still looks wired (RELSE-08 through the back door)" ;;
+  10) fail "verify.yaml's 'on:' block uses a shape hack/lib/pr_reach.sh cannot evaluate (a flow mapping, an anchor or an alias) — it refuses rather than guess, because a hidden paths:/types: filter there would disarm this gate silently" ;;
+  11) fail "verify.yaml's pull_request trigger carries a 'paths:' or 'paths-ignore:' filter — the trigger is present and the gate still loses every PR that does not touch the listed paths, which includes PRs to Taskfile.yml and .github/workflows/** (the two files this gate reads)" ;;
+  12) fail "verify.yaml's pull_request trigger carries a 'types:' filter that omits one of GitHub's defaults (opened, synchronize, reopened) — e.g. 'types: [closed]' satisfies a presence grep while the gate never runs on an open PR" ;;
+  13) fail "verify.yaml's pull_request trigger carries a branch filter that excludes 'main' — PRs onto the branch this gate protects would not run it" ;;
   *) fail "pr_step_pinned returned an unmapped code $rc" ;;
 esac
 
 echo "== 7b. every branch of the PR-visibility pin proved capable of going RED =="
-# Bound, stated rather than implied: rc=3 (verify job block unextractable —
-# reachable by renaming the `verify:` job) has NO control here. rc=6 is
-# controlled for the reachable route (a step merged into its neighbour by a
-# deleted `- name:`); its other route, a region that is not a step at all,
-# needs a workflow actionlint cannot parse and so is unreachable through green
-# CI. Every other branch below is controlled.
+# Bound, stated rather than implied: rc=6 is controlled for the reachable route
+# (a step merged into its neighbour by a deleted `- name:`); its other route, a
+# region that is not a step at all, needs a workflow actionlint cannot parse and
+# so is unreachable through green CI. rc=13's `branches-ignore:` half is
+# controlled through its `branches:` sibling only. Every other branch below,
+# including the ones D-157 added (9..13) and rc=3, which was uncontrolled until
+# cross-pinning made the JOB NAME a single point of failure for all three
+# gates, is controlled.
 expect_rc() { # <want> <file> <label>
   local want="$1" f="$2" label="$3" got=0
   pr_step_pinned "$f" || got=$?
@@ -489,4 +468,177 @@ grep -vE '^[[:space:]]+pull_request:[[:space:]]*$' "$WORKFLOW" >"$m"
 [[ "$(wc -l <"$m")" -lt "$(wc -l <"$WORKFLOW")" ]] || fail "mutation did not land: pull_request: is still in the on: block"
 expect_rc 2 "$m" "the workflow stopped triggering on pull_request at all"
 
-echo "PASS: dogfood wiring (REQ-EX-S08-02, REQ-EX-S08-03) — task check runs dogfood-examples after build; Taskfile.yml and verify.yaml both delegate to the shared discovery script; the cache-blind go test gates (${COUNT1_TASKS[*]}) carry -count=1, in Taskfile.yml AND in verify.yaml; and this gate itself runs undisarmed in the pull-request-visible verify job"
+# --- D-157: the branches the OLD `grep -qE '^[[:space:]]+pull_request:'` could
+# not tell apart. Each of these leaves that grep satisfied. The first two are
+# the reviewer's measured bypass (rc=0 before this change).
+insert_under_pr() { # <outfile> <lines...> — insert under `  pull_request:`
+  local out="$1"
+  shift
+  local payload
+  payload="$(printf '%s\n' "$@")"
+  awk -v add="$payload" '{ print } $0 == "  pull_request:" { print add }' "$WORKFLOW" >"$out"
+  cmp -s "$WORKFLOW" "$out" && fail "mutation did not land: nothing was inserted under 'pull_request:' in $out"
+  grep -qE '^[[:space:]]+pull_request:' "$out" ||
+    fail "mutation is not the intended one: $out no longer satisfies even the OLD presence grep, so it does not demonstrate the bypass"
+  return 0
+}
+
+m="$WORK/verify.prpaths.yaml"
+insert_under_pr "$m" "    paths: ['internal/**']"
+expect_rc 11 "$m" "the pull_request trigger grew a paths: filter (the reviewer's measured bypass: present, and disarmed for a PR that touches only Taskfile.yml)"
+
+m="$WORK/verify.prpathsignore.yaml"
+insert_under_pr "$m" "    paths-ignore: ['docs/**']"
+expect_rc 11 "$m" "the pull_request trigger grew a paths-ignore: filter"
+
+m="$WORK/verify.prtypes.yaml"
+insert_under_pr "$m" "    types: [closed]"
+expect_rc 12 "$m" "the pull_request trigger was narrowed to types: [closed] — it never fires on an open PR"
+
+m="$WORK/verify.prtypespartial.yaml"
+insert_under_pr "$m" "    types: [opened, reopened]"
+expect_rc 12 "$m" "the pull_request types: list dropped 'synchronize' — the gate would not re-run when a PR is updated"
+
+m="$WORK/verify.prbranches.yaml"
+insert_under_pr "$m" "    branches: [release]"
+expect_rc 13 "$m" "the pull_request trigger was restricted to branches that do not include main"
+
+m="$WORK/verify.prflowmap.yaml"
+awk 'NR == 1 { print; next } { print }' "$WORKFLOW" | sed "s|^  pull_request:\$|  pull_request: {paths: ['internal/**']}|" >"$m"
+cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: pull_request: was not rewritten as a flow mapping"
+expect_rc 10 "$m" "the pull_request filter was hidden in a YAML flow mapping the reader refuses to guess at"
+
+m="$WORK/verify.jobneeds.yaml"
+awk '{ print; if ($0 == "  verify:") print "    needs: release-exitgate" }' "$WORKFLOW" >"$m"
+cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: the job-level needs: was not inserted"
+grep -qF -- "run: bash $SELF_REL" "$m" || fail "mutation is not the intended one: the needs: mutant lost the gate step"
+expect_rc 9 "$m" "the verify JOB was made to depend on the push-only release-exitgate job — skipped dependency, skipped job, step still there"
+
+m="$WORK/verify.jobrenamed.yaml"
+sed "s|^  ${ASSENT_PR_JOB}:\$|  ${ASSENT_PR_JOB}-all:|" "$WORKFLOW" >"$m"
+cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: the '${ASSENT_PR_JOB}:' job key was not renamed"
+grep -qF -- "run: bash $SELF_REL" "$m" || fail "mutation is not the intended one: the job-rename mutant lost the gate step"
+expect_rc 3 "$m" "the '${ASSENT_PR_JOB}' job was renamed — with three gates now cross-pinning that job name, an uncontrolled extraction failure here would go vacuous for all of them at once"
+
+m="$WORK/verify.prnested.yaml"
+awk '
+  { print }
+  $0 == "  push:" && !done {
+    print "  workflow_call:"
+    print "    inputs:"
+    print "      pull_request:"
+    print "        type: string"
+    done = 1
+  }
+' "$WORKFLOW" | grep -vE '^  pull_request:[[:space:]]*$' >"$m"
+grep -qE '^[[:space:]]+pull_request:' "$m" ||
+  fail "mutation is not the intended one: the nested-key mutant has no 'pull_request:' line at all, so it does not test indent scoping"
+expect_rc 2 "$m" "the only 'pull_request:' left is an INPUT NAME nested under workflow_call — indent-blind grep says yes, GitHub says the workflow never runs on a PR"
+
+# A fail-open found by building this mutant rather than by reasoning about it.
+# The block-scalar form is accepted on purpose (see 7's legit-shapes control
+# below), and accepting it naively means a BARE `bash <script>` line anywhere in
+# the job satisfies the check — including inside some OTHER step's multi-command
+# `run: |` body, where `echo skip && exit 0` on the line above would mean this
+# gate never runs. Measured at rc=0 before the restriction; the block form is
+# now accepted only when it is the block's SOLE command.
+m="$WORK/verify.blockbleed.yaml"
+grep -vF "run: bash $SELF_REL" "$WORKFLOW" \
+  | awk -v s="$SELF_REL" '{ print } /go test -count=2 \.\/internal\/render/ { print "          bash " s }' >"$m"
+[[ "$(grep -cF "bash $SELF_REL" "$m")" == "1" ]] ||
+  fail "mutation did not land: expected exactly one 'bash $SELF_REL' occurrence in the bleed mutant"
+grep -qF -- "run: bash $SELF_REL" "$m" && fail "mutation did not land: the real step's run: line survived in the bleed mutant"
+expect_rc 5 "$m" "this gate's own step was deleted and its invocation smuggled into ANOTHER step's multi-command 'run: |' body"
+
+# --- the other polarity. Seventeen red controls above are equally satisfied by a
+# pin that always fails, so the shapes a maintainer could legitimately introduce
+# must be proved to stay GREEN. These are the narrowings D-157 deliberately does
+# NOT make: a types: superset, a branches: list containing main, a
+# branches-ignore: that spares main, the inline `on:` forms (which cannot carry
+# a filter at all), the quoted `"on":` key, and a block-scalar invocation.
+m="$WORK/verify.typessuperset.yaml"
+insert_under_pr "$m" "    types: [opened, synchronize, reopened, ready_for_review]"
+expect_rc 0 "$m" "a types: list that SUPERSETS GitHub's defaults is still accepted"
+
+m="$WORK/verify.branchesmain.yaml"
+insert_under_pr "$m" "    branches: [main]"
+expect_rc 0 "$m" "branches: [main] — the branch this gate protects — is still accepted"
+
+m="$WORK/verify.branchesignoreother.yaml"
+insert_under_pr "$m" "    branches-ignore: [gh-pages]"
+expect_rc 0 "$m" "branches-ignore: on a branch that is not main is still accepted"
+
+m="$WORK/verify.inlineseq.yaml"
+awk '{ if ($0 == "on:") { print "on: [push, pull_request]"; skip = 1; next } if (skip && $0 ~ /^  /) next; skip = 0; print }' "$WORKFLOW" >"$m"
+cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: the on: block was not replaced by an inline sequence"
+expect_rc 0 "$m" "the inline 'on: [push, pull_request]' form — which cannot carry a filter at all — is still accepted"
+
+m="$WORK/verify.quotedon.yaml"
+sed 's|^on:$|"on":|' "$WORKFLOW" >"$m"
+cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: the on: key was not quoted"
+expect_rc 0 "$m" "the quoted '\"on\":' key (YAML 1.1 truthiness) is still accepted"
+
+m="$WORK/verify.blockscalar.yaml"
+awk -v s="        run: bash $SELF_REL" '{ if ($0 == s) { print "        run: |"; print "          bash '"$SELF_REL"'" } else print }' "$WORKFLOW" >"$m"
+cmp -s "$WORKFLOW" "$m" && fail "mutation did not land: the run: line was not turned into a block scalar"
+expect_rc 0 "$m" "a block-scalar 'run: |' invocation of this gate is still accepted"
+
+# ------------------------------- 7c. the OTHER two PR-visible text gates --
+#
+# D-157 residual 2. Until now each of the three PR-visible text gates pinned
+# only its OWN step: workflow_pins_test.sh section 5, aud2_exitgate_test.sh's
+# check_pr_wiring, and section 7 above. A reviewer grepped and confirmed none
+# named another — so a PR deleting one of those three steps was invisible to
+# the gate that still ran on that PR. (`task check` and the push-only
+# release-exitgate job caught it afterwards, which is why this was a gap and
+# not a hole.) Each gate now asserts all three steps, so deleting ANY ONE of
+# them reds on the pull request that does it, twice over.
+check_sibling_gates() { # <workflow> — 0 when both siblings are wired
+  local wf="$1" g rc=0
+  while IFS= read -r g; do
+    [[ -n "$g" ]] || continue
+    rc=0
+    assent_step_wired "$wf" "$ASSENT_PR_JOB" "$g" "$WORK" || rc=$?
+    if ((rc != 0)); then
+      SIBLING_FINDING="$g (rc=$rc)"
+      return "$rc"
+    fi
+  done < <(assent_pr_gate_others "$SELF_REL")
+  return 0
+}
+
+echo "== 7c. the OTHER two PR-visible text gates are wired in the same job =="
+# Positive control on the shared list first: if this script is not a member,
+# every "other" below is the wrong set and the section certifies nothing.
+assent_pr_gate_others "$SELF_REL" >"$WORK/siblings" ||
+  fail "$SELF_REL is not listed in ASSENT_PR_GATES (hack/lib/pr_reach.sh) — the cross-pin set is not the set this gate belongs to, so section 7c would grade an unrelated pair"
+((${#ASSENT_PR_GATES[@]} == 3)) ||
+  fail "ASSENT_PR_GATES holds ${#ASSENT_PR_GATES[@]} entries, expected the 3 PR-visible text gates — if a fourth is added, give it its own cross-pin section rather than widening this one silently"
+[[ "$(wc -l <"$WORK/siblings" | tr -d ' ')" == "2" ]] ||
+  fail "expected exactly 2 sibling gates, got $(wc -l <"$WORK/siblings" | tr -d ' ')"
+while IFS= read -r sibling; do
+  [[ -f "$ROOT/$sibling" ]] || fail "cross-pinned gate $sibling does not exist on disk — the pin would assert a step that runs nothing"
+done <"$WORK/siblings"
+SIBLING_FINDING=""
+rc=0
+check_sibling_gates "$WORKFLOW" || rc=$?
+((rc == 0)) ||
+  fail "a sibling PR-visible gate is not wired undisarmed into the '${ASSENT_PR_JOB}' job: ${SIBLING_FINDING} — see the rc table at pr_step_pinned. Deleting one of the three gate steps must redden the PR that does it, and this is the half of that guarantee this script owns"
+echo "OK: both sibling gates ($(tr '\n' ' ' <"$WORK/siblings"| sed 's/ $//')) are wired, argument-free and undisarmed in the ${ASSENT_PR_JOB} job"
+
+echo "== 7d. the cross-pin can fail — each sibling's step deleted in turn =="
+while IFS= read -r sibling; do
+  m="$WORK/verify.nosibling.$(basename "$sibling").yaml"
+  grep -vF -- "run: bash $sibling" "$WORKFLOW" >"$m"
+  [[ "$(wc -l <"$m")" -lt "$(wc -l <"$WORKFLOW")" ]] ||
+    fail "mutation did not land: '$sibling' still has its run line in $m"
+  grep -qF -- "run: bash $SELF_REL" "$m" ||
+    fail "mutation is not the intended one: deleting $sibling's step also removed THIS gate's step, so the control grades self-wiring again"
+  rc=0
+  check_sibling_gates "$m" || rc=$?
+  ((rc == 5)) ||
+    fail "cross-pin control: deleting $sibling's step returned rc=$rc, want 5 (no run: command) — the cross-pin either cannot fail or failed for another reason"
+  echo "OK: cross-pin control — deleting $sibling's step from the ${ASSENT_PR_JOB} job reds THIS gate (rc=5)"
+done <"$WORK/siblings"
+
+echo "PASS: dogfood wiring (REQ-EX-S08-02, REQ-EX-S08-03) — task check runs dogfood-examples after build; Taskfile.yml and verify.yaml both delegate to the shared discovery script; the cache-blind go test gates (${COUNT1_TASKS[*]}) carry -count=1, in Taskfile.yml AND in verify.yaml; and all THREE PR-visible text gates (this one and its two siblings) run undisarmed in a verify job whose pull_request trigger carries no paths:/types:/branches narrowing (D-157)"
