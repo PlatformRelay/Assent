@@ -43,6 +43,24 @@
 set -u
 set -o pipefail
 
+# BASH >= 4.4 REQUIRED, ASSERTED FIRST — before anything else can partially run (D-154).
+# `mapfile -d ''` is 4.4; plain `mapfile -t` and the associative `kind_to_schema` need 4.0, so
+# 4.4 is the binding floor. That floor was already DOCUMENTED in the header above — and a comment
+# is not a guard: under stock macOS /bin/bash 3.2 `mapfile` was "command not found", `all_schemas`
+# stayed unset, and every loop below ran against an unbound array. It does exit non-zero, so it
+# fails closed, but it fails closed several screens later with a diagnostic that names neither
+# bash nor its version. Pinned by hack/lint/bash_version_guard_test.sh. Resolution order matches
+# the other two guards: script-relative, then the enclosing git checkout, then refuse.
+_assent_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd || true)"
+[ -n "$_assent_lib" ] || _assent_lib="$(cd "$(git rev-parse --show-toplevel 2>/dev/null)/hack/lib" 2>/dev/null && pwd || true)"
+[ -r "${_assent_lib}/require-bash.sh" ] || {
+  echo "FAIL: $0 cannot locate hack/lib/require-bash.sh — refusing to run without its bash version floor (D-154)." >&2
+  exit 1
+}
+# shellcheck source=hack/lib/require-bash.sh
+. "${_assent_lib}/require-bash.sh" || exit 1
+require_bash 4.4 "mapfile -d '' (NUL-delimited readarray)" || exit 1
+
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
   echo "error: must run inside the git repository" >&2
   exit 2
