@@ -58,13 +58,29 @@ A throwaway probe reconstructed `newEvalEnv` byte-faithfully against the pinned
 | `oldEntry.acls.filter(a, !(a in entry.acls))` | `lists.*` (`ext.Lists` is not registered) |
 | `facts.registry.topics.value[string(new)].retentionMs` | `cel.bind(...)` (`ext.Bindings` is not registered) |
 | `string(new) in facts.registry.topics.value` | `.?field` / `orValue` (optional syntax unsupported) |
-| `matches`, `startsWith`, `endsWith`, `timestamp`, `duration`, `int`, `double` | `now`, `rand` — non-determinism is not reachable (rule 7 holds) |
+| `matches`, `startsWith`, `endsWith`, `contains`, `timestamp`, `duration`, `int`, `double` | `split`, `substring`, `indexOf` — every string **decomposition** function (`ext.Strings` is not registered); §5 turns on this |
+| | `now`, `rand` — non-determinism is not reachable (rule 7 holds) |
+
+The string row deserves emphasis because §5 rests on it. The surface can **test** a string
+(`matches`, `startsWith`, `endsWith`, `contains`) but cannot **take it apart**: there is no
+`split`, no `substring`, no `indexOf`, and no character indexing. So tier-1 CEL can ask "does
+some edge start with this node?" and can never recover that edge's other end — the exact
+expressions were compiled and are listed in the reproduction below.
 
 **Reproduction** (deliberately not committed — it would add a dependency edge E11-S03 has not
 been authorised to add): copy `newEvalEnv` verbatim into a nested throwaway module pinned to
 `cel-go v0.31.0`, call `env.Compile` on each expression above, and print the issue set. The
 root `go.mod`/`go.sum` must stay byte-unchanged and `go list ./...` must not enumerate the
-probe — the same containment E11-S00 uses.
+probe — the same containment E11-S00 uses. The expression list is exactly the leaves quoted in
+§2–§5, plus these five, whose verdicts carry §5:
+
+```text
+REJECTED  facts.graph.edges.value.exists(s, s.split("|")[0] == string(new))         undeclared 'split'
+REJECTED  facts.graph.edges.value.exists(s, split(s, "|")[0] == string(new))        undeclared 'split'
+REJECTED  facts.graph.edges.value.exists(s, s.substring(0, s.indexOf("|")) == ...)  undeclared 'substring'
+REJECTED  facts.graph.edges.value.exists(s, s.indexOf("|") > 0)                     undeclared 'indexOf'
+COMPILES  facts.graph.edges.value.exists(s, s.startsWith(string(new) + "|"))        one hop, prefix only
+```
 
 ### 1.2 Two ceilings that are *not* expressiveness — and that Rego does not lift
 
@@ -98,12 +114,25 @@ Consequently, in production:
 | `old`, `new` | always a **scalar** (`DecodeCanonical` of a scalar render) |
 | `entry`, `oldEntry` | the same scalars — `EvalChange.Entry` is `json:"-"`, in-memory only, and `internal/adoptertest/entrytree.go` `populateEntries` is its **sole writer** (OQ-35) |
 | `changes[i].old`, `changes[i].new` | always scalars, for one file |
-| `facts.<p>.<n>.value` | a scalar, or a flat list of scalars under `cardinality: set`. Anything richer is undeclarable (§1.2, OQ-36) |
+| `facts.<p>.<n>.value` | a scalar, or a **flat list of scalars** under `cardinality: set`. A nested/mapping value is undeclarable (§1.2, OQ-36) |
 | `mr.labels` | a flat list of strings |
 
-So the **only** value-tree-shaped binding a production rule can navigate is a fact value, and
-the frozen declaration cannot describe one. Under `assent test` the picture is different —
-which is the whole of OQ-35.
+So the only *navigable value tree* a production rule can reach is a fact value, and the frozen
+declaration cannot describe a nested one. Under `assent test` the picture is different — which
+is the whole of OQ-35.
+
+**But "flat list of scalars" is not the same as "carries no structure", and the difference
+decides Shape D (§5).** A `{type: string, cardinality: set}` output is fully in contract, and a
+provider may put whatever it likes in each string — including an encoded edge, e.g.
+`edges: ["orders|billing", "billing|ledger"]`. Every link is verified in-tree: the declaration
+is legal (`schemas/provider/v1alpha1/response.schema.json`); `fact.value` carries **no**
+JSON-Schema type constraint and `provider.ResolveFactsChecked` cross-checks the *declaration*,
+never the value (`internal/provider/resolve.go`); outputs are operator-authored per provider
+(`internal/provider/config.go`, `Outputs map[string]Declaration`); the `http` transport is live
+on the plain `assent run` path with **no `--checkout`** (`cmd/assent/provider_host.go`,
+`providerCallFor`); and a set fact binds as a CEL list, which ships green today. **So an
+adjacency is available inside `EvaluationInput` right now — no `--checkout`, no OQ-35, no
+OQ-36.**
 
 ---
 
@@ -191,9 +220,14 @@ string(new) in facts.registry.topics.value
 
 A `cardinality: set`, `type: string` output is exactly a list of names; `factsToCEL` binds a
 resolved fact's `value` through `toCEL`, so it arrives as a CEL list and `in` is a standard
-operator. The corpus already ships this idiom —
+operator. **The *idiom* is shipped and green** —
 `examples/packs/service-catalog/.assent/packs/catalog/rules/ownership.yaml:21` uses
-`entry.owner in facts.author.groups.value`, and it is green in the dogfood packs.
+`entry.owner in facts.author.groups.value` in the dogfood packs. Stated precisely, because the
+distinction matters: that instance is an **identity** fact (the author's groups), not a
+cross-manifest registry read. What the corpus proves is that a set-valued fact binds as a CEL
+list and `in` decides membership over it; that the *source* of such a set can be another
+manifest follows from the provider contract — any provider may return a set — not from that
+example. The nearest shipped cross-manifest instance is the **keyed** form in B2.
 
 ### B2 · Keyed attribute lookup — **STRUCK (CEL-expressible, two ways)**
 
@@ -308,47 +342,71 @@ at all, which is a test/production-parity question, not a backend question.
 
 ---
 
-## 5. Shape D — graph relationship — **EXCEEDS TIER 1, but justifies E11 only contingently**
+## 5. Shape D — graph relationship — **EXCEEDS TIER 1, unconditionally**
 
 **Rule (generic).** A service manifest may not declare a dependency that is **transitively**
 reachable back to itself — no dependency cycles at any depth.
 
-**Attempted CEL leaf.**
+**The input is available today.** A provider declares
+`edges: {type: string, cardinality: set}` and returns the adjacency as encoded pairs:
+
+```yaml
+edges: ["orders|billing", "billing|ledger", "ledger|orders"]
+```
+
+That declaration is in contract, the `http` transport that serves it runs on the plain
+`assent run` path with no `--checkout`, and the value binds as a CEL list — every link verified
+in §1.3. **No OQ-35, no OQ-36, no `--checkout`, no schema change.**
+
+**Attempted CEL leaves.**
 
 ```cel
 !transitiveClosure(entry.dependsOn).exists(d, d == entry.name)
+facts.graph.edges.value.exists(s, s.split("|")[0] == string(new))
 ```
 
-**Why it fails.** `transitiveClosure` is an `undeclared reference`, and nothing in the surface
-replaces it. CEL is deliberately non-Turing-complete: there is **no recursion, no fixpoint, no
-user-defined function, no `while`, and no fold** (§1.1) — the four comprehension macros iterate
-exactly one level over one collection. A cycle check to a *fixed* depth `k` can be hand-unrolled
-into `k` nested comprehensions (`entry.deps.all(d, entry.deps.all(e, e != d))` compiles), but
-that is a different rule: it answers "no cycle of length ≤ k", it must be rewritten whenever the
-graph deepens, and each unrolling multiplies against the `1_000_000` cost budget. **Unbounded
-reachability has no spelling at tier 1.** The same holds for every other graph question —
-shortest path, ancestor-of, strongly-connected component, topological order.
+**Why they fail — two independent reasons, either of which alone is decisive.**
 
-**Why Rego lifts it.** Recursive rule definitions over `input` are the canonical Rego idiom, and
-they need no I/O and no data beyond the input. This is the second genuine tier-2 justification.
+1. **CEL cannot close the graph.** `transitiveClosure` is an `undeclared reference` and nothing
+   replaces it. CEL is deliberately non-Turing-complete: **no recursion, no fixpoint, no
+   user-defined function, no `while`, no fold** (§1.1) — the four comprehension macros iterate
+   exactly one level over one collection. A cycle check to a *fixed* depth `k` hand-unrolls into
+   `k` nested comprehensions (`entry.deps.all(d, entry.deps.all(e, e != d))` compiles), but that
+   is a different rule: it answers "no cycle of length ≤ k", must be rewritten whenever the graph
+   deepens, and each unrolling multiplies against the `1_000_000` cost budget. **Unbounded
+   reachability has no spelling at tier 1** — likewise shortest path, ancestor-of,
+   strongly-connected component, topological order.
+2. **CEL cannot even decode the edges.** `split`, `substring` and `indexOf` are *all* undeclared
+   (`ext.Strings` is unregistered, §1.1). The surface can **test** a string but never **take it
+   apart**, so `startsWith(string(new) + "|")` answers one hop and there is no way to recover
+   that edge's other end to take a second. Reason 2 is the sharper one, because it holds even
+   for a *bounded* two-hop check that reason 1 would otherwise permit.
 
-**The contingency — the §1.2 test applied to this shape, not only to B3.** A recursive rule
-still needs its adjacency **inside `EvaluationInput`**, and on the shipped `assent run` path
-there is currently no in-contract home for one (§1.3):
+**Why Rego lifts it.** `split` is a Rego builtin, recursive rule definitions over `input` are the
+canonical Rego idiom, and `graph.reachable` answers the closure directly. All are pure,
+deterministic, and need no I/O and no data beyond the input already bound.
 
-- `entry.dependsOn` — an entry tree is bound only under `assent test` (**OQ-35**);
-- `changes` — a flat list of scalar deltas for one file, never a full adjacency, and a
-  sequence-valued field makes the ChangeSet opaque → REVIEW before any rule runs;
-- a single fact value — a `cardinality: set` fact is a flat list of scalars; a mapping-valued
-  fact, which an adjacency needs, is undeclarable (**OQ-36**);
-- a graph assembled from *other files* is Shape B3 wearing a different hat, and Rego does not
-  lift that.
+**This is the cleanest tier-2 justification in the record, and it is unconditional.** An input
+that is in contract and available today, that CEL provably **cannot decode**, and that Rego
+consumes trivially, is precisely the evidence D-017's per-rule gate was asking for. It needs no
+answer from OQ-35 or OQ-36.
 
-The **verdict** is unaffected — CEL has no recursion wherever the data sits. What is affected is
-whether this shape justifies **building E11 now**: by the same reasoning that struck B3, a shape
-whose data cannot be in the input is unbuildable at *either* tier. So **D justifies E11 only
-once OQ-35 or OQ-36 supplies an in-contract home for the adjacency.** Until then E11's
-unconditional justification is A1 alone.
+**What was wrong in the first draft of this record, and why.** It claimed "a mapping-valued
+fact, which an adjacency needs, is undeclarable" and downgraded this shape to a contingency. An
+adjacency does **not** need a mapping-valued fact — a set of encoded strings carries one inside
+the frozen declaration. The error came from conflating a *provider-supplied catalog* (shapes B1
+and B2, which this record strikes as working and shipped) with **B3, which is specifically
+same-changeset cross-file *diffs***. A provider fact is "available to both tiers equally"
+(§3, B3) — and for Shape D, data being equally available is exactly what makes **recursion and
+string decomposition** the differentiator rather than the input. It also applied an asymmetric
+evidentiary standard: awkward-but-working spellings were accepted when they *struck* a shape
+(A2's re-derivation, B2's dynamic index) and rejected when they would have *preserved* one. One
+standard is applied throughout now, and it preserves Shape D.
+
+**Binds E11-S04 (the capability sandbox), which is not written yet.** `split` and
+`graph.reachable` are pure and deterministic and **must not be denied** by the allowlist — a
+denylist drafted from "deny anything unfamiliar" would strike out this shape's own
+justification. Recorded in the S04 section of the epic spec, not only here.
 
 ---
 
@@ -362,13 +420,17 @@ unconditional justification is A1 alone.
 | B2 keyed attribute lookup | **STRUCK** | purpose-built provider, or `facts.<p>.<n>.value[key]` (compiles, lint-clean); residual OQ-36 |
 | B3 same-changeset cross-file | **STRUCK from E11** | input availability, not expressiveness — the evaluation unit is one file and S05 pins the identical input, so Rego fails identically |
 | C set difference | **STRUCK — unconditionally** | `oldEntry.x.filter(a, !(a in entry.x))` expresses it if the entry tree is bound; if it is not, the failure is input availability and Rego fails identically. Both resolutions of OQ-35 strike it |
-| D graph relationship | **EXCEEDS — justifies E11 only contingently** | no recursion/fixpoint/fold, so the verdict is unconditional; but on the run path there is no in-contract home for an adjacency (§1.3), so building on it waits on **OQ-35 or OQ-36** |
+| D graph relationship | **EXCEEDS — justifies E11, unconditionally** | two independent reasons: no recursion/fixpoint/fold, **and** no `split`/`substring`/`indexOf` to decode an edge. The adjacency is in contract and available today as a `{type: string, cardinality: set}` fact — no OQ-35, no OQ-36, no `--checkout` |
 
 **What E11 is now justified to build:** a tier-2 backend for **folds/aggregates over the
-in-input collections** — unconditionally — plus **recursive/graph reasoning**, *contingent* on
-OQ-35 or OQ-36 supplying an in-contract place for the adjacency to live. Nothing else in this
-record supports it. **On today's shipped input contract, A1 is the only unconditional
-justification for the entire epic**, and that is the honest headline of this record.
+in-input collections** and **recursive/graph reasoning over an adjacency the input already
+carries**. Both justifications are **unconditional** on today's shipped input contract; neither
+waits on OQ-35 or OQ-36. Nothing else in this record supports the epic.
+
+**The single strongest piece of evidence** is Shape D: an input that is declarable and
+deliverable today, that tier-1 CEL provably cannot **decode** (no `split`/`substring`/`indexOf`)
+let alone **close** (no recursion), and that Rego consumes with builtins. That is exactly the
+per-rule evidence D-017's gate existed to demand.
 
 **What E11 is no longer justified to claim:** cross-manifest reasoning of any kind, set
 operations over entry trees, and "reuse a computed intermediate". Two of the four shapes
@@ -376,14 +438,31 @@ operations over entry trees, and "reuse a computed intermediate". Two of the fou
 
 **Consequences for downstream stories** (recorded here; the epic spec carries the same text):
 
+Each is marked with **how it is held** — because a consequence with no mechanism is a comment,
+not a constraint, and saying so is cheaper than pretending otherwise.
+
 - **S05** (input binding) need not carry cross-manifest data and must not be widened to fetch
-  any — the whole point of B3's verdict is that widening the input is a *different* decision
-  from adding a backend, and E11's non-goals fence it.
+  any — widening the input is a *different* decision from adding a backend, and E11's non-goals
+  fence it. **Held by a gate:** `evaluation-input.schema.json` lives under
+  `schemas/decision/v1alpha1/`, and REQ-E11-S05-03 pins
+  `git diff --exit-code -- schemas/decision/`, so a widening reddens.
+- **S04** (capability sandbox) **must not deny `split` or `graph.reachable`** — both are pure
+  and deterministic, and Shape D's justification is built on them. A denylist drafted from
+  "deny anything unfamiliar" would strike out the epic's own strongest evidence. **Held by a
+  gate:** REQ-E11-S04-02's committed `allowed-builtins.golden`, once S04 writes it — this
+  record is what tells S04 what belongs in it. (This says nothing about judgment call (d);
+  *where* the evaluator lives is untouched here.)
 - **S07** (violation shape) must support a **fold result** (a computed scalar with the
   contributing elements named) and a **path/cycle witness**, not a cross-manifest reference.
+  **Held by nothing — stated plainly.** There is no schema or gate over the violation shape at
+  the time of writing; S07 must either carry this as a reviewed acceptance criterion or create
+  the pin itself.
 - **S12** (docs truth) must not describe Rego as enabling cross-entry or cross-manifest checks.
   ADR-0002 §"`rego`" currently calls it an "escape hatch for **cross-entry checks**"; per this
-  record that phrase is inaccurate for the shipped input contract and S12 owns correcting it.
+  record that phrase is inaccurate for the shipped input contract. **Held by a gate:**
+  REQ-E11-S12-01 forbids any document claiming a capability S01 struck. **But S12 is story 12
+  of 14** — if E11 never proceeds, a published ADR stays wrong indefinitely, so the correction
+  is also tracked as a standalone backlog residual, independent of this epic.
 
 **Corroborating observation.** The single committed illustration of the escape hatch,
 `examples/policies/rego/bounded_change.rego`, is **entirely tier-1 expressible** — both of its
@@ -396,15 +475,22 @@ evidence that the tier is needed.
 
 ## 7. Residuals raised, not decided
 
+**Neither gates any verdict in this record, and neither blocks E11.** Both are
+test/production-parity and contract-hygiene questions surfaced while measuring the surface;
+they are recorded so the measurement is reproducible, not as conditions on the scope decision.
+
 | Ref | Question |
 | --- | --- |
-| **OQ-35** | `entry`/`oldEntry` bind whole-entry trees only under `assent test` (and only there is collection-mode diffing reached at all); `assent run` falls back to the scalar. Extend the binding to the run path, or narrow the documented contract? Does **not** gate Shape C — both resolutions strike it — but with OQ-36 it gates whether **Shape D** can justify building E11. |
-| **OQ-36** | The frozen provider declaration has no object/map type, yet the authoring surface and `builtin/repo-file` together permit a mapping-valued fact and dynamic navigation into it. Is a mapping-shaped fact value in-contract? With OQ-35, decides whether an adjacency has any in-contract home (§1.3, §5). |
+| **OQ-35** | `entry`/`oldEntry` bind whole-entry trees only under `assent test` (and only there is collection-mode diffing reached at all); `assent run` falls back to the scalar. Extend the binding to the run path, or narrow the documented contract? Shape C is struck either way (§4) and Shape D needs no entry tree (§5). What is at stake is a silent `assent test` / `assent run` divergence an adopter cannot see. |
+| **OQ-36** | The frozen provider declaration has no object/map type, yet the authoring surface and `builtin/repo-file` together permit a mapping-valued fact and dynamic navigation into it. Is a mapping-shaped fact value in-contract? Touches B2's *second* spelling only — B2 is struck on its first spelling regardless, and Shape D needs only a flat `cardinality: set` fact. |
 
 Neither is the escalated judgment call (d) (rule-7 mechanism, (d1) vs (d2)); that question is
 untouched by this record, which writes no Go and adds no dependency.
 
 **D-002 / rule 1.** Every rule in this document is a generated generic equivalent — topics,
 ACLs, partitions, service dependencies. No employer, internal system, tenant, cluster or
-hostname appears in any form. `bash hack/check-sanitization.sh` covers this file (it scans
-`git ls-files --cached --others`, so an untracked new file is in scope).
+hostname appears in any form. `bash hack/check-sanitization.sh` covers this file: it scans
+`git ls-files --cached --others --exclude-standard`, so a new **untracked** file is in scope.
+Note the `--exclude-standard` — a **gitignored** path is *not* scanned, which is why the
+throwaway CEL probe of §1.1 is deliberately not committed and is **not** covered by that gate.
+Its expressions are reproduced inline above, where the gate does see them.

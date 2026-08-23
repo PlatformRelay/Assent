@@ -66,8 +66,13 @@ landed and **narrowed E11**: `docs/planning/rego-tier-ceiling.md` strikes **cros
 and **set-difference** from the four named shapes and strikes the named-intermediate half of
 **multi-pass**. What remains, and the only thing E11 may be justified or documented as
 delivering, is: **folds/aggregates over the in-input collections** (CEL has `size()` and no
-other aggregate) — **unconditionally** — plus **recursive/graph reasoning**, which is
-**contingent on OQ-35 or OQ-36** giving an adjacency somewhere in-contract to live.
+other aggregate) and **recursive/graph reasoning over an adjacency the input already carries**.
+**Both are unconditional on today's shipped input contract** — neither waits on any open
+question. The strongest single piece of evidence is the graph shape: a
+`{type: string, cardinality: set}` fact carrying encoded edges is fully in contract and
+deliverable over the `http` transport on the plain `assent run` path, and tier-1 CEL can
+neither **decode** it (`split`, `substring` and `indexOf` are all undeclared — `ext.Strings` is
+not registered) nor **close** it (no recursion). Rego does both with builtins.
 Cross-manifest reasoning is an *input-availability* limit, not a tier-1 expressiveness limit —
 REQ-E11-S05-01 pins the identical input, so the Rego tier fails on it identically. See the
 E11-S01 section for the verdict table and the binding consequences for S05/S07/S11/S12.
@@ -294,13 +299,18 @@ struck in part, and one and a half survive**:
 | multi-pass — **named intermediate** across checks | **STRUCK** | no `cel.bind` and the assert tree combines booleans, not values — but re-deriving the sub-expression inside each leaf is semantically identical and compiles |
 | cross-manifest | **STRUCK (all three sub-shapes)** | membership is `x in facts.<p>.<n>.value`; keyed lookup is a purpose-built provider or `facts.<p>.<n>.value[key]` (compiles, lint-clean); **same-changeset cross-file is an input-availability limit, not an expressiveness one** — the evaluation unit is one file and REQ-E11-S05-01 pins the *identical* `EvaluationInput`, so a Rego module fails identically |
 | set-difference | **STRUCK — unconditionally** | `oldEntry.x.filter(a, !(a in entry.x))` expresses it when the entry tree is bound; when it is not (`adoptertest` is the sole writer of `EvalChange.Entry`, so `assent run` binds a scalar) the failure is input availability and Rego fails identically. **Both resolutions of OQ-35 strike it**, so nothing downstream waits on that answer |
-| graph-relationship | **EXCEEDS — but justifies E11 only contingently** | no recursion, fixpoint, fold or user-defined function, so the *verdict* is unconditional. But a recursive rule needs its adjacency **inside `EvaluationInput`**, and on the `assent run` path there is no in-contract home for one: document-mode `walkNode` emits only scalar deltas (a sequence makes the ChangeSet opaque → REVIEW), entry trees are `assent test`-only (**OQ-35**), and a mapping-valued fact is undeclarable (**OQ-36**). Building on this shape waits on one of those two |
+| graph-relationship | **EXCEEDS — justifies E11, unconditionally** | **two independent reasons.** (1) No recursion, fixpoint, fold or user-defined function — unbounded reachability has no spelling. (2) No `split`/`substring`/`indexOf` — the surface can *test* a string but never *take it apart*, so an encoded edge's far end is unrecoverable and even a bounded two-hop check is unwritable. The adjacency itself is **in contract and available today** as a `{type: string, cardinality: set}` fact over the `http` transport — no `--checkout`, no OQ-35, no OQ-36, no schema change |
 
-**The headline, stated plainly so no later story over-claims it: on today's shipped input
-contract the fold/aggregate shape is E11's ONLY unconditional justification.** The graph shape
-exceeds tier 1 but has nowhere in-contract to keep its adjacency until OQ-35 or OQ-36 is
-answered. If the operator wants that contingency removed before the epic commits to a
-dependency, answering OQ-35 or OQ-36 is the cheaper move than building S02–S13.
+**The headline, stated plainly so no later story over- or under-claims it: E11 has two
+unconditional justifications on today's shipped input contract — the fold/aggregate shape and
+the graph shape — and neither waits on an open question.** OQ-35 and OQ-36 are recorded
+residuals of the measurement, not conditions on this scope decision.
+
+**Binds E11-S04, whose denylist is not written yet:** `split` and `graph.reachable` are pure and
+deterministic and **must not be denied** by the capability set. They are precisely what carries
+the graph shape's justification, and a denylist drafted from "deny anything unfamiliar" would
+strike out the epic's own strongest evidence. Recorded again in the S04 section. This says
+nothing about judgment call (d) — *where* the evaluator lives is untouched.
 
 **Binding consequences for later stories:**
 - **S05** must **not** be widened to carry cross-manifest data. Widening the input is a
@@ -455,6 +465,16 @@ dependency, answering OQ-35 or OQ-36 is the cheaper move than building S02–S13
   `opa.runtime`, `time.*`, `rand.*`, and any I/O builtin are unavailable; a module using one
   fails to **compile**, not at runtime; and the rule-7 boundary question is closed by an ADR
   amendment + decision row rather than by a green-but-non-transitive purity walk.
+
+- ⚠️ **ALLOWLIST FLOOR, set by E11-S01 / D-156 — `split` and `graph.reachable` MUST be
+  allowed.** Both are pure and deterministic (no clock, randomness or I/O), and the epic's
+  **strongest** justification is built on them: `docs/planning/rego-tier-ceiling.md` §5 shows
+  tier-1 CEL can neither decode an encoded adjacency (`split`/`substring`/`indexOf` are all
+  undeclared in `newEvalEnv`) nor close one (no recursion), while Rego does both with builtins.
+  A denylist drafted from "deny anything unfamiliar" would strike out the reason E11 exists.
+  This belongs in REQ-E11-S04-02's committed `allowed-builtins.golden`. **It says nothing about
+  judgment call (d)** — *which* builtins are callable is orthogonal to *where* the evaluator
+  lives and *which gate* enforces rule 7; (d1) vs (d2) is untouched and still blocking.
 
 - **REQ-E11-S04-01** — Given rule 7 and D-013, when a module calls `http.send`, `net.lookup_ip_addr`,
   `time.now_ns`, `rand.intn`, or `opa.runtime`, then compilation **fails** with a message
