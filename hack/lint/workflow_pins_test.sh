@@ -1433,6 +1433,100 @@ V="$WORK/fixture.bi-unreadable.yaml"
 } >"$V"
 helper_reach_is 10 "$V" "a branches-ignore: token carrying an unreadable byte is REFUSED, not searched — the fail-open direction is now closed by construction rather than by enumerating bytes (G4-01)"
 
+# G5-01 — a GLOB on `branches-ignore:`. Every pattern below EXCLUDES main, so
+# no pull request onto main runs the workflow; the reader returned 0, "runs on
+# every pull request", for all of them. `_assent_tokens_readable` does not
+# catch it and must not: `*` is a legal filter character, so the pattern
+# tokenises perfectly and nothing is dropped or mangled. The defect was an
+# EXACT-TOKEN predicate applied to a PATTERN list — and the header had already
+# reasoned it out one key over, where the same un-evaluability is fail-CLOSED.
+bi_fixture() { # <name> <yaml value or block> — branches-ignore in flow form
+  local f="$WORK/fixture.$1.yaml"
+  printf 'name: f\non:\n  pull_request:\n    branches-ignore: %s\njobs: {}\n' "$2" >"$f"
+  printf '%s' "$f"
+}
+bi_seq_fixture() { # <name> <item> — branches-ignore as a block sequence
+  local f="$WORK/fixture.$1.yaml"
+  printf 'name: f\non:\n  pull_request:\n    branches-ignore:\n      - %s\njobs: {}\n' "$2" >"$f"
+  printf '%s' "$f"
+}
+
+V="$(bi_fixture bi-glob-star2 "['**']")"
+helper_reach_is 10 "$V" "branches-ignore: ['**'] is REFUSED — it excludes every branch, main included, and an exact-token search finds no literal 'main' (G5-01: rc=0 at 01b2322, on a workflow that runs on NO pull request)"
+
+V="$(bi_fixture bi-glob-prefix "[main*]")"
+helper_reach_is 10 "$V" "branches-ignore: [main*] is REFUSED — a pattern that covers main without being the token 'main' (G5-01)"
+
+V="$(bi_fixture bi-glob-suffix "['*ain']")"
+helper_reach_is 10 "$V" "branches-ignore: ['*ain'] is REFUSED — glob semantics are not evaluable by a text gate, and refusing is the direction this reader already claims for branches: (G5-01)"
+
+V="$(bi_seq_fixture bi-glob-seq "'**'")"
+helper_reach_is 10 "$V" "…and in BLOCK SEQUENCE form too, not only flow form (G5-01)"
+
+V="$(bi_fixture bi-literal-bad "[main]")"
+helper_reach_is 13 "$V" "a LITERAL branches-ignore: [main] still reds as excluding main — the refusal is scoped to patterns, it did not swallow the real finding (G5-01, other polarity)"
+
+V="$(bi_fixture bi-literal-legit "[gh-pages]")"
+helper_reach_is 0 "$V" "a LITERAL branches-ignore: [gh-pages] is still accepted — not made refusal-happy (G5-01, other polarity)"
+
+# G5-02 — a disarm key that is not spelled bare. `if : `, `"if":` and `'if' :`
+# are resolved identically to `if:` by a conformant parser (checked against
+# ruby/psych), so actionlint has nothing to flag and the step or job carries
+# release-exitgate's exact push-only guard while grading "wired, argument-free
+# and undisarmed". Graded now by NORMALISED KEY NAME, mirroring the filter-key
+# allowlist in assent_pr_reach that is measurably immune to the same evasions —
+# normalisation is the immunity, not a wider pattern.
+step_key_fixture() { # <name> <extra key line, 8-space indent assumed>
+  local f="$WORK/fixture.$1.yaml"
+  {
+    printf 'name: f\non:\n  pull_request:\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n'
+    printf '      - name: gate\n'
+    printf '        %s\n' "$2"
+    printf '        run: bash %s\n' "$3"
+  } >"$f"
+  printf '%s' "$f"
+}
+job_key_fixture() { # <name> <extra job-level key line>
+  local f="$WORK/fixture.$1.yaml"
+  {
+    printf 'name: f\non:\n  pull_request:\njobs:\n  verify:\n'
+    printf '    %s\n' "$2"
+    printf '    runs-on: ubuntu-latest\n    steps:\n'
+    printf '      - name: gate\n        run: bash %s\n' "$3"
+  } >"$f"
+  printf '%s' "$f"
+}
+
+V="$(step_key_fixture step-if-bare 'if: false' hack/lint/workflow_pins_test.sh)"
+helper_wired_is 8 "$V" "$SELF_GATE" "a step disarmed with a BARE 'if:' is DISARMED (the control that always worked)"
+
+V="$(step_key_fixture step-if-spaced 'if : false' hack/lint/workflow_pins_test.sh)"
+helper_wired_is 8 "$V" "$SELF_GATE" "a step disarmed with 'if : ' — a space before the colon — is DISARMED (G5-02: rc=0 at 01b2322; a conformant parser reads it as 'if')"
+
+V="$(step_key_fixture step-if-quoted '"if": false' hack/lint/workflow_pins_test.sh)"
+helper_wired_is 8 "$V" "$SELF_GATE" "a step disarmed with a QUOTED '\"if\":' is DISARMED (G5-02)"
+
+V="$(step_key_fixture step-coe-spaced 'continue-on-error : true' hack/lint/workflow_pins_test.sh)"
+helper_wired_is 8 "$V" "$SELF_GATE" "a step neutered with 'continue-on-error : ' is DISARMED (G5-02)"
+
+V="$(job_key_fixture job-if-spaced 'if : false' hack/lint/workflow_pins_test.sh)"
+helper_wired_is 4 "$V" "$SELF_GATE" "a JOB carrying 'if : ' has release-exitgate's push-only guard — rc=4, not 0 (G5-02: this is the RELSE-08 shape the whole lane exists to catch)"
+
+V="$(job_key_fixture job-if-quoted '"if": false' hack/lint/workflow_pins_test.sh)"
+helper_wired_is 4 "$V" "$SELF_GATE" "a JOB carrying a quoted '\"if\":' is likewise rc=4 (G5-02)"
+
+V="$(job_key_fixture job-needs-quoted '"needs": release-exitgate' hack/lint/workflow_pins_test.sh)"
+helper_wired_is 9 "$V" "$SELF_GATE" "a JOB carrying a quoted '\"needs\":' is rc=9 — skipped dependency, skipped job (G5-02)"
+
+# Both polarities: normalisation must not turn ordinary step/job keys into a red.
+V="$WORK/fixture.step-ordinary-keys.yaml"
+{
+  printf 'name: f\non:\n  pull_request:\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    timeout-minutes: 60\n    steps:\n'
+  printf '      - name: gate\n        id: g\n        shell: bash\n        env:\n          FOO: bar\n'
+  printf '        run: bash hack/lint/workflow_pins_test.sh\n'
+} >"$V"
+helper_wired_is 0 "$V" "$SELF_GATE" "a step carrying ordinary keys (id:, shell:, env:) in a job with timeout-minutes: is still WIRED — the key allowlist grades disarms, it does not refuse normal structure (G5-02, other polarity)"
+
 f="$(helper_fixture wired-comment <<'FIX'
 name: f
 on:

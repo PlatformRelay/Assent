@@ -109,6 +109,9 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(ci): run the -count=1 wiring pin in the PR-visible verify job
 - :bug: fix(ci): pin COUNT1-F01 and refuse a merged gate step
 - :bug: fix(ci): bump golangci-lint to v2.13.1 for Go 1.27 (D-158)
+- :bug: fix(ci): read flush block sequences and whole branch names (D-157)
+- :bug: fix(ci): strip CR, and close the one fail-open direction by construction (D-157)
+- :bug: fix(ci): refuse globs on branches-ignore, grade disarm keys by name (D-157)
 
 ### Refactoring
 - :recycle: refactor(audit): pin REL-03 and REL-07 by test name, demote source shape
