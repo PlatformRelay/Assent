@@ -41,7 +41,6 @@ REQ ID format: `REQ-<epic>-S<story>-<nn>` (e.g. `REQ-P1-E2-S01-01`).
 | **P3-P1-3** | Stock Draft 2020-12 validator in schemas CI (roast P1-3) | **OPEN** (D-027 → Option A) | no (agent lane) | Prove structure/`$ref` outside Go compiler; `x-uniqueKeys` uniqueness follow-up separate if still invisible to stock tools |
 | **P3-OQ1** | Replace `assent.dev` apiVersion/`$id` group | **OPEN** (D-028/D-031 — path A: own a domain; **exact domain TBD**) | **yes — name the domain** | Then rename lane across consts/`$id`s/docs/fixtures |
 | P3-ADR-freeze | Accept ADR-0018 + ADR-0019 (Proposed → Accepted) | **DONE** (D-030) | — | Phase-3 freeze ADRs Accepted |
-| **ADR-0002-rego-line** | ADR-0002's `rego` bullet calls the tier an "escape hatch for **cross-entry checks**" — inaccurate for the shipped input contract (E11-S01 / D-156 strikes cross-manifest; the tier's real justification is folds + graph recursion) | **OPEN** | no (agent lane) | E11-S12 owns the fix under REQ-E11-S12-01, but that is **story 12 of 14** of an epic that may not proceed — tracked here so a published ADR does not stay wrong indefinitely. Fix is one sentence in `docs/adr/0002-policy-frontends-rego-declarative.md`; evidence in `docs/planning/rego-tier-ceiling.md` §3/§6 |
 
 ## Phase 4 — P4-E1 walking-skeleton stories
 
@@ -592,7 +591,7 @@ LGTM** (published contract + the decision path itself). Independent of E10; may 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
 | E11-S00 | ⚠️ **SPIKE, do first**: does OPA expose a deterministic (non-wall-clock) eval budget? Nested throwaway module — root `go.mod` unchanged | **[autonomous · spike]** | none | if not, S06 stalls the epic *after* S02+S03 commit |
-| E11-S01 | ✅ **DONE (D-156)** — tier-1 (CEL) ceiling recorded: `docs/planning/rego-tier-ceiling.md` | **[autonomous]** | none | **E11 NARROWED**: cross-manifest + set-difference **struck** (both unconditional). **Two justifications survive, both unconditional**: fold/aggregate, and graph reasoning over an encoded adjacency CEL can neither decode (`split`/`substring`/`indexOf` undeclared) nor close. Cross-manifest is an *input* limit S05's identical `EvaluationInput` does not lift. Sets an S04 allowlist floor (`split`, `graph.reachable`). Residuals OQ-35/OQ-36 gate nothing |
+| E11-S01 | ✅ **DONE (D-156)** — tier-1 (CEL) ceiling recorded: `docs/planning/rego-tier-ceiling.md` | **[autonomous]** | none | **E11 NARROWED**: cross-manifest + set-difference **struck** (both unconditional). **Two justifications survive, both unconditional**: fold/aggregate, and graph reasoning — CEL has no recursion, so **unbounded** reachability has no spelling (a bounded `k`-hop check *is* writable via encode-and-compare, so the ceiling is `k`, not decoding). Cross-manifest is an *input* limit S05's identical `EvaluationInput` does not lift. Sets an S04 allowlist floor (`graph.reachable`, `split`) held by **review**, not by REQ-E11-S04-02's drift-only golden. Residuals OQ-35/OQ-36 gate nothing |
 | E11-S02 | ⚠️ Additive `rego:` leaf in the policy schema (announced, no `apiVersion` bump) | **[autonomous · engine-grade · LGTM]** | **S00**, S01 | drift guard scoped; both polarities tested |
 | E11-S03 | 🔴 Module loading from the **target ref**; compile failure is a lint hard error — **blocked on the operator's rule-7 answer (d1/d2)**: this story adds OPA to `go.mod` inside the guarded tree | **[autonomous · engine-grade · LGTM]** | S02 + operator | no second, laxer load path; transitive purity guard under (d1) |
 | E11-S04 | 🔴 OPA capability sandbox — **blocked on the operator's rule-7 *mechanism* answer (d1 vs d2)**; "accept and pin" settled only the supply-chain half | **[autonomous · engine-grade · LGTM]** | S03 + operator | both purity gates are non-transitive; see D-141 |
@@ -605,6 +604,13 @@ LGTM** (published contract + the decision path itself). Independent of E10; may 
 | E11-S11 | Remove the `# locked: D-012` quarantine; **update** the P3-E3-S04 guard | **[autonomous]** | S10 | only E11's lane may do this |
 | E11-S12 | Docs & maturity truth; retire ADR-0002's "pluggable half unbuilt" line | **[autonomous]** | S11 | nothing still calls Rego locked |
 | E11-S13 | Exit gate | **[autonomous]** | S00–S12 | **the E11 exit gate** |
+
+**E11 residual, tracked independently of the epic** — because it corrects a *published* ADR and
+must not wait on 14 stories that may never run:
+
+| ID | Item | Status | Needs operator | Notes |
+| --- | --- | --- | --- | --- |
+| **E11-R01** | ADR-0002's `rego` bullet calls the tier an "escape hatch for **cross-entry checks**" — inaccurate for the shipped input contract: E11-S01 / D-156 strikes cross-manifest, and the tier's real justification is folds + unbounded graph reachability | **OPEN** | no (agent lane) | E11-S12 owns it under REQ-E11-S12-01, but that is **story 12 of 14** and the REQ's `Test:` list omits `docs/adr/0002-*`, so nothing fails today if the line survives. Fix is one sentence in `docs/adr/0002-policy-frontends-rego-declarative.md`; evidence in `docs/planning/rego-tier-ceiling.md` §3/§6 |
 
 ## Phase 5 — EX complex in-tree examples / adopter tests / docs truth
 

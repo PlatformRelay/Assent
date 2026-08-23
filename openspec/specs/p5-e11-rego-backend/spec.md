@@ -70,9 +70,12 @@ other aggregate) and **recursive/graph reasoning over an adjacency the input alr
 **Both are unconditional on today's shipped input contract** — neither waits on any open
 question. The strongest single piece of evidence is the graph shape: a
 `{type: string, cardinality: set}` fact carrying encoded edges is fully in contract and
-deliverable over the `http` transport on the plain `assent run` path, and tier-1 CEL can
-neither **decode** it (`split`, `substring` and `indexOf` are all undeclared — `ext.Strings` is
-not registered) nor **close** it (no recursion). Rego does both with builtins.
+deliverable over the `http` transport on the plain `assent run` path, and tier-1 CEL can answer
+only a **fixed-depth approximation** over it — a bounded `k`-hop check is expressible via
+encode-and-compare, at `O(|N|^(k-1)·|E|)` against a `1_000_000` cost budget and rewritten
+whenever the graph deepens — while **unbounded reachability has no spelling at all**, because
+CEL has no recursion, fixpoint, fold or user-defined function. Rego answers the actual question
+at any depth with `graph.reachable`.
 Cross-manifest reasoning is an *input-availability* limit, not a tier-1 expressiveness limit —
 REQ-E11-S05-01 pins the identical input, so the Rego tier fails on it identically. See the
 E11-S01 section for the verdict table and the binding consequences for S05/S07/S11/S12.
@@ -299,7 +302,7 @@ struck in part, and one and a half survive**:
 | multi-pass — **named intermediate** across checks | **STRUCK** | no `cel.bind` and the assert tree combines booleans, not values — but re-deriving the sub-expression inside each leaf is semantically identical and compiles |
 | cross-manifest | **STRUCK (all three sub-shapes)** | membership is `x in facts.<p>.<n>.value`; keyed lookup is a purpose-built provider or `facts.<p>.<n>.value[key]` (compiles, lint-clean); **same-changeset cross-file is an input-availability limit, not an expressiveness one** — the evaluation unit is one file and REQ-E11-S05-01 pins the *identical* `EvaluationInput`, so a Rego module fails identically |
 | set-difference | **STRUCK — unconditionally** | `oldEntry.x.filter(a, !(a in entry.x))` expresses it when the entry tree is bound; when it is not (`adoptertest` is the sole writer of `EvalChange.Entry`, so `assent run` binds a scalar) the failure is input availability and Rego fails identically. **Both resolutions of OQ-35 strike it**, so nothing downstream waits on that answer |
-| graph-relationship | **EXCEEDS — justifies E11, unconditionally** | **two independent reasons.** (1) No recursion, fixpoint, fold or user-defined function — unbounded reachability has no spelling. (2) No `split`/`substring`/`indexOf` — the surface can *test* a string but never *take it apart*, so an encoded edge's far end is unrecoverable and even a bounded two-hop check is unwritable. The adjacency itself is **in contract and available today** as a `{type: string, cardinality: set}` fact over the `http` transport — no `--checkout`, no OQ-35, no OQ-36, no schema change |
+| graph-relationship | **EXCEEDS — justifies E11, unconditionally** | No recursion, fixpoint, fold or user-defined function ⇒ **unbounded reachability has no spelling**. A *bounded* `k`-hop check **is** expressible (encode-and-compare over a finite in-input candidate set — verified by evaluation, not just compilation), so the ceiling is `k`, not string decoding; going deeper costs `O(\|N\|^(k-1)·\|E\|)` against the `1_000_000` budget and a rewrite per depth. Rego answers it at any depth with `graph.reachable`. The adjacency is **in contract and available today** as a `{type: string, cardinality: set}` fact over the `http` transport — no `--checkout`, no OQ-35, no OQ-36, no schema change. **Caveat:** no provider in the corpus ships one yet; deliverability follows from the provider contract, the same inference used to strike B1 |
 
 **The headline, stated plainly so no later story over- or under-claims it: E11 has two
 unconditional justifications on today's shipped input contract — the fold/aggregate shape and
@@ -466,13 +469,17 @@ nothing about judgment call (d) — *where* the evaluator lives is untouched.
   fails to **compile**, not at runtime; and the rule-7 boundary question is closed by an ADR
   amendment + decision row rather than by a green-but-non-transitive purity walk.
 
-- ⚠️ **ALLOWLIST FLOOR, set by E11-S01 / D-156 — `split` and `graph.reachable` MUST be
+- ⚠️ **ALLOWLIST FLOOR, set by E11-S01 / D-156 — `graph.reachable` and `split` MUST be
   allowed.** Both are pure and deterministic (no clock, randomness or I/O), and the epic's
-  **strongest** justification is built on them: `docs/planning/rego-tier-ceiling.md` §5 shows
-  tier-1 CEL can neither decode an encoded adjacency (`split`/`substring`/`indexOf` are all
-  undeclared in `newEvalEnv`) nor close one (no recursion), while Rego does both with builtins.
-  A denylist drafted from "deny anything unfamiliar" would strike out the reason E11 exists.
-  This belongs in REQ-E11-S04-02's committed `allowed-builtins.golden`. **It says nothing about
+  **strongest** justification is built on them: `graph.reachable` closes what tier-1 CEL cannot
+  close — CEL has no recursion, so unbounded reachability has no spelling, and only a
+  fixed-depth approximation is writable (`docs/planning/rego-tier-ceiling.md` §5) — and `split`
+  is what a module needs to rebuild the adjacency from the encoded `"a|b"` pairs the input
+  carries. A denylist drafted from "deny anything unfamiliar" would strike out the reason E11
+  exists. **This floor is held by REVIEW, not by a gate:** REQ-E11-S04-02's golden detects a
+  **change** to the allowed set, so the sandbox cannot silently *widen* — it cannot detect an
+  **omission**, and a golden written without `graph.reachable` is green forever. S04 must carry
+  this as a reviewed acceptance criterion or write the pin itself. **It says nothing about
   judgment call (d)** — *which* builtins are callable is orthogonal to *where* the evaluator
   lives and *which gate* enforces rule 7; (d1) vs (d2) is untouched and still blocking.
 
