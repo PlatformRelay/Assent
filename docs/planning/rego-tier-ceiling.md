@@ -58,14 +58,18 @@ A throwaway probe reconstructed `newEvalEnv` byte-faithfully against the pinned
 | `oldEntry.acls.filter(a, !(a in entry.acls))` | `lists.*` (`ext.Lists` is not registered) |
 | `facts.registry.topics.value[string(new)].retentionMs` | `cel.bind(...)` (`ext.Bindings` is not registered) |
 | `string(new) in facts.registry.topics.value` | `.?field` / `orValue` (optional syntax unsupported) |
-| `matches`, `startsWith`, `endsWith`, `contains`, `timestamp`, `duration`, `int`, `double` | `split`, `substring`, `indexOf` — every string **decomposition** function (`ext.Strings` is not registered); §5 turns on this |
+| `matches`, `startsWith`, `endsWith`, `contains`, `timestamp`, `duration`, `int`, `double`, `+` on strings | `split`, `substring`, `indexOf` — every string **decomposition** function (`ext.Strings` is not registered). Read §1.1's note: this does **not** block working with encoded values |
 | | `now`, `rand` — non-determinism is not reachable (rule 7 holds) |
 
-The string row deserves emphasis because §5 rests on it. The surface can **test** a string
-(`matches`, `startsWith`, `endsWith`, `contains`) but cannot **take it apart**: there is no
-`split`, no `substring`, no `indexOf`, and no character indexing. So tier-1 CEL can ask "does
-some edge start with this node?" and can never recover that edge's other end — the exact
-expressions were compiled and are listed in the reproduction below.
+The string row is worth reading carefully, and **also worth not over-reading** — an earlier
+draft of §5 did exactly that. The surface can **test** a string (`matches`, `startsWith`,
+`endsWith`, `contains`) but cannot **take it apart**: no `split`, no `substring`, no `indexOf`,
+no character indexing. That is a real absence. It is **not**, however, a barrier to working with
+encoded values, because `+` on strings and `in` are both stdlib: over a finite in-input
+candidate set you can always **rebuild** the string you were going to decode and test membership
+instead. §5 shows that construction recovering an edge's far end and detecting a 3-cycle without
+any decomposition function. What the absence does cost is spelling *generic* string surgery,
+which no shape in this record needs.
 
 **Reproduction** (deliberately not committed — it would add a dependency edge E11-S03 has not
 been authorised to add): copy `newEvalEnv` verbatim into a nested throwaway module pinned to
@@ -79,8 +83,16 @@ REJECTED  facts.graph.edges.value.exists(s, s.split("|")[0] == string(new))     
 REJECTED  facts.graph.edges.value.exists(s, split(s, "|")[0] == string(new))        undeclared 'split'
 REJECTED  facts.graph.edges.value.exists(s, s.substring(0, s.indexOf("|")) == ...)  undeclared 'substring'
 REJECTED  facts.graph.edges.value.exists(s, s.indexOf("|") > 0)                     undeclared 'indexOf'
-COMPILES  facts.graph.edges.value.exists(s, s.startsWith(string(new) + "|"))        one hop, prefix only
+REJECTED  !transitiveClosure(entry.dependsOn).exists(d, d == entry.name)            undeclared 'transitiveClosure'
+COMPILES  <the §5 encode-and-compare 3-cycle leaf>                                  see below
+COMPILES  facts.graph.nodes.value.filter(m, (string(new) + "|" + m) in facts.graph.edges.value)
 ```
+
+The last two were **evaluated**, not merely compiled, under `cel.CostLimit(1_000_000)` against
+`edges: ["orders|billing","billing|ledger","ledger|orders"]` and
+`nodes: [orders, billing, ledger, payments]` — yielding `true/true/true/false` and `[billing]`
+respectively. Evaluation matters here: a compile-only check would have left §5's claim about
+what CEL can *do* with those primitives untested.
 
 ### 1.2 Two ceilings that are *not* expressiveness — and that Rego does not lift
 
@@ -358,55 +370,88 @@ That declaration is in contract, the `http` transport that serves it runs on the
 `assent run` path with no `--checkout`, and the value binds as a CEL list — every link verified
 in §1.3. **No OQ-35, no OQ-36, no `--checkout`, no schema change.**
 
-**Attempted CEL leaves.**
+**Attempted CEL leaf.**
 
 ```cel
 !transitiveClosure(entry.dependsOn).exists(d, d == entry.name)
-facts.graph.edges.value.exists(s, s.split("|")[0] == string(new))
 ```
 
-**Why they fail — two independent reasons, either of which alone is decisive.**
+**Why it fails.** `transitiveClosure` is an `undeclared reference` and nothing replaces it. CEL
+is deliberately non-Turing-complete: **no recursion, no fixpoint, no user-defined function, no
+`while`, no fold** (§1.1) — the four comprehension macros iterate exactly one level over one
+collection, and a comprehension cannot call itself. **Unbounded reachability therefore has no
+spelling at tier 1**, and neither does any question that depends on it: shortest path,
+ancestor-of, strongly-connected component, topological order.
 
-1. **CEL cannot close the graph.** `transitiveClosure` is an `undeclared reference` and nothing
-   replaces it. CEL is deliberately non-Turing-complete: **no recursion, no fixpoint, no
-   user-defined function, no `while`, no fold** (§1.1) — the four comprehension macros iterate
-   exactly one level over one collection. A cycle check to a *fixed* depth `k` hand-unrolls into
-   `k` nested comprehensions (`entry.deps.all(d, entry.deps.all(e, e != d))` compiles), but that
-   is a different rule: it answers "no cycle of length ≤ k", must be rewritten whenever the graph
-   deepens, and each unrolling multiplies against the `1_000_000` cost budget. **Unbounded
-   reachability has no spelling at tier 1** — likewise shortest path, ancestor-of,
-   strongly-connected component, topological order.
-2. **CEL cannot even decode the edges.** `split`, `substring` and `indexOf` are *all* undeclared
-   (`ext.Strings` is unregistered, §1.1). The surface can **test** a string but never **take it
-   apart**, so `startsWith(string(new) + "|")` answers one hop and there is no way to recover
-   that edge's other end to take a second. Reason 2 is the sharper one, because it holds even
-   for a *bounded* two-hop check that reason 1 would otherwise permit.
+**What *is* expressible, stated precisely, because an earlier draft of this record got it
+wrong.** A cycle check to a **fixed** depth `k` is writable, and it does *not* need the string
+decomposition CEL lacks. Over a finite in-input candidate set, **decode is replaceable by
+encode-and-compare** — rebuild the edge string and test membership:
 
-**Why Rego lifts it.** `split` is a Rego builtin, recursive rule definitions over `input` are the
-canonical Rego idiom, and `graph.reachable` answers the closure directly. All are pure,
+```cel
+# a 3-cycle through the subject, using only `+`, `in` and nested exists()
+facts.graph.nodes.value.exists(m, facts.graph.nodes.value.exists(n,
+  (string(new) + "|" + m) in facts.graph.edges.value &&
+  (m + "|" + n)           in facts.graph.edges.value &&
+  (n + "|" + string(new)) in facts.graph.edges.value))
+```
+
+Compiled **and evaluated** under the real `1_000_000` cost limit against
+`edges: ["orders|billing","billing|ledger","ledger|orders"]` and
+`nodes: [orders, billing, ledger, payments]`, that returns `true / true / true / false` — correct
+3-cycle detection with no `split`, no `substring`, no `indexOf`. The far end of an edge is
+recoverable as a *value* the same way:
+`nodes.filter(m, (string(new) + "|" + m) in edges)` → `[billing]`. Both primitives (`+` on
+strings, `in`) were already in this record's own §1.1 census, so this was always derivable from
+the table above.
+
+**So the ceiling is `k` itself, not decoding.** Each additional hop costs another nested
+comprehension — `O(|N|^(k-1)·|E|)` — which exhausts the cost budget on any real graph, and the
+rule must be rewritten whenever the graph deepens. But that is a **scale** argument, and this
+record refuses to offer scale as an expressiveness argument (§2, A1). The honest statement is
+narrow and it is enough: **a bounded `k`-hop check is expressible; unbounded reachability is
+not**, and that is the whole of the reason above.
+
+**Why Rego lifts it.** Recursive rule definitions over `input` are the canonical Rego idiom and
+`graph.reachable` answers the closure directly, at any depth, without unrolling; `split` turns
+the encoded pairs back into an adjacency so the recursion has something to walk. All are pure,
 deterministic, and need no I/O and no data beyond the input already bound.
 
 **This is the cleanest tier-2 justification in the record, and it is unconditional.** An input
-that is in contract and available today, that CEL provably **cannot decode**, and that Rego
-consumes trivially, is precisely the evidence D-017's per-rule gate was asking for. It needs no
-answer from OQ-35 or OQ-36.
+that is in contract and available today, over which tier-1 CEL can answer only a fixed-depth
+approximation while Rego answers the actual question, is precisely the evidence D-017's per-rule
+gate was asking for. It needs no answer from OQ-35 or OQ-36.
 
-**What was wrong in the first draft of this record, and why.** It claimed "a mapping-valued
-fact, which an adjacency needs, is undeclarable" and downgraded this shape to a contingency. An
-adjacency does **not** need a mapping-valued fact — a set of encoded strings carries one inside
-the frozen declaration. The error came from conflating a *provider-supplied catalog* (shapes B1
-and B2, which this record strikes as working and shipped) with **B3, which is specifically
-same-changeset cross-file *diffs***. A provider fact is "available to both tiers equally"
-(§3, B3) — and for Shape D, data being equally available is exactly what makes **recursion and
-string decomposition** the differentiator rather than the input. It also applied an asymmetric
-evidentiary standard: awkward-but-working spellings were accepted when they *struck* a shape
-(A2's re-derivation, B2's dynamic index) and rejected when they would have *preserved* one. One
-standard is applied throughout now, and it preserves Shape D.
+> **Caveat, stated because this record makes the same distinction for B1 (§3).** No provider in
+> the corpus delivers an encoded adjacency today. That the shape is **declarable and
+> deliverable** follows from the provider contract — any provider may return a
+> `{type: string, cardinality: set}` output, and every link is verified in §1.3 — not from a
+> shipped example. It is the same contract inference used to strike B1, applied in the same
+> direction, and it is why "unconditional" is qualified throughout as *on today's shipped input
+> contract*.
 
-**Binds E11-S04 (the capability sandbox), which is not written yet.** `split` and
-`graph.reachable` are pure and deterministic and **must not be denied** by the allowlist — a
-denylist drafted from "deny anything unfamiliar" would strike out this shape's own
-justification. Recorded in the S04 section of the epic spec, not only here.
+**Two things this record got wrong before, recorded so the corrections are auditable.**
+
+1. *Draft 1* claimed "a mapping-valued fact, which an adjacency needs, is undeclarable" and
+   downgraded this shape to a contingency on OQ-35/OQ-36. An adjacency needs no mapping — a set
+   of encoded strings carries one inside the frozen declaration. The error came from conflating
+   a *provider-supplied catalog* (shapes B1/B2, struck here as working and shipped) with **B3,
+   which is specifically same-changeset cross-file *diffs***.
+2. *Draft 2* replaced that with a second "independent reason" — that CEL cannot decode an edge,
+   and that this kills even a bounded two-hop check. **Refuted by execution** (above):
+   encode-and-compare needs no decoding. Both errors are the same failure with the sign flipped
+   — an **asymmetric evidentiary standard**, accepting awkward-but-working spellings when they
+   *struck* a shape (A2's re-derivation, B2's dynamic index) and rejecting one when it would
+   have *narrowed* a shape this record wanted to keep. The verdict was right both times; the
+   argument was not. One standard now applies in both directions, and Shape D stands on
+   reason 1 alone.
+
+**Binds E11-S04 (the capability sandbox), which is not written yet.** `graph.reachable` and
+`split` are pure and deterministic and **must not be denied** by the allowlist:
+`graph.reachable` closes what CEL cannot close, and `split` is what a module needs to rebuild
+the adjacency from the encoded pairs. A denylist drafted from "deny anything unfamiliar" would
+strike out this shape's own justification. Recorded in the S04 section of the epic spec, not
+only here.
 
 ---
 
@@ -420,7 +465,7 @@ justification. Recorded in the S04 section of the epic spec, not only here.
 | B2 keyed attribute lookup | **STRUCK** | purpose-built provider, or `facts.<p>.<n>.value[key]` (compiles, lint-clean); residual OQ-36 |
 | B3 same-changeset cross-file | **STRUCK from E11** | input availability, not expressiveness — the evaluation unit is one file and S05 pins the identical input, so Rego fails identically |
 | C set difference | **STRUCK — unconditionally** | `oldEntry.x.filter(a, !(a in entry.x))` expresses it if the entry tree is bound; if it is not, the failure is input availability and Rego fails identically. Both resolutions of OQ-35 strike it |
-| D graph relationship | **EXCEEDS — justifies E11, unconditionally** | two independent reasons: no recursion/fixpoint/fold, **and** no `split`/`substring`/`indexOf` to decode an edge. The adjacency is in contract and available today as a `{type: string, cardinality: set}` fact — no OQ-35, no OQ-36, no `--checkout` |
+| D graph relationship | **EXCEEDS — justifies E11, unconditionally** | no recursion, fixpoint, fold or user-defined function ⇒ **unbounded** reachability has no spelling. A *bounded* `k`-hop check **is** expressible via encode-and-compare (verified by evaluation, §5) — the ceiling is `k`, not decoding. The adjacency is in contract and available today as a `{type: string, cardinality: set}` fact — no OQ-35, no OQ-36, no `--checkout` |
 
 **What E11 is now justified to build:** a tier-2 backend for **folds/aggregates over the
 in-input collections** and **recursive/graph reasoning over an adjacency the input already
@@ -428,9 +473,11 @@ carries**. Both justifications are **unconditional** on today's shipped input co
 waits on OQ-35 or OQ-36. Nothing else in this record supports the epic.
 
 **The single strongest piece of evidence** is Shape D: an input that is declarable and
-deliverable today, that tier-1 CEL provably cannot **decode** (no `split`/`substring`/`indexOf`)
-let alone **close** (no recursion), and that Rego consumes with builtins. That is exactly the
-per-rule evidence D-017's gate existed to demand.
+deliverable today, over which tier-1 CEL can answer only a **fixed-depth approximation** —
+rewritten whenever the graph deepens, at `O(|N|^(k-1)·|E|)` against a `1_000_000` budget — while
+Rego answers the **actual** question at any depth with `graph.reachable`. That gap is exactly
+the per-rule evidence D-017's gate existed to demand. It is a narrower claim than two earlier
+drafts of this record made, and unlike them it survives execution.
 
 **What E11 is no longer justified to claim:** cross-manifest reasoning of any kind, set
 operations over entry trees, and "reuse a computed intermediate". Two of the four shapes
@@ -446,12 +493,16 @@ not a constraint, and saying so is cheaper than pretending otherwise.
   fence it. **Held by a gate:** `evaluation-input.schema.json` lives under
   `schemas/decision/v1alpha1/`, and REQ-E11-S05-03 pins
   `git diff --exit-code -- schemas/decision/`, so a widening reddens.
-- **S04** (capability sandbox) **must not deny `split` or `graph.reachable`** — both are pure
-  and deterministic, and Shape D's justification is built on them. A denylist drafted from
-  "deny anything unfamiliar" would strike out the epic's own strongest evidence. **Held by a
-  gate:** REQ-E11-S04-02's committed `allowed-builtins.golden`, once S04 writes it — this
-  record is what tells S04 what belongs in it. (This says nothing about judgment call (d);
-  *where* the evaluator lives is untouched here.)
+- **S04** (capability sandbox) **must not deny `graph.reachable` or `split`** — both are pure
+  and deterministic; `graph.reachable` closes what CEL cannot close and `split` rebuilds the
+  adjacency from the encoded pairs. A denylist drafted from "deny anything unfamiliar" would
+  strike out the epic's own strongest evidence. **Held by review — not by a gate, and the
+  distinction is the point.** REQ-E11-S04-02's committed `allowed-builtins.golden` detects
+  **drift**: it fires when the allowed set *changes*, so the sandbox cannot silently *widen*.
+  It does **not** detect **omission** — an S04 author who simply never adds `graph.reachable`
+  commits a golden without it and the test is green forever. S04 must therefore carry this floor
+  as a reviewed acceptance criterion or write the pin itself. (This says nothing about judgment
+  call (d); *where* the evaluator lives is untouched here.)
 - **S07** (violation shape) must support a **fold result** (a computed scalar with the
   contributing elements named) and a **path/cycle witness**, not a cross-manifest reference.
   **Held by nothing — stated plainly.** There is no schema or gate over the violation shape at
@@ -459,10 +510,13 @@ not a constraint, and saying so is cheaper than pretending otherwise.
   the pin itself.
 - **S12** (docs truth) must not describe Rego as enabling cross-entry or cross-manifest checks.
   ADR-0002 §"`rego`" currently calls it an "escape hatch for **cross-entry checks**"; per this
-  record that phrase is inaccurate for the shipped input contract. **Held by a gate:**
-  REQ-E11-S12-01 forbids any document claiming a capability S01 struck. **But S12 is story 12
-  of 14** — if E11 never proceeds, a published ADR stays wrong indefinitely, so the correction
-  is also tracked as a standalone backlog residual, independent of this epic.
+  record that phrase is inaccurate for the shipped input contract. **Held partly.**
+  REQ-E11-S12-01's normative text is broad enough to cover it, but its `Test:` list omits
+  `docs/adr/0002-*` — the actual wrong file — and its `Verify: task check` has no pin over the
+  phrase today, so the gate would not fail if the line survived. **And S12 is story 12 of 14**:
+  if E11 never proceeds, a published ADR stays wrong indefinitely. The correction is therefore
+  also tracked as a standalone backlog residual, independent of this epic — that residual, not
+  REQ-E11-S12-01, is what actually keeps it from being lost.
 
 **Corroborating observation.** The single committed illustration of the escape hatch,
 `examples/policies/rego/bounded_change.rego`, is **entirely tier-1 expressible** — both of its
