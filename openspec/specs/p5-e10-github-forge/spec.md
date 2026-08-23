@@ -209,7 +209,11 @@ runs it.
 - **Dependencies**: S00.
 - **Definition of done**: case bodies live in importable Go; `go test ./internal/forge/...`
   passes with **no case deleted, renamed, or weakened**; the GitLab entry point is a thin
-  `_test.go` calling the shared runner.
+  `_test.go` calling the shared runner; **and every case id minted by S00's model
+  (`docs/planning/github-addressing-model.md`, "Conformance cases" tables) exists as a
+  `catalog.yaml` row with an explicit adapter disposition** — S00's `Verify:` lines ("the named
+  conformance case appears in S01's catalog") are otherwise satisfied only by an implementer
+  voluntarily reading a planning doc, which this repo has already learned does not happen.
 - **The tension to resolve deliberately, not cheaply**: the existing cases assert on
   `*fake.Forge` internals — `sha_guard_test.go:49` takes `*fake.Forge`, and
   `reconciliation_test.go:220` type-asserts to it — reading recorded writes (`Merges`,
@@ -254,7 +258,7 @@ runs it.
 - **Dependencies**: S00, S01 (so the port change is proven by an executable suite).
 - **Definition of done**: `forge.RunPort` declared in `internal/forge`; **both** of
   `cmd/assent`'s port declarations retired — `run.go:64 forgePort` (the anonymous literal at
-  the call site) **and** `provider_host.go:246 refFilePort`, a second, hand-rolled
+  the call site) **and** `provider_host.go:263 refFilePort`, a second, hand-rolled
   `FileAtRef`-only interface. Naming only the first is how this story closes while
   `cmd/assent` still depends on a private port: replacing `forgePort` alone leaves
   `refFilePort` standing, the DoD reads satisfied, and `go build` + `task lint` stay green.
@@ -491,7 +495,12 @@ runs it.
 - **Dependencies**: S06.
 - **Definition of done**: PR metadata → `forge.MRInfo` (head/base SHAs, fork detection),
   changed-file enumeration satisfying **ADR-0020 completeness** (truncation is an opaque
-  enumeration failure, never a short list), and merge-result pinning via `refs/pull/N/merge`.
+  enumeration failure, never a short list), and merge-result pinning via `refs/pull/N/merge`;
+  **plus S00's addressing and sentinel cases green against the GitHub factory** —
+  `fork-head-unchanged-file-no-lifecycle` + its positive control
+  `fork-head-genuine-delete-detected`, and `forbidden-never-renders-as-absent`,
+  `absent-file-still-renders-as-absent`, `metadata-only-token-is-not-absence`,
+  `ratelimit-403-is-transport-error` (see `docs/planning/github-addressing-model.md` Q1/Q4).
 
 - **REQ-E10-S07-01** — Given `forge.MRInfo`'s contract, when a PR is described, then
   `SourceSHA` is the PR head, `TargetSHA` is the **base branch tip** (not the merge base),
@@ -686,7 +695,10 @@ runs it.
 - **Dependencies**: S13.
 - **Definition of done**: the S01 suite runs against the GitHub factory in CI; every
   `github-deferred` row in `catalog.yaml` is either flipped to `both` or **retains the
-  deferral with a named, cited reason**; D-084 is dispositioned.
+  deferral with a named, cited reason**; D-084 is dispositioned; **and every S00-minted case id
+  is dispositioned like any other row** — executed on both adapters, or deferred with a cited
+  reason. A capability whose `C` (contract-proven) constant has no passing case here must be
+  reported `unknown`, per S00's Q2 rule.
 
 - **REQ-E10-S14-01** — Given **every one of the 14 non-deferred catalog rows is
   `forge: gitlab`**, when the catalog is updated, then **every row** — not only

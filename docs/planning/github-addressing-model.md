@@ -7,7 +7,14 @@
 > guesswork), [forge-dossier-gitlab.md](forge-dossier-gitlab.md), ADR-0015 §1/§2/§4/§8,
 > ADR-0017 §1/§3, ADR-0020, GUIDELINES "Safety invariants".
 > **Raises**: [OQ-33](open-questions.md) — `protected-pipeline-source` has no decidable
-> predicate on either forge today.
+> predicate on either forge today; **OQ-34** — whether an adapter-computed CODEOWNERS eligible
+> set can ever be `full` under ADR-0017 §3's "typed eligible principals".
+>
+> **Revision (post-review)**: the first version graded GitHub `eligible-approval-evidence` as
+> `supported{full}`. That contradicted this document's own named spec input (dossier §2 grades
+> the property `partial`) and was the exact "papered over with a heuristic" outcome
+> `REQ-E10-S00-02` forbids. It is now **`unknown`** → OQ-34. Q2's row-9 section keeps the wrong
+> answer visible rather than editing it away, because *how* it was wrong is the reusable part.
 
 This is E10 story zero: four questions answered on paper before the port signature freezes.
 Each answer names the conformance case that will prove it. Case IDs are *minted here and
@@ -65,12 +72,20 @@ worth running — two of its line anchors have drifted. As of this change's HEAD
 | `provider_host.go:82` | provider host declaration | `targetRef` | stays `FileAtRef` |
 | `provider_host.go:292` | **resource-owner registry** | `targetRef` | stays `FileAtRef` — **D-130** |
 
-Exactly **two** call sites migrate; **six** must not. Corrections to ADR-0021's anchors:
-the resource-owner registry read is at `provider_host.go:292` (ADR-0021 cites `:275`, which
-now falls inside that function's doc comment), and `refFilePort` is declared at
-`provider_host.go:263` (ADR-0021 cites `:246`). `forgePort` at `run.go:64` is correct. A
-third drift for S02 to absorb: ADR-0021 item 1 proposes `Describe(project, mr)`; the tree's
-method is `GetMR(project, mr)` (`run.go:68`).
+Exactly **two** call sites migrate; **six** must not.
+
+**Anchor drift, attributed to the document that actually carries it** — this matters because
+S02 reads the epic spec as its own DoD, so a correction filed against the wrong document
+leaves the stale anchor exactly where an implementer will trip on it:
+
+| Stale anchor | Carried by | Correct value |
+| --- | --- | --- |
+| `provider_host.go:275` (the D-130 resource-owner registry read) | **ADR-0021** — Decision items 1 and 5 | `provider_host.go:292`; `:275` now falls inside that function's doc comment |
+| `Describe(project, mr string)` | **ADR-0021** — Decision item 1 | the tree's method is `GetMR(project, mr)` (`run.go:68`) |
+| `provider_host.go:246 refFilePort` | **`openspec/specs/p5-e10-github-forge/spec.md:257`** (E10-S02's DoD) — the string `246` appears nowhere in ADR-0021 | `provider_host.go:263`; **fixed in this change**, since the epic spec is in this story's fence |
+
+So ADR-0021's genuine drifts are **two**, not three, and the third belongs to the epic spec.
+`run.go:64 forgePort` (spec.md:256) is **correct** and needs no change.
 
 `run.go:230` and `provider_host.go:292` deserve the specific mention ADR-0021 gives them:
 the first carries provider-host declarations, so migrating it would let a fork's head
@@ -88,7 +103,9 @@ Both forges expose an **MR-relative head ref inside the target project**, which 
 shape is neutral rather than GitHub-shaped:
 
 - **GitHub** — `GET /repos/{o}/{r}/contents/{path}?ref={pr.head.sha}`; the fork's head commit
-  is reachable in the base repo as `refs/pull/{n}/head` (`dossier` C13). Addressing by the
+  is reachable in the base repo as `refs/pull/{n}/head` (source: **ADR-0021 item 5**, not the
+  dossier — C13 names `refs/pull/N/`**`merge`**, a semantically different ref carrying *merged*
+  content, not head content; `unverified` until S06 confirms the head ref live). Addressing by the
   head **SHA** rather than the ref name is preferred: it is the same value pinned into
   `pins.sourceSha`, so the record and the read cannot disagree.
 - **GitLab** — the source project id from the MR object, or the target project's
@@ -138,7 +155,7 @@ promoted into it that is currently assumed-true becomes an honest gap and owes a
 
 | # | Capability | GitLab predicate | GitHub predicate | Kind |
 | --- | --- | --- | --- | --- |
-| 1 | `resolvable-threads` | constant `supported`, licensed by the existing `p3e5-*` reconciliation cases | constant `supported`, licensed by a GraphQL case (`reviewThreads.isResolved` / `resolveReviewThread`, `dossier` C1/C2) | `C` |
+| 1 | `resolvable-threads` | constant `supported`, licensed by the existing `p3e5-*` reconciliation cases | constant `supported`, licensed by `threads-resolvable-graphql` / `TestConformanceThreadResolveRoundTrip` (`reviewThreads.isResolved` / `resolveReviewThread`, `dossier` C1/C2) | `C` |
 | 2 | `threads-block-merge` | `GET /projects/{id}` → `only_allow_merge_if_all_discussions_are_resolved == true` (`code`: `snapshot.go:290`) | `GET /repos/{o}/{r}/branches/{base}/protection` → `required_conversation_resolution.enabled == true`, **or** the equivalent ruleset row from `GET /repos/{o}/{r}/rules/branches/{base}`; both must be consulted (endpoints `dossier` C3 + §2 step (a); **field name `unverified`**) | `P` |
 | 3 | `blocking-review` | `absent` — GitLab has no `REQUEST_CHANGES` primitive; ADR-0017 §3 uses threads (`dossier` C4) | `required_pull_request_reviews.required_approving_review_count >= 1` on the base branch; without required reviews a `REQUEST_CHANGES` review does not block (`dossier` C4) | `P` |
 | 4 | `review-dismissal-restrictions` | `absent` — no analogue | `required_pull_request_reviews.dismissal_restrictions` non-empty **and** `users[].id ∪ expand(teams[]) ∌ pr.user.id`; team expansion via `GET /orgs/{org}/teams/{slug}/members` (`dossier` C8′) | `P` |
@@ -146,7 +163,7 @@ promoted into it that is currently assumed-true becomes an honest gap and owes a
 | 6 | `deferred-merge-arming` | constant `supported` (MWPS is tier-independent, `dossier` C11) | `GET /repos/{o}/{r}` → `allow_auto_merge == true`; `enablePullRequestAutoMerge` fails without the repo setting (setting `dossier` C11; **field name `unverified`**) | `C` / `P` |
 | 7 | `arming-revoked-on-push` | constant `supported` — any new commit cancels MWPS (`dossier` C11) | `supported` **only** when the substitute is configured — stale-approval dismissal **and** at least one required status check; a write-access push does **not** auto-disarm GitHub auto-merge (`dossier` §3 delta 2). Otherwise `absent`. (**Field names `unverified`** — C19 names the setting, not the API field) | `P` |
 | 8 | `merge-result-pinning` | `GET /projects/{id}` → `merge_trains_enabled == true` (`code`: `snapshot.go:291`) | base-branch ruleset from `GET /repos/{o}/{r}/rules/branches/{base}` contains the merge-queue rule (endpoint `dossier` C14; **rule-type string `unverified`**) | `P` |
-| 9 | `eligible-approval-evidence{full\|aggregate}` | `full` iff `GET /projects/{id}/merge_requests/{iid}/approval_rules` returns rules with `eligible_approvers[]` (`code`: `gitlab/snapshot.go` `hasApprovalRulesAPI`); else `absent` | `full` iff `required_pull_request_reviews.require_code_owner_reviews == true` **and** CODEOWNERS is readable **at the base ref** **and** every referenced team expands (`GET /orgs/{org}/teams/{slug}/members` → 200). Team expansion 403 → `unknown`. See below | `P` |
+| 9 | `eligible-approval-evidence{full\|aggregate}` | `full` iff `GET /projects/{id}/merge_requests/{iid}/approval_rules` returns rules with `eligible_approvers[]` (`code`: `gitlab/snapshot.go` `hasApprovalRulesAPI`); else `absent` | **`unknown`** — see below. The CODEOWNERS route is legitimate (ADR-0017 §3 names it) and its preconditions are probeable (`require_pull_request_reviews.require_code_owner_reviews == true`, CODEOWNERS readable **at the base ref**, teams expandable via `GET /orgs/{org}/teams/{slug}/members`), but **none of them decides the property `full` denotes** — that the adapter-computed eligible set equals the forge's. No forge-readable predicate exists → `unknown`, promoted only by the fidelity case named below (**OQ-34**) | `P` → `unknown` |
 | 10 | `approval-reset-on-push{default\|opt-in}` | `GET /projects/{id}/approvals` → `reset_approvals_on_push == true` — **currently unprobed** (audit RELI-03; **`unverified`** — the field is named by RELI-03, not read from this tree) | stale-approval dismissal enabled on the base branch; the stronger variant is "require approval of the most recent reviewable push" (`dossier` C19/C8; **field names `unverified`**) | `P` |
 | 11 | `protected-pipeline-source` | **no predicate today** — see below | **no predicate today** — see below | — |
 
@@ -159,52 +176,95 @@ turns out to be right is promoted at S09; a cell that turns out to be wrong neve
 anything. Rows 3, 4 and 9's GitHub field names are genuinely enumerated in dossier §2 and are
 not tagged.
 
-### Row 9 is the one that decides whether GitHub can ever gate — and it is decidable
+### Row 9 decides whether GitHub can ever gate — and the honest answer is `unknown`
 
-The dossier's "no API returns the computed per-PR eligible code owners" reads like a dead end.
-It is not, because assent never needed the *forge* to compute the set — it needs a
-**forge-proven named principal set**, and `code` shows the engine already accepts two ways to
-get one: `internal/core/aggregate/approval.go:126-133` admits
-`VerifyingCapability ∈ {"approval-rules-api", "codeowners"}` and fails closed on anything
-else, and `approvalSatisfies` counts an approver only if its id is in `ev.Eligibility`.
+A first draft of this document declared GitHub row 9 `supported{full}` on three conjuncts:
+`require_code_owner_reviews == true`, CODEOWNERS readable at the base ref, and every referenced
+team expandable. **That was wrong, and the way it was wrong is worth recording**, because it is
+the failure mode `REQ-E10-S00-02` names: each conjunct establishes that a CODEOWNERS file
+exists and that GitHub *cares* about code owners. **None of them establishes what `full`
+denotes** — that the adapter's computed eligible set **equals** the set GitHub would accept.
+That property has no forge-readable predicate, which is exactly the situation row 11 handles
+correctly. Two identical gaps had opposite treatments; the asymmetry, not the CODEOWNERS route,
+was the defect.
 
-So:
+**Decision: GitHub row 9 is `unknown` for v1**, promoted only by a named fidelity case (below).
 
-- **`aggregate` is not a satisfying sub-value.** GraphQL `reviewDecision: APPROVED` proves the
-  forge enforced *its* rule but names no principal; fed to the engine it is
-  `VerifyingCapability: "none"` → a recorded capability gap that **never satisfies**
-  (`approval.go:130`). Recording `aggregate` as `supported` would be exactly the
-  paper-over REQ-E10-S00-02 forbids.
-- **`full` is reachable on GitHub via `codeowners`**, which is already a first-class verifying
-  capability: CODEOWNERS read **from the base ref** (fork-safe by GitHub's own definition,
-  `dossier` §2 step (b)), matched client-side, teams expanded to ids, owners filtered to
-  write-holders. The predicate above is what makes that honest rather than optimistic — and
-  it is symmetric with GitLab Free, which is `absent` for the same reason (no named eligible
-  set) and already refuses to arm (`precondition.go:70-78`).
+### What is and is not in dispute
 
-This **refines**, and does not contradict, ADR-0021's Consequences prediction that
-`eligible-approval-evidence` would plausibly be `unknown` on GitHub forever. The prediction was
-about the *aggregate* route; the `codeowners` route was already in the engine. It also needs no
-schema change: `code`,
+**CODEOWNERS is a legitimate route — this is not the objection.** ADR-0017 §3 names it
+explicitly: `require-review` is "satisfied only by forge-proven eligible approval (**approval
+rules / CODEOWNERS evidence**, typed eligible principals)". `code`: the frozen schema agrees —
 `schemas/approval/v1alpha1/approval-evidence.schema.json:40-42` enumerates
-`verifyingCapability` as exactly `["approval-rules-api", "codeowners", "none"]` — the value is
-already frozen-legal.
+`verifyingCapability` as exactly `["approval-rules-api", "codeowners", "none"]`, and
+`internal/core/aggregate/approval.go:126-133` admits `"codeowners"` as a real capability,
+distinct from `none`. So no schema change and no ADR amendment is implied by the route itself.
 
-**The asymmetry a reviewer will find, owned here rather than left to be discovered.** Two
-things are true and both should be said. First, **no adapter produces `"codeowners"` today** —
-`code`: the only writer is `internal/forge/gitlab/resolve.go:85`, which emits
-`"approval-rules-api"`; `"codeowners"` appears in the tree solely as an accepted *input* value
-(`approval.go:41`, `:127`) and in the frozen enum. GitHub would be its first producer. Second,
-GitLab's `eligible_approvers[]` is **forge-computed** while GitHub's CODEOWNERS set is
-**adapter-computed from forge-supplied data**, and ADR-0017 §3 says *forge-proven*. The
-defence is that the frozen contract already ruled on this: it admits `codeowners` as a real
-verifying capability, distinct from `none`, precisely because a CODEOWNERS file served by the
-forge **at the base ref** is forge-supplied evidence — what the adapter contributes is
-pattern-matching, not authority. The trust-boundary half is what makes it hold, and it is why
-the predicate says *base ref*: a head-ref CODEOWNERS would let an author name themselves owner,
-which is D-130's shape on a different file. If the maintainer reads ADR-0017 §3 more strictly
-than the schema does, the consequence is stated and survivable — GitHub falls to `absent` for
-require-review, exactly like GitLab Free, and gates nothing rather than gating wrongly.
+**The objection is §3's *other* clause — "typed eligible principals".** GitLab's
+`eligible_approvers[]` is **forge-computed**; a GitHub CODEOWNERS set is **adapter-computed**
+from forge-supplied bytes. What the adapter contributes is a matcher, and a matcher can be
+wrong in a direction that is not fail-safe.
+
+**The concrete slip-through, spelled out because a vaguer statement would not have caught the
+first draft.** An over-permissive matcher — first-match-wins instead of last-match-wins, an
+unhandled section or negation syntax, case-folding, or a team-membership read returning a
+superset of actual write-holders — puts a principal into `ev.Eligibility` that GitHub would not
+accept. `approvalSatisfies` then finds the approver's id in the eligible set
+(`approval.go:127`, `:150-158`) and records the obligation **satisfied**. *No arming is needed
+for the harm*: the DecisionRecord — the product's whole thesis — asserts that a governance
+obligation was met by a principal the forge does not recognise as eligible. GitHub's own
+`require_code_owner_reviews` is not a backstop, because it enforces over the **PR's changed
+files** while assent's eligible set is scoped to the **governed subject**; the two sets need
+not coincide.
+
+### Reconciling the spec input, which graded this `partial` and was right
+
+`docs/planning/forge-dossier-github.md` §2 closes: *"Verdict for ADR-0017 §3: GitHub can prove
+**that** eligible approval exists (aggregate `reviewDecision` + protection config) — `partial`
+on proving **which** typed principal satisfied **which** rule."* The capability's sub-values
+are `{full|aggregate}`, and `full` is precisely the "which typed principal" property the
+dossier grades `partial`. **The first draft's `full` contradicted its own named spec input.**
+`unknown` is the grading that agrees with it: not `absent` (the route exists and the evidence is
+partly forge-supplied), not `full` (unproven), and non-arming under `unknown ⇒ never arm`.
+
+This also **confirms rather than refines ADR-0021's Consequences prediction.** The ADR predicted
+`eligible-approval-evidence` would plausibly report `unknown` on GitHub forever, and its stated
+reason was dossier §2 step (b) — the CODEOWNERS step, not the aggregate route. That reason
+stands.
+
+### The `aggregate` sub-value satisfies nothing, on either forge
+
+GraphQL `reviewDecision: APPROVED` proves the forge enforced *its* rule but names no principal.
+Fed to the engine it is `VerifyingCapability: "none"` → a recorded capability gap that **never
+satisfies** (`approval.go:129-130`). Recording `aggregate` as `supported` would be the
+paper-over `REQ-E10-S00-02` forbids by name. This is symmetric with GitLab Free, which is
+`absent` for the same reason — no named eligible set — and already refuses to arm
+(`precondition.go:70-78`).
+
+### What would promote row 9 to `full` — named, not hand-waved
+
+`unknown` is a state with an exit, and S08 owns it. Two candidate routes, neither specifiable
+as a *proof* today, which is why this is **OQ-34** rather than a decision:
+
+1. **Fixture-corpus fidelity case** — `codeowners-eligible-set-matches-forge` /
+   `TestConformanceCodeownersEligibleSetMatchesForge`, over a corpus covering last-match-wins,
+   sections, negation, case sensitivity and team expansion, **paired with a positive control**
+   proving the case reddens on a deliberately over-permissive matcher (this document's own
+   E10-S12 pairing rule). *Limit, stated:* it proves the matcher against fixtures, not against
+   GitHub's live computation — fidelity to the spec, not equality with the forge.
+2. **Live cross-check** against GitHub's own code-owner determination for the PR
+   (`unverified`). *Limit, stated:* any such signal is scoped to the PR's changed files and is
+   mutable after PR open, so it is corroboration, not authority.
+
+Until one is accepted and discharged, row 9 stays `unknown` and **GitHub does not satisfy
+`require-review`** — the same standing as GitLab Free, which ships today. Consequence: with
+rows 9 and 11 both `unknown`, **v1 GitHub comments and does not gate.** That is the fail-closed
+outcome the project's thesis prefers over gating on an unproven set.
+
+**One asymmetry owned rather than left to be found:** `"codeowners"` is accepted by the engine
+and legal in the frozen enum, but **no adapter produces it today** — `code`: the only writer is
+`internal/forge/gitlab/resolve.go:85`, which emits `"approval-rules-api"`. GitHub would be its
+first producer, which is part of why the fidelity case is owed before, not after.
 
 ### Row 11 is the honest failure, and it is worse than "GitHub lacks it"
 
@@ -226,13 +286,28 @@ resolves to project *X* → `GET /projects/X/protected_branches` covers the file
 the MR author lacks push access there), and degrades to `unknown` whenever the token is not
 scoped to *X*.
 
-On GitHub there is no single readable analogue at all. The plausible predicate is a
-**composite of environment and forge** (`unverified`): the run's trigger event is one whose
-workflow definition GitHub loads from the base repository's default branch
-(`pull_request_target` / `workflow_run` / `merge_group`), **and** that default branch requires
-reviews, so the definition is not author-editable. Under `pull_request` from a fork the token
-is read-only and secretless (`dossier` C17) — safe, and advisory-only per ADR-0015 §8, which
-is a *non-arming* state, not a gap.
+On GitHub there is no *single* readable field — but "no readable analogue at all" would
+overstate it against this document's own cited input. **ADR-0015 §4 already frames the GitHub
+condition, and in composite terms**: the assent job must come from a protected source —
+*"GitHub: workflows from the target branch (`pull_request` runs the base-ref workflow for
+forks; same-repo branches need branch protection on workflow paths)"* — and §4 states it is
+"verified by `assent doctor`". Three candidate predicates follow, and OQ-33 asks which the
+operator accepts:
+
+1. **Same-repo route (§4's own second clause, largely forge-readable).** Branch protection or a
+   path-restricted ruleset covering `.github/workflows/**` on the base branch, so a same-repo
+   PR author cannot alter the definition that gates them. This is the closest thing to a
+   GitLab-style forge-only predicate and §4 already names it; its readability limits
+   (path-scoped push rulesets are org/Enterprise-shaped) are `unverified`.
+2. **Fork route (§4's first clause).** Under `pull_request` from a fork GitHub runs the
+   **base-ref** workflow with a read-only, secretless token (`dossier` C17). Safe, but
+   advisory-only per ADR-0015 §8 — a *non-arming* state, not a gap, and therefore not a route
+   to `supported`.
+3. **Composite env+forge route** (`unverified`): the trigger event is one whose workflow
+   definition GitHub loads from the base repository's default branch (`pull_request_target` /
+   `workflow_run` / `merge_group`) **and** that branch requires reviews. This spans
+   `cmd/assent`'s CI-env adapter and `internal/forge`, which is the part §4 did not anticipate
+   being asked to *probe* rather than document.
 
 Consequences, stated rather than discovered:
 
@@ -241,8 +316,9 @@ Consequences, stated rather than discovered:
 2. Retiring the `@` heuristic makes **GitLab** arming paths that pass today stop passing.
    That is the intended surfacing (judgment call (e)) and it owes its own decision row at
    S04/S09 — **not** here, because S00 changes no behaviour.
-3. The composite predicate spans `cmd/assent`'s CI-env adapter and `internal/forge`, which
-   ADR-0015 §4 did not anticipate. That is why it is a question, not a decision → **OQ-33**.
+3. Route 1 may be forge-readable enough to stand alone; routes 3 spans `cmd/assent`'s CI-env
+   adapter and `internal/forge`. Which of these ADR-0015 §4 accepts as a *probe* — as opposed
+   to documentation verified by hand — is not this story's to decide → **OQ-33**.
 
 ### What GitLab actually probes today (judgment call (e), made concrete)
 
@@ -262,6 +338,7 @@ consequence ADR-0021 promised, with a count attached.
 
 | Case id | Test name | Proves |
 | --- | --- | --- |
+| `threads-resolvable-graphql` | `TestConformanceThreadResolveRoundTrip` | licenses row 1's GitHub `C` constant — post a thread, resolve it via GraphQL, read `isResolved`. No case, no constant: the flag reports `unknown` |
 | `capability-report-exhaustive` | `TestConformanceCapabilityReportExhaustive` | every enum member has an entry; a new member without one fails to compile or fails the case |
 | `capability-unknown-never-arms` | `TestConformanceUnknownCapabilityNeverArms` | `unknown` at a consultation point refuses arming, `merges == 0` |
 | `capability-supported-does-arm` | `TestConformanceSupportedCapabilityArms` | **positive control**, `merges == 1` — without it the previous case is vacuous (E10-S12's rule, applied one story early) |
@@ -285,10 +362,16 @@ Three consequences follow directly, and the second is the one a reviewer will re
 
 1. `capabilityGap` models **one** capability, merge-result pinning. (A prior draft's claim that
    it "already models the absent-capability case" was **False** and stays retired.)
-2. **Comma-joining eleven gaps into that string is not a loophole.** It passes validation, but
-   it is a semantic lie against the field's own description, and it is *unavailable in the
-   common case*: when `mergeResultDigest` **is** pinned, the field is forbidden outright. A
-   channel that closes precisely when the merge succeeds is not an audit trail.
+2. **Comma-joining eleven gaps into that string must be refused — but the schema does not
+   refuse it today, and saying otherwise would be the same over-claim this document is trying
+   to avoid.** Such a string passes validation; it is a semantic lie against the field's own
+   description; and the `allOf` at `:94-100` forbids the field only *when `mergeResultDigest`
+   is pinned*. `code`: `cmd/assent/run.go:368` calls `decision.MergeResultGap(...)`
+   **unconditionally**, so `mergeResultDigest` is null and the channel is **open in 100% of
+   runs today**. The schema clause is therefore a *latent* guard that goes live only once an
+   adapter pins a real merge-result digest (E10-S03/S07 on a merge train or merge queue). What
+   closes the loophole in the meantime is not the schema — it is the conformance case named
+   below, which is why that case had to be rewritten.
 3. **There is therefore no gap-selection problem to solve.** The field is not a general gap
    channel that eleven candidates compete for; it is reserved for one capability, and the
    remaining ten have a different home. No priority order is needed, which is the desirable
@@ -327,7 +410,13 @@ the arming-refusal reason surfaced to the operator. Both are unfrozen internal s
 
 | Case id | Test name | Proves |
 | --- | --- | --- |
-| `record-schema-unchanged-under-multi-gap` | `TestConformanceMultiGapRecordStillValidates` | a run with several `absent`/`unknown` capabilities still emits a record that validates against the frozen schema, and the doctor report carries all of them |
+| `capability-gap-string-is-merge-result-only` | `TestConformanceCapabilityGapCarriesOnlyMergeResult` | a run with **N** additional `absent`/`unknown` capabilities emits a `pins.capabilityGap` **byte-identical** to the same run with none of them, while the doctor report carries all N. This is the case that reddens on the comma-join adapter |
+| `capability-gap-positive-control` | `TestConformanceCapabilityGapStillRecordsMergeResult` | **positive control**: the merge-result gap itself *is* still recorded, so the case above is not satisfiable by emitting an empty string |
+
+The case this replaces — "the record still validates against the frozen schema" — was
+**unfailable**, and the reason is worth keeping: `code`, `cmd/assent/run.go:394` already
+validates every record against the schema before any write, so that clause is enforced
+unconditionally by production code, and a comma-joining adapter would have *passed* it.
 
 ---
 
@@ -339,7 +428,8 @@ means *absent*, never *forbidden*. `forge.ErrUnauthorized` is lifted to the port
 `forge.ErrNotFound` is already neutral at `internal/forge/port.go:34`).
 
 The precedent to stay consistent with is **AUD2-S02 / REL-03**: `code`:
-`cmd/assent/provider_host.go:84` and `:276-283` — the fallback is gated on
+`cmd/assent/provider_host.go:84` and `:299` (`:276-283` is that function's doc comment, which
+explains the gate; `:299` is the gate) — the fallback is gated on
 `errors.Is(err, forge.ErrNotFound)` **alone**, so a 503, a throttle or a token scoped away
 from the repo can no longer masquerade as an absent file. This story extends the same
 discrimination one layer down, into the adapter that mints the sentinel.
@@ -348,7 +438,7 @@ discrimination one layer down, into the adapter that mints the sentinel.
 
 | Status | Sentinel | Note |
 | --- | --- | --- |
-| 200 | content | `code`: `gitlab.go:486` region |
+| 200 | content | `code`: `gitlab.go:484` (the 404 → `ErrNotFound` branch is `:486`) |
 | 401 / 403 | `ErrUnauthorized` | `code`: `gitlab.go:238`, `:792` |
 | 404 | `forge.ErrNotFound` (**absent**) | safe: GitLab distinguishes 403 from 404 for files |
 | 429 / 5xx | transport error | retry/backoff per AUD-S11; never a sentinel |
@@ -387,7 +477,11 @@ sibling content read in the same repo at the same ref — the root listing,
 *there*, and only then is a 404 on the specific path genuine absence. The probe is cacheable
 per `(repo, ref)` for the run, so it costs one request, not one per governed read. It also
 fails in the right direction on an unresolvable ref: a bad `ref` 404s the root listing too, and
-"the ref does not exist" is correctly not path absence. (`unverified` — the exact Contents API
+"the ref does not exist" is correctly not path absence. **Diagnostic caveat for S06:** that
+case is *safe* but its operator-facing message would be wrong — an unresolvable ref is not a
+permission failure, so the adapter must word the error as "content unreadable at ref X:
+absent and forbidden could not be distinguished", never as a bare authorization message. The
+sentinel choice is fail-closed either way; only the wording is at stake. (`unverified` — the exact Contents API
 behaviour for the root-listing form is an E10-S06 live check; until confirmed, the residual
 rule below applies and the adapter errors.)
 
@@ -412,12 +506,13 @@ covered by a row in this table takes the residual rule.
 
 | # | Owed by | Obligation |
 | --- | --- | --- |
-| 1 | S01 | the ten case ids above appear in `catalog.yaml` with an adapter disposition (S01-03's strict-decode adapter list) |
-| 2 | S02 | two call sites migrate, six do not; `forge.ErrUnauthorized` lifted to the port; ADR-0021's stale anchors (`provider_host.go:275→:292`, `:246→:263`, `Describe→GetMR`) absorbed |
+| 1 | S01 | the **twelve** case ids above appear in `catalog.yaml` with an adapter disposition (S01-03's strict-decode adapter list). **Now enforced, not merely requested**: this obligation is written into E10-S01's DoD in `spec.md`, and S07/S14's DoDs name the cases they must run — the `Verify:` lines otherwise depend on an implementer voluntarily reading a planning doc. `codeowners-eligible-set-matches-forge` is a **candidate**, not minted: it is OQ-34's promotion route |
+| 2 | S02 | two call sites migrate, six do not; `forge.ErrUnauthorized` lifted to the port; **ADR-0021's two** stale anchors absorbed (`provider_host.go:275→:292`, `Describe→GetMR`). The third, `provider_host.go:246→:263`, lived in E10-S02's own DoD (`spec.md:257`) and is **already fixed** by this change |
 | 2b | S02 | **resolve `FileAtBase(mr, path)`'s missing project binding before freezing the signature.** `FileAtRef` takes `project` as a parameter and today's client binds none, so ADR-0021's two-argument shape is under-specified: either the client binds the *target* project at construction (and the accessor is genuinely MR-relative) or `mr` becomes composite. Flagged here because a signature that freezes wrong is precisely what S00 exists to prevent; the choice is S02's, the ambiguity is not S02's to discover |
 | 3 | S04 | the arming-relevant capability subset is stated explicitly; every `C` constant names its licensing case |
 | 4 | S04 / S09 | retiring the `@` heuristic (and any other capability promoted into the arming set) is a **user-visible GitLab behaviour change** → its own `D-nnn` row + changelog entry, per epic judgment call (e). Not minted by S00, which changes no behaviour |
-| 5 | operator | **OQ-33** — `protected-pipeline-source` predicate; until answered, v1 GitHub does not arm |
+| 5 | operator | **OQ-33** — `protected-pipeline-source` predicate (three candidate routes, one of them §4's own largely-forge-readable same-repo route); until answered, v1 GitHub does not arm |
+| 6 | operator / S08 | **OQ-34** — whether an adapter-computed CODEOWNERS eligible set can be `full`. Until answered, GitHub row 9 is `unknown` and **GitHub does not satisfy `require-review`**, the same standing as GitLab Free. With rows 9 and 11 both `unknown`, **v1 GitHub comments and does not gate** |
 
 ## Claims deliberately not resurrected
 
