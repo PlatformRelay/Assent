@@ -251,6 +251,14 @@ for want in "${KNOWN_FEATURE_USERS[@]}"; do
 done
 
 for clean in "${MUST_BE_CLEAN[@]}"; do
+  # An assertion of ABSENCE from the scan passes for two indistinguishable
+  # reasons: the file really is clean, or the path no longer names a file the
+  # scan ever looks at (renamed, moved, deleted). Every other check here has an
+  # anti-vacuity partner; this is its one.
+  if [ ! -f "$ROOT/$clean" ]; then
+    fail "$clean does not exist — its 'is bash-3.2-clean' assertion would pass forever about a file that is not there"
+    continue
+  fi
   if grep -q "^${clean}|" "$SCAN"; then
     fail "$clean uses a bash 4+ construct — the guard machinery must run under the shell it protects against, or it cannot refuse cleanly on bash 3.2"
   else
