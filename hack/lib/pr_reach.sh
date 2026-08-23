@@ -67,19 +67,47 @@
 #
 # So the bound is stated here rather than discovered in a sixth round.
 #
-# READS: block mappings at any indent; block sequences whether their items are
-# indented under the key or written FLUSH with it; inline flow SEQUENCES;
-# quoted scalars; CRLF line endings.
+# READS (the FILTER reader, `assent_pr_reach`, unless noted — the STEP reader's
+# bounds differ and are listed separately below):
+# block mappings at any indent; block sequences whether their items are
+# indented under the key or written FLUSH with it; inline flow SEQUENCES,
+# including ones spread over several lines (G6-02 — an earlier version of this
+# header listed those under DOES NOT READ "(refused)", and that was wrong twice
+# over: they are read, and the six shapes measured — `branches:`/`types:`/
+# `branches-ignore:` in both polarities — all graded correctly, because the
+# value region is bounded by indentation and a continuation line more indented
+# than its key is simply part of the value. No general guarantee is claimed for
+# them beyond those six; they are listed here because "refused" was false, not
+# because correctness has been proved); quoted scalars; CRLF line endings.
 # REFUSES (distinct code, never a guess): flow MAPPINGS, anchors, aliases,
 # merge keys, filter keys outside GitHub's five, and — on the one
-# must-NOT-contain test — any token carrying a byte outside the ref/glob set.
-# DOES NOT READ: multi-line flow sequences (refused); `strategy:`/matrix,
-# reusable-workflow `uses:` jobs and container entrypoints in the step reader;
-# and a QUOTED SCALAR's interior — `,` and whitespace are separators here even
-# inside quotes, so `branches: ["main,next"]` is shredded into `main` + `next`
-# and grades 0 though it excludes main (G5-03, measured, unfixed on purpose:
-# see the claim below, which is now written to match the code rather than the
-# other way round).
+# must-NOT-contain test — any token carrying a byte outside the ref/glob set,
+# or any token carrying a glob metacharacter.
+# DOES NOT READ:
+#   * `strategy:`/matrix, reusable-workflow `uses:` jobs and container
+#     entrypoints, in the step reader.
+#   * a QUOTED SCALAR's interior — `,` and whitespace are separators here even
+#     inside quotes, so `branches: ["main,next"]` is shredded into `main` +
+#     `next` and grades 0 though it excludes main (G5-03, measured, unfixed on
+#     purpose; the claim below is written to match the code rather than the
+#     other way round).
+#   * a step whose `- ` marker is followed by MORE THAN ONE SPACE, when the
+#     disarm key is spelled non-bare (G6-01). `_assent_step_keys` derives the
+#     key indent from the marker with `match($0, /^[ ]*- /)`, which matches
+#     exactly one space, so `      -   if : ${{ false }}` yields 8 while the
+#     keys sit at 10; the enumeration visits nothing, `?unreadable` never
+#     fires, and `assent_step_wired` returns 0 — WIRED — for a step carrying
+#     release-exitgate's own push-only guard. Ruby/psych resolves that mutant
+#     to `if: "${{ … }}"`, so it is valid YAML with nothing for actionlint to
+#     flag. Measured (both this tip and 01b2322, so the shape predates the
+#     normalisation work and survives it):
+#         '      -   ' + 'if : ${{ false }}'  -> 0   (want 8)
+#         '      -  '  + 'if : ${{ false }}'  -> 0   (want 8)
+#         '      -   ' + '"if": false'        -> 0   (want 8)
+#         '      -   ' + 'if: false'          -> 8   (bare: the literal grep
+#                                                     still catches it)
+#     Reproduce: source this file and call
+#     `assent_step_wired <that-workflow> verify <script> <tmpdir>`.
 #
 # THE SAFETY CLAIM, NARROWED TO WHAT IS TRUE (G5-04). An earlier version of
 # this header said "unknown shapes cost false reds, not silent passes". That
@@ -87,10 +115,20 @@
 # surface listed as READ — which is worse than a documented hole, because the
 # next author trusts the sentence. What actually holds:
 #
-#   * A misread that DROPS or MANGLES a token yields a RED on every
-#     must-CONTAIN test (`types:`, `branches:`), and on the one
-#     must-NOT-contain test (`branches-ignore:`) an unreadable token is
-#     REFUSED rather than searched. That direction is closed by construction.
+#   * On every must-CONTAIN test (`types:`, `branches:`) a misread that DROPS
+#     or MANGLES a token yields a RED — including a misread that drops the set
+#     ENTIRELY, since an empty set cannot contain the required token (measured:
+#     empty -> 13). That direction is closed by construction.
+#   * On the one must-NOT-contain test (`branches-ignore:`) only a token that is
+#     PRESENT and unreadable, or present and a glob, is refused. A misread that
+#     drops the token set entirely is NOT covered, and the phrase "never a
+#     silent accept, by construction" that used to sit here was false: an empty
+#     set passes `_assent_tokens_readable`, passes `_assent_tokens_globfree`,
+#     and passes `grep -qx main`, so the consumer falls through to 0 (measured,
+#     all three). This is G6-01's lesson on the filter layer — an enumeration
+#     that visits nothing yields an empty set, and an empty set satisfies every
+#     must-NOT-contain check. No total-drop defect is known here today; the
+#     point is that the construction does not rule one out.
 #   * A misread that CREATES a token is NOT covered: shredding a quoted scalar
 #     manufactures `main` out of `"main,next"` and yields a silent 0.
 #   * Un-evaluability is not a misread at all. A glob tokenises perfectly and
@@ -98,10 +136,23 @@
 #     `branches:` by polarity, and on `branches-ignore:` only because it is now
 #     refused explicitly (G5-01).
 #
-# So: the reader fails closed against dropped and mangled tokens, and against
-# shapes it refuses. It does not claim immunity against a misread that
-# fabricates a token. An honest narrow gate beats an overreaching one, and an
-# honestly narrow CLAIM beats a reassuring one.
+# Those three bullets are about the FILTER layer (`assent_pr_reach`) and its
+# tokens. The STEP layer (`assent_step_wired`) has its own bound and it is not
+# the same one: its key enumeration derives an indent from the `- ` marker
+# width, and a marker followed by more than one space moves the keys outside
+# the enumerated indent, where a non-bare disarm key is SKIPPED — not
+# normalised, not refused (G6-01, above, with measurements).
+#
+# So, precisely and no wider: the filter layer fails closed against dropped and
+# mangled tokens on the must-CONTAIN tests and against the shapes it refuses; on
+# the must-NOT-contain test it fails closed against a MANGLED or GLOB token but
+# not against a wholly dropped set; and it does not claim immunity against a
+# misread that fabricates a token. The step layer catches bare disarm
+# spellings at any indent, and non-bare spellings at the indent its enumeration
+# visits — and nothing outside that intersection. Neither layer claims to be a
+# YAML parser. An honest narrow gate beats an overreaching one, and an honestly
+# narrow CLAIM beats a reassuring one — this header has now been wrong in the
+# reassuring direction twice, which is the reason it is worded like this.
 
 # The three PR-visible text gates, single-sourced so each can cross-pin the
 # others (D-157 residual 2: before this, each gate pinned only its OWN step, so
@@ -266,9 +317,18 @@ _assent_tokens_globfree() {
 #
 # The immune design was already in this file: `assent_pr_reach` normalises and
 # ALLOWLISTS the filter keys, and is measurably immune to every one of those
-# spellings. This mirrors it. Normalisation — not pattern breadth — is what
-# makes it immune, and anything normalisation cannot reduce to an identifier is
-# refused rather than skipped, so the unknown-spelling direction costs a red.
+# spellings. This mirrors it, and normalisation — not pattern breadth — is what
+# makes it work on the lines it is given.
+#
+# THE BOUND, stated because an earlier version of this comment claimed the
+# opposite (G6-01): a key this function VISITS and cannot reduce to an
+# identifier is printed `?unreadable`, and the caller refuses it. But a key it
+# never visits is neither normalised nor refused — it is SKIPPED. `_assent_map_keys`
+# only ever looks at lines whose indent equals <indent>, and for a step that
+# indent is derived from the `- ` marker width, so a wider marker puts every
+# key out of reach. "Anything normalisation cannot reduce to an identifier is
+# refused" was false: it holds for what is enumerated, and says nothing about
+# what is not.
 _assent_map_keys() {
   awk -v want="$2" '
     { if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*#/) next
@@ -628,8 +688,15 @@ assent_step_wired() {
   # NAME (G5-02) rather than by literal pattern, so `if : `, `"if":` and
   # `'if' :` — which a conformant parser resolves identically to `if:` — cannot
   # walk past it. The literal greps are kept BESIDE the allowlist, not replaced
-  # by it: their union can only add detections, and they still catch a key at an
-  # indent the enumeration does not visit.
+  # by it, so a detection from either is a detection.
+  #
+  # WHAT THE UNION DOES NOT COVER (G6-01 — an earlier version of this comment
+  # claimed it did): the literal greps catch a BARE spelling at any indent; the
+  # allowlist catches a NON-BARE spelling at an indent the enumeration visits.
+  # A non-bare spelling at an indent it does not visit falls between them and is
+  # skipped. That intersection is reachable at step level, where the enumerated
+  # indent is derived from the `- ` marker width — see DOES NOT READ in the
+  # header for the measured shapes.
   local jobkeys="$work/step_wired.jobkeys"
   _assent_map_keys "$jb" 4 >"$jobkeys"
   if grep -qx '?unreadable' "$jobkeys"; then

@@ -94,6 +94,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(e11): delete the false cost claim; reason 1 carries Shape D alone (F3-01)
 - :memo: docs(ci): D-159 recorded a residual that does not exist (ORPH-01..04)
 - :memo: docs(release): correct the residual the gate documents (R3-01)
+- :memo: docs(ci): withdraw three falsifiable claims from the PR-reach reader (D-157)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
