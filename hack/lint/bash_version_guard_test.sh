@@ -36,7 +36,11 @@
 #            what lets this file carry the patterns without matching itself.
 #
 #   CANNOT SEE: the same constructs after `&&`, `||`, `;`, `then`, in an `if`/
-#            `while` head, behind `eval`, or assembled from a variable; bash 4
+#            `while` head, behind `eval`, or assembled from a variable; `mapfile
+#            -d` when an option BEFORE it takes an argument (`mapfile -u 3 -d ''`
+#            reads as plain 4.0 `mapfile`, so a 4.0 floor on a 4.4 construct would
+#            pass green there; `-d` in a later option position with no intervening
+#            argument, e.g. `mapfile -t -d '' arr`, IS caught — control (f)); bash 4
 #            EXPANSIONS — `${v^^}`, `${v,,}`, `${!prefix@}`, `**` globstar,
 #            `&>>` — because detecting those needs unanchored patterns that this
 #            file could not carry without flagging itself; non-`.sh` files;
@@ -51,7 +55,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-cd "$ROOT"
+cd "$ROOT" || exit 1
 
 WORK="$(mktemp -d)"
 FINISHED=0
@@ -95,7 +99,7 @@ FEATURES=(
   'local[[:space:]]+-A;4.0;local -A (associative array)'
   'declare[[:space:]]+-n;4.3;declare -n (nameref)'
   'local[[:space:]]+-n;4.3;local -n (nameref)'
-  'mapfile[[:space:]]+-[a-zA-Z]*d;4.4;mapfile -d (alternate delimiter)'
+  'mapfile([[:space:]]+-[a-zA-Z]+)*[[:space:]]+-[a-zA-Z]*d;4.4;mapfile -d (alternate delimiter)'
   'mapfile([[:space:]]|$);4.0;mapfile'
   'readarray([[:space:]]|$);4.0;readarray'
   'wait[[:space:]]+-n;4.3;wait -n'
@@ -172,10 +176,20 @@ declared_floor() {
 }
 
 # A hand-rolled guard (the hack/audit/aud2_exitgate_test.sh:71 precedent) counts as
-# present. It must be CODE: `# TODO: add a BASH_VERSINFO check` is a comment, and
-# accepting it would make this the one branch of grade_root that cannot fail.
-# Control (e) below is what keeps that honest.
-has_versinfo_guard() { grep -Eq '^[^#]*BASH_VERSINFO' "$1" 2>/dev/null; }
+# present — but it must be a COMPARISON, not a mention. Accepting any non-comment
+# occurrence of the token was itself the defect this gate exists to catch: a file
+# containing `echo "note: BASH_VERSINFO is nice to have"` beside an unguarded
+# `declare -A` passed the whole gate at exit 0. Both halves of control (e) below
+# pin this: a comment is rejected, a non-comment MENTION is rejected, and a real
+# comparison is accepted.
+#
+# Deliberately loose about the SHAPE of the comparison (`((BASH_VERSINFO[0] < 4))`,
+# `[ "${BASH_VERSINFO[0]}" -lt 4 ]`, `-ge`, `<`, `>` …) and blind to the number, as
+# documented in CANNOT-SEE: this branch grades that a version comparison exists,
+# never that its floor is the right one.
+has_versinfo_guard() {
+  grep -Eq '^[^#]*BASH_VERSINFO[^#]*(-lt|-le|-gt|-ge|-eq|-ne|<|>|=)' "$1" 2>/dev/null
+}
 
 # Lines of the guard idiom that are missing their `|| exit 1`. The callers run
 # `set -u` with no `-e`: without it a failed source returns non-zero and execution
@@ -379,6 +393,21 @@ if echo "$out" | grep -q "^hack/docs/truthlag_pins_test.sh: uses .* declares NO 
 else
   fail "mutant control: a bare '# … BASH_VERSINFO …' comment was accepted as a version guard — the hand-rolled-guard branch cannot fail, so aud2_exitgate_test.sh's green above means nothing. grade_root said: ${out:-<nothing>}"
 fi
+#     The half that was missing, and the one that mattered: a NON-COMMENT line
+#     merely naming the token is not a guard either. Rejecting only comments left
+#     `echo "note: BASH_VERSINFO is nice to have"` beside an unguarded
+#     `declare -A` passing the entire gate at exit 0 — the D-154 shape walking
+#     straight past the gate built to stop it.
+{
+  echo 'echo "note: BASH_VERSINFO is nice to have"'
+  cat "$WORK/nogua.sh"
+} >"$MUT/hack/docs/truthlag_pins_test.sh"
+out="$(grade_root "$MUT" versinfo-mention)"
+if echo "$out" | grep -q "^hack/docs/truthlag_pins_test.sh: uses .* declares NO bash version floor"; then
+  pass "mutant control: a non-comment MENTION of BASH_VERSINFO is not accepted as a guard"
+else
+  fail "mutant control: a non-comment line merely naming BASH_VERSINFO was accepted as a version guard — any file that so much as echoes the token can carry an unguarded bash 4 construct past this gate. grade_root said: ${out:-<nothing>}"
+fi
 {
   echo 'if ((BASH_VERSINFO[0] < 4)); then exit 1; fi'
   cat "$WORK/nogua.sh"
@@ -390,6 +419,75 @@ else
   fail "mutant control: a real BASH_VERSINFO guard was rejected, so hack/audit/aud2_exitgate_test.sh would red for having the guard it actually has: $out"
 fi
 cp "$ROOT/hack/docs/truthlag_pins_test.sh" "$MUT/hack/docs/truthlag_pins_test.sh"
+
+# (f) `-d` in a LATER option position must still read as 4.4. The tree writes
+#     `mapfile -d '' -t refs`; `mapfile -t -d '' refs` means exactly the same
+#     thing, and an option-order-sensitive pattern grades it plain 4.0 — a 4.0
+#     floor on a 4.4 construct, passing green. (`mapfile -u 3 -d ''`, where an
+#     earlier option takes an argument, is still missed; that is in CANNOT-SEE.)
+{
+  echo '#!/usr/bin/env bash'
+  echo 'set -uo pipefail'
+  echo "mapfile -t -d '' arr"
+} >"$MUT/hack/f3probe.sh"
+out="$(grade_root "$MUT" mapfile-d-late)"
+if echo "$out" | grep -q '^hack/f3probe.sh: uses .*needs >= 4.4'; then
+  pass "mutant control: 'mapfile -t -d' (option-order variant) is graded 4.4, not 4.0"
+else
+  fail "mutant control: 'mapfile -t -d' was NOT graded 4.4 — the -d pattern is option-order sensitive, so a 4.0 floor on a 4.4 construct passes green. grade_root said: ${out:-<nothing>}"
+fi
+rm -f "$MUT/hack/f3probe.sh"
+
+echo
+echo "== (2b) hack/lib/require-bash.sh BEHAVES — host-independent, so CI runs it too =="
+
+# Sections (1) and (2) grade TEXT; they never call the function. Without the
+# probes below the library was exercised behaviourally ONLY by section (3), which
+# is macOS-only — so on CI, the one place this runs on every PR, gutting
+# `require_bash()` to `return 0` left this gate at exit 0 and the guards in the
+# tree decorative. These probes need no particular bash: they assert the two ends
+# of the comparison against whatever shell is running them.
+# shellcheck source=hack/lib/require-bash.sh
+if . "$ROOT/hack/lib/require-bash.sh"; then
+  pass "hack/lib/require-bash.sh sources cleanly under bash ${BASH_VERSION}"
+else
+  fail "hack/lib/require-bash.sh could not be sourced — every guard in the tree resolves to it"
+fi
+
+if command -v require_bash >/dev/null 2>&1; then
+  rb_err="$WORK/rb.err"
+
+  require_bash 99.0 "a floor no bash satisfies" 2>"$rb_err"
+  rb_rc=$?
+  if [ "$rb_rc" -ne 0 ]; then
+    pass "require_bash 99.0 returns non-zero on bash ${BASH_VERSION} — the refusal path is live"
+  else
+    fail "require_bash 99.0 returned 0 — the library accepts a floor NO bash satisfies, i.e. it is a no-op and every guard in the tree is decorative"
+  fi
+  if grep -q 'requires bash >= 99.0' "$rb_err"; then
+    pass "require_bash 99.0 names the floor it refused, on stderr"
+  else
+    fail "require_bash 99.0 refused silently — a guard that fails without naming its floor sends every reader hunting. stderr was: $(cat "$rb_err")"
+  fi
+
+  require_bash 1.0 "a floor every bash satisfies" 2>/dev/null
+  rb_rc=$?
+  if [ "$rb_rc" -eq 0 ]; then
+    pass "require_bash 1.0 returns 0 on bash ${BASH_VERSION} — the accept path is live, so the refusal above is a discrimination and not a stuck answer"
+  else
+    fail "require_bash 1.0 returned $rb_rc — the library refuses everything, which would red every guarded gate on every host"
+  fi
+
+  require_bash "" "" 2>/dev/null
+  rb_rc=$?
+  if [ "$rb_rc" -ne 0 ]; then
+    pass "require_bash with no arguments returns non-zero — a mis-called guard must not silently pass"
+  else
+    fail "require_bash '' '' returned 0 — a guard whose arguments were lost in an edit would pass silently"
+  fi
+else
+  fail "require_bash is not defined after sourcing hack/lib/require-bash.sh — the guard idiom's '|| exit 1' is the only thing standing between that and an unguarded run"
+fi
 
 echo
 echo "== (3) D-154 fail-open control — guard removed => EXIT 0 with the banner absent =="
