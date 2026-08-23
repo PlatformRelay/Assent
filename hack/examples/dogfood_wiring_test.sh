@@ -390,6 +390,102 @@ pr_step_pinned() {
   return "$rc"
 }
 
+# --------------------------- 7a. the SHARED HELPER itself, against fixtures --
+#
+# Everything else in sections 7..7d mutates verify.yaml and asks the helper
+# about it. None of that can tell a working helper from a stubbed one: replace
+# `assent_pr_reach` with `return 0` and every assertion here — and in both
+# sibling gates — goes green at once, because hack/lib/pr_reach.sh is now a
+# single point of failure for all three. So the helper is also driven against
+# workflows written FROM SCRATCH here, minimal and self-evidently
+# reaching/not-reaching, where the expected answer does not depend on anything
+# in .github/workflows/**. hack/lint/workflow_pins_test.sh carries the same
+# fixtures, so deleting this section alone does not remove the property.
+helper_fixture() { # <name> <heredoc on stdin> -> prints the path
+  local f="$WORK/fixture.$1.yaml"
+  cat >"$f"
+  printf '%s' "$f"
+}
+
+helper_reach_is() { # <want-rc> <file> <label>
+  local want="$1" f="$2" label="$3" got=0
+  assent_pr_reach "$f" "$WORK" || got=$?
+  ((got == want)) ||
+    fail "helper self-check '$label': assent_pr_reach returned $got, want $want — hack/lib/pr_reach.sh does not do what every assertion in this script and in both sibling gates delegates to it"
+  echo "OK: helper self-check — $label (rc=$want)"
+}
+
+echo "== 7a. hack/lib/pr_reach.sh answers correctly on from-scratch fixtures =="
+m="$(helper_fixture reach-min <<'FIX'
+name: f
+on:
+  pull_request:
+jobs: {}
+FIX
+)"
+helper_reach_is 0 "$m" "a bare 'on: pull_request:' reaches every PR"
+
+m="$(helper_fixture reach-paths <<'FIX'
+name: f
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths: [internal/**]
+jobs: {}
+FIX
+)"
+helper_reach_is 11 "$m" "a paths:-filtered pull_request does NOT — and it is the LAST key in on:, so the filter is not read from a sibling trigger"
+
+m="$(helper_fixture reach-none <<'FIX'
+name: f
+on:
+  push:
+    branches: [main]
+jobs: {}
+FIX
+)"
+helper_reach_is 2 "$m" "a push-only workflow reaches no PR"
+
+helper_wired_is() { # <want-rc> <file> <script> <label>
+  local want="$1" f="$2" s="$3" label="$4" got=0
+  assent_step_wired "$f" verify "$s" "$WORK" || got=$?
+  ((got == want)) ||
+    fail "helper self-check '$label': assent_step_wired returned $got, want $want — the shared step reader does not do what all three gates delegate to it"
+  echo "OK: helper self-check — $label (rc=$want)"
+}
+
+m="$(helper_fixture wired-min <<'FIX'
+name: f
+on:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: gate
+        run: bash hack/examples/dogfood_wiring_test.sh
+FIX
+)"
+helper_wired_is 0 "$m" "$SELF_REL" "a minimal wired step is accepted"
+helper_wired_is 5 "$m" "hack/lint/workflow_pins_test.sh" "a script the fixture does not run is reported absent"
+
+m="$(helper_fixture wired-comment <<'FIX'
+name: f
+on:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      # bash hack/examples/dogfood_wiring_test.sh
+      - name: gate
+        # run: bash hack/examples/dogfood_wiring_test.sh
+        run: echo hi
+FIX
+)"
+helper_wired_is 5 "$m" "$SELF_REL" "a step that only MENTIONS the script in comments is reported absent (the residual-3 property, on a fixture)"
+
 echo "== 7. this gate runs in the pull-request-visible verify job, undisarmed =="
 rc=0; pr_step_pinned "$WORKFLOW" || rc=$?
 case "$rc" in
@@ -542,9 +638,22 @@ expect_rc 2 "$m" "the only 'pull_request:' left is an INPUT NAME nested under wo
 # `run: |` body, where `echo skip && exit 0` on the line above would mean this
 # gate never runs. Measured at rc=0 before the restriction; the block form is
 # now accepted only when it is the block's SOLE command.
+# The injected step is written here rather than appended to an existing one, so
+# this control depends on NO other step's contents — sibling lanes edit
+# verify.yaml's toolchain steps, and a mutation harness that anchors on their
+# text reds for their reason instead of its own.
 m="$WORK/verify.blockbleed.yaml"
 grep -vF "run: bash $SELF_REL" "$WORKFLOW" \
-  | awk -v s="$SELF_REL" '{ print } /go test -count=2 \.\/internal\/render/ { print "          bash " s }' >"$m"
+  | awk -v s="$SELF_REL" '
+      { print }
+      $0 == "    steps:" && !done {
+        print "      - name: unrelated"
+        print "        run: |"
+        print "          echo skip \&\& exit 0"
+        print "          bash " s
+        done = 1
+      }
+    ' >"$m"
 [[ "$(grep -cF "bash $SELF_REL" "$m")" == "1" ]] ||
   fail "mutation did not land: expected exactly one 'bash $SELF_REL' occurrence in the bleed mutant"
 grep -qF -- "run: bash $SELF_REL" "$m" && fail "mutation did not land: the real step's run: line survived in the bleed mutant"

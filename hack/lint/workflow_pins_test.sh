@@ -1054,6 +1054,101 @@ expect_red check_ci_wiring "$m" "the 'verify' job was renamed, so the job extrac
 # here now: the ones that satisfy the old grep are marked, because they are the
 # whole reason hack/lib/pr_reach.sh exists.
 
+# ---------------- 5a. the SHARED HELPER itself, against fixtures -------------
+#
+# Every other assertion in sections 5..5c mutates verify.yaml and asks
+# hack/lib/pr_reach.sh about it. None of that can tell a working helper from a
+# stubbed one: replace `assent_pr_reach` with `return 0` and this gate AND both
+# sibling gates go green at once, because the helper is now a single point of
+# failure for all three. So it is also driven against workflows written FROM
+# SCRATCH, minimal and self-evidently reaching or not, where the right answer
+# depends on nothing under .github/workflows/**.
+# hack/examples/dogfood_wiring_test.sh carries the same fixtures, so deleting
+# either section alone does not remove the property.
+
+echo "== 5a. hack/lib/pr_reach.sh answers correctly on from-scratch fixtures =="
+helper_fixture() { # <name> <heredoc on stdin> -> prints the path
+  local f="$WORK/fixture.$1.yaml"
+  cat >"$f"
+  printf '%s' "$f"
+}
+helper_reach_is() { # <want-rc> <file> <label>
+  local want="$1" f="$2" label="$3" got=0
+  assent_pr_reach "$f" "$WORK" || got=$?
+  ((got == want)) ||
+    fail "helper self-check '$label': assent_pr_reach returned $got, want $want — hack/lib/pr_reach.sh does not do what this gate and both sibling gates delegate to it"
+  echo "OK: helper self-check — $label (rc=$want)"
+}
+helper_wired_is() { # <want-rc> <file> <script> <label>
+  local want="$1" f="$2" s="$3" label="$4" got=0
+  assent_step_wired "$f" "$ASSENT_PR_JOB" "$s" "$WORK" || got=$?
+  ((got == want)) ||
+    fail "helper self-check '$label': assent_step_wired returned $got, want $want — the shared step reader does not do what all three gates delegate to it"
+  echo "OK: helper self-check — $label (rc=$want)"
+}
+
+f="$(helper_fixture reach-min <<'FIX'
+name: f
+on:
+  pull_request:
+jobs: {}
+FIX
+)"
+helper_reach_is 0 "$f" "a bare 'on: pull_request:' reaches every PR"
+
+f="$(helper_fixture reach-paths <<'FIX'
+name: f
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths: [internal/**]
+jobs: {}
+FIX
+)"
+helper_reach_is 11 "$f" "a paths:-filtered pull_request does NOT — and it is the LAST key in on:, so the filter is not read from a sibling trigger"
+
+f="$(helper_fixture reach-none <<'FIX'
+name: f
+on:
+  push:
+    branches: [main]
+jobs: {}
+FIX
+)"
+helper_reach_is 2 "$f" "a push-only workflow reaches no PR"
+
+f="$(helper_fixture wired-min <<'FIX'
+name: f
+on:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: gate
+        run: bash hack/lint/workflow_pins_test.sh
+FIX
+)"
+helper_wired_is 0 "$f" "$SELF_GATE" "a minimal wired step is accepted"
+helper_wired_is 5 "$f" "hack/audit/aud2_exitgate_test.sh" "a script the fixture does not run is reported absent"
+
+f="$(helper_fixture wired-comment <<'FIX'
+name: f
+on:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      # bash hack/lint/workflow_pins_test.sh
+      - name: gate
+        # run: bash hack/lint/workflow_pins_test.sh
+        run: echo hi
+FIX
+)"
+helper_wired_is 5 "$f" "$SELF_GATE" "a step that only MENTIONS the script in comments is reported absent"
+
 echo "== 5b. verify.yaml reaches EVERY pull request, unfiltered =="
 
 # Insert a filter directly under the `pull_request:` trigger key.
@@ -1146,9 +1241,13 @@ expect_green check_ci_wiring "$m" "the quoted '\"on\":' key (YAML 1.1 truthiness
 # another step's multi-command `run: |` body, where `echo skip && exit 0` a line
 # above would mean this gate never runs. Measured at rc=0 before the
 # restriction; the block form now counts only as a block's SOLE command.
+# The injected step is written here rather than appended to an existing one, so
+# this control depends on NO other step's contents — sibling lanes edit
+# verify.yaml's toolchain steps, and a mutation harness anchored on their text
+# would red for their reason instead of its own.
 m="$(mutant wiring-block-bleed)"
 mutate_awk "$m/verify.yaml" \
-  '{ if ($0 == "        run: bash hack/lint/workflow_pins_test.sh") next; print; if ($0 ~ /go test -count=2 \.\/internal\/render/) print "          bash hack/lint/workflow_pins_test.sh" }' \
+  '{ if ($0 == "        run: bash hack/lint/workflow_pins_test.sh") next; print; if ($0 == "    steps:" && !done) { print "      - name: unrelated"; print "        run: |"; print "          echo skip \&\& exit 0"; print "          bash hack/lint/workflow_pins_test.sh"; done = 1 } }' \
   '          bash hack/lint/workflow_pins_test.sh'
 bleed_real="$WORK/hits.bleed_real"
 grep -nF -- '        run: bash hack/lint/workflow_pins_test.sh' "$m/verify.yaml" >"$bleed_real" || true
