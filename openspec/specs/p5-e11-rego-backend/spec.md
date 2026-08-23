@@ -61,6 +61,16 @@ second tier real.
   the loader tier alongside CEL compilation; module *evaluation* is pure computation and may
   live in core only once S04's sandbox makes that true by construction.
 
+**Justification, post-S01 (D-156) — read this before adding anything to the epic.** S01 has
+landed and **narrowed E11**: `docs/planning/rego-tier-ceiling.md` strikes **cross-manifest**
+and **set-difference** from the four named shapes and strikes the named-intermediate half of
+**multi-pass**. What remains, and the only thing E11 may be justified or documented as
+delivering, is: **folds/aggregates over the in-input collections** (CEL has `size()` and no
+other aggregate) and **recursive/graph reasoning over data already inside `EvaluationInput`**.
+Cross-manifest reasoning is an *input-availability* limit, not a tier-1 expressiveness limit —
+REQ-E11-S05-01 pins the identical input, so the Rego tier fails on it identically. See the
+E11-S01 section for the verdict table and the binding consequences for S05/S07/S11/S12.
+
 **Scope**: (S00) the deterministic-budget feasibility spike, in a nested throwaway module so it
 adds no dependency; (S01) the tier-1 ceiling, recorded with concrete exceeding rules; (S02) additive
 `rego:` leaf in the policy schema; (S03) module loading + compile-time errors; (S04) OPA
@@ -271,7 +281,32 @@ human dependency.
   - Verify: manual review
   - Level: L0
 
-### E11-S01 — Record the tier-1 ceiling with concrete exceeding rules `[autonomous]`
+### E11-S01 — Record the tier-1 ceiling with concrete exceeding rules `[autonomous]` — ✅ **DONE (D-156)**
+
+**Outcome — E11's scope is NARROWED. Read `docs/planning/rego-tier-ceiling.md` before S05,
+S07 or S12.** Of the four shapes `later-phases.md` names, **two are struck outright, one is
+struck in part, and one and a half survive**:
+
+| Shape | Verdict | Reason (measured against `newEvalEnv`, not CEL in general) |
+| --- | --- | --- |
+| multi-pass — **fold/aggregate** over a collection | **EXCEEDS — justifies E11** | `sum`/`reduce`/`math.*`/`lists.*` are all `undeclared reference`; `size()` is the only aggregate in the surface, so counting is expressible and summing is not |
+| multi-pass — **named intermediate** across checks | **STRUCK** | no `cel.bind` and the assert tree combines booleans, not values — but re-deriving the sub-expression inside each leaf is semantically identical and compiles |
+| cross-manifest | **STRUCK (all three sub-shapes)** | membership is `x in facts.<p>.<n>.value`; keyed lookup is a purpose-built provider or `facts.<p>.<n>.value[key]` (compiles, lint-clean); **same-changeset cross-file is an input-availability limit, not an expressiveness one** — the evaluation unit is one file and REQ-E11-S05-01 pins the *identical* `EvaluationInput`, so a Rego module fails identically |
+| set-difference | **STRUCK**, conditional on **OQ-35** | `oldEntry.x.filter(a, !(a in entry.x))` expresses it; the residual is that `entry`/`oldEntry` bind whole-entry trees only under `assent test` (`adoptertest` is the sole writer of `EvalChange.Entry`) and fall back to a scalar on the `assent run` path |
+| graph-relationship | **EXCEEDS — justifies E11** | no recursion, fixpoint, fold or user-defined function; bounded unrolling answers a *different* rule and costs against the `1_000_000` budget. **Only for graphs already inside `EvaluationInput`** — a graph assembled from other files is the struck cross-manifest shape wearing a different hat |
+
+**Binding consequences for later stories:**
+- **S05** must **not** be widened to carry cross-manifest data. Widening the input is a
+  different decision from adding a backend, and E11's non-goals fence it.
+- **S07**'s violation shape must support a **fold result** (a computed scalar naming its
+  contributing elements) and a **path/cycle witness** — not a cross-manifest reference.
+- **S12** must not describe Rego as enabling cross-entry or cross-manifest checks. ADR-0002's
+  `rego` bullet currently calls it an "escape hatch for **cross-entry checks**"; that phrase is
+  inaccurate for the shipped input contract and correcting it is S12's, under REQ-E11-S12-01.
+- **S11**: the committed illustration `examples/policies/rego/bounded_change.rego` is
+  **entirely tier-1 expressible** (both `violations` rules are per-change predicates, and
+  `examples/policies/declarative/bounded-change.yaml` is the same rule in the envelope). When
+  the quarantine lifts it must be labelled a *shape* illustration, never evidence of need.
 
 - **Goal**: a written, reviewable statement of what CEL *cannot* express, grounded in real
   rules — the artifact D-017's evidence gate was protecting.
@@ -292,7 +327,12 @@ human dependency.
   - Level: L0
 - **REQ-E11-S01-02** — Given a shape might in fact be CEL-expressible, when the document is
   reviewed, then any shape found expressible in CEL is **struck from E11's scope** and
-  recorded — the epic narrows rather than building an unjustified tier.
+  recorded — the epic narrows rather than building an unjustified tier. **Satisfied by the
+  verdict table at the head of this section (D-156):** cross-manifest and set-difference are
+  struck, the named-intermediate half of multi-pass is struck, and only the fold/aggregate and
+  in-input graph shapes remain as justification. A shape struck because the *data* is absent
+  (cross-manifest sub-shape B3) is struck from E11 too, on the separate ground that Rego
+  receives the identical input and therefore fails identically.
   - Test: `docs/planning/rego-tier-ceiling.md`, `openspec/specs/p5-e11-rego-backend/spec.md`
   - Verify: manual review
   - Level: L0
