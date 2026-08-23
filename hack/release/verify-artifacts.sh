@@ -6,6 +6,27 @@
 #   hack/release/verify-artifacts.sh [--dist DIR] [--expected-version VERSION] [--require-signature]
 set -euo pipefail
 
+# BASH >= 4.0 REQUIRED, ASSERTED FIRST — before anything else can partially run (D-154).
+# The checksum walk below declares an associative array. Stock macOS /bin/bash is 3.2, which has
+# none. Today's literal is EMPTY, so 3.2 degrades it to `declare: -A: invalid option` and this
+# script's `set -e` turns that into exit 2 — it fails closed, but only INCIDENTALLY: populate the
+# literal, or drop `-e`, and it becomes the silent exit-0 fail-open D-154 records against
+# hack/docs/truthlag_pins_test.sh. The floor is therefore declared, not inferred from how one
+# construct happens to degrade. Behaviour change, stated: under 3.2 even `--help` now refuses.
+# The lib is resolved script-relative first, then from the enclosing git checkout: this file in
+# particular is executed as a mutated COPY out of a mktemp dir by
+# hack/release/install_cosign_pin_test.sh §5e-5g, where script-relative resolution cannot work.
+# Unresolvable => refuse, never proceed.
+_assent_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" 2>/dev/null && pwd || true)"
+[ -n "$_assent_lib" ] || _assent_lib="$(cd "$(git rev-parse --show-toplevel 2>/dev/null)/hack/lib" 2>/dev/null && pwd || true)"
+[ -r "${_assent_lib}/require-bash.sh" ] || {
+  echo "FAIL: $0 cannot locate hack/lib/require-bash.sh — refusing to run without its bash version floor (D-154)." >&2
+  exit 1
+}
+# shellcheck source=hack/lib/require-bash.sh
+. "${_assent_lib}/require-bash.sh" || exit 1
+require_bash 4.0 "declare -A (associative arrays)" || exit 1
+
 DIST="dist"
 EXPECTED_VERSION=""
 REQUIRE_SIGNATURE=0

@@ -30,6 +30,27 @@
 # paper-gate). Deleting that line from Taskfile.yml reddens the pin below.
 set -uo pipefail
 
+# BASH >= 4.0 REQUIRED, ASSERTED FIRST — before anything else can partially run (D-154).
+# The REQ-EX-S09-02 pins below build an associative array. Stock macOS /bin/bash is 3.2, which
+# has none: under `set -u` it re-reads the literal as an INDEXED array assignment, evaluates the
+# `[topics/]` subscript arithmetically, dies with "unbound variable" after 20 PASS lines, never
+# prints the final `OK:` banner — and EXITS 0. `task docs-gates`, and therefore `task check`,
+# read that as a green gate. AGENTS.md rule 4 makes a green local `task check` a per-commit
+# precondition, so this was a live LOCAL trust hole, not a theoretical one; CI is ubuntu/bash 5,
+# which is exactly why it survived. Measured; pinned by hack/lint/bash_version_guard_test.sh.
+# The lib is resolved script-relative first, then from the enclosing git checkout, because other
+# gates execute mutated COPIES of these scripts out of a mktemp dir (see the failure that shape
+# caused in hack/release/install_cosign_pin_test.sh §5g). Unresolvable => refuse, never proceed.
+_assent_lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" 2>/dev/null && pwd || true)"
+[ -n "$_assent_lib" ] || _assent_lib="$(cd "$(git rev-parse --show-toplevel 2>/dev/null)/hack/lib" 2>/dev/null && pwd || true)"
+[ -r "${_assent_lib}/require-bash.sh" ] || {
+  echo "FAIL: $0 cannot locate hack/lib/require-bash.sh — refusing to run without its bash version floor (D-154)." >&2
+  exit 1
+}
+# shellcheck source=hack/lib/require-bash.sh
+. "${_assent_lib}/require-bash.sh" || exit 1
+require_bash 4.0 "declare -A (associative arrays)" || exit 1
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
