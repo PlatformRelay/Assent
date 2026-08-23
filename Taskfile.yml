@@ -127,9 +127,12 @@ tasks:
       # SECURITY.md:61 publishes to release consumers — and it was invoked by
       # nothing: not check:, not CHECK_STAGES, not the push-only release-exitgate.
       # A gate invoked by nothing is not a gate (D-124). Placed with the other
-      # release-gate rows and BEFORE docs-gates because its `readme` mode reads
-      # hack/release/README.md, which docs-gates does not cover. Offline in the
-      # three modes wired above; see the task definition for why mode `all` is not.
+      # release-gate rows; position is not load-bearing (this stage reads no build
+      # output and nothing downstream reads its output), unlike dogfood-examples,
+      # which must follow build. Its `readme` mode covers hack/release/README.md,
+      # which docs-gates does not read at all — so that file's only pin is here.
+      # Offline in the three modes wired above; see the task definition for why
+      # mode `all` is not.
       - task: release-verify-test
       # D-124: the AUD-S06 docs truth-lag gates shipped green and invoked by nothing,
       # which is the same manual-gate defect they exist to close. Sequential (not a
