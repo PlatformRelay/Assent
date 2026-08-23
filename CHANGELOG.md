@@ -92,6 +92,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(e11): Shape D justifies E11 unconditionally — an encoded adjacency CEL cannot decode (F01)
 - :memo: docs(e11): Shape D rests on no-recursion alone — the decode barrier was false (F-01)
 - :memo: docs(e11): delete the false cost claim; reason 1 carries Shape D alone (F3-01)
+- :memo: docs(ci): D-159 recorded a residual that does not exist (ORPH-01..04)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
