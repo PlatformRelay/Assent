@@ -307,11 +307,20 @@ one_value() {
 # tree as it stands. Universal is also strictly stronger: it keeps holding when a
 # file grows a third, correctly pinned call.
 #
-# FAIL-CLOSED CLASSIFICATION. A candidate that is not at command position is only
-# waved through when it is a markdown inline-code mention (backticked). Anything
-# else — `foo && cosign verify-blob …`, a here-doc line, an un-backticked prose
-# sentence — is reported UNCLASSIFIABLE rather than skipped, because "this gate
-# cannot tell whether that call is pinned" must not read as "that call is fine".
+# CLASSIFICATION, AND WHERE IT IS *NOT* FAIL-CLOSED (R3-01 — read this before
+# trusting the exemption). A candidate that is not at command position is waved
+# through when the substring `cosign verify-blob` appears ANYWHERE ON THE LINE.
+# The test is that substring, not "the line is prose", and it runs BEFORE the
+# multi-token refusal below. So a line carrying a backticked mention AND one or
+# more LIVE calls is skipped, not graded and not refused — measured, with the full
+# gate green. On a line with NO backticked mention, anything not at command
+# position — `foo && cosign verify-blob …`, a here-doc line, an un-backticked
+# prose sentence — IS reported UNCLASSIFIABLE rather than skipped, because "this
+# gate cannot tell whether that call is pinned" must not read as "that call is
+# fine". That principle holds for those lines and is DEFEATED on a line that
+# carries a backticked mention; narrowing the exemption needs quote/markdown-aware
+# parsing, which is the machinery that produced UC-01/02/03, so it is recorded as
+# a stated residual and surfaced in the PASS banner rather than patched blind.
 #
 # STATED LIMIT, deliberately not closed here (same posture as D-154): the
 # denominator is the literal string `cosign verify-blob`. An invocation spelled
@@ -788,11 +797,16 @@ for target in "${GRADED[@]}"; do
   echo "OK: $label — an unquoted regexp is named as a QUOTING defect, not a wrong value (UC-03)"
 done
 
-# The prose escape hatch is NARROW: it is the backticks that make SECURITY.md's
-#     capability-table row a prose mention, not the words. Strip them and the same
-#     row must fail closed — otherwise "prose" is a blanket bypass an unpinned call
-#     could be written into.
-echo "== 2c. UNIV-COSIGN: the backticked-prose exemption is not a blanket bypass =="
+# The exemption is narrow IN ONE DIMENSION, and 2c grades exactly that one: it is
+# the BACKTICKS that exempt SECURITY.md's capability-table row, not the words.
+# Strip them and the same row must fail closed, so the exemption cannot be widened
+# to "any line mentioning cosign verify-blob" without this section reddening.
+#
+# IT IS NOT NARROW IN THE OTHER DIMENSION, and this section does NOT claim it is
+# (R3-01): the substring is looked for ANYWHERE on the line, so a line carrying a
+# backticked mention AND live calls is exempted. 2c grades the backticks-vs-words
+# axis; the same-line axis is an open residual, disclosed in the PASS banner.
+echo "== 2c. UNIV-COSIGN: the exemption keys on the BACKTICKS, not on the words =="
 grep -qF -- '`cosign verify-blob`' "$SECURITY" \
   || fail "SECURITY.md no longer contains a backticked \`cosign verify-blob\` prose mention — 2c grades an exemption that is no longer exercised, so it is decorative (re-point it at whatever prose mention exists, or delete the exemption)"
 prose_mutant="$WORK/SECURITY.prose-declassified.md"
@@ -1305,7 +1319,10 @@ for target in "${GRADED[@]}"; do
   label="${target%%:*}"
   n_c="$(grep -c . <"$WORK/cand.$label" | tr -d ' ')"
   n_i="$(grep -c . <"$WORK/inv.$label" | tr -d ' ')"
-  echo "    ${label}: ${n_c} \`cosign verify-blob\` occurrence(s) found — ${n_i} classified as invocations and GRADED, $((n_c - n_i)) exempted as backticked prose, 0 refused as unclassifiable"
+  # "exempted" is a fact about which branch the line took; calling it "prose" is an
+  # INFERENCE, and R3-01 shows it is the wrong one — an exempted line may still
+  # carry live calls. Report the branch, not the guess about what the line is.
+  echo "    ${label}: ${n_c} \`cosign verify-blob\` occurrence(s) found — ${n_i} classified as invocations and GRADED, $((n_c - n_i)) NOT GRADED (exempted because the line contains a backticked \`cosign verify-blob\` mention; such a line may still carry live calls — see residual (1)), 0 refused as unclassifiable"
 done
 echo "  ASSERTED, and each shown to FAIL on a mutant carrying the defect it exists to catch:"
 echo "    * every GRADED occurrence carries --certificate-oidc-issuer, --certificate-identity-regexp and --bundle,"
@@ -1317,8 +1334,19 @@ echo "    * a foreign-signed bundle fails closed on the adopter path with nothin
 echo "    * on the mutants section 2b builds, a second UNPINNED call reddens both on its own line and chained onto a"
 echo "      pinned one with && / ; / | (in the spellings 2b enumerates), while a second CORRECTLY pinned call does not."
 echo "  NOT ASSERTED — the residual, stated here rather than somewhere a reader will not look:"
-echo "    This gate finds calls by the literal string 'cosign verify-blob' and counts them as whitespace-delimited"
-echo "    words with shell quotes stripped. A call spelled through a variable, built by eval, or assembled from"
-echo "    fragments is NOT SEEN and therefore NOT GRADED. The counts above are what was classified — they are NOT"
-echo "    a proof that no other invocation exists in these files. Any line carrying more than one verify-blob token"
-echo "    is REFUSED (MULTI-OCCURRENCE), never graded on its first call."
+echo "    (1) THE BACKTICKED-MENTION EXEMPTION IS THE RESIDUAL THAT IS ACTUALLY REACHABLE. A candidate line that is"
+echo "        NOT at command position is exempted whenever the BACKTICK-DELIMITED substring (a backtick, then"
+echo "        cosign verify-blob, then a backtick) occurs ANYWHERE ON THE LINE. The test is that substring, NOT"
+echo "        that the line is prose, and it runs BEFORE the multi-token refusal in (3) and before the"
+echo "        UNCLASSIFIABLE fallback. So a line carrying BOTH such a mention AND one or more LIVE calls is"
+echo "        exempted and NOT GRADED, and neither of those two checks ever runs on it. Measured (R3-01), on"
+echo "        SECURITY.md and on a shell script; on the document the whole gate stays green, which is how it"
+echo "        was missed."
+echo "    (2) This gate finds calls by the literal string 'cosign verify-blob' and counts them as whitespace-delimited"
+echo "        words with shell quotes stripped. A call spelled through a variable, built by eval, or assembled from"
+echo "        fragments is NOT SEEN and therefore NOT GRADED. No such spelling is present in these three files today,"
+echo "        which makes this the LESS reachable residual of the two."
+echo "    (3) The counts above are what was classified — they are NOT a proof that no other invocation exists in"
+echo "        these files. A line AT COMMAND POSITION carrying more than one verify-blob token is REFUSED"
+echo "        (MULTI-OCCURRENCE), never graded on its first call; that refusal does NOT reach a line exempted"
+echo "        under (1), because the exemption is tested first."
