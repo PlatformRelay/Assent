@@ -112,12 +112,14 @@ repository still gets a decision, never by following the link; no release carrie
 - :lock: fix(release): widen the cosign identity pin to the real signer casing (SEC-03)
 - :lock: fix(provider): bound exec stdout, set WaitDelay, capture stderr
 - :lock: fix(release): pin cosign signer identity on the maintainer verify path (AUD2-F01)
+- :lock: fix(hack): refuse to run gate scripts under a too-old bash (BASH32-F01)
 
 ### Testing
 - :white_check_mark: test(cmd): assert the REL-03 error wrap as one contiguous substring
 - :test: test(compare): kill the surviving EffectChallenge intervention mutant (TEST-02)
 - :white_check_mark: test(audit): pin the AUD2 remediations behind a PR-visible exit gate
 - :white_check_mark: test(audit): assert verify.yaml still triggers on pull_request
+- :white_check_mark: test(hack): gate that hack/** bash 4+ features declare a floor (BASH32-F01)
 ## [0.3.0] - 2026-08-18
 
 ### Chores
