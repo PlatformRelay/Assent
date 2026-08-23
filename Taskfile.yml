@@ -135,6 +135,14 @@ tasks:
       # .github/workflows/**, so without this line an unpinned workflow is caught
       # only by CI — and only for as long as the CI step itself survives.
       - task: lint-workflow-pins-test
+      # BASH32-F01 / D-154: every hack/** script that uses a bash 4+ feature must
+      # declare a version floor. Without it, `hack/docs/truthlag_pins_test.sh` under
+      # stock macOS /bin/bash 3.2 died at its `declare -A` and EXITED 0 — the
+      # docs-gates stage above read that as green while almost nothing had been
+      # checked. Nothing in CI can see this (ubuntu is bash 5), which is why it
+      # survived; the gate is cheap and offline, and its behavioural control runs
+      # only where a bash 3.2 exists and says so loudly when it skips.
+      - task: lint-bash-version-guard-test
       # EX-S08 (REQ-EX-S08-03): the dogfood-examples gate's own guard. Without
       # this, deleting `- task: dogfood-examples` from check: above passes
       # every wired gate — the same manual-gate defect D-124 closed elsewhere.
@@ -164,6 +172,11 @@ tasks:
     desc: "AUD-S09/S14 gate: workflow supply-chain pins are present and the checks can fail (REQ-AUD-S09-01, REQ-AUD-S14-01/02)"
     cmds:
       - bash hack/lint/workflow_pins_test.sh
+
+  lint-bash-version-guard-test:
+    desc: "BASH32-F01 gate: every hack/** script using a bash 4+ feature declares a sufficient bash version floor (D-154)"
+    cmds:
+      - bash hack/lint/bash_version_guard_test.sh
 
   lint-depguard-test:
     desc: "AUD-S07 gate: adversarial proof the D-123 depguard boundary rules fire (REQ-AUD-S07-01)"

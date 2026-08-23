@@ -143,6 +143,11 @@ CHECK_STAGES=(
   docs-gates
   lint-depguard-test
   lint-workflow-pins-test
+  # BASH32-F01 (D-154): the bash-version-floor gate. Added in the same commit as
+  # its `check:` line — hack/docs/truthlag_pins_test.sh exited 0 under stock macOS
+  # bash 3.2 after dying at its `declare -A`, so `task check` was locally green
+  # while certifying almost nothing, and no CI lane can see that (ubuntu is bash 5).
+  lint-bash-version-guard-test
   dogfood-wiring-test
   ci-audit-test
   # AUD2-S05 (REQ-AUD2-S05-03): the P5-AUD2 exit gate — the four 2026-08-18
@@ -181,6 +186,7 @@ STAGE_BODY_PINS=(
   'coverage|min="{{.COVERAGE_MIN}}"|an unrendered or dropped threshold makes the awk compare against 0 and admit anything (D-128)'
   'lint-workflow-pins-test|bash hack/lint/workflow_pins_test.sh|a wired stage with a gutted body is the same defect one level down'
   'ci-audit-test|bash hack/release/ci_audit_test.sh|a wired stage with a gutted body is the same defect one level down'
+  'lint-bash-version-guard-test|bash hack/lint/bash_version_guard_test.sh|a wired stage with a gutted body is the same defect one level down (BASH32-F01)'
 )
 
 # (6) Immutable base ref for the schema freeze. Overridable only to move it
