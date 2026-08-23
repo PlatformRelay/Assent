@@ -2264,9 +2264,22 @@ done < <(assent_pr_gate_others "$SELF")
 # body, where `echo skip && exit 0` a line above would mean this gate never
 # runs. Measured at rc=0 before the restriction; the block form now counts only
 # as a block's SOLE command.
+# The injected step is written here rather than appended to an existing one, so
+# this control depends on NO other step's contents — sibling lanes edit
+# verify.yaml's toolchain steps, and a mutation harness anchored on their text
+# would red for their reason instead of its own.
 m="$WORK/verify.blockbleed.yaml"
 grep -vF "run: bash $SELF" "$WORKFLOW" \
-  | awk -v s="$SELF" '{ print } /go test -count=2 \.\/internal\/render/ { print "          bash " s }' >"$m"
+  | awk -v s="$SELF" '
+      { print }
+      $0 == "    steps:" && !done {
+        print "      - name: unrelated"
+        print "        run: |"
+        print "          echo skip \&\& exit 0"
+        print "          bash " s
+        done = 1
+      }
+    ' >"$m"
 assert_changed "$WORKFLOW" "$m"
 [[ "$(grep -cF "bash $SELF" "$m")" == "1" ]] ||
   fail "mutation harness: expected exactly one 'bash $SELF' occurrence in the bleed mutant"

@@ -134,6 +134,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(hack): close two gate fail-opens found by review (BASH32-F01)
 - :white_check_mark: test(ci): wire release-verify-test into task check (D-159)
 - :white_check_mark: test(ci): share PR-reach and cross-pin the three PR-visible gates (D-157)
+- :white_check_mark: test(ci): grade the shared PR-reach helper itself, on fixtures (D-157)
 ## [0.3.0] - 2026-08-18
 
 ### Chores
