@@ -1377,6 +1377,62 @@ FIX
 )"
 helper_wired_is 7 "$V" "$SELF_GATE" "…and the bare '- run:' form is still graded for ARGUMENTS, not merely admitted (G3R-03)"
 
+# G4-01 — a stray CR on a sequence-item line. These fixtures are built with
+# printf rather than a heredoc because the CR has to be a REAL byte: that is
+# the whole point of the defect. A single committed CR was enough (no
+# .gitattributes here, core.autocrlf=false preserves it, no gate scans for it,
+# and a GitHub diff renders it invisibly), and it made `branches-ignore:` — the
+# ONE must-NOT-contain test in this reader — report "runs on every pull
+# request" for a trigger that EXCLUDES main. Measured rc=0 at 54de1a4; both
+# earlier readers said 13, so it was a regression the round-3 tokenizer
+# introduced. Both polarities are pinned at every consumer, because the CR also
+# caused FALSE REDS on `branches:` and `types:` and a fix for one direction is
+# not a fix for the other.
+cr_fixture() { # <name> <key> <item> — the item line carries a CR
+  local f="$WORK/fixture.$1.yaml"
+  {
+    printf 'name: f\non:\n  pull_request:\n    %s:\n' "$2"
+    printf '      - %s\r\n' "$3"
+    printf 'jobs: {}\n'
+  } >"$f"
+  grep -q "$(printf '\r')" "$f" ||
+    fail "fixture $1 carries no CR — the case it exists to cover is not present, so the assertion below would be vacuous"
+  printf '%s' "$f"
+}
+
+V="$(cr_fixture bi-cr-bad branches-ignore main)"
+helper_reach_is 13 "$V" "branches-ignore: '- main' with a CR still EXCLUDES main (G4-01 — THE fail-open: rc=0 at 54de1a4, on a trigger under which no PR onto main runs the workflow)"
+
+V="$(cr_fixture bi-cr-legit branches-ignore gh-pages)"
+helper_reach_is 0 "$V" "branches-ignore: '- gh-pages' with a CR is still accepted — the CR fix is not comment-hostile in the other direction (G4-01)"
+
+V="$(cr_fixture br-cr-legit branches main)"
+helper_reach_is 0 "$V" "branches: '- main' with a CR is still accepted (G4-01 — this was a FALSE RED at 54de1a4, the fail-closed half of the same defect)"
+
+V="$(cr_fixture br-cr-bad branches release)"
+helper_reach_is 13 "$V" "branches: '- release' with a CR still excludes main (G4-01, bad polarity)"
+
+V="$WORK/fixture.types-cr.yaml"
+{
+  printf 'name: f\non:\n  pull_request:\n    types:\n'
+  printf '      - opened\r\n'
+  printf '      - synchronize\n      - reopened\n'
+  printf 'jobs: {}\n'
+} >"$V"
+helper_reach_is 0 "$V" "types: with a CR on one item still reads the full default set (G4-01 — a false red at 54de1a4)"
+
+# The structural half, and the reason this round is not a third character-class
+# patch: on the ONE must-NOT-contain key, a token carrying a byte the reader
+# does not understand is REFUSED rather than searched. A future tokenizer
+# defect there can then produce a red or a refusal, never a silent accept.
+V="$WORK/fixture.bi-unreadable.yaml"
+{
+  printf 'name: f\non:\n  pull_request:\n    branches-ignore:\n'
+  printf '      - ma\001in\n'
+  printf 'jobs: {}\n'
+} >"$V"
+helper_reach_is 10 "$V" "a branches-ignore: token carrying an unreadable byte is REFUSED, not searched — the fail-open direction is now closed by construction rather than by enumerating bytes (G4-01)"
+
 f="$(helper_fixture wired-comment <<'FIX'
 name: f
 on:

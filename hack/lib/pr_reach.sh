@@ -47,12 +47,40 @@
 #     under `set -o pipefail`); matches go to a file, the file is inspected.
 #   * `set -e` safe: no bare `[[ ... ]] && return N` tails.
 #
-# WHAT THIS IS NOT. It is a line-oriented reader with a structural bias, not a
-# YAML parser. It understands block mappings at 2/4/6-space indent, block
-# sequences, and inline flow SEQUENCES. It does NOT understand anchors, aliases,
-# merge keys, or flow MAPPINGS, and it refuses (fails closed, with a distinct
-# code) rather than guessing when it meets one. Stated here rather than
-# discovered later: an honest narrow gate beats an overreaching one.
+# WHAT THIS IS NOT, and WHY IT STAYS THAT WAY. It is a line-oriented reader
+# with a structural bias, not a YAML parser. Four review rounds produced six
+# defects of one family — structure inferred from indentation and character
+# classes — so a real parse was evaluated rather than assumed. It was REJECTED
+# on measurement:
+#
+#   * `python3` is an established dependency of this repo
+#     (hack/validate-schemas-stock.sh) but it uses `json` ONLY, which is stdlib.
+#     PyYAML is established nowhere here.
+#   * hack/audit/README.md PUBLISHES `docker run --rm -v "$PWD:$PWD" -w "$PWD"
+#     debian:stable-slim bash hack/audit/aud2_exitgate_test.sh --text-only` as
+#     the offline verification path. That image was measured to contain no
+#     python3 and no yq — and both that gate (51 controls) and
+#     workflow_pins_test.sh were measured GREEN inside it with this file
+#     sourced. A PyYAML reader would break a published operator path.
+#   * Go is absent from that image too, and this reader runs in the CI step
+#     BEFORE actions/setup-go, by design.
+#
+# So the bound is stated here rather than discovered in a sixth round.
+#
+# READS: block mappings at any indent; block sequences whether their items are
+# indented under the key or written FLUSH with it; inline flow SEQUENCES;
+# quoted scalars; CRLF line endings.
+# REFUSES (distinct code, never a guess): flow MAPPINGS, anchors, aliases,
+# merge keys, filter keys outside GitHub's five, and — on the one
+# must-NOT-contain test — any token carrying a byte outside the ref/glob set.
+# DOES NOT READ: multi-line flow sequences (refused), and `strategy:`/matrix,
+# reusable-workflow `uses:` jobs and container entrypoints in the step reader.
+#
+# The safety argument does NOT rest on that list being complete. Every filter
+# test here is "must CONTAIN token X" except `branches-ignore:`, so a misread
+# yields a RED everywhere but there — and there, an unreadable token is refused
+# rather than searched. Unknown shapes therefore cost false reds, not silent
+# passes. An honest narrow gate beats an overreaching one.
 
 # The three PR-visible text gates, single-sourced so each can cross-pin the
 # others (D-157 residual 2: before this, each gate pinned only its OWN step, so
@@ -108,8 +136,8 @@ _assent_strip_comment() {
 }
 
 # _assent_yaml_tokens — split a value region into tokens on the YAML separators
-# separators (flow brackets/braces, commas, quotes, the `- ` sequence marker,
-# whitespace) and on nothing else.
+# (flow brackets/braces, commas, quotes, the `- ` sequence marker, whitespace)
+# and on nothing else.
 #
 # G3R-02: this replaced `tr -c 'A-Za-z0-9_' '\n'`, which ALSO split on `-` and
 # `/`. `branches: [main-next]` therefore yielded a `main` token, and a filter
@@ -119,13 +147,59 @@ _assent_strip_comment() {
 # [maintenance]` reddened correctly the whole time, which is exactly why the
 # defect survived review: only the values that contain `main` as a SUBSTRING
 # broke, and those are the ones that look right.
+#
+# G4-01: CR is stripped FIRST. It is a YAML break character, so `main<CR>` is
+# not a whole token — but the round-3 tokenizer emitted it as one, `grep -qx
+# main` missed it, and a `branches-ignore:` that EXCLUDES main reported "runs
+# on every pull request" (measured rc=0; the round-1 and round-2 readers both
+# said 13, so this was a regression introduced by the round-3 fix). One stray
+# CR on one committed line is enough: there is no `.gitattributes` here,
+# `core.autocrlf=false` preserves a committed CR, no gate scans workflows for
+# CR, and a GitHub diff renders it invisibly.
 _assent_yaml_tokens() {
-  sed -e 's/^[[:space:]]*-[[:space:]]*/ /' \
-    -e 's/[][{},]/ /g' \
-    -e 's/["'"'"']/ /g' \
+  tr -d '\r' \
+    | sed -e 's/^[[:space:]]*-[[:space:]]*/ /' \
+      -e 's/[][{},]/ /g' \
+      -e 's/["'"'"']/ /g' \
     | tr '\t' ' ' \
     | tr ' ' '\n' \
     | grep -v '^$' || true
+}
+
+# _assent_tokens_readable <token-file> — 0 when every token is built only from
+# characters this reader claims to understand, 1 otherwise.
+#
+# THE STRUCTURAL POINT, and the reason this exists instead of a third
+# character-class patch. Two of this lane's five P1s (G3R-02's `-`//` split,
+# G4-01's CR) are one defect wearing two costumes: a byte the tokenizer had not
+# been taught about silently CHANGED a token rather than stopping the reader.
+# Patching the byte closes the instance and leaves the class, and the next
+# unenumerated byte is another review round.
+#
+# The direction that can actually hurt is narrow and known. Every filter test
+# here is "must CONTAIN token X" — types must carry GitHub's defaults, branches
+# must carry main — EXCEPT one: `branches-ignore:` must NOT contain main. A
+# misread drops or mangles a token, so a must-CONTAIN test goes RED: annoying,
+# and fail-closed. Only the must-NOT-contain test turns a mangled token into a
+# silent PASS. That is the same asymmetry G3-04 records for comment stripping,
+# and it is structural rather than incidental.
+#
+# So the burden is inverted exactly there: a token carrying any byte outside the
+# git-ref/glob set is not graded at all, it is REFUSED. A future tokenizer
+# defect on that key can then yield a red or a refusal, never a silent accept —
+# by construction rather than by enumeration.
+# The set: what a git ref name or a glob can be built from, plus `#`. The `#`
+# is not an oversight — this key alone passes strip=0 (G3-04), so ordinary
+# comment text is EXPECTED to survive into its tokens and is not evidence of a
+# misread. Comment residue carrying anything more exotic than `#` refuses
+# rather than grades, which is the safe direction and the deliberate bound.
+_assent_tokens_readable() {
+  local bad="$1.unreadable"
+  grep -vE '^[A-Za-z0-9_./*+#-]+$' "$1" >"$bad" || true
+  if [[ -s "$bad" ]]; then
+    return 1
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -331,6 +405,12 @@ assent_pr_reach() {
     # Unstripped, a comment that merely mentions main reds, which is the
     # harmless direction.
     _assent_key_tokens "$prblk" branches-ignore 0 >"$bitoks"
+    # G4-01, the structural half: this is the reader's ONLY must-NOT-contain
+    # test, hence the only place a mangled token can become a silent accept.
+    # An unreadable token set is refused, never searched.
+    if ! _assent_tokens_readable "$bitoks"; then
+      return 10
+    fi
     if grep -qx 'main' "$bitoks"; then
       return 13
     fi
