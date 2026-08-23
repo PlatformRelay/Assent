@@ -591,7 +591,7 @@ LGTM** (published contract + the decision path itself). Independent of E10; may 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
 | E11-S00 | ⚠️ **SPIKE, do first**: does OPA expose a deterministic (non-wall-clock) eval budget? Nested throwaway module — root `go.mod` unchanged | **[autonomous · spike]** | none | if not, S06 stalls the epic *after* S02+S03 commit |
-| E11-S01 | Record the tier-1 (CEL) ceiling with concrete exceeding rules | **[autonomous]** | none | **do first** — a CEL-expressible shape is struck from scope |
+| E11-S01 | ✅ **DONE (D-156)** — tier-1 (CEL) ceiling recorded: `docs/planning/rego-tier-ceiling.md` | **[autonomous]** | none | **E11 NARROWED**: cross-manifest + set-difference **struck**; only fold/aggregate + in-input graph survive. Cross-manifest is an *input* limit S05's identical `EvaluationInput` does not lift. Residuals OQ-35/OQ-36 |
 | E11-S02 | ⚠️ Additive `rego:` leaf in the policy schema (announced, no `apiVersion` bump) | **[autonomous · engine-grade · LGTM]** | **S00**, S01 | drift guard scoped; both polarities tested |
 | E11-S03 | 🔴 Module loading from the **target ref**; compile failure is a lint hard error — **blocked on the operator's rule-7 answer (d1/d2)**: this story adds OPA to `go.mod` inside the guarded tree | **[autonomous · engine-grade · LGTM]** | S02 + operator | no second, laxer load path; transitive purity guard under (d1) |
 | E11-S04 | 🔴 OPA capability sandbox — **blocked on the operator's rule-7 *mechanism* answer (d1 vs d2)**; "accept and pin" settled only the supply-chain half | **[autonomous · engine-grade · LGTM]** | S03 + operator | both purity gates are non-transitive; see D-141 |
