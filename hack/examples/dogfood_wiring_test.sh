@@ -593,6 +593,117 @@ FIX
 )"
 helper_wired_is 8 "$m" "$SELF_REL" "a step whose FIRST key is 'continue-on-error:' is DISARMED (G3-02)"
 
+# G3R-01/G3R-02/G3R-03 — the shapes the round-2 fixture set still could not
+# see. Round 2 closed the CODE-coverage complaint (every reach and wired code
+# got a fixture) but wrote every one of them at 4 or 6 spaces with sequence
+# items indented DEEPER than their key, so it reproduced the same indentation
+# blind spot somewhere cheaper. FLUSH block sequences — the canonical GitHub
+# Actions style, item at the same indent as the key — are covered here, in both
+# polarities, because that is the style a maintainer is most likely to write.
+V="$(helper_fixture reach-flush-legit <<'FIX'
+name: f
+on:
+  pull_request:
+    types:
+    - opened
+    - synchronize
+    - reopened
+    - ready_for_review
+    branches:
+    - main
+jobs: {}
+FIX
+)"
+helper_reach_is 0 "$V" "a FULLY legitimate trigger with both filters as FLUSH block sequences is accepted (G3R-01 — this returned 10, refusing valid structure, and 12 before the allowlist existed)"
+
+V="$(helper_fixture reach-flush-bi-legit <<'FIX'
+name: f
+on:
+  pull_request:
+    branches-ignore:
+    - gh-pages
+jobs: {}
+FIX
+)"
+helper_reach_is 0 "$V" "branches-ignore: as a FLUSH block sequence sparing main is accepted (G3R-01 — the case the key allowlist actively BROKE: 0 before it, 10 after)"
+
+V="$(helper_fixture reach-flush-bad <<'FIX'
+name: f
+on:
+  pull_request:
+    branches:
+    - release
+jobs: {}
+FIX
+)"
+helper_reach_is 13 "$V" "a FLUSH branches: that excludes main still reds — the fix reads flush sequences, it does not wave them through"
+
+V="$(helper_fixture reach-substring-branch <<'FIX'
+name: f
+on:
+  pull_request:
+    branches: [main-next]
+jobs: {}
+FIX
+)"
+helper_reach_is 13 "$V" "branches: [main-next] excludes main (G3R-02 — the tokenizer split on '-', yielded a 'main' token, and reported 'runs on every PR' for a filter under which no PR onto main runs it)"
+
+V="$(helper_fixture reach-substring-path <<'FIX'
+name: f
+on:
+  pull_request:
+    branches: ['release/main']
+jobs: {}
+FIX
+)"
+helper_reach_is 13 "$V" "branches: ['release/main'] excludes main — same defect through '/' (G3R-02)"
+
+V="$(helper_fixture reach-maintenance <<'FIX'
+name: f
+on:
+  pull_request:
+    branches: [maintenance]
+jobs: {}
+FIX
+)"
+helper_reach_is 13 "$V" "the control that kept G3R-02 hidden: [maintenance] reddened correctly all along, because only values containing 'main' as a SUBSTRING broke"
+
+V="$(helper_fixture reach-main-exact <<'FIX'
+name: f
+on:
+  pull_request:
+    branches: [main]
+jobs: {}
+FIX
+)"
+helper_reach_is 0 "$V" "…and the tokenizer fix did not make the match hostile: an exact [main] is still accepted"
+
+V="$(helper_fixture wired-bare-run <<'FIX'
+name: f
+on:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bash hack/examples/dogfood_wiring_test.sh
+FIX
+)"
+helper_wired_is 0 "$V" "$SELF_REL" "a step written as a bare '- run:' with no name: is WIRED (G3R-03 — the sequence-item form verify.yaml already uses three times, which reported rc=5 'deleted, commented out': a false red with a wrong diagnosis)"
+
+V="$(helper_fixture wired-bare-run-args <<'FIX'
+name: f
+on:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - run: bash hack/examples/dogfood_wiring_test.sh --quick
+FIX
+)"
+helper_wired_is 7 "$V" "$SELF_REL" "…and the bare '- run:' form is still graded for ARGUMENTS, not merely admitted (G3R-03)"
+
 m="$(helper_fixture wired-comment <<'FIX'
 name: f
 on:
