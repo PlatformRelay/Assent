@@ -81,6 +81,30 @@ Three of the verdicts below turn on this distinction, so it is stated once, up f
   `single | set`. There is **no declarable object/map type**. A fact whose value is a mapping
   is undeclarable, whichever backend reads it. (See residual OQ-36.)
 
+### 1.3 On the `assent run` path, almost every binding is a **scalar**
+
+This is measured, and it decides two of the five verdicts below. `assent run` diffs the
+governed file in **document mode** (`changeSetForGoverned` → `change.Diff`), and document-mode
+`walkNode` emits a `Change` **only where two scalars differ**: a sequence on either side, or a
+map-vs-non-map type flip, returns a reason → the whole ChangeSet is **opaque** → fail-safe
+REVIEW (`internal/change/diff.go`, `walkNode` and the `vSequence` leaf marker). Collection mode
+(`DiffEntries`, which projects sequence elements) is reached **only** from
+`internal/adoptertest`; `cmd/` references it nowhere.
+
+Consequently, in production:
+
+| Binding | Shape on the `assent run` path |
+| --- | --- |
+| `old`, `new` | always a **scalar** (`DecodeCanonical` of a scalar render) |
+| `entry`, `oldEntry` | the same scalars — `EvalChange.Entry` is `json:"-"`, in-memory only, and `internal/adoptertest/entrytree.go` `populateEntries` is its **sole writer** (OQ-35) |
+| `changes[i].old`, `changes[i].new` | always scalars, for one file |
+| `facts.<p>.<n>.value` | a scalar, or a flat list of scalars under `cardinality: set`. Anything richer is undeclarable (§1.2, OQ-36) |
+| `mr.labels` | a flat list of strings |
+
+So the **only** value-tree-shaped binding a production rule can navigate is a fact value, and
+the frozen declaration cannot describe one. Under `assent test` the picture is different —
+which is the whole of OQ-35.
+
 ---
 
 ## 2. Shape A — multi-pass
@@ -269,16 +293,22 @@ error → `predicate.error` → REVIEW. The same rule passes in `assent test` an
 REVIEW in production. That asymmetry is fail-safe, so it is not urgent, but it is real and it
 is **not E11-S01's to decide** — raised as **OQ-35**.
 
-**Why this shape must not be struck quietly.** Striking it on the strength of the *test-harness*
-binding would remove backend justification for a capability production does not have, and it
-propagates straight into S05's input binding and S07's violation shape. The verdict here is
-therefore: **struck as expressiveness, conditional on OQ-35** — if the operator resolves OQ-35
-by removing the entry binding rather than extending it to `assent run`, this shape returns to
-the ceiling and E11's scope reopens by one shape.
+**Why the strike is nonetheless unconditional.** Apply the §1.2 test to both resolutions of
+OQ-35 and they converge:
+
+- if OQ-35 is resolved by **extending** the entry binding to `assent run`, the leaf above works
+  in production and the shape is struck because **CEL expresses it**;
+- if OQ-35 is resolved by **narrowing** the documented contract to the scalar binding, the
+  shape fails for **input availability** — there is no entry tree in `EvaluationInput` — and
+  REQ-E11-S05-01 hands a Rego module that identical input, so **Rego fails identically**.
+
+Either way the shape does not justify a second backend, so it is struck outright and nothing
+downstream is left waiting on OQ-35. What OQ-35 *does* decide is whether the shape is writable
+at all, which is a test/production-parity question, not a backend question.
 
 ---
 
-## 5. Shape D — graph relationship — **EXCEEDS TIER 1 (with a data caveat)**
+## 5. Shape D — graph relationship — **EXCEEDS TIER 1, but justifies E11 only contingently**
 
 **Rule (generic).** A service manifest may not declare a dependency that is **transitively**
 reachable back to itself — no dependency cycles at any depth.
@@ -302,11 +332,23 @@ shortest path, ancestor-of, strongly-connected component, topological order.
 **Why Rego lifts it.** Recursive rule definitions over `input` are the canonical Rego idiom, and
 they need no I/O and no data beyond the input. This is the second genuine tier-2 justification.
 
-**Caveat, stated so it cannot be over-claimed.** This shape only justifies E11 when the graph is
-**already inside `EvaluationInput`** — i.e. the adjacency lives in the governed entry tree
-(`entry.dependsOn`), in `changes`, or in a single fact value. A dependency graph assembled from
-*other files* is Shape B3 wearing a different hat, and Rego does not lift that (§1.2). E11 must
-be justified on the in-input form only.
+**The contingency — the §1.2 test applied to this shape, not only to B3.** A recursive rule
+still needs its adjacency **inside `EvaluationInput`**, and on the shipped `assent run` path
+there is currently no in-contract home for one (§1.3):
+
+- `entry.dependsOn` — an entry tree is bound only under `assent test` (**OQ-35**);
+- `changes` — a flat list of scalar deltas for one file, never a full adjacency, and a
+  sequence-valued field makes the ChangeSet opaque → REVIEW before any rule runs;
+- a single fact value — a `cardinality: set` fact is a flat list of scalars; a mapping-valued
+  fact, which an adjacency needs, is undeclarable (**OQ-36**);
+- a graph assembled from *other files* is Shape B3 wearing a different hat, and Rego does not
+  lift that.
+
+The **verdict** is unaffected — CEL has no recursion wherever the data sits. What is affected is
+whether this shape justifies **building E11 now**: by the same reasoning that struck B3, a shape
+whose data cannot be in the input is unbuildable at *either* tier. So **D justifies E11 only
+once OQ-35 or OQ-36 supplies an in-contract home for the adjacency.** Until then E11's
+unconditional justification is A1 alone.
 
 ---
 
@@ -319,12 +361,14 @@ be justified on the in-input form only.
 | B1 registry membership | **STRUCK** | `x in facts.<p>.<n>.value` over a `set` fact; already shipped in the corpus |
 | B2 keyed attribute lookup | **STRUCK** | purpose-built provider, or `facts.<p>.<n>.value[key]` (compiles, lint-clean); residual OQ-36 |
 | B3 same-changeset cross-file | **STRUCK from E11** | input availability, not expressiveness — the evaluation unit is one file and S05 pins the identical input, so Rego fails identically |
-| C set difference | **STRUCK** (conditional on OQ-35) | `oldEntry.x.filter(a, !(a in entry.x))` expresses it; the residual is an `assent run` vs `assent test` binding-parity defect |
-| D graph relationship | **EXCEEDS — justifies E11** | no recursion/fixpoint/fold; bounded unrolling is a different rule and costs against the budget. Only for graphs already in the input |
+| C set difference | **STRUCK — unconditionally** | `oldEntry.x.filter(a, !(a in entry.x))` expresses it if the entry tree is bound; if it is not, the failure is input availability and Rego fails identically. Both resolutions of OQ-35 strike it |
+| D graph relationship | **EXCEEDS — justifies E11 only contingently** | no recursion/fixpoint/fold, so the verdict is unconditional; but on the run path there is no in-contract home for an adjacency (§1.3), so building on it waits on **OQ-35 or OQ-36** |
 
 **What E11 is now justified to build:** a tier-2 backend for **folds/aggregates over the
-in-input collections** and **recursive/graph reasoning over data already in
-`EvaluationInput`**. Nothing else in this record supports it.
+in-input collections** — unconditionally — plus **recursive/graph reasoning**, *contingent* on
+OQ-35 or OQ-36 supplying an in-contract place for the adjacency to live. Nothing else in this
+record supports it. **On today's shipped input contract, A1 is the only unconditional
+justification for the entire epic**, and that is the honest headline of this record.
 
 **What E11 is no longer justified to claim:** cross-manifest reasoning of any kind, set
 operations over entry trees, and "reuse a computed intermediate". Two of the four shapes
@@ -354,8 +398,8 @@ evidence that the tier is needed.
 
 | Ref | Question |
 | --- | --- |
-| **OQ-35** | `entry`/`oldEntry` bind whole-entry trees only under `assent test`; `assent run` falls back to the scalar. Extend the binding to the run path, or narrow the documented contract? Gates whether Shape C stays struck. |
-| **OQ-36** | The frozen provider declaration has no object/map type, yet the authoring surface and `builtin/repo-file` together permit a mapping-valued fact and dynamic navigation into it. Is a mapping-shaped fact value in-contract? |
+| **OQ-35** | `entry`/`oldEntry` bind whole-entry trees only under `assent test` (and only there is collection-mode diffing reached at all); `assent run` falls back to the scalar. Extend the binding to the run path, or narrow the documented contract? Does **not** gate Shape C — both resolutions strike it — but with OQ-36 it gates whether **Shape D** can justify building E11. |
+| **OQ-36** | The frozen provider declaration has no object/map type, yet the authoring surface and `builtin/repo-file` together permit a mapping-valued fact and dynamic navigation into it. Is a mapping-shaped fact value in-contract? With OQ-35, decides whether an adjacency has any in-contract home (§1.3, §5). |
 
 Neither is the escalated judgment call (d) (rule-7 mechanism, (d1) vs (d2)); that question is
 untouched by this record, which writes no Go and adds no dependency.
