@@ -107,6 +107,27 @@ _assent_strip_comment() {
   sed -e 's/[[:space:]]#.*$//' -e 's/^#.*$//'
 }
 
+# _assent_yaml_tokens — split a value region into tokens on the YAML separators
+# separators (flow brackets/braces, commas, quotes, the `- ` sequence marker,
+# whitespace) and on nothing else.
+#
+# G3R-02: this replaced `tr -c 'A-Za-z0-9_' '\n'`, which ALSO split on `-` and
+# `/`. `branches: [main-next]` therefore yielded a `main` token, and a filter
+# under which NO pull request onto main runs the workflow was reported as
+# "runs on every pull request" — measured rc=0, and likewise for
+# `branches: ['release/main']` and a `- main-v2` item. `branches:
+# [maintenance]` reddened correctly the whole time, which is exactly why the
+# defect survived review: only the values that contain `main` as a SUBSTRING
+# broke, and those are the ones that look right.
+_assent_yaml_tokens() {
+  sed -e 's/^[[:space:]]*-[[:space:]]*/ /' \
+    -e 's/[][{},]/ /g' \
+    -e 's/["'"'"']/ /g' \
+    | tr '\t' ' ' \
+    | tr ' ' '\n' \
+    | grep -v '^$' || true
+}
+
 # ---------------------------------------------------------------------------
 # assent_pr_reach <workflow-file> <scratch-dir>
 #
@@ -162,7 +183,9 @@ assent_pr_reach() {
         # A flow SEQUENCE of event names. It cannot carry paths/types/branches,
         # so membership is the whole question.
         local seq
-        seq="$(printf '%s' "$onvalue" | tr -c 'A-Za-z0-9_' '\n' | grep -x 'pull_request' || true)"
+        # Same tokenizer, same reason (G3R-02): splitting on `-` would let a
+        # value that merely CONTAINS the event name satisfy an exact match.
+        seq="$(printf '%s' "$onvalue" | _assent_yaml_tokens | grep -x 'pull_request' || true)"
         if [[ -n "$seq" ]]; then
           return 0
         fi
@@ -249,7 +272,12 @@ assent_pr_reach() {
   # flags. Guessing is the wrong answer to both.
   local prkeys="$work/pr_reach.pr_keys"
   awk '
-    { if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*#/) next
+    # G3R-01: a `- item` line is never a KEY, whatever its indent. A flush
+    # block sequence puts its items at the same indent as the key, so without this
+    # they were enumerated as sub-block keys, failed the allowlist and returned
+    # 10 — refusing valid, legitimate structure (and turning a pre-existing
+    # rc=0 into a red, the one case the allowlist made worse).
+    { if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*#/ || $0 ~ /^[[:space:]]*-[[:space:]]/) next
       match($0, /^[ ]*/)
       if (min == 0 || RLENGTH < min) min = RLENGTH
       ind[NR] = RLENGTH; line[NR] = $0 }
@@ -333,14 +361,24 @@ _assent_key_tokens() {
     ink {
       if ($0 ~ /^[[:space:]]*$/) next
       match($0, /^[ ]*/)
-      if (RLENGTH <= ind) { ink = 0; next }
-      print
+      if (RLENGTH > ind) { print; next }
+      # G3R-01: a block sequence item may sit at the SAME INDENT as its key — the
+      # canonical GitHub Actions style, and the one every fixture in this repo
+      # happened not to use:
+      #     branches:
+      #     - main
+      # The old bound was `RLENGTH <= ind -> stop`, so the items were never
+      # read: `branches: / - main` yielded no `main` token and returned 13,
+      # "excludes main", on a filter that includes it. Measured on this file at
+      # 4d592fe, i.e. INDEPENDENTLY of the key allowlist added later.
+      if (RLENGTH == ind && $0 ~ /^[[:space:]]*-[[:space:]]/) { print; next }
+      ink = 0
     }
   ' "$blk" >"$raw"
   if [[ "$strip" == "1" ]]; then
-    _assent_strip_comment <"$raw" | tr -c 'A-Za-z0-9_' '\n' | grep -v '^$' || true
+    _assent_strip_comment <"$raw" | _assent_yaml_tokens
   else
-    tr -c 'A-Za-z0-9_' '\n' <"$raw" | grep -v '^$' || true
+    _assent_yaml_tokens <"$raw"
   fi
 }
 
@@ -431,7 +469,13 @@ assent_step_wired() {
   local re
   re="$(_assent_ere_escape "$script")"
   local cmdhits="$work/step_wired.cmd" cmdform="plain"
-  grep -nE "^[[:space:]]*run:[[:space:]]*bash[[:space:]]+${re}([[:space:]]|\$)" "$jb" >"$cmdhits" || true
+  # G3R-03: the `(-[[:space:]]+)?` alternative belongs at EVERY key-matching
+  # site, not only the disarm one. `      - run: bash <script>` — a step with no
+  # `name:`, the sequence-item form — is already the idiom used three times in
+  # the very workflow these gates read, and without this it reported rc=5,
+  # "no run: COMMAND invokes the script: deleted, commented out": a false red
+  # carrying a wrong diagnosis.
+  grep -nE "^[[:space:]]*(-[[:space:]]+)?run:[[:space:]]*bash[[:space:]]+${re}([[:space:]]|\$)" "$jb" >"$cmdhits" || true
   if [[ ! -s "$cmdhits" ]]; then
     cmdform="block"
     grep -nE "^[[:space:]]*bash[[:space:]]+${re}([[:space:]]|\$)" "$jb" >"$cmdhits" || true
@@ -528,7 +572,7 @@ assent_step_wired() {
   fi
 
   local argfree="$work/step_wired.argfree"
-  grep -nE "^[[:space:]]*(run:[[:space:]]*)?bash[[:space:]]+${re}[[:space:]]*\$" "$step" >"$argfree" || true
+  grep -nE "^[[:space:]]*(-[[:space:]]+)?(run:[[:space:]]*)?bash[[:space:]]+${re}[[:space:]]*\$" "$step" >"$argfree" || true
   if [[ ! -s "$argfree" ]]; then
     return 7
   fi
