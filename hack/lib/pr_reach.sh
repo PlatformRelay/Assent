@@ -73,14 +73,35 @@
 # REFUSES (distinct code, never a guess): flow MAPPINGS, anchors, aliases,
 # merge keys, filter keys outside GitHub's five, and — on the one
 # must-NOT-contain test — any token carrying a byte outside the ref/glob set.
-# DOES NOT READ: multi-line flow sequences (refused), and `strategy:`/matrix,
-# reusable-workflow `uses:` jobs and container entrypoints in the step reader.
+# DOES NOT READ: multi-line flow sequences (refused); `strategy:`/matrix,
+# reusable-workflow `uses:` jobs and container entrypoints in the step reader;
+# and a QUOTED SCALAR's interior — `,` and whitespace are separators here even
+# inside quotes, so `branches: ["main,next"]` is shredded into `main` + `next`
+# and grades 0 though it excludes main (G5-03, measured, unfixed on purpose:
+# see the claim below, which is now written to match the code rather than the
+# other way round).
 #
-# The safety argument does NOT rest on that list being complete. Every filter
-# test here is "must CONTAIN token X" except `branches-ignore:`, so a misread
-# yields a RED everywhere but there — and there, an unreadable token is refused
-# rather than searched. Unknown shapes therefore cost false reds, not silent
-# passes. An honest narrow gate beats an overreaching one.
+# THE SAFETY CLAIM, NARROWED TO WHAT IS TRUE (G5-04). An earlier version of
+# this header said "unknown shapes cost false reds, not silent passes". That
+# was an overclaim, and two round-5 findings were counterexamples INSIDE the
+# surface listed as READ — which is worse than a documented hole, because the
+# next author trusts the sentence. What actually holds:
+#
+#   * A misread that DROPS or MANGLES a token yields a RED on every
+#     must-CONTAIN test (`types:`, `branches:`), and on the one
+#     must-NOT-contain test (`branches-ignore:`) an unreadable token is
+#     REFUSED rather than searched. That direction is closed by construction.
+#   * A misread that CREATES a token is NOT covered: shredding a quoted scalar
+#     manufactures `main` out of `"main,next"` and yields a silent 0.
+#   * Un-evaluability is not a misread at all. A glob tokenises perfectly and
+#     an exact-token predicate simply cannot answer it — fail-closed on
+#     `branches:` by polarity, and on `branches-ignore:` only because it is now
+#     refused explicitly (G5-01).
+#
+# So: the reader fails closed against dropped and mangled tokens, and against
+# shapes it refuses. It does not claim immunity against a misread that
+# fabricates a token. An honest narrow gate beats an overreaching one, and an
+# honestly narrow CLAIM beats a reassuring one.
 
 # The three PR-visible text gates, single-sourced so each can cross-pin the
 # others (D-157 residual 2: before this, each gate pinned only its OWN step, so
@@ -200,6 +221,86 @@ _assent_tokens_readable() {
     return 1
   fi
   return 0
+}
+
+# _assent_tokens_globfree <token-file> — 0 when no token carries a glob
+# metacharacter, 1 otherwise.
+#
+# G5-01. `_assent_tokens_readable` deliberately ADMITS `*` and `+` — a glob is
+# a legal branch filter, so a pattern tokenises perfectly, nothing is dropped or
+# mangled, and the burden inversion above never engages. The residual defect is
+# not a tokenizer defect at all: it is an EXACT-TOKEN predicate (`grep -qx
+# main`) applied to a PATTERN list. `branches-ignore: ['**']` excludes every
+# branch including main, and `grep -qx main` finds no literal `main`, so the
+# reader returned 0 — "runs on every pull request" — for a workflow that runs on
+# no pull request at all. Measured for `**`, `*`, `ma*`, `main*` and `*ain`, in
+# both flow and block-sequence form.
+#
+# The header already reasoned this out ONE KEY OVER: a `branches:` glob that
+# covers main without the literal token reds, because "a bash gate cannot
+# honestly evaluate GitHub's glob semantics, and refusing is the fail-closed
+# direction". That is exactly right, and on `branches:` it happens for free —
+# the must-CONTAIN predicate fails on a pattern. On `branches-ignore:`, the one
+# must-NOT-contain test, the identical un-evaluability is fail-OPEN. So it is
+# made explicit here rather than left to the polarity: a pattern is refused,
+# never searched, on the key where searching it would be a silent accept.
+_assent_tokens_globfree() {
+  local globby="$1.globby"
+  grep -E '[][*?!+]' "$1" >"$globby" || true
+  if [[ -s "$globby" ]]; then
+    return 1
+  fi
+  return 0
+}
+
+# _assent_map_keys <file> <indent> — the NORMALISED name of every mapping key at
+# exactly <indent> spaces, one per line. A key whose name cannot be normalised
+# to a plain YAML identifier is printed as the literal `?unreadable`.
+#
+# G5-02, and the mechanism matters more than the fix. `if:` was matched by a
+# LITERAL pattern, so `if : `, `"if":` and `'if' :` — which a conformant parser
+# resolves identically (checked against ruby/psych) — all evaded it, and a step
+# or job carrying release-exitgate's exact push-only guard graded "wired,
+# argument-free and undisarmed". Adding `[[:space:]]*:` would have been the
+# fifth spelling patch on this lane and would still miss the sixth.
+#
+# The immune design was already in this file: `assent_pr_reach` normalises and
+# ALLOWLISTS the filter keys, and is measurably immune to every one of those
+# spellings. This mirrors it. Normalisation — not pattern breadth — is what
+# makes it immune, and anything normalisation cannot reduce to an identifier is
+# refused rather than skipped, so the unknown-spelling direction costs a red.
+_assent_map_keys() {
+  awk -v want="$2" '
+    { if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*#/) next
+      match($0, /^[ ]*/)
+      if (RLENGTH != want) next
+      rest = substr($0, want + 1)
+      c = index(rest, ":")
+      if (c == 0) next                     # not a mapping entry; cannot be a key
+      k = substr(rest, 1, c - 1)
+      sub(/[[:space:]]+$/, "", k)          # `if :`
+      sub(/^[[:space:]]+/, "", k)
+      if (k ~ /^".*"$/ || k ~ /^\x27.*\x27$/) k = substr(k, 2, length(k) - 2)
+      sub(/[[:space:]]+$/, "", k)          # `" if " :`
+      sub(/^[[:space:]]+/, "", k)
+      if (k ~ /^[A-Za-z0-9_-]+$/) print k; else print "?unreadable"
+    }
+  ' "$1"
+}
+
+# _assent_step_keys <isolated-step-file> — the same, for a sequence ITEM: the
+# first key rides on the `- ` marker line and the rest sit two columns in.
+_assent_step_keys() {
+  local step="$1" first ind
+  first="$(head -1 "$step")"
+  ind="$(printf '%s' "$first" | awk '{ match($0, /^[ ]*- /); print RLENGTH }')"
+  if [[ -z "$ind" || "$ind" == "0" ]]; then
+    printf '%s\n' '?unreadable'
+    return 0
+  fi
+  printf '%s\n' "$(printf '%s' "$first" | cut -c$((ind + 1))-)" \
+    | _assent_map_keys /dev/stdin 0
+  sed -n '2,$p' "$step" | _assent_map_keys /dev/stdin "$ind"
 }
 
 # ---------------------------------------------------------------------------
@@ -411,6 +512,10 @@ assent_pr_reach() {
     if ! _assent_tokens_readable "$bitoks"; then
       return 10
     fi
+    # G5-01: a glob is readable and un-evaluable. Refused, never searched.
+    if ! _assent_tokens_globfree "$bitoks"; then
+      return 10
+    fi
     if grep -qx 'main' "$bitoks"; then
       return 13
     fi
@@ -519,15 +624,25 @@ assent_step_wired() {
     return 3
   fi
 
-  # Job-level keys sit at 4 spaces; step-level ones at 8.
+  # Job-level keys sit at 4 spaces; step-level ones at 8. Graded by NORMALISED
+  # NAME (G5-02) rather than by literal pattern, so `if : `, `"if":` and
+  # `'if' :` — which a conformant parser resolves identically to `if:` — cannot
+  # walk past it. The literal greps are kept BESIDE the allowlist, not replaced
+  # by it: their union can only add detections, and they still catch a key at an
+  # indent the enumeration does not visit.
+  local jobkeys="$work/step_wired.jobkeys"
+  _assent_map_keys "$jb" 4 >"$jobkeys"
+  if grep -qx '?unreadable' "$jobkeys"; then
+    return 3
+  fi
   local jobif="$work/step_wired.jobif"
   grep -nE '^    if:' "$jb" >"$jobif" || true
-  if [[ -s "$jobif" ]]; then
+  if [[ -s "$jobif" ]] || grep -qx 'if' "$jobkeys"; then
     return 4
   fi
   local jobneeds="$work/step_wired.jobneeds"
   grep -nE '^    needs:' "$jb" >"$jobneeds" || true
-  if [[ -s "$jobneeds" ]]; then
+  if [[ -s "$jobneeds" ]] || grep -qx 'needs' "$jobkeys"; then
     return 9
   fi
 
@@ -665,9 +780,16 @@ assent_step_wired() {
   # rc=0, "wired, argument-free and undisarmed", for a step that does not run
   # on pull requests at all. Same idiom as the run:/uses: counters above, which
   # had it; this key list did not.
+  # G5-02, step level: same normalised allowlist, same union with the literal
+  # grep. An unreadable step key is an isolation failure (6), not a pass.
+  local stepkeys="$work/step_wired.stepkeys"
+  _assent_step_keys "$step" >"$stepkeys"
+  if grep -qx '?unreadable' "$stepkeys"; then
+    return 6
+  fi
   local disarmed="$work/step_wired.disarmed"
   grep -nE '^[[:space:]]*(-[[:space:]]+)?(if|continue-on-error):' "$step" >"$disarmed" || true
-  if [[ -s "$disarmed" ]]; then
+  if [[ -s "$disarmed" ]] || grep -qx 'if' "$stepkeys" || grep -qx 'continue-on-error' "$stepkeys"; then
     return 8
   fi
 
