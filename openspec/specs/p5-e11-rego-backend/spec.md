@@ -66,7 +66,8 @@ landed and **narrowed E11**: `docs/planning/rego-tier-ceiling.md` strikes **cros
 and **set-difference** from the four named shapes and strikes the named-intermediate half of
 **multi-pass**. What remains, and the only thing E11 may be justified or documented as
 delivering, is: **folds/aggregates over the in-input collections** (CEL has `size()` and no
-other aggregate) and **recursive/graph reasoning over data already inside `EvaluationInput`**.
+other aggregate) — **unconditionally** — plus **recursive/graph reasoning**, which is
+**contingent on OQ-35 or OQ-36** giving an adjacency somewhere in-contract to live.
 Cross-manifest reasoning is an *input-availability* limit, not a tier-1 expressiveness limit —
 REQ-E11-S05-01 pins the identical input, so the Rego tier fails on it identically. See the
 E11-S01 section for the verdict table and the binding consequences for S05/S07/S11/S12.
@@ -292,8 +293,14 @@ struck in part, and one and a half survive**:
 | multi-pass — **fold/aggregate** over a collection | **EXCEEDS — justifies E11** | `sum`/`reduce`/`math.*`/`lists.*` are all `undeclared reference`; `size()` is the only aggregate in the surface, so counting is expressible and summing is not |
 | multi-pass — **named intermediate** across checks | **STRUCK** | no `cel.bind` and the assert tree combines booleans, not values — but re-deriving the sub-expression inside each leaf is semantically identical and compiles |
 | cross-manifest | **STRUCK (all three sub-shapes)** | membership is `x in facts.<p>.<n>.value`; keyed lookup is a purpose-built provider or `facts.<p>.<n>.value[key]` (compiles, lint-clean); **same-changeset cross-file is an input-availability limit, not an expressiveness one** — the evaluation unit is one file and REQ-E11-S05-01 pins the *identical* `EvaluationInput`, so a Rego module fails identically |
-| set-difference | **STRUCK**, conditional on **OQ-35** | `oldEntry.x.filter(a, !(a in entry.x))` expresses it; the residual is that `entry`/`oldEntry` bind whole-entry trees only under `assent test` (`adoptertest` is the sole writer of `EvalChange.Entry`) and fall back to a scalar on the `assent run` path |
-| graph-relationship | **EXCEEDS — justifies E11** | no recursion, fixpoint, fold or user-defined function; bounded unrolling answers a *different* rule and costs against the `1_000_000` budget. **Only for graphs already inside `EvaluationInput`** — a graph assembled from other files is the struck cross-manifest shape wearing a different hat |
+| set-difference | **STRUCK — unconditionally** | `oldEntry.x.filter(a, !(a in entry.x))` expresses it when the entry tree is bound; when it is not (`adoptertest` is the sole writer of `EvalChange.Entry`, so `assent run` binds a scalar) the failure is input availability and Rego fails identically. **Both resolutions of OQ-35 strike it**, so nothing downstream waits on that answer |
+| graph-relationship | **EXCEEDS — but justifies E11 only contingently** | no recursion, fixpoint, fold or user-defined function, so the *verdict* is unconditional. But a recursive rule needs its adjacency **inside `EvaluationInput`**, and on the `assent run` path there is no in-contract home for one: document-mode `walkNode` emits only scalar deltas (a sequence makes the ChangeSet opaque → REVIEW), entry trees are `assent test`-only (**OQ-35**), and a mapping-valued fact is undeclarable (**OQ-36**). Building on this shape waits on one of those two |
+
+**The headline, stated plainly so no later story over-claims it: on today's shipped input
+contract the fold/aggregate shape is E11's ONLY unconditional justification.** The graph shape
+exceeds tier 1 but has nowhere in-contract to keep its adjacency until OQ-35 or OQ-36 is
+answered. If the operator wants that contingency removed before the epic commits to a
+dependency, answering OQ-35 or OQ-36 is the cheaper move than building S02–S13.
 
 **Binding consequences for later stories:**
 - **S05** must **not** be widened to carry cross-manifest data. Widening the input is a
