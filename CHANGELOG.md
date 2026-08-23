@@ -120,6 +120,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(audit): pin the AUD2 remediations behind a PR-visible exit gate
 - :white_check_mark: test(audit): assert verify.yaml still triggers on pull_request
 - :white_check_mark: test(hack): gate that hack/** bash 4+ features declare a floor (BASH32-F01)
+- :white_check_mark: test(hack): the bash-3.2-clean assertion could not fail (BASH32-F01)
 ## [0.3.0] - 2026-08-18
 
 ### Chores
