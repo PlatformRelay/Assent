@@ -1321,7 +1321,7 @@ check_pr_wiring() { # <verify.yaml>
       return 1
       ;;
     10)
-      echo "  REQ-AUD2-S05-05: verify.yaml's 'on:' block uses a shape hack/lib/pr_reach.sh refuses to evaluate (a flow mapping, an anchor or an alias). A paths:/types: filter hidden in there would disarm this gate silently, so the reader fails closed instead of guessing" >&2
+      echo "  REQ-AUD2-S05-05: verify.yaml's pull_request trigger is something hack/lib/pr_reach.sh refuses to evaluate: either a shape it cannot read (a flow mapping, an anchor or an alias) or a filter key outside GitHub's five (types, branches, branches-ignore, paths, paths-ignore). A narrowing hidden in either would disarm this gate silently, so the reader fails closed instead of guessing" >&2
       return 1
       ;;
     11)
@@ -2253,6 +2253,94 @@ while IFS= read -r sibling; do
     "the sibling PR-visible gate $sibling is NOT wired" "$m"
 done < <(assent_pr_gate_others "$SELF")
 
+# ---- G3-01/G3-02: two defects an independent review found by mutating the
+# REAL verify.yaml end-to-end, after a 28-row fixture matrix missed both.
+# Controlled HERE, on the real workflow, for the same reason they were found
+# there: a fixture cannot tell you what your own gate does to your own file.
+
+# G3-01. The filter greps were pinned to EXACTLY four spaces. Six-space indent
+# is valid YAML resolving to the identical mapping, the grep missed it, and
+# control fell through to `return 0` — this gate returned rc=0 on a
+# paths:-filtered trigger, the exact shape REQ-AUD2-S05-05 says it refuses.
+m="$(pr_filter_mutant prpaths6sp "      paths: [internal/**]")"
+expect_red check_pr_wiring "the pull_request paths: filter is written at SIX spaces instead of four — valid YAML, identical mapping, and the 4-space grep fell through to 0 (G3-01)" \
+  "carries a 'paths:' or 'paths-ignore:' filter" "$m"
+
+m="$(pr_filter_mutant prtypes6sp "      types: [closed]")"
+expect_red check_pr_wiring "the pull_request types: filter is written at SIX spaces (G3-01)" \
+  "omits one of GitHub's defaults" "$m"
+
+# …and the counterpart, so the fix is indent-AGNOSTIC, not indent-hostile.
+m="$(pr_filter_mutant prlegit6sp "      types: [opened, synchronize, reopened, ready_for_review]")"
+expect_green check_pr_wiring "a legitimate types: superset written at SIX spaces is still accepted (G3-01 widened the match; it did not start refusing indents)" "$m"
+
+# An unknown key under pull_request: is refused rather than accepted. GitHub
+# defines exactly five filter keys; a sixth is a narrowing this gate has never
+# evaluated, or a typo. Guessing is the wrong answer to both.
+m="$(pr_filter_mutant prunknownkey "    only-when: [tuesday]")"
+expect_red check_pr_wiring "an UNKNOWN filter key appeared under pull_request: — refused, not accepted (G3-01)" \
+  "refuses to evaluate" "$m"
+
+# G3-02. A step whose FIRST key is the disarm is a sequence ITEM, so the key
+# carries the `- ` marker and `^[[:space:]]*if:` never matched it. Measured on
+# this very workflow: rc=0, "wired, argument-free and undisarmed", for a step
+# that does not run on pull requests at all. The regex was inherited verbatim
+# from the local copy this gate's check replaced, so it is a pre-existing hole
+# closed here rather than a regression — but until it was closed, the
+# cross-pinning below reported WIRED for a disarmed step.
+disarm_first_mutant() { # <name> <key: value> -> prints the mutant path
+  local name="$1" kv="$2"
+  local out="$WORK/verify.${name}.yaml"
+  awk -v self="run: bash $SELF" -v kv="$kv" '
+    { lines[NR] = $0; if ($0 ~ /^      - /) starts[NR] = 1; if (index($0, self) > 0 && $0 !~ /^[[:space:]]*#/) target = NR }
+    END {
+      s = 0
+      for (i = target; i >= 1; i--) if (i in starts) { s = i; break }
+      for (i = 1; i <= NR; i++) {
+        if (i == s) {
+          rest = substr(lines[i], 9)
+          print "      - " kv
+          print "        " rest
+        } else print lines[i]
+      }
+    }
+  ' "$WORKFLOW" >"$out"
+  assert_changed "$WORKFLOW" "$out"
+  grep -qF -- "run: bash $SELF" "$out" ||
+    fail "mutation harness: the ${name} mutant lost the ${SELF} invocation — it must stay PRESENT, or the control grades absence instead of disarmament"
+  grep -qE "^      - ${kv%%:*}:" "$out" ||
+    fail "mutation harness: the ${name} mutant does not carry '${kv%%:*}:' as a step's FIRST key, which is the whole shape it exists to exercise"
+  printf '%s' "$out"
+}
+
+m="$(disarm_first_mutant iffirst "if: \${{ github.event_name != 'pull_request' }}")"
+expect_red check_pr_wiring "the gate's step was disarmed with 'if:' as its FIRST key — the sequence-item form the disarm grep could not see (G3-02)" \
+  "DISARMED" "$m"
+
+m="$(disarm_first_mutant coefirst "continue-on-error: true")"
+expect_red check_pr_wiring "the gate's step was disarmed with 'continue-on-error:' as its FIRST key (G3-02)" \
+  "DISARMED" "$m"
+
+# The same shape applied to a SIBLING gate's step must red the cross-pin, or
+# residual 2 delivers a check that says WIRED for a step that will not run.
+m="$WORK/verify.siblingdisarmed.yaml"
+sibling_first="$(assent_pr_gate_others "$SELF" | head -1)"
+awk -v self="run: bash $sibling_first" '
+  { lines[NR] = $0; if ($0 ~ /^      - /) starts[NR] = 1; if (index($0, self) > 0 && $0 !~ /^[[:space:]]*#/) target = NR }
+  END {
+    s = 0
+    for (i = target; i >= 1; i--) if (i in starts) { s = i; break }
+    for (i = 1; i <= NR; i++) {
+      if (i == s) { print "      - continue-on-error: true"; print "        " substr(lines[i], 9) } else print lines[i]
+    }
+  }
+' "$WORKFLOW" >"$m"
+assert_changed "$WORKFLOW" "$m"
+grep -qF -- "run: bash $sibling_first" "$m" ||
+  fail "mutation harness: the sibling-disarm mutant lost ${sibling_first}'s invocation"
+expect_red check_cross_pins "the SIBLING gate ${sibling_first} was disarmed with 'continue-on-error:' as its step's first key — present, and it will not run on the PR (G3-02 x residual 2)" \
+  "is NOT wired" "$m"
+
 # ---- the other polarity: D-157 must not have made this a gate that reds on
 # any workflow structure at all. Without these, the eleven red controls above
 # are equally satisfied by a check that always fails. Each of these is a shape
@@ -2308,16 +2396,19 @@ expect_green check_pr_wiring "a block-scalar 'run: |' invocation of this gate is
 # Mode-aware floor: --text-only legitimately skips the four behavioural
 # controls, and a single number would either pass a truncated full run or red
 # every text-only run. Both floors are pinned so neither mode can quietly shrink.
-# D-157 raised both floors by 13: eleven new red controls over check_pr_wiring
+# D-157 raised both floors by 19: eleven new red controls over check_pr_wiring
 # (the residual-3 comment-out, six pull_request-filter bypasses, the nested
-# input name, the job-level needs:, the job rename, the block-scalar bleed)
-# plus one over the new check_cross_pins per sibling gate. All are pure text,
+# input name, the job-level needs:, the job rename, the block-scalar bleed),
+# one over the new check_cross_pins per sibling gate, and six more from the
+# independent review's two P1s — the 6-space filter indents, the unknown filter
+# key, and the disarm-as-a-step's-FIRST-key shape (G3-01/G3-02), each of which
+# returned rc=0 on the real workflow before its fix. All are pure text,
 # so they run in BOTH
 # modes and both floors move together. Not bumping would not have reddened —
 # the floor is `>=` — which is exactly why it has to be bumped: an unbumped
 # floor stops pinning the sections it was raised for.
-CONTROL_FLOOR=51
-((TEXT_ONLY == 0)) || CONTROL_FLOOR=45
+CONTROL_FLOOR=57
+((TEXT_ONLY == 0)) || CONTROL_FLOOR=51
 ((MUTATIONS_PROVED >= CONTROL_FLOOR)) ||
   fail "only ${MUTATIONS_PROVED} mutation controls ran in $([[ $TEXT_ONLY == 1 ]] && echo --text-only || echo full) mode, fewer than the pinned floor of ${CONTROL_FLOOR} — a section was skipped, so REQ-AUD2-S05-02's evidence is incomplete"
 

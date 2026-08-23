@@ -470,6 +470,129 @@ FIX
 helper_wired_is 0 "$m" "$SELF_REL" "a minimal wired step is accepted"
 helper_wired_is 5 "$m" "hack/lint/workflow_pins_test.sh" "a script the fixture does not run is reported absent"
 
+# G3-01/G3-02 — the codes the original fixture set did NOT cover, which is why
+# both P1s survived a 28-row mutant matrix: it was broad in mutant SHAPES and
+# narrow in CODE coverage. Every filter code and the disarm code now have a
+# host-independent fixture, and the filter ones are written at a NON-4-space
+# indent on purpose — the bypass was a grep pinned to exactly four spaces, and
+# 6-space is valid YAML resolving to the identical mapping.
+m="$(helper_fixture reach-paths-6sp <<'FIX'
+name: f
+on:
+  pull_request:
+      paths: [internal/**]
+jobs: {}
+FIX
+)"
+helper_reach_is 11 "$m" "paths: at SIX spaces is still a paths: filter (G3-01 — the 4-space grep fell through to 0 here)"
+
+m="$(helper_fixture reach-types-6sp <<'FIX'
+name: f
+on:
+  pull_request:
+      types: [closed]
+jobs: {}
+FIX
+)"
+helper_reach_is 12 "$m" "types: [closed] at SIX spaces still omits the defaults (G3-01)"
+
+m="$(helper_fixture reach-branches-6sp <<'FIX'
+name: f
+on:
+  pull_request:
+      branches: [release]
+jobs: {}
+FIX
+)"
+helper_reach_is 13 "$m" "branches: at SIX spaces still excludes main (G3-01)"
+
+m="$(helper_fixture reach-bi-6sp <<'FIX'
+name: f
+on:
+  pull_request:
+      branches-ignore: [main]
+jobs: {}
+FIX
+)"
+helper_reach_is 13 "$m" "branches-ignore: [main] at SIX spaces still excludes main (G3-01)"
+
+m="$(helper_fixture reach-bi-quoted-hash <<'FIX'
+name: f
+on:
+  pull_request:
+    branches-ignore: ['x #y', 'main']
+jobs: {}
+FIX
+)"
+helper_reach_is 13 "$m" "a quoted ' #' before 'main' in branches-ignore does not hide it (G3-04 — comment stripping is fail-OPEN for a must-NOT-contain test, so it is off for this key)"
+
+# The property that keeps G3-01's indent-agnostic widening honest, MEASURED
+# rather than reasoned: a key's value region must stop at a SAME-INDENT sibling
+# key. If it swallowed the sibling, `branches: [release]` followed by
+# `branches-ignore: [main]` would merge into one token set, `main` would appear
+# among the `branches:` tokens, and a main-excluding filter would look fine.
+m="$(helper_fixture reach-sibling-scope <<'FIX'
+name: f
+on:
+  pull_request:
+    branches: [release]
+    branches-ignore: [main]
+jobs: {}
+FIX
+)"
+helper_reach_is 13 "$m" "a key's value region stops at a SAME-INDENT sibling — 'main' in branches-ignore does not leak into the branches: token set (the bound G3-01's widening rests on)"
+
+m="$(helper_fixture reach-legit-6sp <<'FIX'
+name: f
+on:
+  pull_request:
+      types: [opened, synchronize, reopened, ready_for_review]
+      branches: [main]
+jobs: {}
+FIX
+)"
+helper_reach_is 0 "$m" "the legitimate shapes are still accepted at SIX spaces — G3-01's fix widened the match, it did not make the check indent-hostile"
+
+m="$(helper_fixture reach-unknown-key <<'FIX'
+name: f
+on:
+  pull_request:
+    only-when: [tuesday]
+jobs: {}
+FIX
+)"
+helper_reach_is 10 "$m" "an UNKNOWN key under pull_request: is REFUSED, not accepted — the header's own rule, now honoured for a key it cannot evaluate as well as for an unparseable shape"
+
+m="$(helper_fixture wired-if-first <<'FIX'
+name: f
+on:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - if: ${{ github.event_name != 'pull_request' }}
+        name: gate
+        run: bash hack/examples/dogfood_wiring_test.sh
+FIX
+)"
+helper_wired_is 8 "$m" "$SELF_REL" "a step whose FIRST key is 'if:' is DISARMED (G3-02 — the sequence-item form '      - if:' was never matched, and this graded WIRED)"
+
+m="$(helper_fixture wired-coe-first <<'FIX'
+name: f
+on:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - continue-on-error: true
+        name: gate
+        run: bash hack/examples/dogfood_wiring_test.sh
+FIX
+)"
+helper_wired_is 8 "$m" "$SELF_REL" "a step whose FIRST key is 'continue-on-error:' is DISARMED (G3-02)"
+
 m="$(helper_fixture wired-comment <<'FIX'
 name: f
 on:
@@ -498,7 +621,7 @@ case "$rc" in
   7) fail "the step invokes $SELF_REL WITH ARGUMENTS — an argument-carrying invocation is how a wired-looking step is hollowed out" ;;
   8) fail "the step is present but DISARMED — an 'if:' or 'continue-on-error:' means a red gate does not fail the PR" ;;
   9) fail "the 'verify' job carries a JOB-LEVEL needs: — a dependency that skips on pull requests skips this job with it, so the gate is push-only by proxy while the step still looks wired (RELSE-08 through the back door)" ;;
-  10) fail "verify.yaml's 'on:' block uses a shape hack/lib/pr_reach.sh cannot evaluate (a flow mapping, an anchor or an alias) — it refuses rather than guess, because a hidden paths:/types: filter there would disarm this gate silently" ;;
+  10) fail "verify.yaml's pull_request trigger is something hack/lib/pr_reach.sh REFUSES to grade: either a shape it cannot read (a flow mapping, an anchor, an alias) or a filter key outside GitHub's five (types, branches, branches-ignore, paths, paths-ignore). It refuses rather than guess, because a narrowing hidden in either would disarm this gate silently" ;;
   11) fail "verify.yaml's pull_request trigger carries a 'paths:' or 'paths-ignore:' filter — the trigger is present and the gate still loses every PR that does not touch the listed paths, which includes PRs to Taskfile.yml and .github/workflows/** (the two files this gate reads)" ;;
   12) fail "verify.yaml's pull_request trigger carries a 'types:' filter that omits one of GitHub's defaults (opened, synchronize, reopened) — e.g. 'types: [closed]' satisfies a presence grep while the gate never runs on an open PR" ;;
   13) fail "verify.yaml's pull_request trigger carries a branch filter that excludes 'main' — PRs onto the branch this gate protects would not run it" ;;

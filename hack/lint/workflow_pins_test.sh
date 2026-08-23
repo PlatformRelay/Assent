@@ -418,7 +418,7 @@ check_ci_wiring() {
       return 1
       ;;
     10)
-      echo "  verify.yaml's 'on:' block uses a shape hack/lib/pr_reach.sh refuses to evaluate (a flow mapping, an anchor or an alias) — a paths:/types: filter hidden there would disarm this gate silently, so it fails closed rather than guessing" >&2
+      echo "  verify.yaml's pull_request trigger is something hack/lib/pr_reach.sh refuses to evaluate: either a shape it cannot read (a flow mapping, an anchor or an alias) or a filter key outside GitHub's five (types, branches, branches-ignore, paths, paths-ignore). A narrowing hidden in either would disarm this gate silently, so it fails closed rather than guessing" >&2
       return 1
       ;;
     11)
@@ -1007,12 +1007,35 @@ expect_red check_ci_wiring "$m" "if: inserted BEFORE run:, the conventional posi
   'present but DISARMED'
 
 # N5 secondary: the extraction must isolate a STEP, not a slab of file header.
-# The old one swallowed lines 13..24 of verify.yaml and still reported non-empty.
+# The old one swallowed a slab of the file header and still reported non-empty.
+#
+# G3-03: this mutation used to be `sed '/^      - name: workflow supply-chain
+# pins/d'` — coupled to the literal TEXT of the step's name line. Any unrelated
+# edit that stops that line starting with `      - ` (renaming the step, or
+# giving the step a different first key, which is exactly the G3-02 disarm
+# shape) made the sed a no-op, and `mutate` then reported "mutation harness:
+# sed program … did not change" — a BROKEN-HARNESS message for a workflow that
+# was merely different. A real finding elsewhere in the family was masked by
+# that misreport once already. The step start is now DERIVED: find the line
+# that runs this gate, walk back to the nearest `      - ` step marker, delete
+# that marker line. No step name, and no other step's text, appears here.
 m="$(mutant wiring-name-removed)"
-mutate "$m/verify.yaml" \
-  '/^      - name: workflow supply-chain pins/d' \
+mutate_awk "$m/verify.yaml" \
+  '{ lines[NR] = $0; if ($0 ~ /^      - /) starts[NR] = 1; if ($0 ~ /^[[:space:]]*run: bash hack\/lint\/workflow_pins_test\.sh[[:space:]]*$/) target = NR }
+   END { s = 0; for (i = target; i >= 1; i--) if (i in starts) { s = i; break }
+         for (i = 1; i <= NR; i++) if (i != s) print lines[i] }' \
   'run: bash hack/lint/workflow_pins_test.sh'
-expect_red check_ci_wiring "$m" "the step's own '- name:' line is gone, so it merged into the checkout step above (N5)" \
+# Positive control on the mutation itself: exactly one step marker fewer, and
+# the gate's own run line untouched. Without this the derived deletion could
+# silently remove the wrong line (or none) and the expect_red below would be
+# grading something else.
+before_starts="$WORK/hits.starts_before"
+after_starts="$WORK/hits.starts_after"
+grep -cE '^      - ' "$WORKFLOWS/verify.yaml" >"$before_starts" || true
+grep -cE '^      - ' "$m/verify.yaml" >"$after_starts" || true
+[[ "$(cat "$after_starts")" -eq "$(($(cat "$before_starts") - 1))" ]] ||
+  fail "mutation control 'wiring-name-removed': expected exactly one fewer step marker, got $(cat "$before_starts") -> $(cat "$after_starts") — the derived step-start deletion did not land"
+expect_red check_ci_wiring "$m" "the step's own start marker is gone, so it merged into the checkout step above (N5)" \
   'the extraction broke'
 
 m="$(mutant wiring-arguments)"
@@ -1132,6 +1155,116 @@ FIX
 )"
 helper_wired_is 0 "$f" "$SELF_GATE" "a minimal wired step is accepted"
 helper_wired_is 5 "$f" "hack/audit/aud2_exitgate_test.sh" "a script the fixture does not run is reported absent"
+
+# G3-01/G3-02 — the codes the original fixture set did not cover. Both P1s
+# lived in uncovered codes; the matrix was broad in mutant shapes and narrow in
+# code coverage. Filter fixtures are written at a NON-4-space indent on purpose.
+f="$(helper_fixture reach-paths-6sp <<'FIX'
+name: f
+on:
+  pull_request:
+      paths: [internal/**]
+jobs: {}
+FIX
+)"
+helper_reach_is 11 "$f" "paths: at SIX spaces is still a paths: filter (G3-01 — the 4-space grep fell through to 0 here)"
+
+f="$(helper_fixture reach-types-6sp <<'FIX'
+name: f
+on:
+  pull_request:
+      types: [closed]
+jobs: {}
+FIX
+)"
+helper_reach_is 12 "$f" "types: [closed] at SIX spaces still omits the defaults (G3-01)"
+
+f="$(helper_fixture reach-bi-6sp <<'FIX'
+name: f
+on:
+  pull_request:
+      branches-ignore: [main]
+jobs: {}
+FIX
+)"
+helper_reach_is 13 "$f" "branches-ignore: [main] at SIX spaces still excludes main (G3-01)"
+
+f="$(helper_fixture reach-bi-quoted-hash <<'FIX'
+name: f
+on:
+  pull_request:
+    branches-ignore: ['x #y', 'main']
+jobs: {}
+FIX
+)"
+helper_reach_is 13 "$f" "a quoted ' #' before 'main' in branches-ignore does not hide it (G3-04)"
+
+# The property that keeps G3-01's indent-agnostic widening honest, MEASURED
+# rather than reasoned: a key's value region must stop at a SAME-INDENT sibling
+# key. If it swallowed the sibling, `branches: [release]` followed by
+# `branches-ignore: [main]` would merge into one token set, `main` would appear
+# among the `branches:` tokens, and a main-excluding filter would look fine.
+f="$(helper_fixture reach-sibling-scope <<'FIX'
+name: f
+on:
+  pull_request:
+    branches: [release]
+    branches-ignore: [main]
+jobs: {}
+FIX
+)"
+helper_reach_is 13 "$f" "a key's value region stops at a SAME-INDENT sibling — 'main' in branches-ignore does not leak into the branches: token set (the bound G3-01's widening rests on)"
+
+f="$(helper_fixture reach-legit-6sp <<'FIX'
+name: f
+on:
+  pull_request:
+      types: [opened, synchronize, reopened, ready_for_review]
+      branches: [main]
+jobs: {}
+FIX
+)"
+helper_reach_is 0 "$f" "the legitimate shapes are still accepted at SIX spaces — the fix widened the match, it did not make the check indent-hostile"
+
+f="$(helper_fixture reach-unknown-key <<'FIX'
+name: f
+on:
+  pull_request:
+    only-when: [tuesday]
+jobs: {}
+FIX
+)"
+helper_reach_is 10 "$f" "an UNKNOWN key under pull_request: is REFUSED rather than accepted"
+
+f="$(helper_fixture wired-if-first <<'FIX'
+name: f
+on:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - if: ${{ github.event_name != 'pull_request' }}
+        name: gate
+        run: bash hack/lint/workflow_pins_test.sh
+FIX
+)"
+helper_wired_is 8 "$f" "$SELF_GATE" "a step whose FIRST key is 'if:' is DISARMED (G3-02 — the sequence-item form was never matched and this graded WIRED)"
+
+f="$(helper_fixture wired-coe-first <<'FIX'
+name: f
+on:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - continue-on-error: true
+        name: gate
+        run: bash hack/lint/workflow_pins_test.sh
+FIX
+)"
+helper_wired_is 8 "$f" "$SELF_GATE" "a step whose FIRST key is 'continue-on-error:' is DISARMED (G3-02)"
 
 f="$(helper_fixture wired-comment <<'FIX'
 name: f

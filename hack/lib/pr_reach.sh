@@ -95,10 +95,14 @@ _assent_ere_escape() {
 # That is YAML's rule for a PLAIN scalar. It is NOT the rule inside a quoted or
 # block scalar (hack/lint/workflow_pins_test.sh's N6 note), which is why it is
 # applied ONLY to `on:`/`types:`/`branches:` values, where a quoted ` #` would
-# be absurd. Its effect on the membership tests is asymmetric and both
-# directions are safe: for `types:`/`branches:` (must CONTAIN a token) stripping
-# removes a way to satisfy the check with prose; for `branches-ignore:` (must
-# NOT contain `main`) a leftover comment can only cause a false RED.
+# be absurd. Its effect on a membership test is ASYMMETRIC and only ONE
+# direction is safe (G3-04 — an earlier version of this comment claimed both
+# were, confidently and wrongly): for a "must CONTAIN token X" test
+# (`types:`, `branches:`) stripping can only remove a way to satisfy the check
+# with prose, which is fail-closed. For a "must NOT contain `main`" test
+# (`branches-ignore:`) stripping removes tokens from the very thing being
+# searched, so a quoted ` #` before `main` HIDES it — fail-OPEN. That call site
+# therefore passes strip=0.
 _assent_strip_comment() {
   sed -e 's/[[:space:]]#.*$//' -e 's/^#.*$//'
 }
@@ -225,17 +229,49 @@ assent_pr_reach() {
     return 0
   fi
 
+  # G3-01. These greps used to be pinned to EXACTLY four spaces
+  # (`^    (paths|paths-ignore):`). Six-space indent is valid YAML resolving to
+  # the identical mapping, the grep missed it, and control fell through to
+  # `return 0` — so a `paths:`-at-6-spaces mutant made all three gates green on
+  # the exact shape D-157 says they refuse. That was the one place this file
+  # broke the rule its own header states: it refuses (rc=10) an anchor, an
+  # alias and a flow mapping, and it silently ACCEPTED an unrecognised indent.
+  #
+  # Matching is now indent-agnostic, which is safe precisely because `prblk`
+  # above is already scoped to the `pull_request:` sub-block and exits at the
+  # next 2-space key — a sibling trigger's `paths:` cannot bleed in. The
+  # 4-space pin bought no isolation the scoping did not already provide.
+  #
+  # And the sub-block's own keys are ALLOWLISTED first, so this now fails
+  # closed on a key it does not know rather than on an indent it does not know.
+  # GitHub defines exactly five filter keys for `pull_request`; a sixth is
+  # either a new narrowing this gate has never evaluated or a typo actionlint
+  # flags. Guessing is the wrong answer to both.
+  local prkeys="$work/pr_reach.pr_keys"
+  awk '
+    { if ($0 ~ /^[[:space:]]*$/ || $0 ~ /^[[:space:]]*#/) next
+      match($0, /^[ ]*/)
+      if (min == 0 || RLENGTH < min) min = RLENGTH
+      ind[NR] = RLENGTH; line[NR] = $0 }
+    END { for (i = 1; i <= NR; i++) if (i in ind && ind[i] == min) print line[i] }
+  ' "$prblk" >"$prkeys"
+  local unknown="$work/pr_reach.pr_unknown"
+  grep -vE '^[[:space:]]*(types|branches|branches-ignore|paths|paths-ignore):' "$prkeys" >"$unknown" || true
+  if [[ -s "$unknown" ]]; then
+    return 10
+  fi
+
   local pathhits="$work/pr_reach.paths"
-  grep -nE '^    (paths|paths-ignore):' "$prblk" >"$pathhits" || true
+  grep -nE '^[[:space:]]+(paths|paths-ignore):' "$prblk" >"$pathhits" || true
   if [[ -s "$pathhits" ]]; then
     return 11
   fi
 
   local typehits="$work/pr_reach.types"
-  grep -nE '^    types:' "$prblk" >"$typehits" || true
+  grep -nE '^[[:space:]]+types:' "$prblk" >"$typehits" || true
   if [[ -s "$typehits" ]]; then
     local toks="$work/pr_reach.types.tok" t
-    _assent_key_tokens "$prblk" types >"$toks"
+    _assent_key_tokens "$prblk" types 1 >"$toks"
     for t in opened synchronize reopened; do
       if ! grep -qx "$t" "$toks"; then
         return 12
@@ -244,20 +280,29 @@ assent_pr_reach() {
   fi
 
   local brhits="$work/pr_reach.branches"
-  grep -nE '^    branches:' "$prblk" >"$brhits" || true
+  grep -nE '^[[:space:]]+branches:' "$prblk" >"$brhits" || true
   if [[ -s "$brhits" ]]; then
     local btoks="$work/pr_reach.branches.tok"
-    _assent_key_tokens "$prblk" branches >"$btoks"
+    _assent_key_tokens "$prblk" branches 1 >"$btoks"
     if ! grep -qx 'main' "$btoks"; then
       return 13
     fi
   fi
 
   local bihits="$work/pr_reach.branches_ignore"
-  grep -nE '^    branches-ignore:' "$prblk" >"$bihits" || true
+  grep -nE '^[[:space:]]+branches-ignore:' "$prblk" >"$bihits" || true
   if [[ -s "$bihits" ]]; then
     local bitoks="$work/pr_reach.branches_ignore.tok"
-    _assent_key_tokens "$prblk" branches-ignore >"$bitoks"
+    # G3-04: comment stripping is DISABLED for this key, and the reason is the
+    # one the old comment got backwards. Every other membership test asks "does
+    # the list CONTAIN token X", and stripping can only remove a way to satisfy
+    # that with prose. This test asks "does the list NOT contain `main`", so
+    # stripping removes tokens from the very thing being searched: with the
+    # tail dropped, `branches-ignore: ['x #y', 'main']` lost `main` and
+    # returned 0 — fail-OPEN, not the "false RED" the comment claimed.
+    # Unstripped, a comment that merely mentions main reds, which is the
+    # harmless direction.
+    _assent_key_tokens "$prblk" branches-ignore 0 >"$bitoks"
     if grep -qx 'main' "$bitoks"; then
       return 13
     fi
@@ -266,20 +311,37 @@ assent_pr_reach() {
   return 0
 }
 
-# _assent_key_tokens <pull_request-block> <key> — every token of a 4-space
-# `key:` whose value is an inline flow sequence, a block sequence, or a plain
-# scalar. One token per line, quotes and punctuation removed.
+# _assent_key_tokens <pull_request-block> <key> <strip-comments 0|1> — every
+# token of `key:` at ANY indent (G3-01), whose value is an inline flow
+# sequence, a block sequence, or a plain scalar. The value region is bounded by
+# INDENTATION — lines strictly more indented than the key line — rather than by
+# a fixed column, so a 6-space sub-block reads the same as a 4-space one. One
+# token per line, quotes and punctuation removed.
+#
+# <strip-comments> is per-key on purpose; see the `branches-ignore` call site.
+# Stripping is the fail-CLOSED direction only for the "must CONTAIN" tests.
 _assent_key_tokens() {
-  local blk="$1" key="$2"
+  local blk="$1" key="$2" strip="$3"
+  local raw="$blk.$key.raw"
   awk -v key="$key" '
-    BEGIN { re = "^    " key ":" }
-    $0 ~ re { ink = 1; v = $0; sub(re, "", v); print v; next }
-    ink && /^    [^[:space:]#]/ { ink = 0 }
-    ink { print }
-  ' "$blk" \
-    | _assent_strip_comment \
-    | tr -c 'A-Za-z0-9_' '\n' \
-    | grep -v '^$' || true
+    BEGIN { re = "^[[:space:]]+" key ":" }
+    !ink && $0 ~ re {
+      ink = 1
+      match($0, /^[ ]*/); ind = RLENGTH
+      v = $0; sub(re, "", v); print v; next
+    }
+    ink {
+      if ($0 ~ /^[[:space:]]*$/) next
+      match($0, /^[ ]*/)
+      if (RLENGTH <= ind) { ink = 0; next }
+      print
+    }
+  ' "$blk" >"$raw"
+  if [[ "$strip" == "1" ]]; then
+    _assent_strip_comment <"$raw" | tr -c 'A-Za-z0-9_' '\n' | grep -v '^$' || true
+  else
+    tr -c 'A-Za-z0-9_' '\n' <"$raw" | grep -v '^$' || true
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -471,8 +533,16 @@ assent_step_wired() {
     return 7
   fi
 
+  # G3-02: the `(-[[:space:]]+)?` alternative is NOT optional here, and its
+  # absence was inherited verbatim from the local copy this replaced. A step
+  # whose FIRST key is the disarm — `      - if: ${{ … }}` / `- name:` /
+  # `run:` — is a sequence ITEM, so the key is preceded by the `- ` marker and
+  # `^[[:space:]]*if:` never matches it. Measured on the real verify.yaml:
+  # rc=0, "wired, argument-free and undisarmed", for a step that does not run
+  # on pull requests at all. Same idiom as the run:/uses: counters above, which
+  # had it; this key list did not.
   local disarmed="$work/step_wired.disarmed"
-  grep -nE '^[[:space:]]*(if|continue-on-error):' "$step" >"$disarmed" || true
+  grep -nE '^[[:space:]]*(-[[:space:]]+)?(if|continue-on-error):' "$step" >"$disarmed" || true
   if [[ -s "$disarmed" ]]; then
     return 8
   fi
