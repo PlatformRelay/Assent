@@ -215,10 +215,34 @@ occurrence_count() {
   # whole UC-01 fix, so the repair a maintainer would reach for is loosening this
   # very function. awk's default field splitting also folds runs of whitespace, so
   # `cosign  verify-blob` and `"$COSIGN" verify-blob` still count as occurrences.
+  #
+  # UC-05: SHELL QUOTES ARE STRIPPED BEFORE THE COMPARE. A bare field compare finds
+  # one whole-word token and concludes SINGULARITY, when all it established is that
+  # it did not find a second one — absence of evidence read as evidence of absence.
+  # `cosign "verify-blob"`, `cosign 'verify-blob'` and `cosign verify-blob""` are
+  # all the same command to the shell, and each hid a chained unpinned call from
+  # the count. Measured: without the strip, all three returned 1 and the full gate
+  # exited 0 on SECURITY.md.
+  #
+  # This is a SPELLING PATCH, not a terminator, and it is labelled as one on
+  # purpose. It closes three known spellings; it does not prove a fourth does not
+  # exist. A structural terminator was considered and ruled out with evidence:
+  # refusing any graded line that carries a command separator would red the REAL
+  # files, because hack/install.sh and hack/release/verify-artifacts.sh both end
+  # their genuine invocation with `|| die "cosign verification failed…"`. Since the
+  # count cannot be made complete, the PASS banner is written to report what was
+  # classified rather than to claim that nothing else exists (UC-07).
+  #
   # Residual, stated: a bundle named exactly `verify-blob` (no extension) counts as
   # an occurrence and fails closed. No file does that, and closed is the safe way
   # to be wrong.
-  printf '%s' "$1" | awk '{ for (i = 1; i <= NF; i++) if ($i == "verify-blob") n++ } END { print n + 0 }'
+  printf '%s' "$1" | awk '{
+    for (i = 1; i <= NF; i++) {
+      tok = $i
+      gsub(/["\047]/, "", tok)
+      if (tok == "verify-blob") n++
+    }
+  } END { print n + 0 }'
 }
 
 # flag_value_tokens <flag> — reads one folded line on stdin and prints the RAW
@@ -231,8 +255,8 @@ occurrence_count() {
 # attacker. Here every value is returned and every one has to match.
 flag_value_tokens() {
   local flag="$1"
-  grep -oE -- "$flag[[:space:]]+('[^']*'|\"[^\"]*\"|[^[:space:]]+)" \
-    | sed -E "s/^$flag[[:space:]]+//" || true
+  grep -oE -- "${flag}[[:space:]]+('[^']*'|\"[^\"]*\"|[^[:space:]]+)" \
+    | sed -E "s/^${flag}[[:space:]]+//" || true
 }
 
 # unquote <raw-token> — prints "quoted<TAB>value" or "bare<TAB>value".
@@ -328,7 +352,13 @@ pin_violations() {
     n_occ="$(occurrence_count "$line")"
     if [[ "$n_occ" -gt 1 ]]; then
       n_inv=$((n_inv + n_occ))
-      printf 'MULTI-OCCURRENCE: %s has %s `verify-blob` calls chained on ONE line, and this gate grades a line as one invocation — so a pinned first call would vouch for an unpinned second. Put each cosign call on its own line: %s\n' "$rel" "$n_occ" "$line"
+      # UC-06: say TOKENS, not "calls chained". cosign_candidates only drops a line
+      # whose FIRST non-space character is `#`, so a TRAILING comment mentioning
+      # verify-blob lands here too. Refusing it is right (this gate cannot grade a
+      # line it cannot resolve to one call); describing it as a chained call is not,
+      # and a message that misdiagnoses is what gets the counter loosened — the
+      # UC-03 failure recurring inside the UC-01 fix.
+      printf 'MULTI-OCCURRENCE: %s has %s `verify-blob` TOKENS on ONE line, and this gate grades a line as exactly one invocation, so it refuses rather than guess which one to grade — a pinned first call must not vouch for an unpinned second. Cause is either a second call chained onto this one, or `verify-blob` appearing in a TRAILING COMMENT on this line. Put each cosign call on its own line, and keep `verify-blob` out of trailing comments there: %s\n' "$rel" "$n_occ" "$line"
       continue
     fi
     n_inv=$((n_inv + 1))
@@ -684,7 +714,7 @@ for target in "${GRADED[@]}"; do
   # the second call spelled so the literal trigger would miss it. occurrence_count
   # deliberately counts the shorter 'verify-blob' INSIDE an already-triggered
   # line, so these are seen even though the file-level trigger would not match.
-  for spelling in '"$COSIGN" verify-blob' 'cosign  verify-blob'; do
+  for spelling in '"$COSIGN" verify-blob' 'cosign  verify-blob' 'cosign "verify-blob"' "cosign 'verify-blob'" 'cosign verify-blob""'; do
     m="$WORK/univ.${label}.chained-spelling-$(printf '%s' "$spelling" | od -An -tx1 | tr -d ' \n')"
     append_raw "$src" "$m" "cosign verify-blob $PINS_OK --bundle $PROBE_BUNDLE $PROBE_ARTIFACT && $spelling --bundle evil-$PROBE_BUNDLE evil-$PROBE_ARTIFACT"
     v="$(pin_violations "$m")"
@@ -1245,4 +1275,50 @@ grep -qE "^[[:space:]]+${STAGE}\$" "$AUDIT_GATE" \
   || fail "'$STAGE' is not in CHECK_STAGES in hack/audit/exitgate_test.sh — the release exit gate would not grade it (AUD-S18)"
 echo "OK: $STAGE is pinned in CHECK_STAGES"
 
-echo "PASS: install_cosign_pin_test.sh — SEC-03 closed on BOTH paths (REQ-AUD2-S03-01..05 + AUD2-F01 + UNIV-COSIGN/D-160 + UC-01..UC-03): EVERY cosign verify-blob OCCURRENCE in hack/install.sh, SECURITY.md and hack/release/verify-artifacts.sh pins issuer=${inst_issuer} identity=${inst_identity}, byte-identical across the three, with EVERY value of every flag compared (not just the last on a line); a second unpinned call reddens whether it sits on its own line or is chained onto a pinned one with && / ; / |, and a second correctly-pinned one does not; a foreign-signed bundle fails closed with nothing installed and fails the maintainer check too; all four pins proved load-bearing by mutation; the gate is wired into task check"
+# ------------------------------------------------------ 7. the PASS banner --
+#
+# UC-07 — THE BANNER STATES ONLY WHAT WAS ASSERTED, AND REPORTS WHAT WAS SEEN.
+#
+# The previous banner was printed unconditionally and asserted "EVERY cosign
+# verify-blob OCCURRENCE ... is pinned" plus "a second unpinned call reddens
+# whether it sits on its own line or is chained onto a pinned one" — a UNIVERSAL
+# claim bound to NO assertion. When UC-05's quoted spelling slipped past the
+# occurrence count, that banner did not merely overstate: it printed something
+# FALSE, on a green run, which is strictly worse than printing nothing. This
+# repo's #1 defect class is an assertion that cannot fail; a claim that is not
+# bound to an assertion is the same defect wearing a different hat.
+#
+# So the claim is now bound to the evidence and the residual travels in the same
+# breath as the claim. Four rounds of review on this one gate have each found a
+# spelling or a scope the previous round did not cover; the honest posture is that
+# a fifth exists and has not been found yet. A gate that says "I classified and
+# graded 4 occurrences, I refuse to guess about anything I could not classify, and
+# here is what I cannot see at all" stays TRUE when that fifth spelling turns up.
+# It is then INCOMPLETE rather than WRONG, and incomplete is recoverable.
+#
+# The counts below are exact at this point in the run: reaching here means
+# pin_violations was EMPTY for all three files, so there were no MULTI-OCCURRENCE
+# and no UNCLASSIFIABLE candidates, and therefore candidates = graded + prose.
+echo "PASS: install_cosign_pin_test.sh — REQ-AUD2-S03-01..05 + AUD2-F01 + UNIV-COSIGN (D-160, UC-01..UC-08)"
+echo "  OBSERVED (counts, not proofs of absence):"
+for target in "${GRADED[@]}"; do
+  label="${target%%:*}"
+  n_c="$(grep -c . <"$WORK/cand.$label" | tr -d ' ')"
+  n_i="$(grep -c . <"$WORK/inv.$label" | tr -d ' ')"
+  echo "    ${label}: ${n_c} \`cosign verify-blob\` occurrence(s) found — ${n_i} classified as invocations and GRADED, $((n_c - n_i)) exempted as backticked prose, 0 refused as unclassifiable"
+done
+echo "  ASSERTED, and each shown to FAIL on a mutant carrying the defect it exists to catch:"
+echo "    * every GRADED occurrence carries --certificate-oidc-issuer, --certificate-identity-regexp and --bundle,"
+echo "      with EVERY value it supplies for those flags equal to SECURITY.md's published pair"
+echo "      (issuer=${inst_issuer}, identity=${inst_identity}) — not merely the last value on the line;"
+echo "    * hack/install.sh, SECURITY.md and hack/release/verify-artifacts.sh publish that pair byte-identically;"
+echo "    * the pinned regexp accepts all ${#REAL_SANS_ACCEPT[@]} REAL published release identities and rejects all ${#REAL_SANS_REJECT[@]} negatives;"
+echo "    * a foreign-signed bundle fails closed on the adopter path with nothing installed, and fails the maintainer path too;"
+echo "    * on the mutants section 2b builds, a second UNPINNED call reddens both on its own line and chained onto a"
+echo "      pinned one with && / ; / | (in the spellings 2b enumerates), while a second CORRECTLY pinned call does not."
+echo "  NOT ASSERTED — the residual, stated here rather than somewhere a reader will not look:"
+echo "    This gate finds calls by the literal string 'cosign verify-blob' and counts them as whitespace-delimited"
+echo "    words with shell quotes stripped. A call spelled through a variable, built by eval, or assembled from"
+echo "    fragments is NOT SEEN and therefore NOT GRADED. The counts above are what was classified — they are NOT"
+echo "    a proof that no other invocation exists in these files. Any line carrying more than one verify-blob token"
+echo "    is REFUSED (MULTI-OCCURRENCE), never graded on its first call."
