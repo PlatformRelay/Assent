@@ -54,6 +54,7 @@ A throwaway probe reconstructed `newEvalEnv` byte-faithfully against the pinned
 | --- | --- |
 | `size(...)`, `filter`, `map`, `all`, `exists`, `exists_one`, `in`, `has` | `sum(...)` and `<list>.sum()` |
 | chained comprehensions — `changes.filter(c, …).all(c, …)` | `math.*` (the `ext.Math` library is not registered) |
+| the **value binder** `[expr].all(v, …)` — CEL's standard poor-man's `let`: computes `expr` once and binds it to `v` | `reduce`, `transformList`, `transformMap`, two-var `all(i, x, …)` — every construct that could vary an iteration count |
 | nested comprehensions — `changes.all(c, changes.exists(d, …))` | `reduce(...)` — no fold of any kind |
 | `oldEntry.acls.filter(a, !(a in entry.acls))` | `lists.*` (`ext.Lists` is not registered) |
 | `facts.registry.topics.value[string(new)].retentionMs` | `cel.bind(...)` (`ext.Bindings` is not registered) |
@@ -94,7 +95,36 @@ The last two were **evaluated**, not merely compiled, under `cel.CostLimit(1_000
 respectively. Evaluation matters here: a compile-only check would have left §5's claim about
 what CEL can *do* with those primitives untested.
 
-### 1.2 Two ceilings that are *not* expressiveness — and that Rego does not lift
+### 1.2 The one property the whole record rests on, measured rather than recalled
+
+§5's verdict — the only shape-level claim in this document with nothing behind it but itself —
+reduces to a single property: **the number of iterations a tier-1 CEL expression performs cannot
+be made to depend on the data.** Every expression's maximum path length is a *syntactic*
+property, fixed when the rule is authored. Earlier drafts supported this with "CEL is
+non-Turing-complete by design", which is a recalled argument in a section headed *measured, not
+recalled*. Compiled against `newEvalEnv`:
+
+```text
+REJECTED  !transitiveClosure(entry.dependsOn).exists(d, d == entry.name)   undeclared 'transitiveClosure'
+REJECTED  changes.reduce(a, x, a + 1, 0) > 0                               undeclared 'reduce'
+REJECTED  [1,2,3].reduce(a, x, a + x, 0) == 6                              undeclared 'reduce'
+REJECTED  changes.transformList(x, x).size() > 0                           undeclared 'transformList'
+REJECTED  changes.transformMap(k, v, v).size() > 0                         undeclared 'transformMap'
+REJECTED  changes.all(i, x, i >= 0)                                        undeclared 'all'  (no two-var form)
+REJECTED  cel.bind(x, changes, x.size() > 0)                               undeclared 'cel'
+REJECTED  range(3).size() == 3   /   lists.range(3).size() == 3            undeclared 'range' / 'lists'
+REJECTED  for (x, changes) { x }                                           reserved identifier: for
+```
+
+There is no fold, no user-defined function, no self-reference, no loop form, and no generator;
+the four comprehension macros iterate exactly one level over one collection and cannot call
+themselves. Depth must therefore be written out, and cel-go hard-caps that at a parser recursion
+limit of **250** (`expression recursion limit exceeded: 250` at nesting depth 260; depth 200
+still compiles). **That is the ceiling — one property, measured nine ways.** A bounded `k`-hop
+check really is an approximation when the data outruns the authored `k`: on a 4-cycle, the `k=3`
+form evaluates `false` and the `k=4` form `true`.
+
+### 1.3 Two ceilings that are *not* expressiveness — and that Rego does not lift
 
 Three of the verdicts below turn on this distinction, so it is stated once, up front.
 
@@ -109,7 +139,7 @@ Three of the verdicts below turn on this distinction, so it is stated once, up f
   `single | set`. There is **no declarable object/map type**. A fact whose value is a mapping
   is undeclarable, whichever backend reads it. (See residual OQ-36.)
 
-### 1.3 On the `assent run` path, almost every binding is a **scalar**
+### 1.4 On the `assent run` path, almost every binding is a **scalar**
 
 This is measured, and it decides two of the five verdicts below. `assent run` diffs the
 governed file in **document mode** (`changeSetForGoverned` → `change.Diff`), and document-mode
@@ -208,10 +238,20 @@ size(changes.filter(c, c.kind == "add")) <= 5
 changes.filter(c, c.kind == "add").all(c, !string(c.new).contains("*"))
 ```
 
-Chained and nested comprehensions both compile (§1.1). The residual cost is **legibility and
-evaluation cost, not expressiveness**, and neither is a licence to add a second backend. A
-hostile reviewer will point out that a chained comprehension *is* a second pass; that reviewer
-is right, and this record concedes it — which is exactly why only A1 survives from this shape.
+Chained and nested comprehensions both compile (§1.1) — and the surface additionally has a value
+binder, `[expr].all(v, …)`, which computes the sub-expression **once** and reuses it:
+
+```cel
+[changes.filter(c, c.kind == "add")].all(added,
+  added.size() <= 5 && added.all(c, !string(c.new).contains("*")))
+```
+
+That compiles, and it removes the re-derivation entirely. So the residual is **legibility, not
+expressiveness and not evaluation cost** — the binder answers the cost half — and legibility is
+not a licence to add a second backend. A hostile reviewer will point out that a chained
+comprehension *is* a second pass; that reviewer is right, and this record concedes it. **This
+shape is struck more firmly than the first draft struck it**, which is exactly why only A1
+survives from multi-pass.
 
 ---
 
@@ -265,7 +305,7 @@ the chain at the index, so a *dynamic* index past `.value` is accepted. Only an 
 
 **Two residuals, recorded honestly, neither of which Rego fixes.** (a) Spelling (ii) relies on
 a fact whose value is a **mapping**, and the frozen provider declaration has no object type
-(§1.2) — the value is undeclarable, so this is a contract gap, raised as **OQ-36**, not a
+(§1.3) — the value is undeclarable, so this is a contract gap, raised as **OQ-36**, not a
 backend argument. (b) The generic `builtin/repo-file` cannot supply an arbitrary registry: it
 resolves a **basename** by walking up from the change anchor and maps each output to a
 **top-level key** of that one file (`repo_file.go` `findMostSpecific` / `answerRepoFile`) — no
@@ -288,7 +328,7 @@ evaluation can contain both files, and there is no cross-subject aggregation at 
 `REQ-DEM-S05-04` already records this finding independently.
 
 **Why this is struck rather than escalated.** The blocker is **input availability**, not
-expressiveness (§1.2). REQ-E11-S05-01 pins the Rego module to the *identical*
+expressiveness (§1.3). REQ-E11-S05-01 pins the Rego module to the *identical*
 `EvaluationInput`, and the tier is fenced to "declared data, no I/O" — so a Rego module
 evaluating this rule sees exactly the same single-file changeset and fails in exactly the same
 way. **Adding the Rego tier does not make this rule writable.** The only mechanism that
@@ -339,7 +379,7 @@ error → `predicate.error` → REVIEW. The same rule passes in `assent test` an
 REVIEW in production. That asymmetry is fail-safe, so it is not urgent, but it is real and it
 is **not E11-S01's to decide** — raised as **OQ-35**.
 
-**Why the strike is nonetheless unconditional.** Apply the §1.2 test to both resolutions of
+**Why the strike is nonetheless unconditional.** Apply the §1.3 test to both resolutions of
 OQ-35 and they converge:
 
 - if OQ-35 is resolved by **extending** the entry binding to `assent run`, the leaf above works
@@ -368,7 +408,7 @@ edges: ["orders|billing", "billing|ledger", "ledger|orders"]
 
 That declaration is in contract, the `http` transport that serves it runs on the plain
 `assent run` path with no `--checkout`, and the value binds as a CEL list — every link verified
-in §1.3. **No OQ-35, no OQ-36, no `--checkout`, no schema change.**
+in §1.4. **No OQ-35, no OQ-36, no `--checkout`, no schema change.**
 
 **Attempted CEL leaf.**
 
@@ -378,7 +418,7 @@ in §1.3. **No OQ-35, no OQ-36, no `--checkout`, no schema change.**
 
 **Why it fails.** `transitiveClosure` is an `undeclared reference` and nothing replaces it. CEL
 is deliberately non-Turing-complete: **no recursion, no fixpoint, no user-defined function, no
-`while`, no fold** (§1.1) — the four comprehension macros iterate exactly one level over one
+`while`, no fold** (§1.2, measured nine ways) — the four comprehension macros iterate exactly one level over one
 collection, and a comprehension cannot call itself. **Unbounded reachability therefore has no
 spelling at tier 1**, and neither does any question that depends on it: shortest path,
 ancestor-of, strongly-connected component, topological order.
@@ -405,12 +445,30 @@ recoverable as a *value* the same way:
 strings, `in`) were already in this record's own §1.1 census, so this was always derivable from
 the table above.
 
-**So the ceiling is `k` itself, not decoding.** Each additional hop costs another nested
-comprehension — `O(|N|^(k-1)·|E|)` — which exhausts the cost budget on any real graph, and the
-rule must be rewritten whenever the graph deepens. But that is a **scale** argument, and this
-record refuses to offer scale as an expressiveness argument (§2, A1). The honest statement is
-narrow and it is enough: **a bounded `k`-hop check is expressible; unbounded reachability is
-not**, and that is the whole of the reason above.
+**So the ceiling is `k` itself, not decoding — and `k` reaches further than an earlier draft of
+this record claimed.** That draft asserted the cost grew as `O(|N|^(k-1)·|E|)` and "exhausts the
+cost budget on any real graph". **Measured, that is the wrong complexity class and the wrong
+conclusion.** Binding each BFS frontier once per level with `[expr].all(v, …)` (§1.1) makes the
+cost *additive across levels* rather than multiplicative, and under the real
+`cel.CostLimit(1_000_000)`:
+
+```text
+ring |N|=50  deg 5 |E|=250    frontier k=10 cost= 89,551   k=20 cost=235,297   k=50 cost=686,317  (all correct)
+ring |N|=200 deg 5 |E|=1000   frontier k=10 cost=462,618   k=20 EXCEEDED
+without the frontier binder    naive nesting exceeds the budget at k=4 on the |N|=50 graph
+```
+
+Cost grows roughly linearly in `k` at fixed `|N|`. At `|N|=50` a check to `k=50` fits in 69% of
+budget — and since `k ≥ |N|`, CEL there is **not approximating at all: it decides reachability
+exactly.** Many governed catalogs are well under 50 entries. The practical `k` collapses around
+`|N|≈200`.
+
+**This is recorded because it is the honest envelope, not because it is a second reason.** It is
+not offered as an expressiveness argument — §2 refuses scale in that role and the same refusal
+applies here. It changes nothing about the verdict, and a reader entitled to ask "would CEL
+suffice for *our* graph?" is entitled to the measurement rather than an assertion that
+forecloses the question. The one claim that carries the verdict is unchanged and narrow: **a
+bounded `k`-hop check is expressible; unbounded reachability is not.**
 
 **Why Rego lifts it.** Recursive rule definitions over `input` are the canonical Rego idiom and
 `graph.reachable` answers the closure directly, at any depth, without unrolling; `split` turns
@@ -425,10 +483,12 @@ gate was asking for. It needs no answer from OQ-35 or OQ-36.
 > **Caveat, stated because this record makes the same distinction for B1 (§3).** No provider in
 > the corpus delivers an encoded adjacency today. That the shape is **declarable and
 > deliverable** follows from the provider contract — any provider may return a
-> `{type: string, cardinality: set}` output, and every link is verified in §1.3 — not from a
-> shipped example. It is the same contract inference used to strike B1, applied in the same
-> direction, and it is why "unconditional" is qualified throughout as *on today's shipped input
-> contract*.
+> `{type: string, cardinality: set}` output, and every link is verified in §1.4 — not from a
+> shipped example. **The same epistemic standard as B1, but not the same evidential weight:**
+> B1 has a shipped mechanism (`ownership.yaml:21`) and infers only the *source* of the set,
+> whereas Shape D infers the whole delivery. That is why "unconditional" is qualified throughout
+> as *on today's shipped input contract*, and why the cheapest thing that would close the gap is
+> one `assent test` fixture carrying a stubbed `edges` fact.
 
 **Two things this record got wrong before, recorded so the corrections are auditable.**
 
@@ -446,10 +506,11 @@ gate was asking for. It needs no answer from OQ-35 or OQ-36.
    argument was not. One standard now applies in both directions, and Shape D stands on
    reason 1 alone.
 
-**Binds E11-S04 (the capability sandbox), which is not written yet.** `graph.reachable` and
-`split` are pure and deterministic and **must not be denied** by the allowlist:
-`graph.reachable` closes what CEL cannot close, and `split` is what a module needs to rebuild
-the adjacency from the encoded pairs. A denylist drafted from "deny anything unfamiliar" would
+**Binds E11-S04 (the capability sandbox), which is not written yet.** `graph.reachable` is pure
+and deterministic and **must not be denied** by the allowlist: it is what closes the graph at
+any depth, and it alone carries this shape's justification. `split` should be allowed alongside
+it — it is equally pure and it is the convenient way to rebuild the adjacency from the encoded
+pairs — but it is a convenience, not the justification. A denylist drafted from "deny anything unfamiliar" would
 strike out this shape's own justification. Recorded in the S04 section of the epic spec, not
 only here.
 
@@ -473,11 +534,13 @@ carries**. Both justifications are **unconditional** on today's shipped input co
 waits on OQ-35 or OQ-36. Nothing else in this record supports the epic.
 
 **The single strongest piece of evidence** is Shape D: an input that is declarable and
-deliverable today, over which tier-1 CEL can answer only a **fixed-depth approximation** —
-rewritten whenever the graph deepens, at `O(|N|^(k-1)·|E|)` against a `1_000_000` budget — while
-Rego answers the **actual** question at any depth with `graph.reachable`. That gap is exactly
-the per-rule evidence D-017's gate existed to demand. It is a narrower claim than two earlier
-drafts of this record made, and unlike them it survives execution.
+deliverable today, over which tier-1 CEL can express only a check to some **fixed, syntactically
+written depth `k`** — because the iteration count of a CEL expression cannot be made
+data-dependent (§1.2) — while Rego answers the **actual**, unbounded question with
+`graph.reachable`. That gap is exactly the per-rule evidence D-017's gate existed to demand.
+Note the claim is about **expressiveness only**: on a small enough graph a large enough `k` is
+both affordable and *complete* (§5 measures where), so this is not an argument that CEL is too
+slow — it is an argument that CEL cannot write the rule that holds at any size.
 
 **What E11 is no longer justified to claim:** cross-manifest reasoning of any kind, set
 operations over entry trees, and "reuse a computed intermediate". Two of the four shapes
@@ -493,9 +556,10 @@ not a constraint, and saying so is cheaper than pretending otherwise.
   fence it. **Held by a gate:** `evaluation-input.schema.json` lives under
   `schemas/decision/v1alpha1/`, and REQ-E11-S05-03 pins
   `git diff --exit-code -- schemas/decision/`, so a widening reddens.
-- **S04** (capability sandbox) **must not deny `graph.reachable` or `split`** — both are pure
-  and deterministic; `graph.reachable` closes what CEL cannot close and `split` rebuilds the
-  adjacency from the encoded pairs. A denylist drafted from "deny anything unfamiliar" would
+- **S04** (capability sandbox) **must not deny `graph.reachable`** — it is pure, deterministic,
+  and the thing that closes the graph at any depth, which is Shape D's entire justification.
+  `split` belongs in the same allowlist as an equally pure convenience for rebuilding the
+  adjacency, but it is not what carries the shape. A denylist drafted from "deny anything unfamiliar" would
   strike out the epic's own strongest evidence. **Held by review — not by a gate, and the
   distinction is the point.** REQ-E11-S04-02's committed `allowed-builtins.golden` detects
   **drift**: it fires when the allowed set *changes*, so the sandbox cannot silently *widen*.
