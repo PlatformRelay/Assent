@@ -31,8 +31,11 @@
 # satisfied by a mere comment (it still went red, but with the wrong finding —
 # "WITH ARGUMENTS" for a step whose command had been commented out).
 #
-# CONTRACT: this file is SOURCED, never executed. Every function returns a
-# distinct numeric code and prints NOTHING. The caller owns the wording,
+# CONTRACT: this file is SOURCED, never executed. The two GRADING entry points
+# (`assent_pr_reach`, `assent_step_wired`) return a distinct numeric code and
+# print nothing at all; the internal helpers print their results to stdout by
+# design, which is how they are composed. No function here emits a FINDING or
+# writes to stderr. The caller owns the wording,
 # because each caller's mutation controls pin their own stderr fragments.
 #
 # PORTABILITY RULES, inherited from hack/lint/workflow_pins_test.sh's preamble
@@ -258,8 +261,16 @@ _assent_yaml_tokens() {
 #
 # So the burden is inverted exactly there: a token carrying any byte outside the
 # git-ref/glob set is not graded at all, it is REFUSED. A future tokenizer
-# defect on that key can then yield a red or a refusal, never a silent accept —
-# by construction rather than by enumeration.
+# defect on that key THAT MANGLES A TOKEN can then yield a red or a refusal
+# rather than a silent accept.
+#
+# NOT a defect that drops the token set ENTIRELY, and the unqualified "never a
+# silent accept — by construction" that used to end this paragraph was false
+# (G6-03). An empty set passes this check, passes _assent_tokens_globfree and
+# passes `grep -qx main`, so the consumer falls through to 0. See the
+# must-NOT-contain bullet in the header for the measurements. No total-drop
+# defect is known on this key today — what is withdrawn is the claim that the
+# construction rules one out.
 # The set: what a git ref name or a glob can be built from, plus `#`. The `#`
 # is not an oversight — this key alone passes strip=0 (G3-04), so ordinary
 # comment text is EXPECTED to survive into its tokens and is not evidence of a
@@ -315,9 +326,12 @@ _assent_tokens_globfree() {
 # argument-free and undisarmed". Adding `[[:space:]]*:` would have been the
 # fifth spelling patch on this lane and would still miss the sixth.
 #
-# The immune design was already in this file: `assent_pr_reach` normalises and
-# ALLOWLISTS the filter keys, and is measurably immune to every one of those
-# spellings. This mirrors it, and normalisation — not pattern breadth — is what
+# The immune design was already in this file: `assent_pr_reach` ALLOWLISTS the
+# filter keys — it greps each sub-block key against the five GitHub defines and
+# REFUSES anything else, so `paths : `, `"paths":`, `'paths' :` and `"types" :`
+# all land on the refusal (measured: rc=10). It does not normalise; the
+# immunity there comes from refusing non-matches, and here from normalising.
+# Both are "grade a structure, not a spelling"; the mechanisms differ. This mirrors it, and normalisation — not pattern breadth — is what
 # makes it work on the lines it is given.
 #
 # THE BOUND, stated because an earlier version of this comment claimed the
