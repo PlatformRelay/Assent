@@ -70,6 +70,31 @@
 # This is the AUD2-S05 quorum bug one layer out: not a wrong assertion, a wrong
 # quantifier.
 #
+# SECOND ROUND (UC-01..UC-04) — THE FIRST D-160 FIX REPRODUCED THE DEFECT IT WAS
+# WRITTEN TO CLOSE, one level down, and independent review caught it. has_flag
+# grepped the whole FILE; the replacement grepped the whole LINE. Both are
+# existential; only the scope shrank. One folded line was graded as at most ONE
+# invocation, so
+#
+#   cosign verify-blob <both pins> --bundle a.json a && cosign verify-blob --bundle EVIL.json evil
+#
+# started with `cosign verify-blob` (not UNCLASSIFIABLE), carried --bundle (not
+# FOLD-BROKEN), carried both flag strings (not UNPINNED) and yielded the published
+# values (not WRONG-VALUE): GREEN, in same-line, `;`-separated and backslash-folded
+# forms, on all three graded files — and the FULL gate exited 0 on SECURITY.md,
+# which has no runtime twin because it is a document. The gate printed "EVERY
+# cosign verify-blob invocation ... is pinned", which was false as printed.
+# Closed by grading per OCCURRENCE (occurrence_count + MULTI-OCCURRENCE), not per
+# line. UC-02: extract_issuer/extract_identity anchor on a greedy `.*`, so the LAST
+# value on a line won and a hostile `--certificate-identity-regexp ''` placed FIRST
+# was masked by a correct value placed second — the extraction direction favoured
+# the attacker. Closed by grading EVERY value of every flag (flag_value_tokens).
+# UC-03: a CORRECTLY pinned call written with double quotes was refused as
+# "identity=<empty/unparsable> ... an empty regexp matches every Fulcio identity" —
+# a true refusal with a false reason, and the repair a maintainer reaches for is
+# widening the extractor. Both quote styles are now accepted and a BARE value is
+# diagnosed as a QUOTING defect (UNQUOTED-VALUE), never as a wrong or empty value.
+#
 # ANTI-VACUITY DISCIPLINE (this repo has a documented history of gates that
 # cannot fail — D-124, AUD-S18). Every assertion here is a FUNCTION over a file
 # or a fixture, run twice: once against the real tree (must be GREEN) and once
@@ -147,11 +172,77 @@ extract_issuer() {
 }
 
 # extract_identity <file> — every distinct --certificate-identity-regexp value.
-# The value is single-quoted in all three graded files (a shell regexp must be);
-# an unquoted
-# value extracts as nothing and trips the positive controls rather than passing.
+# BOTH quote styles are accepted (UC-03). The value is single-quoted in all three
+# graded files and it must be quoted somehow — a BARE regexp is glob-expanded and
+# word-split by the shell, so `[Aa]ssent` would silently become something else —
+# but double quotes are an equally correct spelling for this particular value (it
+# contains no $ and no backtick). A gate that reds on a CORRECTLY pinned,
+# double-quoted call while blaming "an empty regexp that matches every Fulcio
+# identity" teaches the next maintainer to widen the extractor, which is how a
+# pin gate erodes. A bare value still extracts as nothing here, and pin_violations
+# names QUOTE STYLE as the cause instead of misdiagnosing it as a wrong value.
 extract_identity() {
-  sed -nE "s/.*--certificate-identity-regexp[[:space:]]+'([^']*)'.*/\1/p" "$1" | sort -u
+  sed -nE "s/.*--certificate-identity-regexp[[:space:]]+'([^']*)'.*/\1/p;s/.*--certificate-identity-regexp[[:space:]]+\"([^\"]*)\".*/\1/p" "$1" | sort -u
+}
+
+# --------------------------- UC-01 / UC-02: per-OCCURRENCE grading ----------
+#
+# THE DEFECT THIS BLOCK EXISTS TO CLOSE, stated plainly because it is the same
+# defect D-160 was opened to fix, reproduced one level down. The first D-160 fix
+# replaced has_flag — which grepped the whole FILE, so a pinned sibling anywhere
+# satisfied it — with a check that grepped the whole LINE. That is still an
+# existential test, just with a smaller scope: one folded line was graded as at
+# most ONE invocation, so
+#
+#   cosign verify-blob <both pins> --bundle a.json a && cosign verify-blob --bundle EVIL.json evil
+#
+# started with `cosign verify-blob` (not UNCLASSIFIABLE), contained --bundle (not
+# FOLD-BROKEN), contained both flag strings (not UNPINNED) and yielded the
+# published values (not WRONG-VALUE). Green. Confirmed in same-line, `;`-separated
+# and backslash-folded forms, on all three graded files. The universal property
+# is per OCCURRENCE, not per line.
+#
+# occurrence_count <text> — how many verify-blob calls sit on one folded line.
+# The line-level TRIGGER stays the literal `cosign verify-blob` (see
+# cosign_candidates) because widening it to bare `verify-blob` reds on prose; but
+# COUNTING inside an already-triggered line uses the shorter `verify-blob`, so a
+# second call spelled `cosign  verify-blob` or `"$COSIGN" verify-blob` and chained
+# onto a pinned one is still SEEN and still fails closed.
+occurrence_count() {
+  # WHOLE WORDS, not substrings. A substring count reds on a perfectly good
+  # invocation whose BUNDLE is named `verify-blob-test.sigstore.json` — a
+  # false positive on a plausible filename, sitting on the branch that carries the
+  # whole UC-01 fix, so the repair a maintainer would reach for is loosening this
+  # very function. awk's default field splitting also folds runs of whitespace, so
+  # `cosign  verify-blob` and `"$COSIGN" verify-blob` still count as occurrences.
+  # Residual, stated: a bundle named exactly `verify-blob` (no extension) counts as
+  # an occurrence and fails closed. No file does that, and closed is the safe way
+  # to be wrong.
+  printf '%s' "$1" | awk '{ for (i = 1; i <= NF; i++) if ($i == "verify-blob") n++ } END { print n + 0 }'
+}
+
+# flag_value_tokens <flag> — reads one folded line on stdin and prints the RAW
+# value token following EVERY occurrence of <flag> (quotes included), one per line.
+#
+# "Every", not "the last one", is the point (UC-02). extract_issuer and
+# extract_identity anchor on a greedy `.*`, so on a line carrying two values the
+# LAST one wins — and a hostile `--certificate-identity-regexp ''` placed FIRST is
+# masked by a correct value placed second. The extraction direction favoured the
+# attacker. Here every value is returned and every one has to match.
+flag_value_tokens() {
+  local flag="$1"
+  grep -oE -- "$flag[[:space:]]+('[^']*'|\"[^\"]*\"|[^[:space:]]+)" \
+    | sed -E "s/^$flag[[:space:]]+//" || true
+}
+
+# unquote <raw-token> — prints "quoted<TAB>value" or "bare<TAB>value".
+unquote() {
+  local raw="$1" n=${#1}
+  case "$raw" in
+    \'*\') printf 'quoted\t%s\n' "${raw:1:n-2}" ;;
+    \"*\") printf 'quoted\t%s\n' "${raw:1:n-2}" ;;
+    *) printf 'bare\t%s\n' "$raw" ;;
+  esac
 }
 
 # one_value <file> <extractor> <label> — the extractor's single distinct value,
@@ -206,7 +297,7 @@ one_value() {
 # sentence in SECURITY.md that says "verify-blob" outside backticks into a red
 # gate, and the next lane's remedy for that would be to loosen the classifier.
 pin_violations() {
-  local file="$1" rel cand line flag n_cand n_inv=0 inv_iss inv_id
+  local file="$1" rel cand line flag n_cand n_inv=0 n_occ tokens tok kind val published
   rel="${file#"$ROOT"/}"
   # The comparison is against SECURITY.md's published pair, so this must not run
   # before section 0 extracted it — otherwise every value check below compares
@@ -230,6 +321,16 @@ pin_violations() {
       printf 'UNCLASSIFIABLE: %s has a `cosign verify-blob` occurrence that is neither at command position nor a backticked prose mention, so this gate cannot decide whether it is pinned — failing closed: %s\n' "$rel" "$line"
       continue
     fi
+    # UC-01: ONE FOLDED LINE MAY CARRY MORE THAN ONE CALL. Everything below grades
+    # a line as a single invocation, so a line carrying two calls has to fail
+    # closed rather than be graded as its first one. `a && b`, `a ; b` and a
+    # backslash-folded chain all arrive here as one line.
+    n_occ="$(occurrence_count "$line")"
+    if [[ "$n_occ" -gt 1 ]]; then
+      n_inv=$((n_inv + n_occ))
+      printf 'MULTI-OCCURRENCE: %s has %s `verify-blob` calls chained on ONE line, and this gate grades a line as one invocation — so a pinned first call would vouch for an unpinned second. Put each cosign call on its own line: %s\n' "$rel" "$n_occ" "$line"
+      continue
+    fi
     n_inv=$((n_inv + 1))
     if [[ "$line" != *--bundle* ]]; then
       # --bundle is present in every real invocation across all three files, so
@@ -244,20 +345,37 @@ pin_violations() {
       [[ "$line" == *"$flag"* ]] \
         || printf 'UNPINNED[%s]: %s has a `cosign verify-blob` invocation without %s — keyless verification there accepts a signer this project never authorised: %s\n' "$flag" "$rel" "$flag" "$line"
     done
-    # PRESENCE IS NOT A PIN. `--certificate-identity-regexp ''` carries the flag
-    # and matches every Fulcio identity ever issued, so a check that stops at "the
-    # flag is there" is the same defect D-160 closes, one level down. Each
-    # invocation's OWN value is therefore compared against SECURITY.md's published
-    # pair — which also means a second invocation can no longer drift from the
-    # first behind `one_value`'s `sort -u`.
-    inv_iss="$(printf '%s\n' "$line" | extract_issuer /dev/stdin)"
-    inv_id="$(printf '%s\n' "$line" | extract_identity /dev/stdin)"
-    if [[ "$line" == *--certificate-oidc-issuer* && "$inv_iss" != "$sec_issuer" ]]; then
-      printf 'WRONG-VALUE[--certificate-oidc-issuer]: %s has a `cosign verify-blob` invocation pinning issuer=%s, but SECURITY.md publishes %s — the flag is present and the guarantee is not: %s\n' "$rel" "${inv_iss:-<empty/unparsable>}" "$sec_issuer" "$line"
-    fi
-    if [[ "$line" == *--certificate-identity-regexp* && "$inv_id" != "$sec_identity" ]]; then
-      printf 'WRONG-VALUE[--certificate-identity-regexp]: %s has a `cosign verify-blob` invocation pinning identity=%s, but SECURITY.md publishes %s — the flag is present and the guarantee is not (an empty regexp matches every Fulcio identity): %s\n' "$rel" "${inv_id:-<empty/unparsable>}" "$sec_identity" "$line"
-    fi
+    # PRESENCE IS NOT A PIN, and NEITHER IS "one of the values is right" (UC-02).
+    # `--certificate-identity-regexp ''` carries the flag and matches every Fulcio
+    # identity ever issued. EVERY value the invocation supplies for each flag is
+    # compared against SECURITY.md's published pair, because the greedy `.*` in
+    # extract_identity/extract_issuer keeps only the LAST value on a line — so a
+    # hostile empty regexp placed FIRST used to be masked by a correct one placed
+    # second. Quote style is diagnosed separately from a wrong value (UC-03): a
+    # bare regexp is a real defect (the shell globs and word-splits it) but it is
+    # NOT "an empty regexp", and saying so is what stops a maintainer from
+    # "fixing" it by widening the extractor.
+    for flag in --certificate-oidc-issuer --certificate-identity-regexp; do
+      [[ "$line" == *"$flag"* ]] || continue
+      if [[ "$flag" == "--certificate-oidc-issuer" ]]; then published="$sec_issuer"; else published="$sec_identity"; fi
+      tokens="$(printf '%s\n' "$line" | flag_value_tokens "$flag")"
+      if [[ -z "$tokens" ]]; then
+        printf 'UNPARSABLE-VALUE[%s]: %s carries %s but this gate could not read a value after it — the invocation is malformed, or the value uses a quoting style the extractor does not support (single and double quotes are supported; a BARE value is not, because the shell would glob and word-split it): %s\n' "$flag" "$rel" "$flag" "$line"
+        continue
+      fi
+      while IFS= read -r tok; do
+        [[ -n "$tok" ]] || continue
+        kind="$(unquote "$tok" | cut -f1)"
+        val="$(unquote "$tok" | cut -f2-)"
+        if [[ "$flag" == "--certificate-identity-regexp" && "$kind" == "bare" ]]; then
+          printf 'UNQUOTED-VALUE[%s]: %s pins the identity regexp WITHOUT quotes (%s). The value is a regexp: unquoted, the shell glob-expands `[Aa]` and word-splits it, so cosign is handed something other than what is written. This is a QUOTING defect, not a wrong or empty value — quote it, do not widen the extractor: %s\n' "$flag" "$rel" "$val" "$line"
+          continue
+        fi
+        if [[ "$val" != "$published" ]]; then
+          printf 'WRONG-VALUE[%s]: %s has a `cosign verify-blob` invocation supplying %s=%s, but SECURITY.md publishes %s — the flag is present and the guarantee is not (an EMPTY regexp matches every Fulcio identity ever issued): %s\n' "$flag" "$rel" "$flag" "${val:-<empty>}" "$published" "$line"
+        fi
+      done <<<"$tokens"
+    done
   done <<<"$cand"
   [[ "$n_inv" -ge 1 ]] \
     || printf 'NO-INVOCATIONS: %s mentions `cosign verify-blob` but not once at command position — nothing was actually graded\n' "$rel"
@@ -375,6 +493,17 @@ echo "== 2b. UNIV-COSIGN (D-160): the check is UNIVERSAL, and every branch of it
 # copies of the three files, with the same verdicts recorded below.
 PROBE_BUNDLE='univ-cosign-probe.sigstore.json'
 PROBE_ARTIFACT='univ-cosign-probe.tar.gz'
+PINS_OK="--certificate-oidc-issuer ${sec_issuer} --certificate-identity-regexp '${sec_identity}'"
+
+# append_raw <src> <dst> <text> — a copy of <src> with <text> appended verbatim.
+# Used by the UC-01/UC-02/UC-03 mutants, which need exact control of the line
+# shape (chaining operators, quote style, duplicated flags) rather than the
+# canonical multi-line form append_invocation emits.
+append_raw() {
+  cp "$1" "$2"
+  printf '%s\n' "$3" >>"$2"
+  grep -qF -- "$PROBE_BUNDLE" "$2" || fail "mutation did not land: $2 has no appended text"
+}
 
 # append_invocation <src> <dst> <pinned|unpinned|offset|emptyid|wrongiss> — a copy of <src> with a
 # SECOND `cosign verify-blob` appended in one of five shapes: pinned (the control),
@@ -527,6 +656,106 @@ for target in "${GRADED[@]}"; do
   printf '%s\n' "$v" | grep -qF -- 'WRONG-VALUE[--certificate-oidc-issuer]' \
     || fail "a second invocation in $label pinning a foreign OIDC issuer was NOT reported — each invocation's own value is not compared against SECURITY.md's published pair: ${v:-<nothing>}"
   echo "OK: $label — a foreign issuer on a second invocation is caught per-invocation"
+
+  # ---- UC-01: a second call CHAINED ONTO THE SAME LINE as a pinned one. --------
+  # This is the shape that defeated the first D-160 fix: it grades a folded LINE
+  # as at most one invocation, so a pinned first call vouched for an unpinned
+  # second. All three chaining operators are exercised, on all three files,
+  # because the earlier matrix was broad in mutant shapes and narrow in this one.
+  for chain in "&&" ";" "|"; do
+    m="$WORK/univ.${label}.chained-$(printf '%s' "$chain" | tr -d ' ' | od -An -tx1 | tr -d ' \n')"
+    append_raw "$src" "$m" "cosign verify-blob $PINS_OK --bundle $PROBE_BUNDLE $PROBE_ARTIFACT $chain cosign verify-blob --bundle evil-$PROBE_BUNDLE evil-$PROBE_ARTIFACT"
+    v="$(pin_violations "$m")"
+    printf '%s\n' "$v" | grep -qF -- 'MULTI-OCCURRENCE:' \
+      || fail "UC-01: an UNPINNED 'cosign verify-blob' chained onto a pinned one with '$chain' on ONE line in $label was NOT caught — the check is per-LINE, not per-OCCURRENCE, which is the D-160 defect one level down: ${v:-<nothing>}"
+    echo "OK: $label — a second call chained with '$chain' on one line fails closed (UC-01)"
+  done
+
+  # backslash-folded chain: the fold joins the two calls into one line, so this
+  # must reach the same verdict by the same route.
+  m="$WORK/univ.${label}.chained-folded"
+  append_raw "$src" "$m" "cosign verify-blob $PINS_OK --bundle $PROBE_BUNDLE $PROBE_ARTIFACT && \\
+  cosign verify-blob --bundle evil-$PROBE_BUNDLE evil-$PROBE_ARTIFACT"
+  v="$(pin_violations "$m")"
+  printf '%s\n' "$v" | grep -qF -- 'MULTI-OCCURRENCE:' \
+    || fail "UC-01: a backslash-FOLDED chain hiding an unpinned second call in $label was NOT caught: ${v:-<nothing>}"
+  echo "OK: $label — a backslash-folded chain fails closed (UC-01)"
+
+  # the second call spelled so the literal trigger would miss it. occurrence_count
+  # deliberately counts the shorter 'verify-blob' INSIDE an already-triggered
+  # line, so these are seen even though the file-level trigger would not match.
+  for spelling in '"$COSIGN" verify-blob' 'cosign  verify-blob'; do
+    m="$WORK/univ.${label}.chained-spelling-$(printf '%s' "$spelling" | od -An -tx1 | tr -d ' \n')"
+    append_raw "$src" "$m" "cosign verify-blob $PINS_OK --bundle $PROBE_BUNDLE $PROBE_ARTIFACT && $spelling --bundle evil-$PROBE_BUNDLE evil-$PROBE_ARTIFACT"
+    v="$(pin_violations "$m")"
+    printf '%s\n' "$v" | grep -qF -- 'MULTI-OCCURRENCE:' \
+      || fail "UC-01: a second call spelled '$spelling' and chained onto a pinned one in $label was NOT counted as an occurrence: ${v:-<nothing>}"
+    echo "OK: $label — a chained call spelled '$spelling' is still counted (UC-01)"
+  done
+
+  # FALSE-POSITIVE CONTROL for occurrence_count, the branch the UC-01 fix rests on.
+  # A single, correctly pinned call whose BUNDLE happens to be named
+  # `verify-blob-*.sigstore.json` must stay GREEN. Counting the bare substring
+  # instead of whole words reds here — on a plausible filename — and the repair a
+  # maintainer reaches for is loosening occurrence_count itself.
+  m="$WORK/univ.${label}.filename-collision"
+  append_raw "$src" "$m" "cosign verify-blob $PINS_OK --bundle verify-blob-$PROBE_BUNDLE verify-blob-$PROBE_ARTIFACT"
+  v="$(pin_violations "$m")"
+  [[ -z "$v" ]] \
+    || fail "occurrence_count counts SUBSTRINGS, not whole words: a correctly pinned call whose bundle is named verify-blob-$PROBE_BUNDLE was reported as a violation in $label. That is a false positive on a plausible filename, on the branch the UC-01 fix rests on: $v"
+  echo "OK: $label — a bundle filename containing 'verify-blob' does not fake a second occurrence (UC-01 false-positive control)"
+
+  # ---- UC-02: ORDERING must not mask a defanged value. -------------------------
+  # extract_issuer/extract_identity anchor on a greedy .*, so the LAST value on a
+  # line wins. A hostile empty regexp placed FIRST used to be masked by a correct
+  # value placed second: the extraction direction favoured the attacker.
+  m="$WORK/univ.${label}.order-empty-first"
+  append_raw "$src" "$m" "cosign verify-blob --certificate-oidc-issuer ${sec_issuer} --certificate-identity-regexp '' --bundle $PROBE_BUNDLE $PROBE_ARTIFACT && cosign verify-blob $PINS_OK --bundle b-$PROBE_BUNDLE b-$PROBE_ARTIFACT"
+  v="$(pin_violations "$m")"
+  [[ -n "$v" ]] \
+    || fail "UC-02: an EMPTY identity regexp placed FIRST and masked by a correct value placed second in $label went unreported — ordering defeats the value check"
+  echo "OK: $label — a defanged value cannot be masked by a correct one later on the line (UC-02)"
+
+  # the same defect within ONE occurrence: the flag repeated, empty value first.
+  m="$WORK/univ.${label}.dup-flag-empty-first"
+  append_raw "$src" "$m" "cosign verify-blob --certificate-oidc-issuer ${sec_issuer} --certificate-identity-regexp '' --certificate-identity-regexp '${sec_identity}' --bundle $PROBE_BUNDLE $PROBE_ARTIFACT"
+  v="$(pin_violations "$m")"
+  printf '%s\n' "$v" | grep -qF -- 'WRONG-VALUE[--certificate-identity-regexp]' \
+    || fail "UC-02: --certificate-identity-regexp supplied TWICE in $label, empty first and correct second, was not reported — only the last value is graded: ${v:-<nothing>}"
+  echo "OK: $label — EVERY value of a repeated flag is graded, not just the last (UC-02)"
+
+  m="$WORK/univ.${label}.dup-issuer-foreign-first"
+  append_raw "$src" "$m" "cosign verify-blob --certificate-oidc-issuer https://accounts.example.invalid --certificate-oidc-issuer ${sec_issuer} --certificate-identity-regexp '${sec_identity}' --bundle $PROBE_BUNDLE $PROBE_ARTIFACT"
+  v="$(pin_violations "$m")"
+  printf '%s\n' "$v" | grep -qF -- 'WRONG-VALUE[--certificate-oidc-issuer]' \
+    || fail "UC-02: --certificate-oidc-issuer supplied TWICE in $label, foreign first and correct second, was not reported: ${v:-<nothing>}"
+  echo "OK: $label — a repeated issuer flag is graded on every value (UC-02)"
+
+  # ---- UC-03: quote style is diagnosed, not misdiagnosed. ---------------------
+  # A CORRECTLY pinned call written with double quotes must be GREEN. It used to
+  # red as 'WRONG-VALUE ... identity=<empty/unparsable> ... (an empty regexp
+  # matches every Fulcio identity)' — a true refusal with a false reason, and the
+  # repair a maintainer would reach for is widening the extractor.
+  m="$WORK/univ.${label}.double-quoted"
+  append_raw "$src" "$m" "cosign verify-blob --certificate-oidc-issuer ${sec_issuer} --certificate-identity-regexp \"${sec_identity}\" --bundle $PROBE_BUNDLE $PROBE_ARTIFACT"
+  [[ "$(cosign_invocations "$m" | grep -c . || true)" -eq "$((base_inv + 1))" ]] \
+    || fail "the double-quoted mutant of $label did not raise the invocation count from $base_inv — the extractor never saw it, so its green proves nothing"
+  v="$(pin_violations "$m")"
+  [[ -z "$v" ]] \
+    || fail "UC-03: a CORRECTLY pinned, double-quoted invocation in $label was reported as a violation — the gate refuses a correct call, and the message is what teaches a maintainer to widen the extractor: $v"
+  echo "OK: $label — a correctly pinned double-quoted call is accepted (UC-03)"
+
+  # a BARE regexp is a real defect (the shell globs and word-splits it) but it is
+  # NOT an empty value, and the message must say so.
+  m="$WORK/univ.${label}.bare-value"
+  append_raw "$src" "$m" "cosign verify-blob --certificate-oidc-issuer ${sec_issuer} --certificate-identity-regexp ${sec_identity} --bundle $PROBE_BUNDLE $PROBE_ARTIFACT"
+  v="$(pin_violations "$m")"
+  printf '%s\n' "$v" | grep -qF -- 'UNQUOTED-VALUE[--certificate-identity-regexp]' \
+    || fail "UC-03: an UNQUOTED identity regexp in $label was not diagnosed as a quoting defect — it must not be reported as an empty or wrong value: ${v:-<nothing>}"
+  if printf '%s\n' "$v" | grep -qF -- 'WRONG-VALUE[--certificate-identity-regexp]'; then
+    fail "UC-03: the unquoted-regexp mutant of $label ALSO reported WRONG-VALUE — quoting and value defects are conflated, which is the misdiagnosis that erodes the gate: $v"
+  fi
+  echo "OK: $label — an unquoted regexp is named as a QUOTING defect, not a wrong value (UC-03)"
 done
 
 # The prose escape hatch is NARROW: it is the backticks that make SECURITY.md's
@@ -1016,4 +1245,4 @@ grep -qE "^[[:space:]]+${STAGE}\$" "$AUDIT_GATE" \
   || fail "'$STAGE' is not in CHECK_STAGES in hack/audit/exitgate_test.sh — the release exit gate would not grade it (AUD-S18)"
 echo "OK: $STAGE is pinned in CHECK_STAGES"
 
-echo "PASS: install_cosign_pin_test.sh — SEC-03 closed on BOTH paths (REQ-AUD2-S03-01..05 + AUD2-F01 + UNIV-COSIGN/D-160): EVERY cosign verify-blob invocation in hack/install.sh, SECURITY.md and hack/release/verify-artifacts.sh pins issuer=${inst_issuer} identity=${inst_identity}, byte-identical across the three; a second unpinned call in any of them reddens and a second correctly-pinned one does not; a foreign-signed bundle fails closed with nothing installed and fails the maintainer check too; all four pins proved load-bearing by mutation; the gate is wired into task check"
+echo "PASS: install_cosign_pin_test.sh — SEC-03 closed on BOTH paths (REQ-AUD2-S03-01..05 + AUD2-F01 + UNIV-COSIGN/D-160 + UC-01..UC-03): EVERY cosign verify-blob OCCURRENCE in hack/install.sh, SECURITY.md and hack/release/verify-artifacts.sh pins issuer=${inst_issuer} identity=${inst_identity}, byte-identical across the three, with EVERY value of every flag compared (not just the last on a line); a second unpinned call reddens whether it sits on its own line or is chained onto a pinned one with && / ; / |, and a second correctly-pinned one does not; a foreign-signed bundle fails closed with nothing installed and fails the maintainer check too; all four pins proved load-bearing by mutation; the gate is wired into task check"
