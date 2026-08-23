@@ -87,6 +87,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(openspec): amend AUD2-S03 to the shipped pin and log D-153 (SEC-03)
 - :memo: docs(audit): document the AUD2 gate and correct stale line counts (F4, F6)
 - :memo: docs(backlog): mark P5-AUD2 complete (S01-S05 landed)
+- :memo: docs(e10): GitHub addressing & representation model (E10-S00)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name

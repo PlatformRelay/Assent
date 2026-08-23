@@ -559,7 +559,7 @@ them rather than auto-merge.
 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
-| E10-S00 | ⚠️ GitHub addressing & representation model (4 questions, ~1 page) | **[autonomous · design · LGTM]** | none | **do first** — kills both P0s before the port freezes |
+| E10-S00 | **DONE** (D-155) — ⚠️ GitHub addressing & representation model: [github-addressing-model.md](../../docs/planning/github-addressing-model.md) answers all four questions, mints 10 conformance case IDs (each paired with a positive control), corrects **3 stale ADR-0021 anchors** (`provider_host.go:275→:292` — the D-130 registry — `:246→:263`, `Describe→GetMR`), and raises **OQ-33**: `protected-pipeline-source` has no decidable predicate on **either** forge, so `unknown ⇒ never arm` leaves v1 GitHub comment-only until it is answered. `git diff schemas/ == 0` holds — no schema change proposed. **Awaiting maintainer LGTM** | **[autonomous · design · LGTM]** | none | **do first** — kills both P0s before the port freezes |
 | E10-S01 | Extract the conformance suite into an importable package + observation surface | **[autonomous]** | S00 | first **code** story; no assertion may be weakened |
 | E10-S02 | ⚠️ `forge.RunPort` + **neutral factory** + MR-relative addressing + identity | **[autonomous · engine-grade · LGTM]** | S00, S01 | one neutral seam; ARCH-02 cannot recur |
 | E10-S03 | ⚠️ Collapse `SyntheticDigest` onto `Snapshot.Heads.MergeResultDigest` | **[autonomous · engine-grade]** | S02 | digest scheme adapter-owned; allowlist emptied |
