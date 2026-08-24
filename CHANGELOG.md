@@ -87,6 +87,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(openspec): amend AUD2-S03 to the shipped pin and log D-153 (SEC-03)
 - :memo: docs(audit): document the AUD2 gate and correct stale line counts (F4, F6)
 - :memo: docs(backlog): mark P5-AUD2 complete (S01-S05 landed)
+- :memo: docs(e10): GitHub addressing & representation model (E10-S00)
+- :memo: docs(e10): demote GitHub eligible-approval-evidence to unknown (review fixes)
 - :memo: docs(e11): record the tier-1 CEL ceiling and narrow E11 (E11-S01)
 - :memo: docs(e11): strike set-difference unconditionally; make the graph shape contingent
 - :memo: docs(e11): Shape D justifies E11 unconditionally — an encoded adjacency CEL cannot decode (F01)
@@ -96,6 +98,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(release): correct the residual the gate documents (R3-01)
 - :memo: docs(ci): withdraw three falsifiable claims from the PR-reach reader (D-157)
 - :memo: docs(ci): withdraw the third copy of the retracted claim (D-157)
+- :memo: docs(e10): record the operator LGTM that satisfies E10-S00's GOVERNANCE marker (D-161)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
