@@ -89,6 +89,15 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(backlog): mark P5-AUD2 complete (S01-S05 landed)
 - :memo: docs(e10): GitHub addressing & representation model (E10-S00)
 - :memo: docs(e10): demote GitHub eligible-approval-evidence to unknown (review fixes)
+- :memo: docs(e11): record the tier-1 CEL ceiling and narrow E11 (E11-S01)
+- :memo: docs(e11): strike set-difference unconditionally; make the graph shape contingent
+- :memo: docs(e11): Shape D justifies E11 unconditionally — an encoded adjacency CEL cannot decode (F01)
+- :memo: docs(e11): Shape D rests on no-recursion alone — the decode barrier was false (F-01)
+- :memo: docs(e11): delete the false cost claim; reason 1 carries Shape D alone (F3-01)
+- :memo: docs(ci): D-159 recorded a residual that does not exist (ORPH-01..04)
+- :memo: docs(release): correct the residual the gate documents (R3-01)
+- :memo: docs(ci): withdraw three falsifiable claims from the PR-reach reader (D-157)
+- :memo: docs(ci): withdraw the third copy of the retracted claim (D-157)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
@@ -103,6 +112,11 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(ci): -count=1 on verify.yaml's comparison corpus dogfood
 - :bug: fix(ci): run the -count=1 wiring pin in the PR-visible verify job
 - :bug: fix(ci): pin COUNT1-F01 and refuse a merged gate step
+- :bug: fix(ci): bump golangci-lint to v2.13.1 for Go 1.27 (D-158)
+- :bug: fix(ci): close two PR-reach fail-opens the review found end-to-end (D-157)
+- :bug: fix(ci): read flush block sequences and whole branch names (D-157)
+- :bug: fix(ci): strip CR, and close the one fail-open direction by construction (D-157)
+- :bug: fix(ci): refuse globs on branches-ignore, grade disarm keys by name (D-157)
 
 ### Refactoring
 - :recycle: refactor(audit): pin REL-03 and REL-07 by test name, demote source shape
@@ -113,12 +127,22 @@ repository still gets a decision, never by following the link; no release carrie
 - :lock: fix(release): widen the cosign identity pin to the real signer casing (SEC-03)
 - :lock: fix(provider): bound exec stdout, set WaitDelay, capture stderr
 - :lock: fix(release): pin cosign signer identity on the maintainer verify path (AUD2-F01)
+- :lock: fix(hack): refuse to run gate scripts under a too-old bash (BASH32-F01)
+- :lock: fix(release): grade EVERY cosign invocation, not just some (UNIV-COSIGN, D-160)
+- :lock: fix(release): grade per OCCURRENCE, not per line (UC-01..UC-04, D-160)
+- :lock: fix(release): stop the gate overclaiming; close the quoted-spelling hole (UC-05..UC-09)
 
 ### Testing
 - :white_check_mark: test(cmd): assert the REL-03 error wrap as one contiguous substring
 - :test: test(compare): kill the surviving EffectChallenge intervention mutant (TEST-02)
 - :white_check_mark: test(audit): pin the AUD2 remediations behind a PR-visible exit gate
 - :white_check_mark: test(audit): assert verify.yaml still triggers on pull_request
+- :white_check_mark: test(hack): gate that hack/** bash 4+ features declare a floor (BASH32-F01)
+- :white_check_mark: test(hack): the bash-3.2-clean assertion could not fail (BASH32-F01)
+- :white_check_mark: test(hack): close two gate fail-opens found by review (BASH32-F01)
+- :white_check_mark: test(ci): wire release-verify-test into task check (D-159)
+- :white_check_mark: test(ci): share PR-reach and cross-pin the three PR-visible gates (D-157)
+- :white_check_mark: test(ci): grade the shared PR-reach helper itself, on fixtures (D-157)
 ## [0.3.0] - 2026-08-18
 
 ### Chores

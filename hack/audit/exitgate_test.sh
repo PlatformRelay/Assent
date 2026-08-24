@@ -140,9 +140,24 @@ CHECK_STAGES=(
   release-changelog-gate-test
   release-verify-tag-gate-test
   release-install-cosign-pin-test
+  # ORPHAN (D-159): the verify-artifacts harness gate. `release-verify-test` was
+  # defined in Taskfile.yml and invoked by NOTHING — not check:, not this array,
+  # not any workflow — while `hack/release/verify-artifacts.sh` is the procedure
+  # SECURITY.md:61 publishes to release consumers. Added in the same commit as
+  # its `check:` line, and its body is pinned in STAGE_BODY_PINS by MODE, because
+  # the stage is check:-safe only in its three offline modes (the `all` default
+  # shells out to `task release-snapshot`: `go install goreleaser@…` on a cold
+  # machine, a `go mod tidy` before-hook that rewrites tracked files mid-check,
+  # and `--clean` on dist/).
+  release-verify-test
   docs-gates
   lint-depguard-test
   lint-workflow-pins-test
+  # BASH32-F01 (D-154): the bash-version-floor gate. Added in the same commit as
+  # its `check:` line — hack/docs/truthlag_pins_test.sh exited 0 under stock macOS
+  # bash 3.2 after dying at its `declare -A`, so `task check` was locally green
+  # while certifying almost nothing, and no CI lane can see that (ubuntu is bash 5).
+  lint-bash-version-guard-test
   dogfood-wiring-test
   ci-audit-test
   # AUD2-S05 (REQ-AUD2-S05-03): the P5-AUD2 exit gate — the four 2026-08-18
@@ -181,6 +196,18 @@ STAGE_BODY_PINS=(
   'coverage|min="{{.COVERAGE_MIN}}"|an unrendered or dropped threshold makes the awk compare against 0 and admit anything (D-128)'
   'lint-workflow-pins-test|bash hack/lint/workflow_pins_test.sh|a wired stage with a gutted body is the same defect one level down'
   'ci-audit-test|bash hack/release/ci_audit_test.sh|a wired stage with a gutted body is the same defect one level down'
+  'lint-bash-version-guard-test|bash hack/lint/bash_version_guard_test.sh|a wired stage with a gutted body is the same defect one level down (BASH32-F01)'
+  # ORPHAN (D-159). Pinned per MODE, not by the bare script path, and that is the
+  # whole point: `verify_test.sh` with no argument runs mode `all`, which calls
+  # `task release-snapshot` (network `go install`, a `go mod tidy` before-hook
+  # that rewrites go.mod/go.sum mid-check, `--clean` on dist/, a five-target
+  # cross-compile). A single `bash hack/release/verify_test.sh` pin would stay
+  # green under BOTH regressions that matter here: dropping two of the three
+  # modes, and reverting the stage to that unrunnable-in-check default. Either
+  # keeps the stage wired while it stops checking what D-159 wired it for.
+  'release-verify-test|bash hack/release/verify_test.sh negative|REQ-E9-S12-02: without it nothing proves verify-artifacts.sh REJECTS a tampered archive, which is the only assertion that makes SECURITY.md:61 worth publishing'
+  'release-verify-test|bash hack/release/verify_test.sh cosign-skip-when-absent|REQ-E9-S12-03 / D-110: the unsigned-artifact path must exit 0 AND say it skipped — a silent skip and a real verification are indistinguishable to a consumer'
+  'release-verify-test|bash hack/release/verify_test.sh readme|REQ-E9-S12-04: hack/release/README.md must keep documenting the skip-when-absent behaviour the mode above proves'
 )
 
 # (6) Immutable base ref for the schema freeze. Overridable only to move it
@@ -1583,6 +1610,18 @@ mutate "$tf_m" 's|^      - task: lint-workflow-pins-test$|      # - task: lint-w
 expect_red check_check_wiring "a pinned stage was COMMENTED OUT rather than removed" \
   "pinned stage 'lint-workflow-pins-test'" "$tf_m"
 
+# ORPHAN (D-159): the control for the line this lane added. Before it, deleting
+# `- task: release-verify-test` from check: put the repo back in the state D-159
+# names — verify-artifacts.sh's only test invoked by nothing — with `task check`
+# green and no PR able to see it. Anchored on the STAGE NAME, not on the stage
+# COUNT: a one-line deletion trips both findings, and the count message also
+# fires for unrelated edits, so pinning it would be the weaker assertion.
+tf_m="$WORK/Taskfile.noverifytest.yml"
+cp "$TASKFILE" "$tf_m"
+mutate "$tf_m" '/^      - task: release-verify-test$/d' '- task: release-install-cosign-pin-test'
+expect_red check_check_wiring "'- task: release-verify-test' was deleted from check: — verify-artifacts.sh's only test is orphaned again (D-159)" \
+  "pinned stage 'release-verify-test'" "$tf_m"
+
 tf_m="$WORK/Taskfile.lowfloor.yml"
 cp "$TASKFILE" "$tf_m"
 mutate "$tf_m" 's|^      COVERAGE_MIN: [0-9]*$|      COVERAGE_MIN: 90|' 'COVERAGE_MIN: 90'
@@ -1644,6 +1683,16 @@ cp "$TASKFILE" "$tf_m"
 mutate "$tf_m" 's|      - bash hack/release/ci_audit_test.sh|      - echo skipped|' '      - echo skipped'
 expect_red check_stage_bodies "the ci-audit-test: stage body was gutted while the stage stayed wired" \
   'no longer contains: bash hack/release/ci_audit_test.sh' "$tf_m"
+
+# ORPHAN (D-159): gut ONE of the three modes and leave the other two. This is
+# the control that proves the three mode pins are not one redundant pin wearing
+# three hats — a bare `bash hack/release/verify_test.sh` pin would read this
+# mutant as green, because two live invocations of that script remain.
+tf_m="$WORK/Taskfile.guttedverifymode.yml"
+cp "$TASKFILE" "$tf_m"
+mutate "$tf_m" 's|      - bash hack/release/verify_test.sh negative|      - echo skipped|' '      - echo skipped'
+expect_red check_stage_bodies "one of release-verify-test's three modes was gutted while the stage stayed wired and the other two modes still ran" \
+  'no longer contains: bash hack/release/verify_test.sh negative' "$tf_m"
 
 # Vacuity control on the extraction itself: with the task key gone there is no
 # body to read, and "no pin failed" must not be the answer.

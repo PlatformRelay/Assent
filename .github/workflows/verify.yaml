@@ -22,9 +22,18 @@ permissions:
 # `lint-depguard-test`, and the action leaves nothing on PATH for a later step
 # (D-125). Single-sourced here for the same reason TASK_VERSION is: two literals
 # is how the coverage floor skewed.
+# D-158: this pin is COUPLED to the Go toolchain `go-version: stable` resolves
+# to below. golangci-lint typechecks the standard library with the go/types it
+# was COMPILED with, so a linter release predating a Go release cannot read that
+# Go's stdlib — v2.12.2 (built with go1.26.x) reddened every PR, including
+# zero-Go Markdown diffs, the day `stable` rolled 1.26 -> 1.27.0. Diagnosis
+# heuristic: golangci-lint's own go.mod carries `go 1.N-1` with the comment "the
+# minimum Go version must always be latest-1", so a release whose go.mod says
+# `go 1.N` supports Go 1.N+1. Failure signature: `(typecheck) could not import`
+# on paths rooted in /opt/hostedtoolcache/go/1.N.0/. Fix = bump this line.
 env:
   TASK_VERSION: v3.52.0
-  GOLANGCI_LINT_VERSION: v2.12.2
+  GOLANGCI_LINT_VERSION: v2.13.1
 jobs:
   verify:
     runs-on: ubuntu-latest

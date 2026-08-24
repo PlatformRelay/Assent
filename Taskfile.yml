@@ -122,6 +122,18 @@ tasks:
       # without this line an unpinned `cosign verify-blob` ships silently again,
       # and SECURITY.md's published issuer/identity pair can drift away from it.
       - task: release-install-cosign-pin-test
+      # ORPHAN / D-159: `release-verify-test` is the ONLY test of
+      # hack/release/verify-artifacts.sh — the checksum/version/cosign procedure
+      # SECURITY.md:61 publishes to release consumers — and it was invoked by
+      # nothing: not check:, not CHECK_STAGES, not the push-only release-exitgate.
+      # A gate invoked by nothing is not a gate (D-124). Placed with the other
+      # release-gate rows; position is not load-bearing (this stage reads no build
+      # output and nothing downstream reads its output), unlike dogfood-examples,
+      # which must follow build. Its `readme` mode covers hack/release/README.md,
+      # which docs-gates does not read at all — so that file's only pin is here.
+      # Offline in the three modes wired above; see the task definition for why
+      # mode `all` is not.
+      - task: release-verify-test
       # D-124: the AUD-S06 docs truth-lag gates shipped green and invoked by nothing,
       # which is the same manual-gate defect they exist to close. Sequential (not a
       # `deps:` entry) — go-task runs deps in parallel and readme_smoke_test.sh builds
@@ -135,6 +147,14 @@ tasks:
       # .github/workflows/**, so without this line an unpinned workflow is caught
       # only by CI — and only for as long as the CI step itself survives.
       - task: lint-workflow-pins-test
+      # BASH32-F01 / D-154: every hack/** script that uses a bash 4+ feature must
+      # declare a version floor. Without it, `hack/docs/truthlag_pins_test.sh` under
+      # stock macOS /bin/bash 3.2 died at its `declare -A` and EXITED 0 — the
+      # docs-gates stage above read that as green while almost nothing had been
+      # checked. Nothing in CI can see this (ubuntu is bash 5), which is why it
+      # survived; the gate is cheap and offline, and its behavioural control runs
+      # only where a bash 3.2 exists and says so loudly when it skips.
+      - task: lint-bash-version-guard-test
       # EX-S08 (REQ-EX-S08-03): the dogfood-examples gate's own guard. Without
       # this, deleting `- task: dogfood-examples` from check: above passes
       # every wired gate — the same manual-gate defect D-124 closed elsewhere.
@@ -164,6 +184,11 @@ tasks:
     desc: "AUD-S09/S14 gate: workflow supply-chain pins are present and the checks can fail (REQ-AUD-S09-01, REQ-AUD-S14-01/02)"
     cmds:
       - bash hack/lint/workflow_pins_test.sh
+
+  lint-bash-version-guard-test:
+    desc: "BASH32-F01 gate: every hack/** script using a bash 4+ feature declares a sufficient bash version floor (D-154)"
+    cmds:
+      - bash hack/lint/bash_version_guard_test.sh
 
   lint-depguard-test:
     desc: "AUD-S07 gate: adversarial proof the D-123 depguard boundary rules fire (REQ-AUD-S07-01)"
@@ -277,10 +302,24 @@ tasks:
     cmds:
       - bash hack/release/verify-artifacts.sh
 
+  # ORPHAN / D-159: the three OFFLINE modes, named one per line so each is
+  # separately pinned in the exit gate's STAGE_BODY_PINS. The bare
+  # `bash hack/release/verify_test.sh` this task used to run means mode `all`,
+  # which adds test_snapshot_pass -> `task release-snapshot`: `go install
+  # goreleaser@…` on any machine without it (network), a `go mod tidy` before-hook
+  # that rewrites go.mod/go.sum in the middle of `task check`, `--clean` on the
+  # developer's dist/, and a five-target cross-compile. None of that belongs in a
+  # per-commit gate, so REQ-E9-S12-01 stays where the spec already puts it —
+  # `task release-snapshot && task release-verify`, an L1 release-time step.
+  # What runs here is REQ-E9-S12-02/03/04: the tamper rejection, the cosign
+  # skip-when-absent path, and the README pin. All three are offline and finish
+  # in well under a second.
   release-verify-test:
-    desc: "Verify artifact harness gates (REQ-E9-S12-01..03)"
+    desc: "Verify artifact harness gates, offline modes (REQ-E9-S12-02/03/04)"
     cmds:
-      - bash hack/release/verify_test.sh
+      - bash hack/release/verify_test.sh negative
+      - bash hack/release/verify_test.sh cosign-skip-when-absent
+      - bash hack/release/verify_test.sh readme
 
   release-changelog-gate-test:
     desc: "AUD-S02 gate: the CHANGELOG drift gate is wired and fires (REQ-AUD-S02-01/02)"
