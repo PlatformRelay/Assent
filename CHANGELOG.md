@@ -104,6 +104,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(ci): withdraw the third copy of the retracted claim (D-157)
 - :memo: docs(e10): record the operator LGTM that satisfies E10-S00's GOVERNANCE marker (D-161)
 - :memo: docs(planning): record the 2026-08-25 operator rulings and withdraw the stale rule-7 block (D-162..D-164)
+- :memo: docs(forge): name the catalog's overstated-coverage defect and log the coverage-floor headroom (D-165)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
