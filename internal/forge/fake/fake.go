@@ -39,6 +39,14 @@ type Forge struct {
 	Approvals []string
 	Merges    []string
 
+	// Note create-vs-update counters (E10-S01, REQ-E10-S01-04). UpsertComment is
+	// ONE port method with two outcomes, so the conformance suite's port-level
+	// decorator cannot tell them apart — only the backend can. Every other write
+	// counter the suite needs is counted at the port instead (see
+	// internal/forge/conformance/portcount.go), so nothing else was added here.
+	NoteCreateCalls int
+	NoteUpdateCalls int
+
 	seq    int
 	merged bool
 
@@ -170,12 +178,14 @@ func (f *Forge) UpsertComment(_, _ string, marker forge.Marker, body string) (fo
 			continue
 		}
 		if marker.Artifact.Kind == "summary-comment" {
+			f.NoteUpdateCalls++
 			f.notes[i].Marker = marker
 			f.notes[i].Body = fullBody
 			f.noteMutation()
 			return f.notes[i], nil
 		}
 	}
+	f.NoteCreateCalls++
 	f.seq++
 	n := forge.Note{
 		ID:     fmt.Sprintf("note/%d", 8000+f.seq),

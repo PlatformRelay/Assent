@@ -126,6 +126,7 @@ repository still gets a decision, never by following the link; no release carrie
 
 ### Refactoring
 - :recycle: refactor(audit): pin REL-03 and REL-07 by test name, demote source shape
+- :recycle: refactor(forge): extract the conformance suite into an importable package with an explicit observation surface (E10-S01)
 
 ### Security
 - :lock: fix(cmd): discriminate absent provider declaration from forge failure (REL-03)
