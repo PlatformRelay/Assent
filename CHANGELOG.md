@@ -80,6 +80,10 @@ repository still gets a decision, never by following the link; no release carrie
 
 ## Unreleased
 
+### Chores
+- build(deps): bump github/codeql-action/init from 4.37.7 to 4.37.8
+- build(deps): bump github/codeql-action/analyze from 4.37.7 to 4.37.8
+
 ### Documentation
 - :memo: docs(changelog): stamp the v0.3.0 section after tagging
 - :memo: docs(spec): decompose the 2026-08-18 audit Next wave as epic P5-AUD2 (D-152)
