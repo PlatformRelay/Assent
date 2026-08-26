@@ -13,6 +13,7 @@ cases:
     test: TestConformanceTargetAdvancedRejected
     package: internal/forge/conformance
     forge: gitlab
+    adapters: [fake, gitlab]
 
   - id: sha-guard-source-moved
     adr: ADR-0015 §2
@@ -21,6 +22,7 @@ cases:
     test: TestConformanceSourceMovedRejected
     package: internal/forge/conformance
     forge: gitlab
+    adapters: [fake, gitlab]
 
   # --- E4-S09 P3-E5 reconciliation replay (ADR-0019) ---
   - id: p3e5-rerun-idempotence
@@ -30,6 +32,7 @@ cases:
     test: TestConformanceRerunIdempotence
     package: internal/forge/conformance
     forge: gitlab
+    adapters: [fake, gitlab]
 
   - id: p3e5-duplicate-repair
     adr: ADR-0019
@@ -38,6 +41,7 @@ cases:
     test: TestConformanceDuplicateRepair
     package: internal/forge/conformance
     forge: gitlab
+    adapters: [fake, gitlab]
 
   - id: p3e5-spoofed-marker-ignored
     adr: ADR-0019
@@ -46,6 +50,7 @@ cases:
     test: TestConformanceSpoofedMarkerIgnored
     package: internal/forge/conformance
     forge: gitlab
+    adapters: [fake, gitlab]
 
   # --- E4-S08 assent-policy self-vouch (ADR-0015 §1) ---
   - id: assent-policy-self-edit-block
@@ -55,6 +60,7 @@ cases:
     test: TestRunAssentPolicySelfModificationBlocks
     package: cmd/assent
     forge: gitlab
+    adapters: [gitlab]
 
   - id: policy-from-target-ref-only
     adr: ADR-0015 §1
@@ -63,6 +69,7 @@ cases:
     test: TestRunPolicyFromTargetRefOnly
     package: cmd/assent
     forge: gitlab
+    adapters: [gitlab]
 
   # --- AUD-S01 changed-file enumeration completeness (ADR-0020, D-119) ---
   # REQUIRED, not optional: in checkout-less runs the snapshot changed-file list
@@ -75,6 +82,7 @@ cases:
     test: TestRunEnumerationIncompleteNeverApproves
     package: cmd/assent
     forge: gitlab
+    adapters: [gitlab]
     note: truncated enumeration → REVIEW changeset.undecidable, one thread, zero approve/merge
 
   - id: enumeration-incomplete-visible-policy-block
@@ -84,6 +92,7 @@ cases:
     test: TestRunEnumerationIncompleteNeverApproves
     package: cmd/assent
     forge: gitlab
+    adapters: [gitlab]
     note: subtest visible_policy_path_in_partial_list_still_blocks — partial list carrying `.assent/**` still BLOCKs (GUARD 1 over the gap-degrade), zero writes
 
   - id: enumeration-diff-endpoint-404-hard-error
@@ -93,6 +102,7 @@ cases:
     test: TestRunEnumerationIncompleteNeverApproves
     package: cmd/assent
     forge: gitlab
+    adapters: [gitlab]
     note: subtest diff_endpoint_404_is_hard_error_with_no_record — run exits non-zero, no DecisionRecord emitted, zero forge writes
 
   - id: enumeration-diff-endpoint-non200-adapter
@@ -102,6 +112,7 @@ cases:
     test: TestChangedFiles404IsError
     package: internal/forge/gitlab
     forge: gitlab
+    adapters: [gitlab]
     note: adapter level — 404/403/429/500 on the diffs endpoint all raise a hard error; the 404→empty-list mapping is removed
 
   # --- E4-S05 doctor forge probe (ADR-0015 §4) — catalog-index only ---
@@ -112,6 +123,7 @@ cases:
     test: TestDoctorForgeInsecureCITopology
     package: cmd/assent
     forge: gitlab
+    adapters: [gitlab]
 
   # --- E7-S03 new hermetic adversarial cases ---
   - id: fork-context-advisory-only
@@ -121,6 +133,7 @@ cases:
     test: TestRunForkContextAdvisoryOnly
     package: cmd/assent
     forge: gitlab
+    adapters: [gitlab]
 
   - id: expired-fact-blocks-arming
     adr: ADR-0017 §4
@@ -129,6 +142,7 @@ cases:
     test: TestRunExpiredFactBlocksArming
     package: cmd/assent
     forge: gitlab
+    adapters: [gitlab]
 
   # --- GitHub-deferred (E10) — catalog stubs only ---
   - id: github-pull-request-fork-advisory
@@ -138,6 +152,7 @@ cases:
     test: TestLiveGitHubForkAdvisoryOnly
     package: test/e2e
     forge: github-deferred
+    adapters: []
     note: pull_request from fork → read-only token, advisory-only (forge-dossier-github C17)
 
   - id: github-merge-queue-sha-guard
@@ -147,4 +162,5 @@ cases:
     test: TestLiveGitHubMergeQueueSHAGuard
     package: test/e2e
     forge: github-deferred
+    adapters: []
     note: merge-queue merge-result digest pinning — live proof deferred to E10

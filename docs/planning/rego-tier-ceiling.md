@@ -603,7 +603,10 @@ they are recorded so the measurement is reproducible, not as conditions on the s
 | **OQ-36** | The frozen provider declaration has no object/map type, yet the authoring surface and `builtin/repo-file` together permit a mapping-valued fact and dynamic navigation into it. Is a mapping-shaped fact value in-contract? Touches B2's *second* spelling only — B2 is struck on its first spelling regardless, and Shape D needs only a flat `cardinality: set` fact. |
 
 Neither is the escalated judgment call (d) (rule-7 mechanism, (d1) vs (d2)); that question is
-untouched by this record, which writes no Go and adds no dependency.
+untouched by this record, which writes no Go and adds no dependency. **(d) is no longer open:
+[D-144](../decisions/decisions.md) (2026-08-16) resolved it to (d1) and unblocked E11-S03/S04 —
+noted here because this sentence was written after D-144 and reads as though it were still
+pending (D-164).**
 
 **D-002 / rule 1.** Every rule in this document is a generated generic equivalent — topics,
 ACLs, partitions, service dependencies. No employer, internal system, tenant, cluster or

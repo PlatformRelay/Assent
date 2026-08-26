@@ -502,7 +502,9 @@ nothing about judgment call (d) — *where* the evaluator lives is untouched.
   - Level: L1
 - **REQ-E11-S04-03** — Given judgment call (d) and the verified gap that **both purity gates
   are direct-import/direct-call only**, when Rego evaluation is placed, then the placement
-  follows the operator's answer (d1/d2/d3) and the story **fails** if it lands a green
+  follows the operator's answer — **RESOLVED to (d1) by [D-144](../../../docs/decisions/decisions.md),
+  so the (d1) branch below is the live one and the (d2) branch is retained only as the recorded
+  alternative (D-164)** — and the story **fails** if it lands a green
   `TestCorePurity` that is green only because the walk is non-transitive. Under **(d1)**: the
   purity guard is extended to a transitive `go list -deps` assertion over the guarded tree,
   with the OPA path as the single named, pinned exception, and a **mutation control** proving
