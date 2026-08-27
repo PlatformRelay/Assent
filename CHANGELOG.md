@@ -83,6 +83,7 @@ repository still gets a decision, never by following the link; no release carrie
 ### Chores
 - build(deps): bump github/codeql-action/init from 4.37.7 to 4.37.8
 - build(deps): bump github/codeql-action/analyze from 4.37.7 to 4.37.8
+- build(deps): bump github/codeql-action/upload-sarif
 
 ### Documentation
 - :memo: docs(changelog): stamp the v0.3.0 section after tagging
@@ -105,6 +106,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(e10): record the operator LGTM that satisfies E10-S00's GOVERNANCE marker (D-161)
 - :memo: docs(planning): record the 2026-08-25 operator rulings and withdraw the stale rule-7 block (D-162..D-164)
 - :memo: docs(forge): name the catalog's overstated-coverage defect and log the coverage-floor headroom (D-165)
+- :memo: docs(changelog): regenerate CHANGELOG.md for the dependabot bumps
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
