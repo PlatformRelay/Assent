@@ -46,7 +46,12 @@ jobs:
           pip install --only-binary=:all: --require-hashes -r docs/requirements-docs.txt
       - name: Build site
         run: mkdocs build --strict
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+      # Keep the --strict build above running on PRs -- that is the docs gate.
+      # Only upload the Pages artifact when it can actually be deployed: the
+      # deploy job below is skipped for pull_request, so a PR upload was pure
+      # GitHub Actions artifact storage cost with nothing consuming it.
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
 
