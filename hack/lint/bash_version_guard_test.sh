@@ -130,6 +130,43 @@ MUST_BE_CLEAN=(
   hack/lint/bash_version_guard_test.sh
 )
 
+# --- per-pattern anti-vacuity pins (assertion 2, second half) -----------------
+# KNOWN_FEATURE_USERS above pins only the patterns the tree HAPPENS to exercise —
+# measured, four of eleven (declare -A, local -n, mapfile, mapfile -d). A typo in
+# any of the other seven matches nothing, reds nothing, and leaves that construct
+# silently ungraded forever: the same vacuity the population check exists to
+# prevent, one level down, and the reason the readarray -d floor could be wrong
+# from the day it was written without a single assertion noticing.
+#
+# `<a line the patterns MUST detect>;<the version it must be graded>;<the feature
+# description it must be attributed to>`. Same `;` separator and same reason as
+# FEATURES. Every FEATURES description is required to appear here, so a pattern
+# added without a probe reds rather than shipping unpinned.
+PATTERN_PROBES=(
+  'declare -A probe=();4.0;declare -A (associative array)'
+  'typeset -A probe=();4.0;typeset -A (associative array)'
+  'local -A probe=();4.0;local -A (associative array)'
+  'declare -n ref=probe;4.3;declare -n (nameref)'
+  'local -n ref=probe;4.3;local -n (nameref)'
+  'mapfile -t probe < /dev/null;4.0;mapfile'
+  'mapfile -d "" -t probe < /dev/null;4.4;mapfile -d (alternate delimiter)'
+  'readarray -t probe < /dev/null;4.0;readarray'
+  'readarray -d "" -t probe < /dev/null;4.4;readarray -d (alternate delimiter)'
+  'wait -n;4.3;wait -n'
+  'coproc probe true;4.0;coproc'
+)
+
+# The other side of the same pin. A pattern degraded to something that matches
+# every line would satisfy every probe above; these lines put the construct
+# somewhere OTHER than a command position and must therefore be detected by
+# nothing at all. They are also the CANNOT-SEE list, made executable.
+PATTERN_NONPROBES=(
+  'echo "declare -A is how you get an associative array"'
+  'true && declare -A late=()'
+  'if declare -n ref=probe; then :; fi'
+  'printf "%s\n" "coproc wait -n readarray typeset -A"'
+)
+
 # --- version arithmetic (3.2-safe) -------------------------------------------
 ver_ge() { # <a> <b> — true when a >= b
   local a="$1" b="$2" amaj amin bmaj bmin
@@ -284,6 +321,64 @@ for want in "${KNOWN_FEATURE_USERS[@]}"; do
     pass "detected the known feature user $want"
   else
     fail "the scan no longer detects $want as a bash 4+ feature user — either the file changed deliberately (update KNOWN_FEATURE_USERS) or a detection pattern broke, which would make this whole gate vacuous"
+  fi
+done
+
+# Every pattern, including the seven no file in this tree exercises, must be shown
+# to detect something and to grade it at the right floor.
+probe_descs="|"
+probe_i=0
+for spec in "${PATTERN_PROBES[@]}"; do
+  probe_i=$((probe_i + 1))
+  probe_line="${spec%%;*}"
+  probe_min="${spec#*;}"
+  probe_min="${probe_min%%;*}"
+  probe_desc="${spec##*;}"
+  probe_descs="${probe_descs}${probe_desc}|"
+  proot="$WORK/probe$probe_i"
+  mkdir -p "$proot/hack"
+  printf '%s\n' '#!/usr/bin/env bash' "$probe_line" >"$proot/hack/probe.sh"
+  got="$(scan_features "$proot")"
+  got_min="${got#*|}"
+  got_min="${got_min%%|*}"
+  got_feats="${got##*|}"
+  if [ -z "$got" ]; then
+    fail "detection probe: '${probe_line}' was detected by NO pattern — the '${probe_desc}' pattern matches nothing, so every script using that construct is graded as using no bash 4 feature at all"
+  elif [ "$got_min" != "$probe_min" ]; then
+    fail "detection probe: '${probe_line}' was graded ${got_min}, not ${probe_min} — the floor for '${probe_desc}' is wrong, so a script declaring ${got_min} would pass while breaking on every bash below ${probe_min}. scan said: ${got}"
+  else
+    case "$got_feats" in
+    *"$probe_desc"*)
+      pass "detection probe: '${probe_line}' is detected as '${probe_desc}' and graded ${probe_min}"
+      ;;
+    *)
+      fail "detection probe: '${probe_line}' was graded ${probe_min} but attributed to '${got_feats}', not '${probe_desc}' — the right answer for the wrong reason, so the '${probe_desc}' pattern is still unpinned"
+      ;;
+    esac
+  fi
+done
+
+for spec in "${FEATURES[@]}"; do
+  desc="${spec##*;}"
+  case "$probe_descs" in
+  *"|${desc}|"*) ;;
+  *)
+    fail "the detection pattern for '${desc}' has no entry in PATTERN_PROBES — nothing proves it matches anything, which is exactly the shape a mistyped pattern hides in"
+    ;;
+  esac
+done
+
+probe_i=0
+for probe_line in "${PATTERN_NONPROBES[@]}"; do
+  probe_i=$((probe_i + 1))
+  proot="$WORK/nonprobe$probe_i"
+  mkdir -p "$proot/hack"
+  printf '%s\n' '#!/usr/bin/env bash' "$probe_line" >"$proot/hack/probe.sh"
+  got="$(scan_features "$proot")"
+  if [ -n "$got" ]; then
+    fail "detection probe: '${probe_line}' does not put the construct at a command position, so nothing may detect it, but the scan reported '${got}' — a pattern has lost its anchor and now matches prose, which would make every probe above pass for the wrong reason"
+  else
+    pass "detection probe: '${probe_line}' is correctly seen by no pattern (command-position anchor intact)"
   fi
 done
 
