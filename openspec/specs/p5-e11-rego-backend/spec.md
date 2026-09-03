@@ -11,8 +11,12 @@ D-141 records the operator lifting that per-rule evidence gate and what it does 
 **Problem**: ADR-0002 v2 promises "one Kyverno-style YAML envelope, **pluggable expression
 backends**" — and the ADR index has carried the status line "**pluggable half unbuilt: Rego is
 E11**" ever since. There is exactly one backend (CEL, ADR-0013), and the CEL leaf is
-restricted to the frozen predicate-scope table: single-pass, single-subject, no set
-operations across manifests, no graph relationships. The escape hatch was designed and
+restricted to the frozen predicate-scope table: single-subject, no aggregate beyond `size()`,
+and no reachability past a depth written into the expression text. (This sentence used to read
+"single-pass, single-subject, no set operations across manifests, no graph relationships";
+E11-S01 / D-156 struck the cross-manifest half — set operations over facts **are** tier-1
+expressible, and where the data is absent the limit is input availability, which the `rego` tier
+inherits unchanged. Corrected 2026-09-03, D-166.) The escape hatch was designed and
 committed — `examples/policies/rego/bounded_change.rego` exists and is *quarantined* behind a
 `# locked: D-012` marker with a CI guard (P3-E3-S03/S04) forbidding any declarative example
 from referencing a `rego:` leaf. E11 is the epic that removes that quarantine and makes the
@@ -329,8 +333,14 @@ stays green forever. Recorded again in the S04 section. This says nothing about 
 - **S07**'s violation shape must support a **fold result** (a computed scalar naming its
   contributing elements) and a **path/cycle witness** — not a cross-manifest reference.
 - **S12** must not describe Rego as enabling cross-entry or cross-manifest checks. ADR-0002's
-  `rego` bullet currently calls it an "escape hatch for **cross-entry checks**"; that phrase is
-  inaccurate for the shipped input contract and correcting it is S12's, under REQ-E11-S12-01.
+  `rego` bullet called it an "escape hatch for **cross-entry checks**", inaccurate for the
+  shipped input contract. **Already corrected 2026-09-03 under D-166 / backlog residual E11-R01**
+  — the bullet now states the two measured shapes and ADR-0002 **Amendment 1** records the
+  withdrawn sentence verbatim. It did **not** wait for REQ-E11-S12-01, whose `Test:` list omits
+  `docs/adr/0002-*` and whose `Verify: task check` has no pin over the phrase, so no gate would
+  have caught it, and S12 is story 12 of 14. The omission is closed the same day:
+  `docs/adr/0002-policy-frontends-rego-declarative.md` is now named in REQ-E11-S12-01's `Test:`
+  list, so the file the residual was about is inside S12's sweep rather than outside it.
 - **S11**: the committed illustration `examples/policies/rego/bounded_change.rego` is
   **entirely tier-1 expressible** (both `violations` rules are per-change predicates, and
   `examples/policies/declarative/bounded-change.yaml` is the same rule in the envelope). When
@@ -702,7 +712,9 @@ stays green forever. Recorded again in the S04 section. This says nothing about 
 - **REQ-E11-S12-01** — Given the audit's docs-truth family, when E11 ships, then no document
   describes Rego as locked, quarantined, or unbuilt, and none claims a capability S01 struck
   from scope.
-  - Test: `README.md`, `docs/adr/README.md`, `docs/planning/rego-escape-hatch.md`
+  - Test: `README.md`, `docs/adr/README.md`, `docs/planning/rego-escape-hatch.md`,
+    `docs/adr/0002-policy-frontends-rego-declarative.md` (added 2026-09-03, D-166: its omission
+    is exactly why the ADR's struck "cross-entry checks" claim stayed published — see E11-R01)
   - Verify: `task check`
   - Level: L1
 

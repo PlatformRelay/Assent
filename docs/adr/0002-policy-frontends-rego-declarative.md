@@ -44,8 +44,17 @@ effects, risk points, messages. Each rule's predicate is one of:
    CEL for its new ValidatingPolicy types, so CEL *is* Kyverno-style now). Either way the
    engine is wrapped behind our own interface so the choice is reversible.
 2. **`rego`** — inline or file-referenced Rego module (embedded OPA), receiving the same
-   PolicyInput scope and returning findings data only. Escape hatch for cross-entry checks,
-   complex derivations, whole-branch conventions.
+   PolicyInput scope and returning findings data only. Its reach over tier 1 was **measured**
+   against the surface this repo actually binds (E11-S01 / D-156,
+   [`docs/planning/rego-tier-ceiling.md`](../planning/rego-tier-ceiling.md)) and is **two
+   shapes, both over data the input already carries**: **folds and aggregates** over an
+   in-input collection — tier 1 has `size()` and no `sum`, `reduce`, `math.*` or `lists.*`, so
+   *counting* is expressible and *summing* is not — and **unbounded graph reachability** over an
+   adjacency delivered as a `{type: string, cardinality: set}` fact, which tier 1 cannot spell
+   at any depth because a CEL expression's iteration depth is *syntactic*. **Not** cross-entry,
+   cross-manifest or whole-branch checks: those fail on **input availability**, and the `rego`
+   tier is pinned to the identical `EvaluationInput` (REQ-E11-S05-01), so it fails them
+   identically. See **Amendment 1** for the claim this replaces.
 
 Rego **never** controls routing, effects, or aggregation — it computes; the envelope decides.
 Downstream (engine, findings, harness, docs) a rule is a rule regardless of backend.
@@ -74,3 +83,41 @@ Downstream (engine, findings, harness, docs) a rule is a rule regardless of back
   the envelope anyway — the actual product — and inherit the steep default UX.
 - *"kyverno-json is pre-1.0 with a small maintainer pool."* — True; that's why it sits behind
   our wrapper interface with cel-go as the recorded fallback (OQ-11).
+
+## Amendment 1 (2026-09-03, D-166 — the `rego` tier's justification is folds and unbounded graph reachability, **not** cross-entry checks)
+
+**Withdrawn.** Until this amendment the `rego` bullet above read, verbatim:
+
+> Escape hatch for cross-entry checks, complex derivations, whole-branch conventions.
+
+**Why it was wrong, not merely imprecise.** E11-S01 measured the tier-1 CEL ceiling against the
+surface this repo actually binds — `newEvalEnv`'s eleven frozen predicate-scope variables, **zero
+extension libraries** — and D-156 (2026-08-23) struck three of the four shapes that sentence
+gestures at:
+
+- **Cross-entry / cross-manifest** checks are expressible at tier 1 where the data is present
+  (`x in facts.<p>.<n>.value` for membership; a purpose-built provider or
+  `facts.<p>.<n>.value[key]` for keyed lookup — both shipped and lint-clean), and where the data
+  is *absent* the blocker is **input availability, not expressiveness**. The evaluation unit is
+  one file, and REQ-E11-S05-01 pins the Rego module to the *identical* `EvaluationInput` with the
+  tier fenced to "declared data, no I/O" — **so Rego fails those rules identically**. A second
+  backend does not fix an input-contract limitation.
+- **"Complex derivations"** — the named-intermediate shape — is struck: `cel.bind` is absent, but
+  re-deriving the sub-expression inside each leaf is semantically identical, and the surface's
+  value binder `[expr].all(v, …)` computes it once. The residual is legibility, which is not a
+  licence to add a backend.
+- **"Whole-branch conventions"** is the same input-availability limit under another name.
+
+**What survives, and it is narrower.** Two shapes, both **unconditional** on today's shipped
+input contract: folds/aggregates over an in-input collection, and unbounded graph reachability
+over an in-input adjacency. The `rego` bullet above now states those and nothing else.
+
+**Blast radius of the wrong sentence.** It was published on an Accepted ADR and reachable from
+the ADR index; the correction was tracked as backlog residual **E11-R01** precisely because
+REQ-E11-S12-01's `Test:` list omits `docs/adr/0002-*`, so **no gate would ever have caught it** —
+it was invisible to CI by construction, and E11-S12 is story 12 of 14.
+
+**Left standing deliberately.** The **Options** table's *"YAML only (assertion trees) — ceiling:
+cross-entry logic, branch-state conventions get ugly"* cell is a record of what was believed
+during the 2026-07-21 deliberation, not a claim this ADR makes today. It is superseded by this
+amendment and is not restated as current.
