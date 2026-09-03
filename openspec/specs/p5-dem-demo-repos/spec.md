@@ -992,28 +992,88 @@ assent on PRs may be committed before the adapter exists.
 
 **REQ-DEM-S12-01** — Both demo trees run `assent lint` + `assent test` under `task check` and in
 `verify`. A demo that stops reproducing **reds assent's own build**.
+  - Test: `Taskfile.yml`, `.github/workflows/verify.yaml`, `hack/dogfood-examples.sh`,
+    `hack/examples/dogfood_wiring_test.sh`
+  - Verify: `task check` — the demo trees must be reached by **extending the shared discovery
+    script**, which globs `examples/packs/*/` only today, and not by adding a second hardcoded
+    loop (the three-way skew `hack/dogfood-examples.sh` was written to end). The wiring is
+    pinned by `bash hack/examples/dogfood_wiring_test.sh`, which reds when the `task check`
+    invocation is deleted
+  - Level: L1
+
 **REQ-DEM-S12-02** — Every prepared demo branch's expected outcome is an adopter-test case, so
 the README's promised decisions are gated, not asserted.
+  - Test: `examples/demo/*/.assent/tests/demo/*/`, `cmd/assent/demo_branches_test.go`
+  - Verify: `go test ./cmd/assent/ -run TestDemoBranchCasesMatchBranchNames && task build && ./bin/assent test examples/demo/assent-demo-platform && ./bin/assent test examples/demo/assent-demo-terraform`
+  - Level: L1
+
 **REQ-DEM-S12-03** — Once S13 lands, a check diffs the in-tree trees against the published
 repos and fails on drift; until then it is a no-op with the reason recorded (**no silent
 skip** — a gate that cannot fail must announce that it is inert).
+  - Test: `hack/demo/mirror_drift.sh`, `hack/demo/mirror_drift_test.sh`
+  - Verify: `bash hack/demo/mirror_drift_test.sh` — **both polarities of the inert mode**: with
+    the published repos absent the drift check exits 0 *and prints its stated reason*, and a
+    run that exits 0 silently reds the guard. Offline via stubbed `git`/`gh`, the
+    `hack/release/*_test.sh` pattern
+  - Level: L1
 
 ### DEM-S13 — Publish the repositories `[operator]`
 
 **REQ-DEM-S13-01** — 🔴 Operator creates `PlatformRelay/assent-demo-platform` (mirrored to
 GitLab) and `PlatformRelay/assent-demo-terraform`, seeds `main` from the in-tree trees, pushes
 the demo branches. **Requires explicit authorization** — judgment call (d).
+  - Test: no in-tree artifact — the deliverable is two repositories under the `PlatformRelay`
+    org
+  - Verify: `gh repo view PlatformRelay/assent-demo-platform && gh repo view PlatformRelay/assent-demo-terraform`.
+    Runnable and falsifiable, but it **needs network and org credentials and therefore cannot
+    run under `task check`**, and it requires explicit operator authorization (D-142 judgment
+    call (d) — outside AGENTS.md rule 2's push grant). This repository can arm no gate for it
+  - Level: L3
+
 **REQ-DEM-S13-02** — `README.md` and the docs site link both repos with the tier each supports.
+  - Test: `README.md`, `docs/index.md`, `mkdocs.yml`
+  - Verify: `task docs-build` proves the docs page builds and is nav-linked, and
+    `bash hack/docs/truthlag_pins_test.sh` checks README links to **in-repo** paths only
+    (`truthlag_pins_test.sh:110`). The two demo-repo URLs are external and are link-checked by
+    nothing here, so that they resolve and name the right tier is manual review
+  - Level: L0
+
 **REQ-DEM-S13-03** — The mirror procedure is a script in `hack/`, not a remembered sequence.
+  - Test: `hack/demo/mirror.sh`, `hack/demo/mirror_test.sh`
+  - Verify: `bash hack/demo/mirror_test.sh` — a dry run against stubbed `git` and `gh`, the
+    pattern `hack/release/verify_tag_gate_test.sh` already uses, so the procedure is executable
+    and offline-testable instead of a remembered sequence
+  - Level: L0
 
 ### DEM-S14 — Live tier-2 proof on GitLab `[infra-gated · operator]`
 
 **REQ-DEM-S14-01** — assent runs on real MRs in `assent-demo-platform` producing at least one
 APPROVE (with a real SHA-pinned merge), one REVIEW (with a resolvable thread), and one BLOCK.
+  - Test: `docs/decisions/evidence/dem-s14-gitlab/`
+  - Verify: **not runnable in this repository.** It needs a live GitLab project, a token and
+    real MRs; `task check` is hermetic by construction and no gate here can produce a
+    SHA-pinned merge. The evidence is the three retained DecisionRecords (one APPROVE, one
+    REVIEW, one BLOCK) and the reviewer checks that each names a real MR IID and merge SHA
+  - Level: L3
+
 **REQ-DEM-S14-02** — DecisionRecords retained as evidence under `docs/decisions/evidence/`,
 mirroring the D-042 shape.
+  - Test: `docs/decisions/evidence/dem-s14-gitlab/*.json`, `schemas/decision_record_test.go`
+  - Verify: `go test ./schemas/ -run TestRetainedEvidenceValidatesAgainstDecisionRecordSchema`
+    — the retained records validate against
+    `schemas/decision/v1alpha1/decision-record.schema.json`. This is the one mechanically
+    checkable half of S14, and the check must be **added with** the evidence: nothing gates
+    `docs/decisions/evidence/**` today (the P4-E1-S11 adoption evidence is validated by no
+    test)
+  - Level: L0
+
 **REQ-DEM-S14-03** — GitHub tier 2 is **explicitly deferred to E10-S18**, which retargets its
 live adoption proof at `assent-demo-terraform` instead of a throwaway repository.
+  - Test: `openspec/specs/p5-e10-github-forge/spec.md`, `openspec/specs/backlog.md`
+  - Verify: `grep -q 'assent-demo-terraform' openspec/specs/p5-e10-github-forge/spec.md` —
+    E10-S18 must name the demo repository as its live adoption target, or the deferral points
+    at nothing
+  - Level: L0
 
 ---
 
