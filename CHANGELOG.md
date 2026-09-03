@@ -125,6 +125,12 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(decisions): report the sweep as a classification, not a completeness claim (P1, P2-B, P3)
 - :memo: docs(e11): last present-tense copy of the closed Test:-list gap (P2-A, third copy)
 - :memo: docs(e11): correct D-166's handed-on line states and drop its unbackable count (final round)
+- :memo: docs(dem): Wave A REQs gain the Test/Verify/Level triple, and the precondition is discharged
+- :memo: docs(dem): Wave B REQs gain the triple, and two of them are honestly downgraded to L3
+- :memo: docs(dem): Wave C REQs gain the triple; the env-split proof gets its anti-tautology half
+- :memo: docs(dem): Wave D REQs gain the triple, and the operator stories stop pretending to be gateable
+- :memo: docs(backlog): the DEM annotation precondition is discharged, and the five L3 REQs are named
+- :memo: docs(decisions): D-166 records the execution of D-162 and the five honest downgrades
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
