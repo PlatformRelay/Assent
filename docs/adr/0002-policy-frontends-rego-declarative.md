@@ -47,11 +47,13 @@ effects, risk points, messages. Each rule's predicate is one of:
    PolicyInput scope and returning findings data only. Its reach over tier 1 was **measured**
    against the surface this repo actually binds (E11-S01 / D-156,
    [`docs/planning/rego-tier-ceiling.md`](../planning/rego-tier-ceiling.md)) and is **two
-   shapes, both over data the input already carries**: **folds and aggregates** over an
-   in-input collection — tier 1 has `size()` and no `sum`, `reduce`, `math.*` or `lists.*`, so
+   shapes, both unconditional on today's shipped input contract**: **folds and aggregates** over
+   an in-input collection — tier 1 has `size()` and no `sum`, `reduce`, `math.*` or `lists.*`, so
    *counting* is expressible and *summing* is not — and **unbounded graph reachability** over an
-   adjacency delivered as a `{type: string, cardinality: set}` fact, which tier 1 cannot spell
-   at any depth because a CEL expression's iteration depth is *syntactic*. **Not** cross-entry,
+   adjacency **deliverable** as a `{type: string, cardinality: set}` fact, which tier 1 cannot
+   spell at any depth because the number of nested iteration *levels* in a CEL expression is
+   *syntactic*. (Deliverable, not shipped: no provider in the corpus returns an encoded adjacency
+   today — the ceiling record's §5 caveat.) **Not** cross-entry,
    cross-manifest or whole-branch checks: those fail on **input availability**, and the `rego`
    tier is pinned to the identical `EvaluationInput` (REQ-E11-S05-01), so it fails them
    identically. See **Amendment 1** for the claim this replaces.
