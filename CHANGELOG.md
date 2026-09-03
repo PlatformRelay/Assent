@@ -132,6 +132,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(backlog): the DEM annotation precondition is discharged, and the five L3 REQs are named
 - :memo: docs(decisions): D-166 records the execution of D-162 and the five honest downgrades
 - :pencil2: docs(decisions): renumber this lane's row D-166 -> D-167 after a collision, and move its two citations with it
+- :memo: docs(dem): disclose the four uncovered halves the review found, and correct the Level provenance
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
