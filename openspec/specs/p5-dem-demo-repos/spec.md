@@ -550,11 +550,15 @@ the split between repo-side `{type,url,failure}` and host-side `outputs`/`exec`/
     the nav on `main` today** and `docs-build` is green over them, while
     `git grep omitted_files hack/ Taskfile.yml` returns nothing. Nav linkage is therefore
     **manual review** unless a later change bumps `omitted_files` to `warn` — a `mkdocs.yml`
-    edit, not this story's. `docs-build` is also **not in `task check`**: it runs only in the
-    release exit gate (`Taskfile.yml:350`), which `verify.yaml` skips on pull requests. The
-    content is manual review that the target-ref rationale, the repo-side `{type,url,failure}` /
-    host-side `outputs|exec|repoFile|resourceOwner` split, and the silent-skip behaviour are each
-    stated
+    edit, not this story's. **The true half of this check IS armed on a pull request, just not
+    through `task`**: `.github/workflows/docs.yaml:48` runs `mkdocs build --strict` on
+    `pull_request` behind a paths filter covering `docs/**` and `mkdocs.yml` (`:13-19`) — both of
+    this row's `Test:` artifacts — and its own comment at `:49` calls that build *"the docs
+    gate"*. Via `task` it would be unarmed: `docs-build` is not among `check:`'s stages and runs
+    only in the release exit gate (`Taskfile.yml:350`), which `verify.yaml` skips on pull
+    requests. The content is manual review that the target-ref rationale, the repo-side
+    `{type,url,failure}` / host-side `outputs|exec|repoFile|resourceOwner` split, and the
+    silent-skip behaviour are each stated
   - Level: L0
 
 **REQ-DEM-S01-04** — The `http`-typed example providers either gain a declaration *and* are
@@ -589,21 +593,34 @@ format.
 envelopes **by reference to the frozen schemas**, never by restating them (restated schemas
 drift; `docs/planning/provider-contract.md`'s 45 lines about `maxAge` are not a wire contract
 and are cross-linked, not replaced).
-  - Test: `docs/usage/providers.md`, `schemas/provider/v1alpha1/request.schema.json`,
+  - Test: `docs/usage/providers.md`, `mkdocs.yml`,
+    `schemas/provider/v1alpha1/request.schema.json`,
     `schemas/provider/v1alpha1/response.schema.json`
-  - Verify: `task docs-build`; manual review that every envelope field is *cited to* the frozen
-    schema file rather than restated — a restated field table is the drift this REQ exists to
-    prevent and no executable predicate distinguishes it from a citation
+  - Verify: `task docs-build` (and `.github/workflows/docs.yaml:48` on a PR) proves only that
+    the page **builds** and that nav entries and links resolve to existing files. **It does not
+    answer this REQ's "(nav-linked)" clause** — same `mkdocs.yml:65` `omitted_files: info` limit
+    as REQ-DEM-S01-03 — so nav linkage is **manual review**, and it is called out here because a
+    row whose only other clause is about schema citation would otherwise appear to cover it by
+    elimination. Manual review also that every envelope field is *cited to* the frozen schema
+    file rather than restated — a restated field table is the drift this REQ exists to prevent
+    and no executable predicate distinguishes it from a citation
   - Level: L0
 
 **REQ-DEM-S02-02** — The fail-closed state table is documented with the adopter-facing
 consequence of each state, plus the two rules a provider author will otherwise get wrong:
 **echo `queryId`**, and **derive every timestamp from the host-pinned `asOf`** — never from a
 provider wall clock (hard rule 7).
-  - Test: `docs/usage/providers.md`, `internal/provider/guide_example_test.go`
-  - Verify: `go test ./internal/provider/ -run TestGuideExamplePayloadResolvesChecked` — the
-    guide's own copy-pasteable payload is the fixture, run through `ResolveFactsChecked`
-    (`internal/provider/resolve.go:53`), so a payload that drifts out of the guide reds
+  - Test: `docs/usage/providers.md`, `internal/provider/guide_example_test.go` (**new — this
+    story writes it**)
+  - Verify: 🔴 **this gate does not exist yet and the story must write it.**
+    `internal/provider/guide_example_test.go` is absent, and `go test -run` over a pattern
+    matching nothing exits 0 (`[no tests to run]`, measured), so naming the command without
+    writing the test is green-by-vacuity. `ResolveFactsChecked` itself is well covered already
+    (`internal/provider/declaration_test.go:33,72,106`; `sensitive_test.go:162`) — what is new is
+    a fixture that is *the guide's own copy-pasteable payload*. Once written,
+    `go test ./internal/provider/ -run TestGuideExamplePayloadResolvesChecked` runs that payload
+    through `ResolveFactsChecked` (`internal/provider/resolve.go:53`), so a payload that drifts
+    out of the guide reds
   - Level: L0
 
 **REQ-DEM-S02-03** — The **credential constraint (G2)** is stated plainly: no header, token, or
@@ -611,18 +628,22 @@ client certificate can reach an HTTP provider, and `(?i)TOKEN|SECRET` env/argv n
 refused on exec. The broker pattern is documented as the shape that works, with the reasoning
 (ADR-0015 §7), and cross-links **OQ-32**.
   - Test: `docs/usage/providers.md`, `internal/provider/transport.go`,
-    `internal/provider/scrub_test.go` (**new — this story writes it**)
-  - Verify: 🔴 **the gate does not exist yet and this story must add it.** `ScrubEnv` and
-    `ScrubArgv` (`internal/provider/transport.go:38,53`) have **no test today** —
-    `git grep -l 'ScrubEnv\|ScrubArgv' -- '*_test.go'` is empty, and
-    `internal/provider/sensitive_test.go` holds only `TestSensitiveMaxAge` and
-    `TestSensitivePropagates`. That matters because **`go test -run` over a pattern matching
-    nothing exits 0** (`[no tests to run]`, measured), so naming the command without writing the
-    tests would be green-by-vacuity — this repo's own "an empty result satisfies every
-    assertion" failure in a new costume. Once
-    `internal/provider/scrub_test.go` exists, `go test ./internal/provider/ -run
-    'TestScrubEnvRefusesSecretNames|TestScrubArgvRefusesSecretNames'` pins the mechanical half;
-    that the doc states the constraint plainly and cross-links OQ-32 is manual review
+    `internal/provider/isolation_test.go`
+  - Verify: `go test ./internal/provider/ -run
+    'TestIsolationNoWriteToken|TestIsolationNoCredentialInArgv'` — **this REQ's mechanical clause
+    is already gated and the story writes no new test for it.** `CallExec`
+    (`transport.go:239,242`) calls `ScrubArgv`/`ScrubEnv` (`:38,53`), and the two isolation tests
+    (`isolation_test.go:80` REQ-E5-S03-01, `:146` REQ-E5-S03-03) spawn a real provider binary
+    with `UPSTREAM_TOKEN` / `LDAP_SECRET` / `CI_JOB_SECRET` canaries and fail if any
+    `TOKEN`-or-`SECRET`-named entry reaches the child — which *is* the clause "`(?i)TOKEN|SECRET`
+    env/argv names are refused on exec". ⚠️ **What is missing is only a direct unit test of the
+    two functions by name, and that is deliberately not requested**: the behavioural coverage
+    through `CallExec` is the stronger proof of this REQ, and a by-name duplicate would add a
+    second gate for one property. An earlier draft of this row claimed the property was ungated
+    on the strength of `git grep -l 'ScrubEnv\|ScrubArgv' -- '*_test.go'` being empty — a
+    **symbol-name grep, the instrument D-165 already records as wrong**, since it proves only
+    that no test mentions the identifier. That the doc states the constraint plainly and
+    cross-links OQ-32 is manual review
   - Level: L0
 
 **REQ-DEM-S02-04** — The exec digest-pin re-pinning burden (G3) is stated, with the HTTP/broker
@@ -1124,10 +1145,15 @@ mirroring the D-042 shape.
 live adoption proof at `assent-demo-terraform` instead of a throwaway repository.
   - Test: `openspec/specs/p5-e10-github-forge/spec.md`, `openspec/specs/backlog.md`
   - Verify: scoped to the S18 section, not the whole file —
-    `sed -n '/^### E10-S18/,/^## /p' openspec/specs/p5-e10-github-forge/spec.md | grep -q
-    'assent-demo-terraform'` (the heading is at `p5-e10-github-forge/spec.md:780` of 793, and the
-    string is absent from that file on `main` today, so the check is falsifiable in both
-    directions). A whole-file grep would prove only that the string occurs *somewhere* — the
+    `awk '/^### E10-S18/{f=1;next} /^#/{if(f)exit} f' openspec/specs/p5-e10-github-forge/spec.md
+    | grep -q 'assent-demo-terraform'` (the heading is at `p5-e10-github-forge/spec.md:780` of
+    793, and the string is absent from that file on `main` today, so the check is falsifiable in
+    both directions). **The range stops at the next heading of *any* level.** An earlier draft
+    used `sed -n '/^### E10-S18/,/^## /p'`, which terminates on the next `##` **wave** heading
+    and was correct only because S18 happens to be the file's last section: an E10-S19 added
+    under the same wave would have silently widened the "scoped" grep back toward a whole-file
+    one — worse than a whole-file grep, because it would still read as scoped. A whole-file grep
+    proves only that the string occurs *somewhere* — the
     "presence of words, not of the explanation" objection this epic raises at REQ-DEM-S02-04 and
     REQ-DEM-S04-03, and it applies to its own commands too. Even scoped, the check proves the
     **name** appears in S18, not that S18's retargeting is coherent; that, and the agreement of
