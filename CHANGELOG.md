@@ -110,6 +110,12 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(planning): record the 2026-08-25 operator rulings and withdraw the stale rule-7 block (D-162..D-164)
 - :memo: docs(forge): name the catalog's overstated-coverage defect and log the coverage-floor headroom (D-165)
 - :memo: docs(changelog): regenerate CHANGELOG.md for the dependabot bumps
+- :memo: docs(e11): re-derive the §6 verdict table from the body, in both copies (F4-01)
+- :memo: docs(adr): the rego tier is folds and graph reachability, not cross-entry checks (E11-R01)
+- :memo: docs(e11): repoint the missed §1.2 anchor to §1.3 (F4-02)
+- :memo: docs(e11): §1.2's headline is about iteration LEVELS, not iteration count (F4-03)
+- :memo: docs(e11): §5's cost figures are not reproducible from this record (F4-04)
+- :memo: docs(decisions): record D-166 — the ADR-0002 rego claim is withdrawn (E11-R01, F4-01..04)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
@@ -133,6 +139,9 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(lint): a redirection is not a version guard — require an adjacent comparison
 - :bug: fix(lint): the include check missed 'source', one of its two spellings
 - :bug: fix(lint): drop the reversed-form guard pattern — it opened a fresh fail-open
+
+### Other
+- 👷 ci(docs): stop uploading the Pages artifact on pull requests
 
 ### Other
 - 👷 ci(docs): stop uploading the Pages artifact on pull requests
