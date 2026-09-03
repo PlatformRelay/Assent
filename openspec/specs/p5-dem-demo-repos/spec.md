@@ -836,12 +836,31 @@ the test suite so it cannot silently stop reproducing: at minimum
 
 **REQ-DEM-S08-01** — Generated-generic Terraform stacks: a blessed-module instantiation per
 env, with `source`/`version` pins and a small set of governed inputs. D-002 as in S04.
+  - Test: `examples/demo/assent-demo-terraform/stacks/**`
+  - Verify: `bash hack/check-sanitization.sh && task build && ./bin/assent lint examples/demo/assent-demo-terraform`
+  - Level: L1
+
 **REQ-DEM-S08-02** — **Written truth about what the fact model can structure in HCL** — which
 constructs yield bound entries and which fall back to opaque. Determined by running the code,
 not by reading it, and recorded with the commands used.
+  - Test: `openspec/specs/p5-dem-demo-repos/hcl-structuring-truth.md`,
+    `internal/change/diff_hcl.go`, `internal/change/diff_hcl_test.go`
+  - Verify: `go test ./internal/change/ -run TestHclStructuringMatchesRecordedTruth` — the
+    record's construct → (bound | opaque) table *is* the test's table, so a claim the differ
+    does not actually produce reds. That each row was **determined by running the code** and
+    carries the command that produced it is manual review; nothing can verify an observation
+    not yet made
+  - Level: L0
+
 **REQ-DEM-S08-03** — The **opaque-change fallback is pinned in both polarities**: a structured
 `.tf` edit evaluates on bound fields; an edit the model cannot structure routes to REVIEW and
 **never** to APPROVE.
+  - Test: `examples/demo/assent-demo-terraform/.assent/tests/opaque-fallback/structured/`,
+    `examples/demo/assent-demo-terraform/.assent/tests/opaque-fallback/opaque/`
+  - Verify: `task build && ./bin/assent test examples/demo/assent-demo-terraform` — the
+    structured case evaluates on bound fields and the opaque case expects REVIEW; an opaque
+    case whose `expect.yaml` says APPROVE reds
+  - Level: L1
 
 > This story is deliberately allowed to discover that raw HCL structures worse than expected.
 > If so, the finding is recorded and repo 2 leans harder on `.tfvars` for structured rules
@@ -853,7 +872,15 @@ not by reading it, and recorded with the commands used.
 **REQ-DEM-S09-01** — Rules: module `source` within the allow-listed registry; `version` pinned
 exactly (no range) and within the allowed band; instance-size / replica-count within the
 per-environment band; a prod change exceeding the bounded-change budget → REVIEW.
+  - Test: `examples/demo/assent-demo-terraform/.assent/packs/tf-module-instance/**`
+  - Verify: `task build && ./bin/assent test examples/demo/assent-demo-terraform`
+  - Level: L1
+
 **REQ-DEM-S09-02** — Both polarities per rule.
+  - Test: `examples/demo/assent-demo-terraform/.assent/tests/tf-module-instance/*/`
+  - Verify: `task build && ./bin/assent test examples/demo/assent-demo-terraform --coverage`
+  - Level: L1
+
 **REQ-DEM-S09-03** — Environment split proven: the identical diff APPROVEs in `dev` and REVIEWs
 or BLOCKs in `prod`, from one changeset — the clearest single demonstration of binding scope.
 **Depends on DEM-S00 and is currently impossible in either tier**: `run` fails closed on >1
@@ -861,18 +888,37 @@ binding, and `test` collapses a multi-binding document to its strictest (D-060).
 decision-*flipping* environment split has never been exercised by any shipped example — D-060
 recorded the corpus split as decision-neutral — so this requirement is also S00's sharpest
 acceptance test, not merely a demo nicety.
+  - Test: `examples/demo/assent-demo-terraform/.assent/tests/env-split/dev/`,
+    `examples/demo/assent-demo-terraform/.assent/tests/env-split/prod/`,
+    `cmd/assent/demo_env_split_test.go`
+  - Verify: `task build && ./bin/assent test examples/demo/assent-demo-terraform` (the two
+    cases carry different `expect.yaml` decisions) **and**
+    `go test ./cmd/assent/ -run TestEnvSplitCasesShareByteIdenticalDiff`, which asserts the two
+    cases' `base/`↔`head/` bytes are identical. Without the second half the *identical diff*
+    claim is satisfied by two different diffs and proves nothing. Blocked on DEM-S00 — today
+    `assent test` collapses the multi-binding document (D-060) and this pair cannot exist at
+    all
+  - Level: L1
 
 ### DEM-S10 — `tf-backend` ungoverned → REVIEW `[autonomous]`
 
 **REQ-DEM-S10-01** — `stacks/<env>/backend.tf` is matched by **no** class. The two cases have
 **different governing mechanisms and must be cited separately** — conflating them is how a
-guarantee gets over-claimed:
-- **Delete** — an unmatched whole-file delete escalates fail-safe to REVIEW
-  (**D-063**, `aggregate.unmatchedDelete` / `fileEvent.unmatchedDelete`). Operator-confirmed;
-  no relaxation to APPROVE authorized.
-- **Edit** — governed by **ADR-0008 §1**'s implicit `unclassified` class (`classify.go:18-20`),
-  which no vouch rule
-  may match, so an unmatched edit cannot be vouched for.
+guarantee gets over-claimed.
+**Delete** — an unmatched whole-file delete escalates fail-safe to REVIEW (**D-063**,
+`aggregate.unmatchedDelete` / `fileEvent.unmatchedDelete`). Operator-confirmed; no relaxation to
+APPROVE authorized.
+**Edit** — governed by **ADR-0008 §1**'s implicit `unclassified` class (`classify.go:18-20`),
+which no vouch rule may match, so an unmatched edit cannot be vouched for.
+  - Test: `examples/demo/assent-demo-terraform/.assent/config.yaml`,
+    `examples/demo/assent-demo-terraform/.assent/tests/backend/delete/`,
+    `internal/core/aggregate/fileevents_s02_test.go`
+  - Verify: `task build && ./bin/assent test examples/demo/assent-demo-terraform` reproduces
+    the delete → REVIEW escalation in the demo tree, and the mechanism stays pinned by
+    `go test ./internal/core/aggregate/ -run TestUnmatchedFileDeleteFailsSafeReview` (D-063).
+    The **edit** half has no case here on purpose — it is REQ-DEM-S10-02's subject and must be
+    determined, not asserted
+  - Level: L1
 
 **REQ-DEM-S10-02** — **What actually happens to an unmatched EDIT at the `run` seam is
 DETERMINED BY RUNNING THE CODE, not asserted** — the same discipline as S08's HCL truth, and
@@ -880,6 +926,15 @@ required here because `run.go:487-492` records `unclassified` routing as *"not w
 lane"*. The observed behaviour is recorded with the commands used. If it is anything other than
 a refusal or REVIEW, **that is a finding, not a demo feature**, and it is logged rather than
 worked around. Depends on DEM-S00, which owns the same seam (REQ-DEM-S00-05).
+  - Test: `openspec/specs/p5-dem-demo-repos/unmatched-edit-observed.md`,
+    `examples/demo/assent-demo-terraform/.assent/tests/backend/edit/`
+  - Verify: the determination itself is manual — run the seam and record the command and its
+    verbatim output; **no command can verify an observation that has not been made**. Once
+    recorded, the observed decision is locked in by
+    `task build && ./bin/assent test examples/demo/assent-demo-terraform`, so a later change at
+    `run.go:487-492` reds instead of drifting. If the observation is anything other than a
+    refusal or REVIEW it becomes a row in `docs/decisions/decisions.md`, not an `expect.yaml`
+  - Level: L1
 
 **REQ-DEM-S10-03** — 🔴 **RESCOPED TO TIER 2 — as originally written this was unbuildable.**
 The intent stands: in a changeset touching **both** a governed `.tfvars` and `backend.tf`, the
@@ -893,15 +948,41 @@ clause:** two separate single-file evaluations run side by side do **not** demon
 domination — domination is a property of aggregating them, which is the thing that does not
 exist. Building that aggregation is engine work this epic explicitly fences out; if S10 finds it
 necessary, that is a **finding to log**, not a demo feature to add.
+  - Test: `docs/decisions/evidence/` (the DEM-S14 tier-2 record)
+  - Verify: **not mechanically verifiable in this repository, and deliberately given no
+    command.** Domination is a property of *aggregating* two subjects and there is no
+    cross-subject aggregation at the run seam; the unmatched-**edit** analogue of the delete
+    escalation does not exist (`internal/core/aggregate/coverage.go:251-253` gates on
+    `ch.Path == "" && ch.Kind == delete`). Two side-by-side single-file evaluations do not
+    demonstrate it — that is this REQ's own anti-tautology clause. Proof is DEM-S14's live MR
+    touching both files, or the claim is dropped
+  - Level: L3
 
 ### DEM-S11 — Repo 2 assembly `[autonomous]`
 
 **REQ-DEM-S11-01** — `examples/demo/assent-demo-terraform/` complete, `lint` clean, `test`
 green, both-polarity coverage, as S07.
+  - Test: `examples/demo/assent-demo-terraform/**`
+  - Verify: `task build && ./bin/assent lint examples/demo/assent-demo-terraform && ./bin/assent test examples/demo/assent-demo-terraform --coverage`
+  - Level: L1
+
 **REQ-DEM-S11-02** — README leads with tier 1 and **states in its first screenful that the live
 GitHub tier is pending E10-S18**, linking the epic. No workflow file that would appear to run
 assent on PRs may be committed before the adapter exists.
+  - Test: `examples/demo/assent-demo-terraform/README.md`
+  - Verify: `test ! -e examples/demo/assent-demo-terraform/.github/workflows` pins the
+    mechanical half — a committed workflow that appears to run assent on PRs before the adapter
+    exists reds. That the pending-E10-S18 statement appears in the README's **first screenful**
+    is manual review; a screenful is a reading property, not a computable one
+  - Level: L0
+
 **REQ-DEM-S11-03** — Prepared demo branches as S07, including a `demo/review-opaque-backend-change`.
+  - Test: `examples/demo/assent-demo-terraform/.assent/tests/demo/*/`,
+    `cmd/assent/demo_branches_test.go`
+  - Verify: `go test ./cmd/assent/ -run TestDemoBranchCasesMatchBranchNames`, whose expected
+    set must include `demo/review-opaque-backend-change`. As REQ-DEM-S07-04, the branches
+    themselves are DEM-S13 and L3
+  - Level: L1
 
 ---
 
