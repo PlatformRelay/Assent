@@ -54,7 +54,7 @@ A throwaway probe reconstructed `newEvalEnv` byte-faithfully against the pinned
 | --- | --- |
 | `size(...)`, `filter`, `map`, `all`, `exists`, `exists_one`, `in`, `has` | `sum(...)` and `<list>.sum()` |
 | chained comprehensions — `changes.filter(c, …).all(c, …)` | `math.*` (the `ext.Math` library is not registered) |
-| the **value binder** `[expr].all(v, …)` — CEL's standard poor-man's `let`: computes `expr` once and binds it to `v` | `reduce`, `transformList`, `transformMap`, two-var `all(i, x, …)` — every construct that could vary an iteration count |
+| the **value binder** `[expr].all(v, …)` — CEL's standard poor-man's `let`: computes `expr` once and binds it to `v` | `reduce`, `transformList`, `transformMap`, two-var `all(i, x, …)` — every construct that could make traversal *depth* depend on the data |
 | nested comprehensions — `changes.all(c, changes.exists(d, …))` | `reduce(...)` — no fold of any kind |
 | `oldEntry.acls.filter(a, !(a in entry.acls))` | `lists.*` (`ext.Lists` is not registered) |
 | `facts.registry.topics.value[string(new)].retentionMs` | `cel.bind(...)` (`ext.Bindings` is not registered) |
@@ -98,11 +98,21 @@ what CEL can *do* with those primitives untested.
 ### 1.2 The one property the whole record rests on, measured rather than recalled
 
 §5's verdict — the only shape-level claim in this document with nothing behind it but itself —
-reduces to a single property: **the number of iterations a tier-1 CEL expression performs cannot
-be made to depend on the data.** Every expression's maximum path length is a *syntactic*
-property, fixed when the rule is authored. Earlier drafts supported this with "CEL is
-non-Turing-complete by design", which is a recalled argument in a section headed *measured, not
-recalled*. Compiled against `newEvalEnv`:
+reduces to a single property: **the number of iteration *levels* a tier-1 CEL expression performs
+is *syntactic* — the nesting depth of its comprehensions is fixed by the expression text when the
+rule is authored, and cannot be made to depend on the data.** So an expression's maximum path
+length through a graph is fixed at authoring time, which is what forecloses unbounded
+reachability.
+
+**Stated that precisely on purpose, because the shorter version is false.** An earlier wording of
+this headline read "the number of iterations a tier-1 CEL expression performs cannot be made to
+depend on the data" — read alone that is wrong, and quotable against this record: a comprehension
+over an input collection performs `|N|` iterations, and `|N|` is data. What is data-independent is
+the *number of nested levels*, not the count within a level. The argument the record needs, and
+uses, is the levels one; only the headline was mis-stated (**corrected 2026-09-03, D-166**).
+
+Earlier drafts supported the property with "CEL is non-Turing-complete by design", which is a
+recalled argument in a section headed *measured, not recalled*. Compiled against `newEvalEnv`:
 
 ```text
 REJECTED  !transitiveClosure(entry.dependsOn).exists(d, d == entry.name)   undeclared 'transitiveClosure'
@@ -535,8 +545,8 @@ waits on OQ-35 or OQ-36. Nothing else in this record supports the epic.
 
 **The single strongest piece of evidence** is Shape D: an input that is declarable and
 deliverable today, over which tier-1 CEL can express only a check to some **fixed, syntactically
-written depth `k`** — because the iteration count of a CEL expression cannot be made
-data-dependent (§1.2) — while Rego answers the **actual**, unbounded question with
+written depth `k`** — because the *number of nested iteration levels* in a CEL expression is
+syntactic and cannot be made data-dependent (§1.2) — while Rego answers the **actual**, unbounded question with
 `graph.reachable`. That gap is exactly the per-rule evidence D-017's gate existed to demand.
 Note the claim is about **expressiveness only**: on a small enough graph a large enough `k` is
 both affordable and *complete* (§5 measures where), so this is not an argument that CEL is too
