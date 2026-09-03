@@ -197,8 +197,22 @@ H is the most verbose but self-documents which regime failed. C/H tie; guidance 
 
 **Verdict:** this is each syntax's ceiling probe. T fails structurally (single-payload
 projection model); C works but buries the logic in one string; H stays legible and
-attributable. Anything harder (cross-*entry* uniqueness, whole-branch conventions) correctly
-graduates to `rego` per ADR-0002.
+attributable.
+
+> **SUPERSEDED, same correction as the Ceiling summary below** (2026-09-03, D-166). This verdict
+> used to close: "Anything harder (**cross-*entry* uniqueness, whole-branch conventions**)
+> correctly graduates to `rego` per ADR-0002." Both named shapes were **struck** by E11-S01 /
+> D-156, and neither graduates to `rego`: cross-entry uniqueness is tier-1 expressible where the
+> data is present, and where it is absent the limit is **input availability**, which the Rego tier
+> inherits unchanged (REQ-E11-S05-01 pins the identical `EvaluationInput`); "whole-branch
+> conventions" is that same limit under another name — ADR-0002's own Amendment 1 now says so
+> verbatim. The syntax comparison this verdict makes (T fails structurally, C buries, H stays
+> attributable) is untouched. What *does* graduate to `rego` is folds/aggregates beyond `size()`
+> and unbounded graph reachability. Full argument in the Ceiling summary note below.
+>
+> **Found only on the third sweep**, because it was written `cross-*entry*` with emphasis inside
+> the word and `git grep cross-entry` cannot match that — recorded here because the miss, not the
+> sentence, is the reusable lesson.
 
 ---
 
