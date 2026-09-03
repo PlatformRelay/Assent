@@ -116,6 +116,11 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(e11): §1.2's headline is about iteration LEVELS, not iteration count (F4-03)
 - :memo: docs(e11): §5's cost figures are not reproducible from this record (F4-04)
 - :memo: docs(decisions): record D-166 — the ADR-0002 rego claim is withdrawn (E11-R01, F4-01..04)
+- :memo: docs(decisions): amend D-156 — it still carried both withdrawn claims verbatim (P1)
+- :memo: docs(e11): close three surviving completeness claims in the ceiling record (P1, P2-A, P2-B)
+- :memo: docs(adr): the syntax gallery still named the struck tier boundary (P2-C)
+- :memo: docs(adr): the rego bullet overclaimed what the input carries (P3-2)
+- :memo: docs(decisions): bound D-166's completeness claim to what this lane owns (P1, second pass)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
