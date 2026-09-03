@@ -654,9 +654,13 @@ in **both** tiers on **both** forges as designed. S13 is **operator-gated** — 
 repos under the `PlatformRelay` org is outward-facing and **not** covered by AGENTS.md rule 2's
 push grant to `PlatformRelay/assent` (D-142 judgment call (d)).
 
-🔴 **No DEM story is implementable until its REQs carry `Test:`/`Verify:`/`Level:` annotations** —
-the epic has **0** today against E10's 53, E11's 36 and E6's 42, so "green" is undefined for all
-15 stories. Deferred to its own change, not waived.
+✅ **The annotation precondition is discharged (D-166).** All **54** `REQ-DEM-*` rows carry
+`Test:`/`Verify:`/`Level:` in E10/E11's form — the epic had **0** against E10's 54, E11's 36 and
+E6's 42, so "green" was undefined for all 15 stories. Executed spec-first per **D-162**, which
+rejected annotating lane-by-lane as stories are picked up. 🔴 **Five REQs are `L3` and no
+in-tree gate can satisfy them** — S05-04, S06-03, S10-03 (single-file evaluation unit / the E6
+provider fence), S13-01 and S14-01 — so a story is not done because its L3 REQs were
+"demonstrated" at tier 1. S00 stays gated by `engine-grade · maintainer LGTM`, not by this.
 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
