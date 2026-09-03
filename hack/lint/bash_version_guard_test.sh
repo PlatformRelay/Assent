@@ -52,6 +52,25 @@
 #            number is not read, so `hack/audit/aud2_exitgate_test.sh` is graded
 #            on having a guard, not on its value).
 #
+#   GUARD SHAPES NOT RECOGNISED — all of these FAIL CLOSED, i.e. a file written
+#            this way reds with "declares NO bash version floor" even though it
+#            plainly has a guard. None occurs in this tree. If you hit that
+#            message on a file you know is guarded, this list is why; the fix is
+#            to add the shape here with a control in (e), or to spell the guard
+#            one of the recognised ways. Measured, each one:
+#              `[ 4 -gt "${BASH_VERSINFO[0]}" ]` — BASH_VERSINFO must be on the
+#                LEFT of the operator, for the fail-open reason recorded at
+#                has_versinfo_guard;
+#              `[ "${BASH_VERSINFO[0]}" = 3 ]` and `[[ … != 4 ]]` / `(( … != 4 ))`
+#                — bare `=` and `!=` are not in the operator set: `=` was what let
+#                `BASH_VERSINFO_NOTE=1` through, and `!=` was never separated from
+#                it. `==` IS recognised;
+#              `(( BASH_VERSINFO[0] < want_major ))` — a SYMBOLIC operator is
+#                recognised only against a literal digit (a variable right-hand
+#                side is indistinguishable from a redirection target). The word
+#                operators have no such restriction, so
+#                `[ "${BASH_VERSINFO[0]}" -gt "$want_major" ]` is fine.
+#
 # THIS FILE IS BASH-3.2-CLEAN ON PURPOSE and asserts that about itself below: a
 # gate about bash floors must still be able to run, and report, on the very shell
 # whose behaviour it describes.
@@ -238,17 +257,28 @@ declared_floor() {
 #     stays free — `[ "${BASH_VERSINFO[0]}" -gt "$want_major" ]`, the shape in
 #     hack/lib/require-bash.sh, is a guard.
 #
-# The reversed spelling (`[ 4 -gt "${BASH_VERSINFO[0]}" ]`) is accepted by the
-# second pattern. Still deliberately loose about which comparison it is and blind
-# to the number, as documented in CANNOT-SEE: this branch grades that a version
-# comparison EXISTS, never that its floor is the right one — and it grades shape,
-# not semantics, so a contrived `echo "$BASH_VERSINFO" > 4` would still pass.
-# Control (e) below pins both directions: a comment, a bare mention and four
-# non-guard operator shapes are rejected; four real comparison shapes, the first
-# of them verbatim from aud2_exitgate_test.sh, are accepted.
+# BASH_VERSINFO MUST BE ON THE LEFT. A second pattern accepting the reversed
+# spelling (`[ 4 -gt "${BASH_VERSINFO[0]}" ]`) was written here and REMOVED: with
+# the digit required on the left and nothing required on the right, it accepted
+# `command foo 2> "$BASH_VERSINFO_LOG"`, `some_cmd 2>${BASH_VERSINFO_TRACE}`,
+# `printf "%s\n" 4 > "$BASH_VERSINFO_FILE"` and `echo "bash 5 > $BASH_VERSINFO"` —
+# a fresh fail-open, opened by the very commit that closed the forward one, and
+# one the predicate it replaced had rejected. Anchoring the digit to a word
+# boundary does NOT rescue it: `2>` is a digit at a word boundary, measured. So
+# the reversed spelling is simply not recognised. It fails CLOSED — a file
+# written that way reds with "declares NO bash version floor" rather than passing
+# silently — no file in this tree uses it, and it is listed in CANNOT-SEE.
+#
+# Still deliberately loose about which comparison it is and blind to the number,
+# as documented in CANNOT-SEE: this branch grades that a version comparison
+# EXISTS, never that its floor is the right one — and it grades shape, not
+# semantics, so a contrived `echo "$BASH_VERSINFO" > 4` would still pass.
+# Control (e) below pins both directions: a comment, a bare mention, four
+# non-guard operator shapes and the four reversed-form redirections above are
+# rejected; four real comparison shapes, the first of them verbatim from
+# aud2_exitgate_test.sh, are accepted.
 has_versinfo_guard() {
-  grep -Eq '^[^#]*BASH_VERSINFO(\[[0-9]+\])?\}?"?[[:space:]]*((-lt|-le|-gt|-ge|-eq|-ne)[[:space:]]|(<=|>=|==|<|>)[[:space:]]*[0-9])' "$1" 2>/dev/null && return 0
-  grep -Eq '^[^#]*[0-9]"?[[:space:]]*(-lt|-le|-gt|-ge|-eq|-ne|<=|>=|==|<|>)[[:space:]]*"?\$?\{?BASH_VERSINFO' "$1" 2>/dev/null
+  grep -Eq '^[^#]*BASH_VERSINFO(\[[0-9]+\])?\}?"?[[:space:]]*((-lt|-le|-gt|-ge|-eq|-ne)[[:space:]]|(<=|>=|==|<|>)[[:space:]]*[0-9])' "$1" 2>/dev/null
 }
 
 # Lines of the guard idiom that are missing their `|| exit 1`. The callers run
@@ -576,12 +606,22 @@ fi
 #     deleted, i.e. the mutation this branch exists to catch — was accepted, as
 #     were a redirect to a file, an append, and a variable merely NAMED after the
 #     token. Each is pinned here by shape, since each passed before.
+#
+#     The last four are the reversed-form regression: a pattern accepting
+#     `[ 4 -gt "${BASH_VERSINFO[0]}" ]` also accepted a redirection whose
+#     DESTINATION is a variable named after the token (`2> "$BASH_VERSINFO_LOG"`),
+#     because `2>` is a digit followed by an operator. They are pinned as
+#     rejections so that spelling cannot be reintroduced without a control.
 for nonguard in \
   'echo "note: BASH_VERSINFO is nice to have" >&2' \
   'echo "${BASH_VERSINFO[0]}" > /tmp/versinfo.txt' \
   'printf "%s\n" "${BASH_VERSINFO[0]}" >>/tmp/versinfo.log' \
   'BASH_VERSINFO_NOTE=1' \
-  'msg="BASH_VERSINFO note"; other=1'; do
+  'msg="BASH_VERSINFO note"; other=1' \
+  'command foo 2> "$BASH_VERSINFO_LOG"' \
+  'some_cmd 2>${BASH_VERSINFO_TRACE}' \
+  'printf "%s\n" 4 > "$BASH_VERSINFO_FILE"' \
+  'echo "bash 5 > $BASH_VERSINFO"'; do
   {
     echo "$nonguard"
     cat "$WORK/nogua.sh"
@@ -600,8 +640,7 @@ for realguard in \
   'if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3))); then exit 1; fi' \
   'if ((BASH_VERSINFO[0] < 4)); then exit 1; fi' \
   '[ "${BASH_VERSINFO[0]}" -lt 4 ] && exit 1' \
-  '[ "${BASH_VERSINFO[0]}" -ge 4 ] || exit 1' \
-  '[ 4 -gt "${BASH_VERSINFO[0]}" ] && exit 1'; do
+  '[ "${BASH_VERSINFO[0]}" -ge 4 ] || exit 1'; do
   {
     echo "$realguard"
     cat "$WORK/nogua.sh"
