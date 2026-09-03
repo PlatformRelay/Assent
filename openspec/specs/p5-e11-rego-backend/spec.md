@@ -337,8 +337,8 @@ stays green forever. Recorded again in the S04 section. This says nothing about 
   `rego` bullet called it an "escape hatch for **cross-entry checks**", inaccurate for the
   shipped input contract. **Already corrected 2026-09-03 under D-166 / backlog residual E11-R01**
   — the bullet now states the two measured shapes and ADR-0002 **Amendment 1** records the
-  withdrawn sentence verbatim. It did **not** wait for REQ-E11-S12-01, whose `Test:` list omits
-  `docs/adr/0002-*` and whose `Verify: task check` has no pin over the phrase, so no gate would
+  withdrawn sentence verbatim. It did **not** wait for REQ-E11-S12-01, whose `Test:` list **omitted**
+  `docs/adr/0002-*` and whose `Verify: task check` had no pin over the phrase, so no gate would
   have caught it, and S12 is story 12 of 14. The omission is closed the same day:
   `docs/adr/0002-policy-frontends-rego-declarative.md` is now named in REQ-E11-S12-01's `Test:`
   list, so the file the residual was about is inside S12's sweep rather than outside it.
