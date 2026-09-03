@@ -75,11 +75,12 @@ other aggregate) and **recursive/graph reasoning over an adjacency the input alr
 question. The strongest single piece of evidence is the graph shape: a
 `{type: string, cardinality: set}` fact carrying encoded edges is fully in contract and
 deliverable over the `http` transport on the plain `assent run` path, and over it tier-1 CEL can
-express only a check to some **fixed depth `k` written into the rule text** — because the
-iteration count of a CEL expression cannot be made data-dependent: `reduce`, `transformList`,
-`transformMap`, two-var `all`, `range` and `cel.bind` are all `undeclared reference`, `for` is a
-reserved identifier, and depth must therefore be spelled out against cel-go's parser recursion
-cap of 250. **Unbounded reachability has no spelling at all.** Rego answers the actual question
+express only a check to some **fixed depth `k` written into the rule text** — because the number
+of nested iteration *levels* in a CEL expression is syntactic and cannot be made data-dependent
+(the count *within* a level can be, and is: a comprehension over `|N|` elements costs `|N|`):
+`reduce`, `transformList`, `transformMap`, two-var `all`, `range` and `cel.bind` are all
+`undeclared reference`, `for` is a reserved identifier, and depth must therefore be spelled out
+against cel-go's parser recursion cap of 250. **Unbounded reachability has no spelling at all.** Rego answers the actual question
 at any depth with `graph.reachable`. The claim is about **expressiveness only** — on a small
 graph a large `k` is both affordable and complete (measured in the record's §5), so this is not
 an argument that CEL is too slow.
@@ -490,8 +491,8 @@ stays green forever. Recorded again in the S04 section. This says nothing about 
 - ⚠️ **ALLOWLIST FLOOR, set by E11-S01 / D-156 — `graph.reachable` MUST be allowed**, and
   `split` alongside it. Both are pure and deterministic (no clock, randomness or I/O).
   **`graph.reachable` is the one that carries the epic's strongest justification**: it closes
-  the graph at any depth, which tier-1 CEL cannot do at all — a CEL expression's iteration count
-  cannot be data-dependent, so only a fixed, syntactically written depth is expressible
+  the graph at any depth, which tier-1 CEL cannot do at all — the number of nested iteration
+  levels in a CEL expression is syntactic, so only a fixed, written-out depth is expressible
   (`docs/planning/rego-tier-ceiling.md` §1.2, §5). `split` is the convenient way to rebuild the
   adjacency from the encoded `"a|b"` pairs the input carries — equally pure, but a convenience,
   not the justification. A denylist drafted from "deny anything unfamiliar" would strike out the reason E11
