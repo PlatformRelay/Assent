@@ -573,14 +573,17 @@ not a constraint, and saying so is cheaper than pretending otherwise.
   the time of writing; S07 must either carry this as a reviewed acceptance criterion or create
   the pin itself.
 - **S12** (docs truth) must not describe Rego as enabling cross-entry or cross-manifest checks.
-  ADR-0002 §"`rego`" currently calls it an "escape hatch for **cross-entry checks**"; per this
-  record that phrase is inaccurate for the shipped input contract. **Held partly.**
-  REQ-E11-S12-01's normative text is broad enough to cover it, but its `Test:` list omits
-  `docs/adr/0002-*` — the actual wrong file — and its `Verify: task check` has no pin over the
-  phrase today, so the gate would not fail if the line survived. **And S12 is story 12 of 14**:
-  if E11 never proceeds, a published ADR stays wrong indefinitely. The correction is therefore
-  also tracked as a standalone backlog residual, independent of this epic — that residual, not
-  REQ-E11-S12-01, is what actually keeps it from being lost.
+  ADR-0002 §"`rego`" called it an "escape hatch for **cross-entry checks**", which is inaccurate
+  for the shipped input contract. **CORRECTED 2026-09-03 (D-166), ahead of S12** — the bullet now
+  states the two measured shapes and ADR-0002 **Amendment 1** records the withdrawn sentence
+  verbatim and why. Why it did not wait for S12, recorded because the mechanism is the lesson:
+  REQ-E11-S12-01's normative text was broad enough to cover it, but its `Test:` list omits
+  `docs/adr/0002-*` — the actual wrong file — and its `Verify: task check` had no pin over the
+  phrase, so **the gate would not have failed if the line survived**; and S12 is story 12 of 14,
+  so if E11 never proceeded a published ADR would have stayed wrong indefinitely. The correction
+  was carried instead by the standalone backlog residual **E11-R01**, independent of this epic —
+  that residual, not REQ-E11-S12-01, is what actually kept it from being lost. S12 still owns the
+  rest of the docs-truth sweep; ADR-0002 is no longer part of it.
 
 **Corroborating observation.** The single committed illustration of the escape hatch,
 `examples/policies/rego/bounded_change.rego`, is **entirely tier-1 expressible** — both of its
