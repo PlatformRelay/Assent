@@ -116,8 +116,13 @@ over an in-input adjacency. The `rego` bullet above now states those and nothing
 
 **Blast radius of the wrong sentence.** It was published on an Accepted ADR and reachable from
 the ADR index; the correction was tracked as backlog residual **E11-R01** precisely because
-REQ-E11-S12-01's `Test:` list omits `docs/adr/0002-*`, so **no gate would ever have caught it** —
-it was invisible to CI by construction, and E11-S12 is story 12 of 14.
+REQ-E11-S12-01's `Test:` list **omitted** `docs/adr/0002-*`, so **no gate would ever have caught
+it** — it was invisible to CI by construction, and E11-S12 is story 12 of 14. **That omission is
+now closed:** this file **is** named in REQ-E11-S12-01's `Test:` list, so it sits inside S12's
+sweep rather than outside it. That buys a **review** pin and not a gate — nothing
+machine-consumes a REQ's `Test:` list, and the only gate that reads ADRs at all compares Status
+rows against `docs/adr/README.md`, never body content — so a regression re-inserting the withdrawn
+sentence into this file would still fail no check today.
 
 **Left standing deliberately.** The **Options** table's *"YAML only (assertion trees) — ceiling:
 cross-entry logic, branch-state conventions get ugly"* cell is a record of what was believed
