@@ -363,14 +363,31 @@ additionally `[engine-grade · maintainer LGTM]`**: it changes decision routing 
 `cmd/assent` seam, which is exactly the class `/agent-loop-auto` must surface rather than
 auto-merge. S13/S14 **`[operator]`** / **`[infra-gated · operator]`**.
 
-🔴 **PRECONDITION ON EVERY STORY — no DEM story is implementable until its REQs carry
-`Test:` / `Verify:` / `Level:` annotations**, per the sibling-epic convention (E10 has 53,
-E11 36, E6 42; **DEM currently has 0**). This epic's REQs state intent but name no command, so
-"green" is undefined for all 15 stories. That is precisely the condition that produced this
-project's documented **six tests that cannot fail** — a story picked up with no definition of
-done. The annotation pass is deferred to its own change, not waived; until it lands, DEM-S00 in
-particular must not be started, because it is `engine-grade · maintainer LGTM` and is the story
-someone will reach for first.
+✅ **PRECONDITION DISCHARGED (D-166, 2026-09-03).** It read: *no DEM story is implementable
+until its REQs carry `Test:` / `Verify:` / `Level:` annotations*, per the sibling-epic
+convention (E10 54, E11 36, E6 42; **DEM had 0** — the one `Test:`/`Verify:`/`Level:` occurrence
+in this file was this paragraph describing the gap, not an annotation). All **54** `REQ-DEM-*`
+rows now carry the triple, in E10/E11's field order and register. D-162 required the
+re-decomposition be done **spec-first** and rejected annotating lane-by-lane as stories are
+picked up, precisely because a story picked up with no definition of done is the condition that
+produced this project's documented **six tests that cannot fail**. DEM-S00 remains gated — but
+by `engine-grade · maintainer LGTM`, not by this precondition.
+
+**How to read the triple.** `Test:` names the artifacts the REQ lives in — several are files a
+later story creates, as in E10-S00. `Verify:` is a command a later implementer can run and that
+can actually fail; where a REQ has no executable predicate, `Verify:` says *manual review* and
+names what the reviewer checks, and where a REQ cannot be verified in this repository at all it
+says so with the reason and **no command** — an honest downgrade beats a plausible-looking gate
+that would never run. `Level:` follows `internal/forge/conformance/catalog.yaml`: **L0**
+hermetic unit or static-file gate, **L1** CLI / cross-package integration, **L2** adapter with
+`httptest` cassettes, **L3** live — needs network, credentials or a real MR, and therefore
+cannot run under `task check`.
+
+🔴 **Five REQs are `L3` and are satisfiable by no in-tree gate** — REQ-DEM-S05-04,
+REQ-DEM-S06-03 and REQ-DEM-S10-03 (defeated by the single-file evaluation unit or the E6
+provider fence, each carrying an anti-tautology clause a `facts.yaml` stub would violate), plus
+REQ-DEM-S13-01 and REQ-DEM-S14-01. A story is **not** done because its L3 REQs were
+"demonstrated" at tier 1; those REQs close at DEM-S14 or not at all.
 
 **Dependency order**: **S00** → S01 → S02 → S03 → {S04 → S05 → S06 → S07} ∥ {S08 → S09 → S10 →
 S11} → S12 → S13 → S14. **Do first: S00** — until `(class, environment)` routing exists, both
@@ -426,20 +443,35 @@ tier 1 failing closed for both demo repos while the story reads done.
 `Config.classes[].match.paths` and `Config.environments[].match.paths`, and the covering
 `RulesetBinding` entry is selected by that pair. Last-match-wins for environments, matching the
 semantics the example packs already document.
+  - Test: `cmd/assent/run.go`, `cmd/assent/test.go`, `cmd/assent/binding_routing_test.go`
+  - Verify: `go test ./cmd/assent/ -run TestSelectBindingByClassAndEnvironment`
+  - Level: L1
 
 **REQ-DEM-S00-02** — **Fail-closed is preserved wherever routing is genuinely ambiguous — this
 is the story's central constraint, not a caveat.** The current code's virtue is that it never
 guesses; that must survive. A changed file matching **two classes**, and a resolved
 `(class, environment)` pair with **no covering binding**, must both refuse with a named error
 rather than pick one. Both pinned as tests.
+  - Test: `cmd/assent/binding_routing_test.go`
+  - Verify: `go test ./cmd/assent/ -run 'TestRoutingRefusesTwoMatchingClasses|TestRoutingRefusesUncoveredPair'`
+  - Level: L1
 
 **REQ-DEM-S00-03** — Call sites: `run.go:219` and `test.go:87`. **`compare.go:407` stays
 fenced** — D-060 fenced it deliberately and this story does not reopen it.
+  - Test: `cmd/assent/run.go`, `cmd/assent/test.go`, `cmd/assent/compare.go`,
+    `cmd/assent/compare_test.go`
+  - Verify: `go test ./cmd/assent/ -run 'TestRoutingWiredAtRunAndTestSeams|TestCompareBindingSelectionStaysFenced'`
+  - Level: L1
 
 **REQ-DEM-S00-04** — **D-060's `selectBindingForTest` strictest-collapse is DELETED, not left
 as a fallback.** Leaving both paths live is how a fail-closed guarantee is lost quietly: a
 future routing bug would silently degrade to the collapse instead of refusing. The D-060 row is
 amended to record the supersession.
+  - Test: `cmd/assent/test.go`, `docs/decisions/decisions.md`
+  - Verify: `! grep -rn 'selectBindingForTest' cmd/assent/ && go test ./cmd/assent/ -run TestMultiBindingTestPathRefusesRatherThanCollapsing`
+    — deletion is proven by absence *and* by the replacement behaviour; a collapse left in as a
+    fallback reds both halves
+  - Level: L1
 
 **REQ-DEM-S00-05** — `classify`'s reserved classes (`unclassified`, `assent-policy`) are handled
 explicitly by the matcher: `assent-policy` keeps GUARD-1 dominance, and `unclassified` must not
@@ -447,9 +479,16 @@ resolve to a vouch-carrying binding (ADR-0008 §1's classification stage plus th
 2026-07-21 fail-safe-by-construction amendment, enforced by `classify.ValidateRouting` /
 `ErrReservedClassRouting` at `internal/core/classify/classify.go:127-145`). **This is the same seam DEM-S10 probes** —
 the two stories must agree, and S10 is written against whatever S00 establishes.
+  - Test: `cmd/assent/binding_routing_test.go`, `internal/core/classify/classify.go`
+    (read-only)
+  - Verify: `go test ./cmd/assent/ -run 'TestRoutingAssentPolicyKeepsGuardOneDominance|TestRoutingUnclassifiedNeverSelectsVouchCarryingBinding'`
+  - Level: L1
 
 **REQ-DEM-S00-06** — `internal/core` byte-unchanged and `git diff schemas/` == 0, the DoD the
 neighbouring epics use. This is a `cmd/assent`-edge change.
+  - Test: `internal/core/**`, `schemas/**`
+  - Verify: `git diff --exit-code "$(git merge-base HEAD origin/main)" -- internal/core schemas && task check`
+  - Level: L0
 
 **Given** a repo with `kafka-topic` and `kafka-acl` classes carrying different `require[]`,
 **when** an MR changes only a topic file, **then** the `kafka-topic` binding is selected and the
@@ -472,15 +511,30 @@ resolve, **so that** I am not silently running with zero facts.
 **REQ-DEM-S01-01** — Every `providers:` key in every example pack under `examples/packs/**`
 has a matching host declaration at `<dir(config)>/providers/<name>.json`, valid against
 `provider.LoadProviderConfig`, declaring typed `outputs`.
+  - Test: `examples/packs/*/.assent/providers/*.json`
+  - Verify: `go test -count=1 ./cmd/assent/ -run TestExamplePackProviderDeclarationsResolve`
+  - Level: L1
 
 **REQ-DEM-S01-02** — A test in `examples`' gate walks every `.assent/config.yaml` in the tree,
 and **fails** when a declared provider name has no matching `providers/<name>.json`. Both
 polarities pinned: a fixture missing its declaration must red the test.
+  - Test: `cmd/assent/examples_provider_declarations_test.go`
+  - Verify: `go test -count=1 ./cmd/assent/ -run TestExamplePackProviderDeclarationsResolve` —
+    the negative polarity is a subtest that deletes one declaration in a temp copy of the tree
+    and asserts the walk reds naming pack *and* provider; discovery globs the tree the way
+    `hack/dogfood-examples.sh` does, never a hardcoded pack list
+  - Level: L1
 
 **REQ-DEM-S01-03** — `docs/usage/` documents the declaration path, that it is read **from the
 target ref** (and why: an MR author must not be able to redefine their own fact semantics),
 the split between repo-side `{type,url,failure}` and host-side `outputs`/`exec`/`repoFile`/
 `resourceOwner`, and the **silent-skip behaviour** of a missing declaration.
+  - Test: `docs/usage/providers.md`, `mkdocs.yml`
+  - Verify: `task docs-build` proves the page exists and is nav-linked (`mkdocs build --strict`
+    fails on an unlinked or dangling page); the content is manual review that the target-ref
+    rationale, the repo-side `{type,url,failure}` / host-side
+    `outputs|exec|repoFile|resourceOwner` split, and the silent-skip behaviour are each stated
+  - Level: L0
 
 **REQ-DEM-S01-04** — The `http`-typed example providers either gain a declaration *and* are
 re-pointed at the reference broker, or are converted to a builtin. **No example may ship
@@ -488,6 +542,9 @@ a provider block that cannot resolve.** ⚠️ **Ordering:** the reference broke
 comes *after* S01 — so this REQ must be satisfied by the **builtin conversion** arm, or S01
 closes only once S03 lands and the epic's stated S01 → S02 → S03 order is a lie. Prefer the
 builtin: it keeps S01 self-contained and removes the forward dependency entirely.
+  - Test: `examples/packs/*/.assent/config.yaml`
+  - Verify: `go test -count=1 ./cmd/assent/ -run TestExamplePackProviderDeclarationsResolve && bash hack/dogfood-examples.sh`
+  - Level: L1
 
 **Given** an example pack with `providers.author`, **when** its `providers/author.json` is
 deleted, **then** the gate fails naming the pack and the provider.
@@ -511,19 +568,42 @@ format.
 envelopes **by reference to the frozen schemas**, never by restating them (restated schemas
 drift; `docs/planning/provider-contract.md`'s 45 lines about `maxAge` are not a wire contract
 and are cross-linked, not replaced).
+  - Test: `docs/usage/providers.md`, `schemas/provider/v1alpha1/request.schema.json`,
+    `schemas/provider/v1alpha1/response.schema.json`
+  - Verify: `task docs-build`; manual review that every envelope field is *cited to* the frozen
+    schema file rather than restated — a restated field table is the drift this REQ exists to
+    prevent and no executable predicate distinguishes it from a citation
+  - Level: L0
 
 **REQ-DEM-S02-02** — The fail-closed state table is documented with the adopter-facing
 consequence of each state, plus the two rules a provider author will otherwise get wrong:
 **echo `queryId`**, and **derive every timestamp from the host-pinned `asOf`** — never from a
 provider wall clock (hard rule 7).
+  - Test: `docs/usage/providers.md`, `internal/provider/guide_example_test.go`
+  - Verify: `go test ./internal/provider/ -run TestGuideExamplePayloadResolvesChecked` — the
+    guide's own copy-pasteable payload is the fixture, run through `ResolveFactsChecked`
+    (`internal/provider/resolve.go:53`), so a payload that drifts out of the guide reds
+  - Level: L0
 
 **REQ-DEM-S02-03** — The **credential constraint (G2)** is stated plainly: no header, token, or
 client certificate can reach an HTTP provider, and `(?i)TOKEN|SECRET` env/argv names are
 refused on exec. The broker pattern is documented as the shape that works, with the reasoning
 (ADR-0015 §7), and cross-links **OQ-32**.
+  - Test: `docs/usage/providers.md`, `internal/provider/transport.go`,
+    `internal/provider/sensitive_test.go`
+  - Verify: `go test ./internal/provider/ -run 'TestScrubEnvRefusesSecretNames|TestScrubArgvRefusesSecretNames'`
+    pins the mechanical half (`ScrubEnv`/`ScrubArgv`, `transport.go:38,53`); that the doc
+    states the constraint plainly and cross-links OQ-32 is manual review
+  - Level: L0
 
 **REQ-DEM-S02-04** — The exec digest-pin re-pinning burden (G3) is stated, with the HTTP/broker
 transport recommended for third-party providers.
+  - Test: `docs/usage/providers.md`
+  - Verify: manual review that the exec digest re-pinning burden and the HTTP/broker
+    recommendation are both stated. **No mechanical verification is claimed**: this is
+    documentation completeness with no executable predicate, and grepping for a phrase would
+    assert the presence of words, not of the explanation
+  - Level: L0
 
 **Given** a reader with no access to this repository's Go source, **when** they follow the
 guide, **then** they can produce a response the host classifies `resolved` — pinned by a test
@@ -537,21 +617,44 @@ swapping user resolution is an afternoon, not a project.
 **REQ-DEM-S03-01** — `contrib/providers/idp-groups/` ships a single small Go binary serving
 `POST /` with a `FactResponse`, structured as an **IdP-agnostic core** plus two thin adapters:
 **Entra ID** (`transitiveMemberOf`-shaped) and **Keycloak** (`users/<id>/groups`-shaped).
+  - Test: `contrib/providers/idp-groups/main.go`, `contrib/providers/idp-groups/entra.go`,
+    `contrib/providers/idp-groups/keycloak.go`, `contrib/providers/idp-groups/adapters_test.go`
+  - Verify: `go test ./contrib/providers/idp-groups/ -run 'TestEntraTransitiveMemberOfAdapter|TestKeycloakUserGroupsAdapter'`
+  - Level: L2
 
 **REQ-DEM-S03-02** — The broker holds the IdP credential itself; **assent passes none**. The
 README states the deployment contract (loopback/sidecar or mesh-terminated mTLS) and why.
+  - Test: `contrib/providers/idp-groups/main.go`, `contrib/providers/idp-groups/README.md`
+  - Verify: `go test ./contrib/providers/idp-groups/ -run TestBrokerIgnoresInboundCredentialHeaders`
+    pins that the broker takes its IdP credential from its own configuration and never from the
+    request; that the README states the loopback/sidecar-or-mesh-mTLS deployment contract *and
+    why* is manual review
+  - Level: L2
 
 **REQ-DEM-S03-03** — Every response is validated against
 `schemas/provider/v1alpha1/response.schema.json` in test, and every timestamp derives from the
 request's `asOf`. Tests are hermetic (`httptest` upstreams); **no live IdP is contacted in CI**.
+  - Test: `contrib/providers/idp-groups/response_test.go`,
+    `schemas/provider/v1alpha1/response.schema.json`
+  - Verify: `go test ./contrib/providers/idp-groups/ -run 'TestResponsesValidateAgainstFrozenSchema|TestExpiresAtDerivesFromRequestAsOf'`
+    — upstreams are `httptest`; no test contacts a live IdP
+  - Level: L2
 
 **REQ-DEM-S03-04** — Failure paths are pinned: upstream 5xx/timeout → the host classifies
 `unavailable`; unknown subject → `unavailable` with a reason, **never `resolved` with `[]`**
 (the REQ-E5-S06-02 rule — an empty group set is a *false* authorization answer, not a missing
 one).
+  - Test: `contrib/providers/idp-groups/failure_test.go`
+  - Verify: `go test ./contrib/providers/idp-groups/ -run 'TestUpstream5xxClassifiesUnavailable|TestUnknownSubjectNeverResolvesToEmptySet'`
+  - Level: L2
 
 **REQ-DEM-S03-05** — `contrib/` is explicitly **not** part of the decision path and not covered
 by `API_STABILITY.md`; a `README` says so, and no `internal/core` package may import it.
+  - Test: `.golangci.yml` (the `pure-tree` deny list), `contrib/README.md`, `API_STABILITY.md`
+  - Verify: `task lint && bash hack/lint/depguard_test.sh` — `contrib/...` joins the
+    `pure-tree` deny list, and the adversarial depguard gate proves the new rule *fires* rather
+    than merely being present (D-123)
+  - Level: L0
 
 **Given** an Entra-shaped upstream returning two groups, **when** the host queries the broker,
 **then** exactly one `resolved` fact with the sorted group set and `expiresAt = asOf + maxAge`.
