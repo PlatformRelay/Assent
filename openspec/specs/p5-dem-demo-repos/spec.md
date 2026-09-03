@@ -541,10 +541,20 @@ target ref** (and why: an MR author must not be able to redefine their own fact 
 the split between repo-side `{type,url,failure}` and host-side `outputs`/`exec`/`repoFile`/
 `resourceOwner`, and the **silent-skip behaviour** of a missing declaration.
   - Test: `docs/usage/providers.md`, `mkdocs.yml`
-  - Verify: `task docs-build` proves the page exists and is nav-linked (`mkdocs build --strict`
-    fails on an unlinked or dangling page); the content is manual review that the target-ref
-    rationale, the repo-side `{type,url,failure}` / host-side
-    `outputs|exec|repoFile|resourceOwner` split, and the silent-skip behaviour are each stated
+  - Verify: `task docs-build` (`mkdocs build --strict`) proves the page **builds** and that every
+    nav entry and in-page link resolves to an existing file — `mkdocs.yml:66`
+    `unrecognized_links: warn`, escalated to an error by `--strict`. 🔴 **It does not prove the
+    page is nav-linked, and this row must not claim it does.** `mkdocs.yml:65` sets
+    `omitted_files: info` and `--strict` escalates WARNING and above only, so a page created
+    under `docs/` and never added to `nav:` builds green: **56 `docs/**.md` files are absent from
+    the nav on `main` today** and `docs-build` is green over them, while
+    `git grep omitted_files hack/ Taskfile.yml` returns nothing. Nav linkage is therefore
+    **manual review** unless a later change bumps `omitted_files` to `warn` — a `mkdocs.yml`
+    edit, not this story's. `docs-build` is also **not in `task check`**: it runs only in the
+    release exit gate (`Taskfile.yml:350`), which `verify.yaml` skips on pull requests. The
+    content is manual review that the target-ref rationale, the repo-side `{type,url,failure}` /
+    host-side `outputs|exec|repoFile|resourceOwner` split, and the silent-skip behaviour are each
+    stated
   - Level: L0
 
 **REQ-DEM-S01-04** — The `http`-typed example providers either gain a declaration *and* are
@@ -601,10 +611,18 @@ client certificate can reach an HTTP provider, and `(?i)TOKEN|SECRET` env/argv n
 refused on exec. The broker pattern is documented as the shape that works, with the reasoning
 (ADR-0015 §7), and cross-links **OQ-32**.
   - Test: `docs/usage/providers.md`, `internal/provider/transport.go`,
-    `internal/provider/sensitive_test.go`
-  - Verify: `go test ./internal/provider/ -run 'TestScrubEnvRefusesSecretNames|TestScrubArgvRefusesSecretNames'`
-    pins the mechanical half (`ScrubEnv`/`ScrubArgv`, `transport.go:38,53`); that the doc
-    states the constraint plainly and cross-links OQ-32 is manual review
+    `internal/provider/scrub_test.go` (**new — this story writes it**)
+  - Verify: 🔴 **the gate does not exist yet and this story must add it.** `ScrubEnv` and
+    `ScrubArgv` (`internal/provider/transport.go:38,53`) have **no test today** —
+    `git grep -l 'ScrubEnv\|ScrubArgv' -- '*_test.go'` is empty, and
+    `internal/provider/sensitive_test.go` holds only `TestSensitiveMaxAge` and
+    `TestSensitivePropagates`. That matters because **`go test -run` over a pattern matching
+    nothing exits 0** (`[no tests to run]`, measured), so naming the command without writing the
+    tests would be green-by-vacuity — this repo's own "an empty result satisfies every
+    assertion" failure in a new costume. Once
+    `internal/provider/scrub_test.go` exists, `go test ./internal/provider/ -run
+    'TestScrubEnvRefusesSecretNames|TestScrubArgvRefusesSecretNames'` pins the mechanical half;
+    that the doc states the constraint plainly and cross-links OQ-32 is manual review
   - Level: L0
 
 **REQ-DEM-S02-04** — The exec digest-pin re-pinning burden (G3) is stated, with the HTTP/broker
@@ -1064,10 +1082,13 @@ the demo branches. **Requires explicit authorization** — judgment call (d).
 
 **REQ-DEM-S13-02** — `README.md` and the docs site link both repos with the tier each supports.
   - Test: `README.md`, `docs/index.md`, `mkdocs.yml`
-  - Verify: `task docs-build` proves the docs page builds and is nav-linked, and
-    `bash hack/docs/truthlag_pins_test.sh` checks README links to **in-repo** paths only
+  - Verify: `task docs-build` proves the docs page **builds** and that its nav entries and links
+    resolve to existing files — **not** that the page is nav-linked, per the same
+    `mkdocs.yml:65` `omitted_files: info` limit disclosed at REQ-DEM-S01-03. `bash
+    hack/docs/truthlag_pins_test.sh` checks README links to **in-repo** paths only
     (`truthlag_pins_test.sh:110`). The two demo-repo URLs are external and are link-checked by
-    nothing here, so that they resolve and name the right tier is manual review
+    nothing here, so nav linkage, that the URLs resolve, and that each names the right tier are
+    all manual review
   - Level: L0
 
 **REQ-DEM-S13-03** — The mirror procedure is a script in `hack/`, not a remembered sequence.
@@ -1102,9 +1123,16 @@ mirroring the D-042 shape.
 **REQ-DEM-S14-03** — GitHub tier 2 is **explicitly deferred to E10-S18**, which retargets its
 live adoption proof at `assent-demo-terraform` instead of a throwaway repository.
   - Test: `openspec/specs/p5-e10-github-forge/spec.md`, `openspec/specs/backlog.md`
-  - Verify: `grep -q 'assent-demo-terraform' openspec/specs/p5-e10-github-forge/spec.md` —
-    E10-S18 must name the demo repository as its live adoption target, or the deferral points
-    at nothing
+  - Verify: scoped to the S18 section, not the whole file —
+    `sed -n '/^### E10-S18/,/^## /p' openspec/specs/p5-e10-github-forge/spec.md | grep -q
+    'assent-demo-terraform'` (the heading is at `p5-e10-github-forge/spec.md:780` of 793, and the
+    string is absent from that file on `main` today, so the check is falsifiable in both
+    directions). A whole-file grep would prove only that the string occurs *somewhere* — the
+    "presence of words, not of the explanation" objection this epic raises at REQ-DEM-S02-04 and
+    REQ-DEM-S04-03, and it applies to its own commands too. Even scoped, the check proves the
+    **name** appears in S18, not that S18's retargeting is coherent; that, and the agreement of
+    `backlog.md`'s E10-S18 row (`backlog.md:580`), which this command does not read, are manual
+    review
   - Level: L0
 
 ---
