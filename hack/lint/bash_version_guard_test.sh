@@ -183,16 +183,35 @@ declared_floor() {
 # present — but it must be a COMPARISON, not a mention. Accepting any non-comment
 # occurrence of the token was itself the defect this gate exists to catch: a file
 # containing `echo "note: BASH_VERSINFO is nice to have"` beside an unguarded
-# `declare -A` passed the whole gate at exit 0. Both halves of control (e) below
-# pin this: a comment is rejected, a non-comment MENTION is rejected, and a real
-# comparison is accepted.
+# `declare -A` passed the whole gate at exit 0.
 #
-# Deliberately loose about the SHAPE of the comparison (`((BASH_VERSINFO[0] < 4))`,
-# `[ "${BASH_VERSINFO[0]}" -lt 4 ]`, `-ge`, `<`, `>` …) and blind to the number, as
-# documented in CANNOT-SEE: this branch grades that a version comparison exists,
-# never that its floor is the right one.
+# Requiring "an operator character somewhere after the token" did not fix that, it
+# narrowed it: `>` is an operator character AND a redirection, so
+# `echo "…BASH_VERSINFO…" >&2` — exactly what a hand-rolled guard looks like after
+# its `if` has been deleted — was still accepted, as were `> file`, `>>log`, and
+# `BASH_VERSINFO_NOTE=1`. Measured, all four. So two things are required now:
+#
+#   ADJACENCY — nothing may sit between the token and the operator except an
+#     optional numeric subscript, a closing brace, a closing quote and whitespace.
+#     That is what rejects `BASH_VERSINFO_NOTE=` and `"BASH_VERSINFO note"; x=1`.
+#   A VERSION ON THE OTHER SIDE — the symbolic operators (`<`, `>`, `<=`, `>=`,
+#     `==`) are accepted only against a literal digit, which is what separates
+#     `((BASH_VERSINFO[0] < 4))` from `>&2`, `> /tmp/x` and `>>log`. The word
+#     operators (`-lt` … `-ne`) are never redirections, so their right-hand side
+#     stays free — `[ "${BASH_VERSINFO[0]}" -gt "$want_major" ]`, the shape in
+#     hack/lib/require-bash.sh, is a guard.
+#
+# The reversed spelling (`[ 4 -gt "${BASH_VERSINFO[0]}" ]`) is accepted by the
+# second pattern. Still deliberately loose about which comparison it is and blind
+# to the number, as documented in CANNOT-SEE: this branch grades that a version
+# comparison EXISTS, never that its floor is the right one — and it grades shape,
+# not semantics, so a contrived `echo "$BASH_VERSINFO" > 4` would still pass.
+# Control (e) below pins both directions: a comment, a bare mention and four
+# non-guard operator shapes are rejected; four real comparison shapes, the first
+# of them verbatim from aud2_exitgate_test.sh, are accepted.
 has_versinfo_guard() {
-  grep -Eq '^[^#]*BASH_VERSINFO[^#]*(-lt|-le|-gt|-ge|-eq|-ne|<|>|=)' "$1" 2>/dev/null
+  grep -Eq '^[^#]*BASH_VERSINFO(\[[0-9]+\])?\}?"?[[:space:]]*((-lt|-le|-gt|-ge|-eq|-ne)[[:space:]]|(<=|>=|==|<|>)[[:space:]]*[0-9])' "$1" 2>/dev/null && return 0
+  grep -Eq '^[^#]*[0-9]"?[[:space:]]*(-lt|-le|-gt|-ge|-eq|-ne|<=|>=|==|<|>)[[:space:]]*"?\$?\{?BASH_VERSINFO' "$1" 2>/dev/null
 }
 
 # Lines of the guard idiom that are missing their `|| exit 1`. The callers run
@@ -412,16 +431,50 @@ if echo "$out" | grep -q "^hack/docs/truthlag_pins_test.sh: uses .* declares NO 
 else
   fail "mutant control: a non-comment line merely naming BASH_VERSINFO was accepted as a version guard — any file that so much as echoes the token can carry an unguarded bash 4 construct past this gate. grade_root said: ${out:-<nothing>}"
 fi
-{
-  echo 'if ((BASH_VERSINFO[0] < 4)); then exit 1; fi'
-  cat "$WORK/nogua.sh"
-} >"$MUT/hack/docs/truthlag_pins_test.sh"
-out="$(grade_root "$MUT" versinfo-code)"
-if [ -z "$out" ]; then
-  pass "mutant control: a real BASH_VERSINFO expression IS accepted as a guard (the aud2 precedent)"
-else
-  fail "mutant control: a real BASH_VERSINFO guard was rejected, so hack/audit/aud2_exitgate_test.sh would red for having the guard it actually has: $out"
-fi
+#     The rest of the shapes that are not guards. Rejecting only a bare mention
+#     left the predicate matching any comparison-ish CHARACTER anywhere to the
+#     right of the token, and `>` is such a character: `echo "…BASH_VERSINFO…"
+#     >&2` — precisely what a hand-rolled guard looks like once its `if` has been
+#     deleted, i.e. the mutation this branch exists to catch — was accepted, as
+#     were a redirect to a file, an append, and a variable merely NAMED after the
+#     token. Each is pinned here by shape, since each passed before.
+for nonguard in \
+  'echo "note: BASH_VERSINFO is nice to have" >&2' \
+  'echo "${BASH_VERSINFO[0]}" > /tmp/versinfo.txt' \
+  'printf "%s\n" "${BASH_VERSINFO[0]}" >>/tmp/versinfo.log' \
+  'BASH_VERSINFO_NOTE=1' \
+  'msg="BASH_VERSINFO note"; other=1'; do
+  {
+    echo "$nonguard"
+    cat "$WORK/nogua.sh"
+  } >"$MUT/hack/docs/truthlag_pins_test.sh"
+  out="$(grade_root "$MUT" versinfo-nonguard)"
+  if echo "$out" | grep -q "^hack/docs/truthlag_pins_test.sh: uses .* declares NO bash version floor"; then
+    pass "mutant control: '${nonguard}' is not accepted as a version guard"
+  else
+    fail "mutant control: '${nonguard}' was accepted as a version guard — it contains no comparison against a version, so the hand-rolled-guard branch grades a character, not a guard. grade_root said: ${out:-<nothing>}"
+  fi
+done
+#     And the acceptance direction, for every guard SHAPE the tree actually uses
+#     or plausibly could. The first line is verbatim hack/audit/aud2_exitgate_test.sh:71,
+#     the file whose green depends entirely on this branch.
+for realguard in \
+  'if ((BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 3))); then exit 1; fi' \
+  'if ((BASH_VERSINFO[0] < 4)); then exit 1; fi' \
+  '[ "${BASH_VERSINFO[0]}" -lt 4 ] && exit 1' \
+  '[ "${BASH_VERSINFO[0]}" -ge 4 ] || exit 1' \
+  '[ 4 -gt "${BASH_VERSINFO[0]}" ] && exit 1'; do
+  {
+    echo "$realguard"
+    cat "$WORK/nogua.sh"
+  } >"$MUT/hack/docs/truthlag_pins_test.sh"
+  out="$(grade_root "$MUT" versinfo-code)"
+  if [ -z "$out" ]; then
+    pass "mutant control: a real BASH_VERSINFO comparison IS accepted as a guard: ${realguard}"
+  else
+    fail "mutant control: a real BASH_VERSINFO guard was rejected, so hack/audit/aud2_exitgate_test.sh would red for having the guard it actually has. Shape: ${realguard} — grade_root said: $out"
+  fi
+done
 cp "$ROOT/hack/docs/truthlag_pins_test.sh" "$MUT/hack/docs/truthlag_pins_test.sh"
 
 # (g) `readarray` IS `mapfile` — the same builtin under two names — so `-d` needs
