@@ -463,15 +463,35 @@ cost *additive across levels* rather than multiplicative, and under the real
 `cel.CostLimit(1_000_000)`:
 
 ```text
-ring |N|=50  deg 5 |E|=250    frontier k=10 cost= 89,551   k=20 cost=235,297   k=50 cost=686,317  (all correct)
-ring |N|=200 deg 5 |E|=1000   frontier k=10 cost=462,618   k=20 EXCEEDED
-without the frontier binder    naive nesting exceeds the budget at k=4 on the |N|=50 graph
+                              k=10            k=20        k=50
+ring |N|=50  deg 5 |E|=250    ~9% of budget   ~25%        ~70%       (all correct)
+ring |N|=200 deg 5 |E|=1000   ~45%            EXCEEDED    —
+without the frontier binder   naive nesting exceeds the budget at k=4 on the |N|=50 graph
 ```
 
-Cost grows roughly linearly in `k` at fixed `|N|`. At `|N|=50` a check to `k=50` fits in 69% of
-budget — and since `k ≥ |N|`, CEL there is **not approximating at all: it decides reachability
-exactly.** Many governed catalogs are well under 50 entries. The practical `k` collapses around
-`|N|≈200`.
+Cost grows roughly linearly in `k` at fixed `|N|`. At `|N|=50` a check to `k=50` fits in roughly
+**70%** of budget — and since `k ≥ |N|`, CEL there is **not approximating at all: it decides
+reachability exactly.** Many governed catalogs are well under 50 entries. The practical `k`
+collapses around `|N|≈200`.
+
+> ⚠️ **These figures are ILLUSTRATIVE, and this document cannot reproduce them — said plainly,
+> because the rest of the record's method is *reproduce, don't reason*** (2026-09-03, D-166).
+> Until this note they were published to six significant figures — `89,551` / `235,297` /
+> `686,317` at `|N|=50`, and `462,618` at `|N|=200` — a precision the record cannot back.
+> **The generating expression is quoted nowhere in this document**, and the probe that produced
+> the numbers was deliberately not committed (§1.1, "Reproduction"), so no reader — including a
+> later author of this record — can re-derive or falsify a single figure. What *is* written down
+> is the setup: `newEvalEnv` verbatim, `cel-go v0.31.0`, the real `cel.CostLimit(1_000_000)`, a
+> ring graph of the stated `|N|` and degree, and a BFS-frontier form built from the
+> `[expr].all(v, …)` binder of §1.1. The exact expression text at each `k` is **not** recoverable
+> from that, and this note will not invent one to close the gap. The figures are therefore
+> rounded to the precision the argument actually uses — and the argument uses exactly two things
+> from them: that cost is **roughly linear in `k`** rather than exponential, and that a `k ≥ |N|`
+> check **fits the budget at `|N|=50` and does not at `|N|=200`**. Neither needs a third digit.
+> **What would close this:** one committed `assent test` fixture carrying a stubbed `edges` fact
+> together with the frontier expression itself — the same fixture the deliverability caveat below
+> already asks for, which would discharge both gaps at once. Until then the envelope is
+> indicative, not a measurement a reader can check.
 
 **This is recorded because it is the honest envelope, not because it is a second reason.** It is
 not offered as an expressiveness argument — §2 refuses scale in that role and the same refusal
