@@ -671,12 +671,32 @@ fact — and a rule controlling authorization on it fails closed.
 resource type/name/pattern, operation, permission, environment) and Argo CD `Application`
 manifests (project, source repo/path/targetRevision, destination server/namespace, sync
 policy), each one entry per file, with an owner field.
+  - Test: `examples/repos/kafka-acl/**`, `examples/repos/argocd-application/**`,
+    `cmd/assent/examples_repos_shapes_test.go`
+  - Verify: `go test ./cmd/assent/ -run TestExampleRepoShapesOneEntryPerFileWithOwner`
+  - Level: L1
+
 **REQ-DEM-S04-02** — `hack/check-sanitization.sh` green; **no content derived from
 `references/**`** (D-002). Reviewed against that tree for structural resemblance, not just
 string matches.
+  - Test: `examples/repos/kafka-acl/**`, `examples/repos/argocd-application/**`
+  - Verify: `bash hack/check-sanitization.sh` covers the **string** half only — it matches
+    denylist terms, internal-hostname and employee-id shapes
+    (`hack/check-sanitization.sh:24-26`), **not structural resemblance**. The `references/**`
+    structural review is therefore explicitly manual: the reviewer confirms field names,
+    nesting and naming conventions were authored generically rather than transcribed
+  - Level: L0
+
 **REQ-DEM-S04-03** — `examples/repos/README.md`'s shape table gains the two rows; the D-029
 deferred-shapes rows stay untouched (these are new generic shapes, not the deferred private
 generalizations).
+  - Test: `examples/repos/README.md`
+  - Verify: manual review that the two rows are added and the D-029 deferred-shape rows are
+    byte-unchanged. **No mechanical gate exists and none is invented here**:
+    `hack/docs/example_format_inventory_test.sh` reconciles `examples/README.md` against
+    `examples/packs/*` and reads `examples/repos/README.md` not at all, so a command named here
+    would be a gate that cannot fail
+  - Level: L0
 
 ### DEM-S05 — `kafka-acl` class + cross-manifest reference rules `[autonomous]`
 
@@ -684,10 +704,29 @@ generalizations).
 requesting author's team must **own the referenced topic** (via `builtin/resource-owner`); the
 principal must match the requesting team's allowed principal pattern; `permission: allow` on a
 prod `*`-pattern resource is blocked.
+  - Test: `examples/demo/assent-demo-platform/.assent/packs/kafka-acl/**`,
+    `examples/demo/assent-demo-platform/.assent/tests/kafka-acl/**`
+  - Verify: `task build && ./bin/assent test examples/demo/assent-demo-platform`
+  - Level: L1
+
 **REQ-DEM-S05-02** — Both polarities per rule, as directory cases with `facts.yaml`.
+  - Test: `examples/demo/assent-demo-platform/.assent/tests/kafka-acl/*/`
+  - Verify: `task build && ./bin/assent test examples/demo/assent-demo-platform --coverage` —
+    `--coverage` is the read-only completeness gate (`cmd/assent/test.go:41-49`) and reds on
+    any rule covered in one polarity only
+  - Level: L1
+
 **REQ-DEM-S05-03** — **Tier-1 ceiling record.** For each rule, record whether it is
 CEL-expressible under ADR-0013 and, where it is not, the concrete shape that defeats it. The
 record is written into this spec directory and is a **named input to E11-S01** (D-141).
+  - Test: `openspec/specs/p5-dem-demo-repos/tier1-ceiling.md`,
+    `openspec/specs/p5-e11-rego-backend/spec.md`
+  - Verify: `go test ./cmd/assent/ -run TestTierOneCeilingRecordCoversEveryRule` proves the
+    record carries a row for every rule id in the `kafka-acl` pack (the mechanical half); the
+    CEL verdict per row, and the concrete shape that defeats CEL where it does, is manual
+    review — expressibility under ADR-0013 is a judgment, not a computable predicate
+  - Level: L1
+
 **REQ-DEM-S05-04** — 🔴 **RESCOPED TO TIER 2 — as originally written this was unbuildable.**
 The intent stands: a referenced topic *deleted in the same changeset* the ACL references must
 not evaluate as present. But **the evaluation unit is one file**: `assent run` takes exactly one
@@ -701,6 +740,14 @@ only:** `builtin/repo-file` reads the *merged-result checkout* (ADR-0008 §4,
 resolvable — under `--checkout`, i.e. DEM-S14 `[infra-gated · operator]`. **Anti-tautology
 clause:** satisfying this with a hand-authored `facts.yaml` value asserting the topic is absent
 proves nothing and does **not** close the REQ.
+  - Test: `docs/decisions/evidence/` (the DEM-S14 tier-2 record)
+  - Verify: **not mechanically verifiable in this repository, and deliberately given no
+    command.** The evaluation unit is one file (`cmd/assent/run.go:266,289`;
+    `internal/adoptertest/adoptertest.go:150-160`), so no in-tree case can contain both the ACL
+    and the topic deleted in the same changeset. The only proof is DEM-S14's live `--checkout`
+    MR and its retained DecisionRecord. A tier-1 `facts.yaml` asserting the topic absent is
+    exactly the tautology this REQ's own clause forbids and does **not** close it
+  - Level: L3
 
 **Given** an MR adding an ACL for a topic owned by another team, **when** assent evaluates,
 **then** BLOCK with a finding naming the owning team.
@@ -713,7 +760,16 @@ proves nothing and does **not** close the REQ.
 (`builtin/repo-file` walk-up, most-specific-first); `project` within the allow-list; source
 repo within the allow-listed org; `syncPolicy.automated.prune: true` on a prod Application →
 REVIEW; removing an Application in prod → no-destruction BLOCK.
+  - Test: `examples/demo/assent-demo-platform/.assent/packs/argocd-application/**`,
+    `examples/demo/assent-demo-platform/.assent/tests/argocd-application/**`
+  - Verify: `task build && ./bin/assent test examples/demo/assent-demo-platform`
+  - Level: L1
+
 **REQ-DEM-S06-02** — Both polarities per rule.
+  - Test: `examples/demo/assent-demo-platform/.assent/tests/argocd-application/*/`
+  - Verify: `task build && ./bin/assent test examples/demo/assent-demo-platform --coverage`
+  - Level: L1
+
 **REQ-DEM-S06-03** — The per-environment allow-list demonstrates `repo-file` most-specific-first
 resolution across at least two levels, with the walk-up visible in the fixture layout.
 🔴 **This is a tier-2 requirement and must be labelled as one.** `assent test` cannot exercise
@@ -722,22 +778,55 @@ it: the E6 fence (`cmd/assent/test_provider_fence_test.go:69-80`) keeps tier 1 o
 `facts.yaml` value that merely *looks* like a resolved owner is a **test that cannot fail** and
 does not satisfy it. Either demonstrate the walk-up at tier 2 (DEM-S14), or state plainly in the
 fixture and the README that tier 1 shows a stubbed fact and the resolution itself is tier 2.
+  - Test: `internal/provider/builtin/repo_file_test.go`,
+    `examples/demo/assent-demo-platform/.assent/tests/**`,
+    `examples/demo/assent-demo-platform/README.md`
+  - Verify: the walk-up mechanism is pinned hermetically today —
+    `go test ./internal/provider/builtin/ -run TestBuiltinRepoFileMostSpecific`. The
+    **demo-tree demonstration is not verifiable at tier 1**: the E6 fence
+    (`cmd/assent/test_provider_fence_test.go:69-80`) keeps `assent test` on `facts.yaml` stubs,
+    so nothing walks up under tier 1 and an authored fact that merely looks resolved is a test
+    that cannot fail. The demonstration is DEM-S14; the only tier-1 claim left is manual review
+    that the fixture and README both say the fact is stubbed
+  - Level: L3
 
 ### DEM-S07 — Repo 1 assembly `[autonomous]`
 
 **REQ-DEM-S07-01** — `examples/demo/assent-demo-platform/` is a complete repo root: governed
 content, `.assent/{config.yaml,bindings.yaml,packs/**,tests/**,providers/*.json}`.
+  - Test: `examples/demo/assent-demo-platform/**`
+  - Verify: `task build && ./bin/assent lint examples/demo/assent-demo-platform && ./bin/assent test examples/demo/assent-demo-platform`
+  - Level: L1
+
 **REQ-DEM-S07-02** — `assent lint .` clean and `assent test .` green; `assent test . --coverage`
 shows every rule covered in **both** polarities.
+  - Test: `examples/demo/assent-demo-platform/.assent/tests/**`
+  - Verify: `task build && ./bin/assent test examples/demo/assent-demo-platform --coverage`
+  - Level: L1
+
 **REQ-DEM-S07-03** — README leads with the **60-second tier-1 path** (clone → `assent test .`),
 then the tier-2 live path, then the L0→L3 user-resolution ladder with the two-file L2→L3 diff
 shown inline. **The ladder must carry its tier column** — per the fence note above, **L1 and up
 are tier 2 only**; a README presenting the ladder without that qualifier implies live provider
 resolution at tier 1 and is a story failure.
+  - Test: `examples/demo/assent-demo-platform/README.md`, `hack/docs/demo_readme_smoke_test.sh`
+  - Verify: `bash hack/docs/demo_readme_smoke_test.sh` executes the README's own fenced
+    `assent` lines against a freshly built binary — the REQ-AUD-S06-01 pattern already used by
+    `hack/docs/readme_smoke_test.sh` — so a 60-second path that does not actually run reds.
+    That the ladder carries its tier column and marks L1-and-up as tier 2 is manual review
+  - Level: L1
+
 **REQ-DEM-S07-04** — Prepared demo branches, each named for its outcome and each an entry in
 the test suite so it cannot silently stop reproducing: at minimum
 `demo/approve-add-dev-topic`, `demo/review-prod-partition-shrink`, `demo/block-foreign-team-acl`,
 `demo/block-prod-app-delete`.
+  - Test: `examples/demo/assent-demo-platform/.assent/tests/demo/*/`,
+    `cmd/assent/demo_branches_test.go`
+  - Verify: `go test ./cmd/assent/ -run TestDemoBranchCasesMatchBranchNames` asserts each of
+    the four named branches has an adopter-test case whose `expect.yaml` decision matches the
+    outcome in its name. The **branches themselves** live in the published repositories and do
+    not exist until DEM-S13; their existence is L3 and is not claimed by this REQ
+  - Level: L1
 
 ---
 
