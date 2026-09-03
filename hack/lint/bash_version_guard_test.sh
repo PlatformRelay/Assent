@@ -410,11 +410,20 @@ for probe_line in "${PATTERN_NONPROBES[@]}"; do
   proot="$WORK/nonprobe$probe_i"
   mkdir -p "$proot/hack"
   printf '%s\n' '#!/usr/bin/env bash' "$probe_line" >"$proot/hack/probe.sh"
+  # The anti-vacuity partner these checks need, for the same reason MUST_BE_CLEAN
+  # below needs one: "the scan detected nothing here" is satisfied just as well by
+  # a root the scan never walked. Measured — writing these fixtures to a directory
+  # `scan_features` does not descend into left all four reporting success, 0 FAILs,
+  # the gate at exit 0. So each root also carries a line the scan certainly DOES
+  # detect, and the absence below only counts once that sentinel is present.
+  printf '%s\n' '#!/usr/bin/env bash' 'declare -A sentinel=()' >"$proot/hack/sentinel.sh"
   got="$(scan_features "$proot")"
-  if [ -n "$got" ]; then
-    fail "detection probe: '${probe_line}' does not put the construct at a command position, so nothing may detect it, but the scan reported '${got}' — a pattern has lost its anchor and now matches prose, which would make every probe above pass for the wrong reason"
+  if ! echo "$got" | grep -q '^hack/sentinel\.sh|'; then
+    fail "detection probe: the scan did not report the sentinel beside '${probe_line}' — this fixture root was not scanned at all, so the absence asserted below would be vacuous rather than a finding. scan said: ${got:-<nothing>}"
+  elif echo "$got" | grep -q '^hack/probe\.sh|'; then
+    fail "detection probe: '${probe_line}' does not put the construct at a command position, so nothing may detect it, but the scan reported it — a pattern has lost its anchor and now matches prose, which would make every probe above pass for the wrong reason. scan said: ${got}"
   else
-    pass "detection probe: '${probe_line}' is correctly seen by no pattern (command-position anchor intact)"
+    pass "detection probe: '${probe_line}' is correctly seen by no pattern, in a root the sentinel proves was scanned"
   fi
 done
 
