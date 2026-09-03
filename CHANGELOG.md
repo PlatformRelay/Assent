@@ -134,6 +134,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :pencil2: docs(decisions): renumber this lane's row D-166 -> D-167 after a collision, and move its two citations with it
 - :memo: docs(dem): disclose the four uncovered halves the review found, and correct the Level provenance
 - :memo: docs(dem): stop claiming mkdocs proves nav linkage, and stop naming two tests that do not exist
+- :memo: docs(dem): retract a coverage gap asserted from a symbol-name grep, and arm the docs claim correctly
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
