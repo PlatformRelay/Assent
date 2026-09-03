@@ -475,7 +475,7 @@ cost *additive across levels* rather than multiplicative, and under the real
 
 ```text
                               k=10            k=20        k=50
-ring |N|=50  deg 5 |E|=250    ~9% of budget   ~25%        ~70%       (all correct)
+ring |N|=50  deg 5 |E|=250    ~10% of budget  ~25%        ~70%       (all correct)
 ring |N|=200 deg 5 |E|=1000   ~45%            EXCEEDED    —
 without the frontier binder   naive nesting exceeds the budget at k=4 on the |N|=50 graph
 ```
@@ -498,7 +498,8 @@ collapses around `|N|≈200`.
 > ring graph of the stated `|N|` and degree, and a BFS-frontier form built from the
 > `[expr].all(v, …)` binder of §1.1. The exact expression text at each `k` is **not** recoverable
 > from that, and this note will not invent one to close the gap. The figures are therefore
-> rounded to the precision the argument actually uses — and the argument uses exactly two things
+> rounded **to the nearest 5% of the `1_000_000` budget** (the rule is stated so the granularity
+> is checkable and uniform: 8.96→10, 23.53→25, 68.63→70, 46.26→45) — and the argument uses exactly two things
 > from them: that cost is **roughly linear in `k`** rather than exponential, and that a `k ≥ |N|`
 > check **fits the budget at `|N|=50` and does not at `|N|=200`**. Neither needs a third digit.
 > **What would close this:** one committed `assent test` fixture carrying a stubbed `edges` fact
