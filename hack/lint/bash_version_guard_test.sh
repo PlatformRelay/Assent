@@ -29,18 +29,21 @@
 # worth more than an overreaching one:
 #
 #   CAN SEE: `declare -A` / `typeset -A` / `local -A`, `declare -n` / `local -n`,
-#            `mapfile` (and `mapfile -d`, which is 4.4 rather than 4.0),
-#            `readarray`, `wait -n` and `coproc` — each ONLY when it is the first
-#            word on its line (optional leading whitespace). Every real occurrence
-#            in this repo has that shape, and anchoring at a command position is
-#            what lets this file carry the patterns without matching itself.
+#            `mapfile` and `readarray` (which are the SAME builtin under two
+#            names, so `mapfile -d` and `readarray -d` are both graded 4.4 rather
+#            than 4.0 — controls (f) and (g)), `wait -n` and `coproc` — each ONLY
+#            when it is the first word on its line (optional leading whitespace).
+#            Every real occurrence in this repo has that shape, and anchoring at a
+#            command position is what lets this file carry the patterns without
+#            matching itself.
 #
 #   CANNOT SEE: the same constructs after `&&`, `||`, `;`, `then`, in an `if`/
 #            `while` head, behind `eval`, or assembled from a variable; `mapfile
-#            -d` when an option BEFORE it takes an argument (`mapfile -u 3 -d ''`
-#            reads as plain 4.0 `mapfile`, so a 4.0 floor on a 4.4 construct would
-#            pass green there; `-d` in a later option position with no intervening
-#            argument, e.g. `mapfile -t -d '' arr`, IS caught — control (f)); bash 4
+#            -d` / `readarray -d` when an option BEFORE it takes an argument
+#            (`mapfile -u 3 -d ''` reads as plain 4.0 `mapfile`, so a 4.0 floor on
+#            a 4.4 construct would pass green there; `-d` in a later option
+#            position with no intervening argument, e.g. `mapfile -t -d '' arr`,
+#            IS caught — controls (f) and (g)); bash 4
 #            EXPANSIONS — `${v^^}`, `${v,,}`, `${!prefix@}`, `**` globstar,
 #            `&>>` — because detecting those needs unanchored patterns that this
 #            file could not carry without flagging itself; non-`.sh` files;
@@ -101,6 +104,7 @@ FEATURES=(
   'local[[:space:]]+-n;4.3;local -n (nameref)'
   'mapfile([[:space:]]+-[a-zA-Z]+)*[[:space:]]+-[a-zA-Z]*d;4.4;mapfile -d (alternate delimiter)'
   'mapfile([[:space:]]|$);4.0;mapfile'
+  'readarray([[:space:]]+-[a-zA-Z]+)*[[:space:]]+-[a-zA-Z]*d;4.4;readarray -d (alternate delimiter)'
   'readarray([[:space:]]|$);4.0;readarray'
   'wait[[:space:]]+-n;4.3;wait -n'
   'coproc([[:space:]]|$);4.0;coproc'
@@ -419,6 +423,26 @@ else
   fail "mutant control: a real BASH_VERSINFO guard was rejected, so hack/audit/aud2_exitgate_test.sh would red for having the guard it actually has: $out"
 fi
 cp "$ROOT/hack/docs/truthlag_pins_test.sh" "$MUT/hack/docs/truthlag_pins_test.sh"
+
+# (g) `readarray` IS `mapfile` — the same builtin under two names — so `-d` needs
+#     the same 4.4 floor under either spelling. Graded 4.0, a script writing
+#     `readarray -d ''` behind a declared 4.0 floor passes this gate green and
+#     still dies on bash 4.0-4.3. Both option positions are pinned because the
+#     tree has no `readarray -d` occurrence to pin them for us.
+for probe_line in "readarray -d '' -t arr" "readarray -t -d '' arr"; do
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'set -uo pipefail'
+    echo "$probe_line"
+  } >"$MUT/hack/n1probe.sh"
+  out="$(grade_root "$MUT" readarray-d)"
+  if echo "$out" | grep -q '^hack/n1probe.sh: uses .*needs >= 4.4'; then
+    pass "mutant control: '${probe_line}' is graded 4.4, not 4.0 (readarray is mapfile)"
+  else
+    fail "mutant control: '${probe_line}' was NOT graded 4.4 — readarray -d is being graded on mapfile's 4.0 floor, so a 4.0 floor on a 4.4 construct passes green. grade_root said: ${out:-<nothing>}"
+  fi
+  rm -f "$MUT/hack/n1probe.sh"
+done
 
 # (f) `-d` in a LATER option position must still read as 4.4. The tree writes
 #     `mapfile -d '' -t refs`; `mapfile -t -d '' refs` means exactly the same
