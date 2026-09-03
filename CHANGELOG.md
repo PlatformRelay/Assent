@@ -129,6 +129,12 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(ci): read flush block sequences and whole branch names (D-157)
 - :bug: fix(ci): strip CR, and close the one fail-open direction by construction (D-157)
 - :bug: fix(ci): refuse globs on branches-ignore, grade disarm keys by name (D-157)
+- :bug: fix(lint): readarray -d needs bash 4.4, not 4.0 — readarray IS mapfile
+- :bug: fix(lint): a redirection is not a version guard — require an adjacent comparison
+- :bug: fix(lint): the include check missed 'source', one of its two spellings
+
+### Other
+- 👷 ci(docs): stop uploading the Pages artifact on pull requests
 
 ### Other
 - 👷 ci(docs): stop uploading the Pages artifact on pull requests
@@ -159,6 +165,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(ci): wire release-verify-test into task check (D-159)
 - :white_check_mark: test(ci): share PR-reach and cross-pin the three PR-visible gates (D-157)
 - :white_check_mark: test(ci): grade the shared PR-reach helper itself, on fixtures (D-157)
+- :white_check_mark: test(lint): pin all eleven detection patterns, not the four the tree happens to use
 ## [0.3.0] - 2026-08-18
 
 ### Chores
