@@ -363,7 +363,7 @@ additionally `[engine-grade · maintainer LGTM]`**: it changes decision routing 
 `cmd/assent` seam, which is exactly the class `/agent-loop-auto` must surface rather than
 auto-merge. S13/S14 **`[operator]`** / **`[infra-gated · operator]`**.
 
-✅ **PRECONDITION DISCHARGED (D-166, 2026-09-03).** It read: *no DEM story is implementable
+✅ **PRECONDITION DISCHARGED (D-167, 2026-09-03).** It read: *no DEM story is implementable
 until its REQs carry `Test:` / `Verify:` / `Level:` annotations*, per the sibling-epic
 convention (E10 54, E11 36, E6 42; **DEM had 0** — the one `Test:`/`Verify:`/`Level:` occurrence
 in this file was this paragraph describing the gap, not an annotation). All **54** `REQ-DEM-*`
