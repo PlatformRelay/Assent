@@ -26,7 +26,7 @@ part can be pluggable without creating a second frontend.
 | --- | --- | --- |
 | Two parallel frontends (v1 draft) | each audience fully served | double docs/tests, drift; rejected |
 | Rego only | max power, OPA tooling | wall of Rego; loses the preferred UX |
-| YAML only (assertion trees) | lowest barrier | ceiling: cross-entry logic, branch-state conventions get ugly |
+| YAML only (assertion trees) | lowest barrier | ceiling: cross-entry logic, branch-state conventions get ugly — **superseded 2026-09-03, see Amendment 1** |
 | **One YAML envelope; rule bodies choose a backend: `assert` (assertion tree / CEL) or `rego` (module escape hatch)** | one document model, one doc set; 80% never see Rego; Rego available where it earns its keep; backends are tiers, not equivalents — no equivalence testing | envelope schema must be designed carefully; two expression languages to document (but scoped to rule bodies) |
 | Call Kyverno proper as engine | reuse mature engine | Kyverno's engine is K8s-native (GVK match, admission semantics, CRD lifecycle) — we'd fake AdmissionReviews and lose old/new diff semantics; wrong fit |
 
