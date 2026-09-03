@@ -215,8 +215,23 @@ graduates to `rego` per ADR-0002.
 
 T fails soonest (archetype 3 quoting, archetype 6 structurally). C never fails outright but
 loses explainability as expressions grow. H tracks C's ceiling while keeping per-leaf
-attribution — users are forced into Rego at the same point in both C and H: cross-entry and
-whole-branch logic, exactly where ADR-0002 wants the tier boundary.
+attribution — users are forced into Rego at the same point in both C and H.
+
+> **SUPERSEDED where that sentence named the boundary** (2026-09-03, D-166). It used to end
+> "…at the same point in both C and H: **cross-entry and whole-branch logic, exactly where
+> ADR-0002 wants the tier boundary**". The *comparative* claim — that C and H share a ceiling,
+> which is what this gallery exists to establish — is untouched and still stands. **Where that
+> ceiling actually falls is not what this 2026-07-21 paper spike guessed.** E11-S01 measured it
+> against the surface the repo actually binds and D-156 **struck both named shapes**: cross-entry
+> logic is tier-1 expressible where the data is present, and where it is absent the limit is
+> **input availability**, which the Rego tier inherits unchanged (REQ-E11-S05-01 pins the
+> identical `EvaluationInput`) — so users are *not* forced into Rego there, and Rego would not
+> help if they were; "whole-branch" is the same input limit under another name. The measured
+> boundary is **folds/aggregates beyond `size()`** and **unbounded graph reachability**. See
+> [ADR-0002](0002-policy-frontends-rego-declarative.md) Amendment 1 and
+> [`docs/planning/rego-tier-ceiling.md`](../planning/rego-tier-ceiling.md) §6. This is design
+> fiction from before the measurement, left standing as the spike's own record; the boundary it
+> asserted is not.
 
 ## Backend facts (checked 2026-07-21 via GitHub API)
 
