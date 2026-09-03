@@ -255,8 +255,14 @@ has_versinfo_guard() {
 # `set -u` with no `-e`: without it a failed source returns non-zero and execution
 # continues into the guarded construct, and an undefined require_bash returns 127
 # and does the same. That is the original fail-open, one line up.
+#
+# `.` and `source` are the SAME builtin, so both spellings of the include have to
+# be recognised. Matching only `.` left `source "…/require-bash.sh"` — with no
+# `|| exit 1` — reading as no guard line at all, and the tree writes `.` in all
+# three of its guarded scripts, so no population check could ever have caught it.
+# Control (h) pins both spellings, in both directions.
 unterminated_guard_lines() { # <file>
-  grep -E '^[[:space:]]*(require_bash[[:space:]]|\.[[:space:]].*require-bash\.sh)' "$1" |
+  grep -E '^[[:space:]]*(require_bash[[:space:]]|(\.|source)[[:space:]].*require-bash\.sh)' "$1" |
     grep -Ev '\|\|[[:space:]]*exit[[:space:]]+1[[:space:]]*$' || true
 }
 
@@ -491,6 +497,43 @@ if grep -Eq '^require_bash[[:space:]]+[0-9.]+[^|]*$' "$MUT/hack/docs/truthlag_pi
 else
   fail "mutant control: could not strip '|| exit 1' from truthlag_pins_test.sh (its guard shape changed?) — that check was not exercised"
 fi
+cp "$ROOT/hack/docs/truthlag_pins_test.sh" "$MUT/hack/docs/truthlag_pins_test.sh"
+
+# (h) the SOURCE line, in both of its spellings. `.` and `source` are the same
+#     builtin; the pattern recognised only `.`, so an include written
+#     `source "…/require-bash.sh"` with no `|| exit 1` was invisible — and that
+#     line is the original fail-open itself: without `-e`, a failed include just
+#     returns non-zero and execution carries straight on into the construct being
+#     guarded. Every file in the tree writes `.` today, so the population check
+#     could never have noticed; only this probe can.
+for inc in '.' 'source'; do
+  case "$inc" in
+  '.') inc_re='\.' ;;
+  *) inc_re="$inc" ;;
+  esac
+  sed -E 's#^\. (".*require-bash\.sh") \|\| exit 1$#'"$inc"' \1#' \
+    "$ROOT/hack/docs/truthlag_pins_test.sh" >"$MUT/hack/docs/truthlag_pins_test.sh"
+  if ! grep -Eq "^${inc_re}[[:space:]]+\".*require-bash\.sh\"\$" "$MUT/hack/docs/truthlag_pins_test.sh"; then
+    fail "mutant control: could not rewrite truthlag_pins_test.sh's include as '${inc} …' without '|| exit 1' (its guard shape changed?) — the ${inc}-spelling check was not exercised"
+    continue
+  fi
+  out="$(grade_root "$MUT" "noexit-${inc}")"
+  if echo "$out" | grep -q "^hack/docs/truthlag_pins_test.sh: guard line without '|| exit 1'"; then
+    pass "mutant control: a '${inc}' include of require-bash.sh without '|| exit 1' is reported"
+  else
+    fail "mutant control: a '${inc}' include of require-bash.sh without '|| exit 1' was NOT reported — a failed include returns non-zero and, with no '-e', execution continues into the guarded construct. grade_root said: ${out:-<nothing>}"
+  fi
+  #   The acceptance direction, so the report above is a discrimination and not
+  #   the include spelling being rejected outright.
+  sed -E 's#^\. (".*require-bash\.sh") \|\| exit 1$#'"$inc"' \1 || exit 1#' \
+    "$ROOT/hack/docs/truthlag_pins_test.sh" >"$MUT/hack/docs/truthlag_pins_test.sh"
+  out="$(grade_root "$MUT" "ok-${inc}")"
+  if [ -z "$out" ]; then
+    pass "mutant control: a '${inc}' include WITH '|| exit 1' is accepted"
+  else
+    fail "mutant control: a '${inc}' include carrying its '|| exit 1' was reported as a violation, so the report above is about the spelling, not the missing exit: $out"
+  fi
+done
 cp "$ROOT/hack/docs/truthlag_pins_test.sh" "$MUT/hack/docs/truthlag_pins_test.sh"
 
 # (e) the hand-rolled-guard acceptance path. `hack/audit/aud2_exitgate_test.sh`
