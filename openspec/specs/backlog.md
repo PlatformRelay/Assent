@@ -654,7 +654,7 @@ in **both** tiers on **both** forges as designed. S13 is **operator-gated** — 
 repos under the `PlatformRelay` org is outward-facing and **not** covered by AGENTS.md rule 2's
 push grant to `PlatformRelay/assent` (D-142 judgment call (d)).
 
-✅ **The annotation precondition is discharged (D-166).** All **54** `REQ-DEM-*` rows carry
+✅ **The annotation precondition is discharged (D-167).** All **54** `REQ-DEM-*` rows carry
 `Test:`/`Verify:`/`Level:` in E10/E11's form — the epic had **0** against E10's 54, E11's 36 and
 E6's 42, so "green" was undefined for all 15 stories. Executed spec-first per **D-162**, which
 rejected annotating lane-by-lane as stories are picked up. 🔴 **Five REQs are `L3` and no
