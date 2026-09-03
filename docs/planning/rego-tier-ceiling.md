@@ -521,12 +521,12 @@ only here.
 | Shape | Verdict | Reason |
 | --- | --- | --- |
 | A1 fold/aggregate over a collection | **EXCEEDS — justifies E11** | no `sum`/`reduce`/`math.*`/`lists.*`; `size()` is the only aggregate |
-| A2 named intermediate across checks | **STRUCK** | no `cel.bind` and no value flow across leaves, but inlining is semantically identical |
+| A2 named intermediate across checks | **STRUCK** | no `cel.bind` and no value flow across leaves, but inlining is semantically identical — and the surface's value binder `[expr].all(v, …)` computes the sub-expression **once**, so the residual is legibility, not expressiveness and not evaluation cost (§2) |
 | B1 registry membership | **STRUCK** | `x in facts.<p>.<n>.value` over a `set` fact; already shipped in the corpus |
 | B2 keyed attribute lookup | **STRUCK** | purpose-built provider, or `facts.<p>.<n>.value[key]` (compiles, lint-clean); residual OQ-36 |
 | B3 same-changeset cross-file | **STRUCK from E11** | input availability, not expressiveness — the evaluation unit is one file and S05 pins the identical input, so Rego fails identically |
 | C set difference | **STRUCK — unconditionally** | `oldEntry.x.filter(a, !(a in entry.x))` expresses it if the entry tree is bound; if it is not, the failure is input availability and Rego fails identically. Both resolutions of OQ-35 strike it |
-| D graph relationship | **EXCEEDS — justifies E11, unconditionally** | no recursion, fixpoint, fold or user-defined function ⇒ **unbounded** reachability has no spelling. A *bounded* `k`-hop check **is** expressible via encode-and-compare (verified by evaluation, §5) — the ceiling is `k`, not decoding. The adjacency is in contract and available today as a `{type: string, cardinality: set}` fact — no OQ-35, no OQ-36, no `--checkout` |
+| D graph relationship | **EXCEEDS — justifies E11, unconditionally** | **the iteration *levels* of a CEL expression are syntactic and cannot be made data-dependent** — no recursion, fold, user-defined function or loop form, so nesting depth is fixed by the expression text and hard-capped by cel-go's 250 parser recursion limit ⇒ **unbounded** reachability has no spelling (§1.2). A *bounded* `k`-hop check **is** expressible via encode-and-compare (verified by evaluation, §5) — the ceiling is `k`, not decoding — and with the `[expr].all(v, …)` frontier binder its cost is roughly linear in `k`, so on a small graph a large `k` is **affordable and even complete**: the ceiling is **expressive, not performance** (§5). The adjacency is in contract and deliverable today as a `{type: string, cardinality: set}` fact — no OQ-35, no OQ-36, no `--checkout`. **Caveat:** no provider in the corpus ships one yet (§5) |
 
 **What E11 is now justified to build:** a tier-2 backend for **folds/aggregates over the
 in-input collections** and **recursive/graph reasoning over an adjacency the input already

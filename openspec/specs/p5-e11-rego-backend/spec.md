@@ -302,21 +302,26 @@ struck in part, and one and a half survive**:
 | Shape | Verdict | Reason (measured against `newEvalEnv`, not CEL in general) |
 | --- | --- | --- |
 | multi-pass — **fold/aggregate** over a collection | **EXCEEDS — justifies E11** | `sum`/`reduce`/`math.*`/`lists.*` are all `undeclared reference`; `size()` is the only aggregate in the surface, so counting is expressible and summing is not |
-| multi-pass — **named intermediate** across checks | **STRUCK** | no `cel.bind` and the assert tree combines booleans, not values — but re-deriving the sub-expression inside each leaf is semantically identical and compiles |
+| multi-pass — **named intermediate** across checks | **STRUCK** | no `cel.bind` and the assert tree combines booleans, not values — but re-deriving the sub-expression inside each leaf is semantically identical and compiles, **and** the surface's value binder `[expr].all(v, …)` computes the sub-expression **once** and reuses it, so the residual is legibility, not expressiveness and not evaluation cost |
 | cross-manifest | **STRUCK (all three sub-shapes)** | membership is `x in facts.<p>.<n>.value`; keyed lookup is a purpose-built provider or `facts.<p>.<n>.value[key]` (compiles, lint-clean); **same-changeset cross-file is an input-availability limit, not an expressiveness one** — the evaluation unit is one file and REQ-E11-S05-01 pins the *identical* `EvaluationInput`, so a Rego module fails identically |
 | set-difference | **STRUCK — unconditionally** | `oldEntry.x.filter(a, !(a in entry.x))` expresses it when the entry tree is bound; when it is not (`adoptertest` is the sole writer of `EvalChange.Entry`, so `assent run` binds a scalar) the failure is input availability and Rego fails identically. **Both resolutions of OQ-35 strike it**, so nothing downstream waits on that answer |
-| graph-relationship | **EXCEEDS — justifies E11, unconditionally** | **The iteration count of a CEL expression cannot be made data-dependent** — no recursion, fold, user-defined function or loop form (`reduce`/`transformList`/`transformMap`/two-var `all`/`range`/`cel.bind` all undeclared, `for` reserved), so depth is a *syntactic* property capped by cel-go's 250 recursion limit ⇒ **unbounded reachability has no spelling**. A *bounded* `k`-hop check **is** expressible (encode-and-compare over a finite candidate set, verified by evaluation) and on a small graph a large `k` is affordable and even complete — so the ceiling is expressive, not performance. Rego answers it at any depth with `graph.reachable`. Adjacency is **in contract and available today** as a `{type: string, cardinality: set}` fact over the `http` transport — no `--checkout`, no OQ-35, no OQ-36, no schema change. **Caveat:** no provider in the corpus ships one yet — same epistemic standard as B1, less evidential weight (B1 has a shipped mechanism and infers only the set's source) |
+| graph-relationship | **EXCEEDS — justifies E11, unconditionally** | **The iteration *levels* of a CEL expression are syntactic and cannot be made data-dependent** — no recursion, fold, user-defined function or loop form (`reduce`/`transformList`/`transformMap`/two-var `all`/`range`/`cel.bind` all undeclared, `for` reserved), so nesting depth is fixed by the expression text and capped by cel-go's 250 parser recursion limit ⇒ **unbounded reachability has no spelling**. A *bounded* `k`-hop check **is** expressible (encode-and-compare over a finite candidate set, verified by evaluation) and on a small graph a large `k` is affordable and even complete — so the ceiling is expressive, not performance. Rego answers it at any depth with `graph.reachable`. Adjacency is **in contract and deliverable today** as a `{type: string, cardinality: set}` fact over the `http` transport — no `--checkout`, no OQ-35, no OQ-36, no schema change. **Caveat:** no provider in the corpus ships one yet — same epistemic standard as B1, less evidential weight (B1 has a shipped mechanism and infers only the set's source) |
 
 **The headline, stated plainly so no later story over- or under-claims it: E11 has two
 unconditional justifications on today's shipped input contract — the fold/aggregate shape and
 the graph shape — and neither waits on an open question.** OQ-35 and OQ-36 are recorded
 residuals of the measurement, not conditions on this scope decision.
 
-**Binds E11-S04, whose denylist is not written yet:** `split` and `graph.reachable` are pure and
-deterministic and **must not be denied** by the capability set. They are precisely what carries
-the graph shape's justification, and a denylist drafted from "deny anything unfamiliar" would
-strike out the epic's own strongest evidence. Recorded again in the S04 section. This says
-nothing about judgment call (d) — *where* the evaluator lives is untouched.
+**Binds E11-S04, whose denylist is not written yet:** `graph.reachable` **must not be denied** by
+the capability set, and `split` belongs in the same allowlist. Both are pure and deterministic,
+but they are not equals here — **`graph.reachable` alone carries the graph shape's
+justification** (it closes the graph at any depth, which tier 1 cannot do at all); `split` is the
+convenient way to rebuild the adjacency from the encoded `"a|b"` pairs, a convenience rather than
+the justification. A denylist drafted from "deny anything unfamiliar" would strike out the epic's
+own strongest evidence. **Held by review, not by a gate:** REQ-E11-S04-02's golden detects a
+*change* to the allowed set, never an *omission*, so a golden written without `graph.reachable`
+stays green forever. Recorded again in the S04 section. This says nothing about judgment call
+(d) — *where* the evaluator lives is untouched.
 
 **Binding consequences for later stories:**
 - **S05** must **not** be widened to carry cross-manifest data. Widening the input is a
