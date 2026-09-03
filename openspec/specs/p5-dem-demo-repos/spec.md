@@ -378,10 +378,21 @@ later story creates, as in E10-S00. `Verify:` is a command a later implementer c
 can actually fail; where a REQ has no executable predicate, `Verify:` says *manual review* and
 names what the reviewer checks, and where a REQ cannot be verified in this repository at all it
 says so with the reason and **no command** — an honest downgrade beats a plausible-looking gate
-that would never run. `Level:` follows `internal/forge/conformance/catalog.yaml`: **L0**
-hermetic unit or static-file gate, **L1** CLI / cross-package integration, **L2** adapter with
-`httptest` cassettes, **L3** live — needs network, credentials or a real MR, and therefore
-cannot run under `task check`.
+that would never run.
+
+`Level:` is **defined** by `GUIDELINES.md:29-31` — *"golden decision tests (L0) for engine
+semantics; the adopter harness (L1) for policy behavior; cassettes (L2) for adapters; real
+GitLab (L3, `//go:build e2e`) for forge semantics"*. `internal/forge/conformance/catalog.yaml`
+is **usage, not definition**: it carries `level:` tokens per case (only L1 and L3 appear in it)
+and defines none of them. This epic reads the scale as **L0** hermetic unit or static-file gate,
+**L1** CLI / cross-package integration, **L2** adapter with `httptest` cassettes, **L3** live —
+needs network, credentials or a real MR, and therefore cannot run under `task check`. **That
+gloss is deliberately broader than GUIDELINES' wording at L0 and L1**, because DEM's REQs are
+mostly examples, docs and gates rather than engine semantics and policy behaviour: a
+sanitization-script gate is no golden decision test, and `assent lint`/`assent test` over a demo
+tree is the adopter harness driven through the CLI. The broadening matches how E10 and E11
+already use the tokens; the narrower GUIDELINES reading would leave most DEM REQs with no rung
+at all rather than change any REQ's level.
 
 🔴 **Five REQs are `L3` and are satisfiable by no in-tree gate** — REQ-DEM-S05-04,
 REQ-DEM-S06-03 and REQ-DEM-S10-03 (defeated by the single-file evaluation unit or the E6
@@ -652,8 +663,13 @@ one).
 by `API_STABILITY.md`; a `README` says so, and no `internal/core` package may import it.
   - Test: `.golangci.yml` (the `pure-tree` deny list), `contrib/README.md`, `API_STABILITY.md`
   - Verify: `task lint && bash hack/lint/depguard_test.sh` — `contrib/...` joins the
-    `pure-tree` deny list, and the adversarial depguard gate proves the new rule *fires* rather
-    than merely being present (D-123)
+    `pure-tree` deny list (`.golangci.yml:20-46`), and the adversarial depguard gate proves the
+    new rule *fires* rather than merely being present (D-123). That covers **one** of the REQ's
+    three clauses. The other two are **manual review**: that `contrib/README.md` says `contrib/`
+    is not part of the decision path, and that `API_STABILITY.md` does not cover it — the second
+    is an *absence* property over a document whose contract table names exactly three public
+    contracts (policy schema, decision contract, adopter test format), and nothing checks that a
+    fourth row never appears
   - Level: L0
 
 **Given** an Entra-shaped upstream returning two groups, **when** the host queries the broker,
@@ -837,7 +853,15 @@ the test suite so it cannot silently stop reproducing: at minimum
 **REQ-DEM-S08-01** — Generated-generic Terraform stacks: a blessed-module instantiation per
 env, with `source`/`version` pins and a small set of governed inputs. D-002 as in S04.
   - Test: `examples/demo/assent-demo-terraform/stacks/**`
-  - Verify: `bash hack/check-sanitization.sh && task build && ./bin/assent lint examples/demo/assent-demo-terraform`
+  - Verify: `bash hack/check-sanitization.sh && task build && ./bin/assent lint
+    examples/demo/assent-demo-terraform` — but **neither half reads `stacks/`**, so the REQ's own
+    substance is disclosed as manual, exactly as REQ-DEM-S04-02 discloses it for the same script.
+    `assent lint <dir>` roots at `<dir>/.assent` (`cmd/assent/lint.go:34` calling
+    `discoverAssentTree`, `:70-78`) and walks nothing outside it; `check-sanitization.sh` matches
+    denylist terms and hostname/employee-id shapes (`:24-26`). That each stack is a
+    blessed-module instantiation per env with `source`/`version` pinned and a bounded governed-input
+    set is **manual review** until DEM-S09's rules exist — from S09 on, the pins and the input set
+    are covered by `./bin/assent test examples/demo/assent-demo-terraform` (REQ-DEM-S09-01)
   - Level: L1
 
 **REQ-DEM-S08-02** — **Written truth about what the fact model can structure in HCL** — which
@@ -994,11 +1018,19 @@ assent on PRs may be committed before the adapter exists.
 `verify`. A demo that stops reproducing **reds assent's own build**.
   - Test: `Taskfile.yml`, `.github/workflows/verify.yaml`, `hack/dogfood-examples.sh`,
     `hack/examples/dogfood_wiring_test.sh`
-  - Verify: `task check` — the demo trees must be reached by **extending the shared discovery
-    script**, which globs `examples/packs/*/` only today, and not by adding a second hardcoded
-    loop (the three-way skew `hack/dogfood-examples.sh` was written to end). The wiring is
-    pinned by `bash hack/examples/dogfood_wiring_test.sh`, which reds when the `task check`
-    invocation is deleted
+  - Verify: `task check` genuinely covers the REQ's load-bearing half — once a demo tree is
+    discovered, a demo that stops reproducing reds the build — and `bash
+    hack/examples/dogfood_wiring_test.sh` reds when the `task check` invocation is deleted.
+    **Neither covers "*both* demo trees are reached", and that gap is the work**:
+    `hack/dogfood-examples.sh:35` globs `examples/packs/*/` only and errors solely on **zero**
+    packs discovered (`:43-46`), so a run that silently skips `examples/demo/**` is green. The
+    fix is to **extend the shared discovery script**, never to add a second hardcoded loop (the
+    three-way skew that script was written to end); until a discovery assertion naming both demo
+    trees exists, their coverage is **manual review**. The "and in `verify`" half is *partly*
+    covered and the boundary matters: `dogfood_wiring_test.sh:135-153` already asserts
+    `.github/workflows/verify.yaml` invokes the shared script and refuses a re-hardcoded pack
+    loop, so extending discovery reaches CI for free — but nothing asserts *what* that script
+    then discovers, which is the same uncovered half as above
   - Level: L1
 
 **REQ-DEM-S12-02** — Every prepared demo branch's expected outcome is an adopter-test case, so
