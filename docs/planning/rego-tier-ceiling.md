@@ -76,8 +76,8 @@ which no shape in this record needs.
 been authorised to add): copy `newEvalEnv` verbatim into a nested throwaway module pinned to
 `cel-go v0.31.0`, call `env.Compile` on each expression above, and print the issue set. The
 root `go.mod`/`go.sum` must stay byte-unchanged and `go list ./...` must not enumerate the
-probe — the same containment E11-S00 uses. The expression list is exactly the leaves quoted in
-§2–§5, plus these five, whose verdicts carry §5:
+probe — the same containment E11-S00 uses. The expression list is the leaves quoted in §2–§5,
+plus these five, whose verdicts carry §5:
 
 ```text
 REJECTED  facts.graph.edges.value.exists(s, s.split("|")[0] == string(new))         undeclared 'split'
@@ -94,6 +94,17 @@ The last two were **evaluated**, not merely compiled, under `cel.CostLimit(1_000
 `nodes: [orders, billing, ledger, payments]` — yielding `true/true/true/false` and `[billing]`
 respectively. Evaluation matters here: a compile-only check would have left §5's claim about
 what CEL can *do* with those primitives untested.
+
+> **This list is NOT complete, and saying so is the point of writing it down** (2026-09-03,
+> D-166). Until this note the sentence above read "the expression list is **exactly** the leaves
+> quoted in §2–§5, plus these five" — which a reader would use to conclude that everything the
+> probe ran was written down. It was not. The probe also ran the **BFS-frontier expressions**
+> behind §5's cost envelope — §5's own line "without the frontier binder, naive nesting exceeds
+> the budget at `k=4`" is a result that only a frontier form could have produced — and **not one
+> of those expressions was recorded anywhere**, which is exactly why §5's figures cannot be
+> reproduced. The reproduction recipe above therefore reconstructs §1.1's census and §2–§5's
+> quoted leaves; it does **not** reconstruct §5's cost table. See §5's note for the full
+> disclosure and for the one fixture that would close both gaps.
 
 ### 1.2 The one property the whole record rests on, measured rather than recalled
 
@@ -476,8 +487,10 @@ collapses around `|N|≈200`.
 
 > ⚠️ **These figures are ILLUSTRATIVE, and this document cannot reproduce them — said plainly,
 > because the rest of the record's method is *reproduce, don't reason*** (2026-09-03, D-166).
-> Until this note they were published to six significant figures — `89,551` / `235,297` /
-> `686,317` at `|N|=50`, and `462,618` at `|N|=200` — a precision the record cannot back.
+> Until this note they were published here to six significant figures — `89,551` / `235,297` /
+> `686,317` at `|N|=50`, and `462,618` at `|N|=200` — a precision the record cannot back. They
+> were published a second time, unmarked, in **D-156's own row** — this document's `Authority:`
+> line and the more quotable copy — which is amended in the same pass rather than left standing.
 > **The generating expression is quoted nowhere in this document**, and the probe that produced
 > the numbers was deliberately not committed (§1.1, "Reproduction"), so no reader — including a
 > later author of this record — can re-derive or falsify a single figure. What *is* written down
@@ -607,13 +620,16 @@ not a constraint, and saying so is cheaper than pretending otherwise.
   for the shipped input contract. **CORRECTED 2026-09-03 (D-166), ahead of S12** — the bullet now
   states the two measured shapes and ADR-0002 **Amendment 1** records the withdrawn sentence
   verbatim and why. Why it did not wait for S12, recorded because the mechanism is the lesson:
-  REQ-E11-S12-01's normative text was broad enough to cover it, but its `Test:` list omits
+  REQ-E11-S12-01's normative text was broad enough to cover it, but its `Test:` list **omitted**
   `docs/adr/0002-*` — the actual wrong file — and its `Verify: task check` had no pin over the
   phrase, so **the gate would not have failed if the line survived**; and S12 is story 12 of 14,
   so if E11 never proceeded a published ADR would have stayed wrong indefinitely. The correction
   was carried instead by the standalone backlog residual **E11-R01**, independent of this epic —
-  that residual, not REQ-E11-S12-01, is what actually kept it from being lost. S12 still owns the
-  rest of the docs-truth sweep; ADR-0002 is no longer part of it.
+  that residual, not REQ-E11-S12-01, is what actually kept it from being lost. **That omission is
+  now closed:** `docs/adr/0002-policy-frontends-rego-declarative.md` **is** named in
+  REQ-E11-S12-01's `Test:` list, so the ADR sits **inside** S12's sweep rather than outside it.
+  It is a review pin and not a gate — nothing machine-consumes a REQ's `Test:` list — so a
+  regression re-inserting the withdrawn sentence would still fail no check today.
 
 **Corroborating observation.** The single committed illustration of the escape hatch,
 `examples/policies/rego/bounded_change.rego`, is **entirely tier-1 expressible** — both of its
