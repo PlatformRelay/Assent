@@ -156,7 +156,7 @@ Consequently, in production:
 | `old`, `new` | always a **scalar** (`DecodeCanonical` of a scalar render) |
 | `entry`, `oldEntry` | the same scalars — `EvalChange.Entry` is `json:"-"`, in-memory only, and `internal/adoptertest/entrytree.go` `populateEntries` is its **sole writer** (OQ-35) |
 | `changes[i].old`, `changes[i].new` | always scalars, for one file |
-| `facts.<p>.<n>.value` | a scalar, or a **flat list of scalars** under `cardinality: set`. A nested/mapping value is undeclarable (§1.2, OQ-36) |
+| `facts.<p>.<n>.value` | a scalar, or a **flat list of scalars** under `cardinality: set`. A nested/mapping value is undeclarable (§1.3, OQ-36) |
 | `mr.labels` | a flat list of strings |
 
 So the only *navigable value tree* a production rule can reach is a fact value, and the frozen
