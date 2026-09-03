@@ -132,6 +132,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(lint): readarray -d needs bash 4.4, not 4.0 — readarray IS mapfile
 - :bug: fix(lint): a redirection is not a version guard — require an adjacent comparison
 - :bug: fix(lint): the include check missed 'source', one of its two spellings
+- :bug: fix(lint): drop the reversed-form guard pattern — it opened a fresh fail-open
 
 ### Other
 - 👷 ci(docs): stop uploading the Pages artifact on pull requests
@@ -166,6 +167,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(ci): share PR-reach and cross-pin the three PR-visible gates (D-157)
 - :white_check_mark: test(ci): grade the shared PR-reach helper itself, on fixtures (D-157)
 - :white_check_mark: test(lint): pin all eleven detection patterns, not the four the tree happens to use
+- :white_check_mark: test(lint): give the non-probe absence assertions an anti-vacuity partner
 ## [0.3.0] - 2026-08-18
 
 ### Chores
