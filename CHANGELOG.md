@@ -124,6 +124,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(adr): correct the third struck-claim survivor and the stale gate sentence (P1, P2-A)
 - :memo: docs(decisions): report the sweep as a classification, not a completeness claim (P1, P2-B, P3)
 - :memo: docs(e11): last present-tense copy of the closed Test:-list gap (P2-A, third copy)
+- :memo: docs(e11): correct D-166's handed-on line states and drop its unbackable count (final round)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
