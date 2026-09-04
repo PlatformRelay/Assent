@@ -84,6 +84,9 @@ repository still gets a decision, never by following the link; no release carrie
 - build(deps): bump github/codeql-action/init from 4.37.7 to 4.37.8
 - build(deps): bump github/codeql-action/analyze from 4.37.7 to 4.37.8
 - build(deps): bump github/codeql-action/upload-sarif
+- :arrow_up: build(deps): bump all three github/codeql-action refs to v4.37.9
+- :arrow_up: build(deps): bump sbom-action to v0.24.2 and action-gh-release to v3.0.3
+- :arrow_up: build(deps): bump fast-uri from 3.1.5 to 3.1.7 in schemas-validator
 
 ### Documentation
 - :memo: docs(changelog): stamp the v0.3.0 section after tagging
