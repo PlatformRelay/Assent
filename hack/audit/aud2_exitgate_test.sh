@@ -387,7 +387,7 @@ block_from() {
 # block, from its `if` line to the `}` at the SAME indentation. Brace-matched on
 # indentation rather than counting braces: gofmt guarantees the closing brace of
 # a block sits at the block's own indent, and the whole tree is gofmt-clean
-# (`task fmt` is a check stage, and the first one).
+# (`task fmt` is a `check:` stage, so the tree is gofmt-clean before this gate reads it).
 guard_block() {
   awk '
     !ing && /if !errors\.Is\(err, forge\.ErrNotFound\)/ {
