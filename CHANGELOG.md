@@ -149,6 +149,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(decisions): D-168 (f) records the unexercised paths and points at REDMAIN-N4
 - :memo: docs(backlog): correct SONAR-SHELL to 53 of 54 and re-measure R01 as 12
 - :memo: docs(decisions): record D-173 -- withdraw "54 of 54", require an instrument per count
+- :memo: docs(backlog): file BASH32-N5N6 — a sentinel that proved the wrong thing, and a completeness claim that outran its sweep
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
@@ -174,6 +175,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(lint): the include check missed 'source', one of its two spellings
 - :bug: fix(lint): drop the reversed-form guard pattern — it opened a fresh fail-open
 - :bug: fix(release): decouple the two exemption lists so REDMAIN-N3 has a green state (D-168)
+- :pencil2: fix(lint): the replacement rule omitted the predicate's no-hash-before-the-token anchor, and prose restating a regexp does not certify itself (D-169)
+- :pencil2: fix(lint): the population-coupling control could return no verdict at all, and the rule never named its operator set (D-169)
 
 ### Other
 - 👷 ci(docs): stop uploading the Pages artifact on pull requests
@@ -208,6 +211,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(lint): pin all eleven detection patterns, not the four the tree happens to use
 - :white_check_mark: test(lint): give the non-probe absence assertions an anti-vacuity partner
 - :white_check_mark: test(release): reject literal-emoji commit subjects, and let §8 see them (D-168)
+- :white_check_mark: fix(lint): the bash-guard gate's absence assertions now name a file the scan is shown to have enumerated (D-169)
 ## [0.3.0] - 2026-08-18
 
 ### Chores
