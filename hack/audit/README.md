@@ -137,8 +137,8 @@ still present in the tree. Every failure names the audit finding ID it reopens.
 | 4 | `isStricterInterventionEffect` still classifies `EffectChallenge`, and the named unit case that kills the auditor's demonstrated mutant still exists | `TEST-02` |
 | 5 | The gate is a `check:` stage, is pinned in `CHECK_STAGES`, and runs in the **pull-request-visible** `verify` job, undisarmed | `REQ-AUD2-S05-03/04/05` |
 
-Unlike `exitgate_test.sh`, this one **is** a `task check` stage (`audit-aud2-exitgate-test`, the
-19th) and is also a step of `verify.yaml`'s `verify` job. That placement is the point, and the
+Unlike `exitgate_test.sh`, this one **is** a `task check` stage (`audit-aud2-exitgate-test`) and is
+also a step of `verify.yaml`'s `verify` job. That placement is the point, and the
 reason is *not* that the gate is cheap — it runs `go test` against reverted copies of the tree
 and takes ~40-50s. It is that the `verify` job is the one that fires on **pull requests**, while
 `release-exitgate`, where the AUD-S18 gate lives, carries
@@ -194,9 +194,13 @@ out (`t.Skip`, a no-op body, a deleted assertion), because it reports what the t
 Nothing is written to the real tree. Measured cost: the tracked-file copy is ~1,200 files / 8.6 MB
 and is effectively instant; the two `go test -run <pinned>` runs take a few seconds each. The
 whole gate runs in ~40-50s, placed in `check:` **after `task test`** so the packages are already
-built. No stage ordinal is quoted: `CHECK_STAGES` in `hack/audit/exitgate_test.sh` is the single
-source, an ordinal restated here is graded by nothing, and this sentence said "stage 19" while the
-list held 21 (DOCTRUTH / D-174).
+built. **No stage ordinal is quoted anywhere in this file**, other than inside a quotation of
+wording that has been withdrawn: `CHECK_STAGES` in `hack/audit/exitgate_test.sh` is the single
+graded source, and an ordinal restated in prose is graded by nothing. Two sentences in this file
+proved it — this one said "stage 19" while the list held 21, and the AUD2 section above called
+`audit-aud2-exitgate-test` "the 19th" while it was the 22nd. The second survived three sweeps
+because it was **split across a line wrap** (`the` / `19th`), which no line-oriented `grep` can
+match; both were found only by a line-JOINED sweep (DOCTRUTH / D-174).
 
 The name and case pins are kept beside it — they say *which* test or case was lost, which a
 go-test transcript does not — but they are a pre-check, not the property. Case pins now read a
