@@ -654,7 +654,8 @@ check_validator_lockfile() {
 # only; this mirrors its normalisation on the value side rather than duplicating
 # a literal pattern, which is the defect it exists to prevent (G5-02).
 sonar_step_value() {
-  awk -v want="$2" '
+  local step="$1" want="$2"
+  awk -v want="$want" '
     { line = $0
       gsub(/\r/, "", line)
       if (line ~ /^[[:space:]]*$/ || line ~ /^[[:space:]]*#/) next
@@ -674,9 +675,15 @@ sonar_step_value() {
       sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v)
       if (v ~ /^".*"$/ || v ~ /^\x27.*\x27$/) v = substr(v, 2, length(v) - 2)
       sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v)
+      # T2: a block scalar puts the VALUE on following lines, so reading the key
+      # line yields the indicator and never the payload -- `if: >-` + `false` is
+      # valid YAML, GitHub honours it, and a value-grader that stops here calls it
+      # a non-constant. Refused via the same ?unreadable route the key reader uses
+      # rather than guessed at.
+      if (v ~ /^[|>][-+]?[0-9]*$/) { print "?unreadable"; exit }
       print tolower(v)
       exit
-    }' "$1"
+    }' "$step"
 }
 
 # D-177: the SonarCloud scanner step is PRESENT, SHA-pinned, ARMED, and ORDERED
@@ -781,6 +788,10 @@ check_sonar_scan_wired() {
   if grep -qx 'if' "$keys"; then
     local ifval
     ifval="$(sonar_step_value "$block" if)"
+    if [[ "$ifval" == "?unreadable" ]]; then
+      echo "  the SonarCloud scan step's if: is a BLOCK SCALAR — its value lives on following lines, so no key-line reader can grade it; refused rather than guessed, because 'if: >-' followed by 'false' disarms the step and reads as a non-constant (T2 / D-177)" >&2
+      return 1
+    fi
     if [[ "$ifval" == "false" || "$ifval" == "true" ]]; then
       echo "  the SonarCloud scan step's if: normalises to the constant '$ifval' — a constant condition disarms the step while leaving it present and SUCCESS-reporting (D-177)" >&2
       rc=1
@@ -1889,6 +1900,10 @@ expect_red check_no_quoted_hash "$m" "a quoted ' #' hides a live global install 
 
 # ------------------------------- 7. D-177: SonarCloud analysis stays wired --
 
+# Hoisted: this fragment is asserted by four separate controls, and a literal
+# repeated per control is both a smell and a place for them to drift apart.
+SONAR_IF_CONST="normalises to the constant 'false'"
+
 echo "== 7. D-177: the SonarCloud scanner step is present, pinned, armed and ordered =="
 expect_green check_sonar_scan_wired "$WORKFLOWS" \
   "verify.yaml runs a SHA-pinned, undisarmed SonarSource scan after the coverage gate"
@@ -1919,7 +1934,7 @@ mutate "$m/verify.yaml" \
   "s|^        if: github.event_name != .pull_request. .*|        if: \${{ false }}|" \
   "if: \${{ false }}"
 expect_red check_sonar_scan_wired "$m" "the scan step was disarmed with a constant if: — a skipped job reports SUCCESS" \
-  "normalises to the constant 'false'"
+  "$SONAR_IF_CONST"
 
 # G5-02 REGRESSION CONTROLS. Every one of these five went GREEN against the
 # literal readers this check first shipped with, while disarming the step for a
@@ -1929,21 +1944,21 @@ mutate "$m/verify.yaml" \
   "s|^        if: github.event_name.*|        if : \${{ false }}|" \
   "if : \${{ false }}"
 expect_red check_sonar_scan_wired "$m" "the if: key is spelled 'if : ' — identical to a parser, invisible to a literal pattern (G5-02)" \
-  "normalises to the constant 'false'"
+  "$SONAR_IF_CONST"
 
 m="$(mutant sonar-step-if-quoted-key)"
 mutate "$m/verify.yaml" \
   "s|^        if: github.event_name.*|        \"if\": false|" \
   '"if": false'
 expect_red check_sonar_scan_wired "$m" "the if: key is quoted as \"if\": — same disarm, different spelling (G5-02)" \
-  "normalises to the constant 'false'"
+  "$SONAR_IF_CONST"
 
 m="$(mutant sonar-step-if-carriage-return)"
 mutate_awk "$m/verify.yaml" \
   '{ if ($0 ~ /^        if: github.event_name/) { printf "        if: ${{ false }}\r\n" } else print }' \
   'if: ${{ false }}'
 expect_red check_sonar_scan_wired "$m" "a constant if: carrying a trailing CR — the G4-01 shape, which a byte-literal comparison misses" \
-  "normalises to the constant 'false'"
+  "$SONAR_IF_CONST"
 
 m="$(mutant sonar-step-coe-spaced-key)"
 mutate_awk "$m/verify.yaml" \
@@ -1965,6 +1980,16 @@ mutate_awk "$m/verify.yaml" \
   "<<: *disarm"
 expect_red check_sonar_scan_wired "$m" "the step carries a merge-key/alias the reader cannot normalise — refused, not guessed" \
   "cannot be normalised to a plain identifier"
+
+# T2: a BLOCK SCALAR puts the value on following lines. `if: >-` + `false` is
+# valid YAML, GitHub honours it, and a value-grader that reads only the key line
+# sees the indicator and calls it a non-constant. Refused, not guessed.
+m="$(mutant sonar-step-if-block-scalar)"
+mutate_awk "$m/verify.yaml" \
+  '{ if ($0 ~ /^        if: github.event_name/) { print "        if: >-"; print "          false" } else print }' \
+  "if: >-"
+expect_red check_sonar_scan_wired "$m" "a constant if: hidden in a block scalar — the value is not on the key line at all (T2)" \
+  "is a BLOCK SCALAR"
 
 m="$(mutant sonar-step-before-coverage)"
 mutate_awk "$m/verify.yaml" \
