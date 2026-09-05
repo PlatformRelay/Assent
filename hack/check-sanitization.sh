@@ -35,6 +35,10 @@ report() { # $1=source $2=kind $3=match-line
 
 decode_b64() { # stdin -> decoded stdout; tolerate both BSD (-D) and GNU (-d)
   base64 -d 2>/dev/null || base64 -D 2>/dev/null || true
+  # Bare `return` — NOT `return 0`. The `|| true` above already pins the status
+  # to 0, so a bare return propagates it unchanged; spelling a literal 0 here
+  # would hard-code a status this function must never invent (D-173).
+  return
 }
 
 # Denylist: optional, workspace-local, one term per line (# comments allowed).
