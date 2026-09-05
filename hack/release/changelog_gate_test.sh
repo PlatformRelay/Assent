@@ -559,10 +559,29 @@ echo "OK: polarity control — removing the parser brings all three merge subjec
 #
 # Re-filing `dfdae69`'s rendered entry OUT of Other needs a `cliff.toml` parser
 # entry, which this lane's fence does not include (tracked as REDMAIN-N3). It is
-# therefore exempted here — by the SAME SHA list `commit_subject_gate.sh` uses,
-# read through its `--legacy-subjects` mode so there is ONE authority and not two
-# that can drift. The exemption is self-retiring: an exempt subject that no
-# longer renders under Other reds this section and says to delete it.
+# therefore exempted here, by SHA, in OTHER_EXEMPT_SHAS below.
+#
+# WHY THAT LIST IS SEPARATE FROM `commit_subject_gate.sh`'s (P2-1). It was briefly
+# derived from it, and that had NO GREEN STATE after REDMAIN-N3 lands. The two
+# lists answer two different questions that DECOUPLE at exactly that moment:
+#   * `LEGACY_ALLOW_SHAS` (commit_subject_gate.sh) — "is this commit's SUBJECT
+#     still a literal emoji?" `dfdae69`'s subject can never change (hard rule 2),
+#     so that entry is PERMANENT.
+#   * `OTHER_EXEMPT_SHAS` (here) — "is this commit's RENDERED ENTRY still
+#     mis-filed under Other?" REDMAIN-N3 makes that false, so this entry is
+#     TEMPORARY.
+# Derived from one list, the retire message had to say "drop the SHA", and
+# following it reddened the commit-subject gate on `dfdae69` instead. Separated,
+# the N3 lane deletes ONE line — the entry below — and both gates are green.
+#
+# They are still linked, but only ONE WAY and only in the direction that cannot
+# deadlock: OTHER_EXEMPT_SHAS must be a SUBSET of LEGACY_ALLOW_SHAS, read live
+# through `--legacy-shas`. So this section can only ever excuse a line whose
+# commit is already an acknowledged, unrewritable literal-emoji subject — and the
+# empty set is a subset, which is precisely the post-N3 state.
+#
+# The exemption stays self-retiring: an exempt entry that no longer renders under
+# Other reds this section, and the remedy it prints is now executable.
 
 echo "== 8. gitmoji subjects reach their real group, not Other (REL-14 / D-137) =="
 
@@ -581,16 +600,24 @@ AMBULANCE='- :ambulance: fix(forge): skip malformed bot markers with a warning i
 # fits it, and inventing one is a changelog-structure change, not this fix.
 FILEABLE_TYPES='feat|fix|docs|specs|refactor|style|test|chore|build|ci|perf|security'
 
-# The detector (REDMAIN-N2 / D-168). The gitmoji prefix is OPTIONAL and has two
-# recognised spellings, so a fileable type is seen behind an ASCII shortcode,
-# behind a literal emoji, or behind nothing at all:
-#   `- :bug: fix(a): …`   `- 👷 ci(docs): …`   `- ci(docs): …`
+# The detector (REDMAIN-N2 / D-168). Any number of gitmoji-ish prefix tokens,
+# each an ASCII shortcode or a non-ASCII-leading token, separated and followed by
+# any run of spaces INCLUDING NONE. So a fileable type is seen behind every
+# spelling the classifier can be defeated by:
+#   `- :bug: fix(a): …`      `- 👷 ci(docs): …`     `- ci(docs): …`
+#   `- 👷  ci(docs): …`      `- 👷ci(docs): …`      `- 🚀 :rocket: feat(x): …`
+# The first version of this fix accepted exactly ONE non-ASCII token followed by
+# exactly ONE space, and review found the last three shapes slipping past — the
+# same species of shape-specific detector that REDMAIN-N2 was filed against, so
+# the quantifiers are now the general ones. The prefix alternatives stay narrow
+# on purpose: an ordinary ASCII word is neither a shortcode nor non-ASCII-leading,
+# so prose like `- some notes about a fix(thing): …` is still not matched.
 # `[^ -~]` is a BYTE class under LC_ALL=C — every byte outside printable ASCII,
 # which is every lead byte of a UTF-8 emoji. It is spelled that way because
 # `[:ascii:]` is a PCRE extension GNU grep does not implement, and because a
 # locale-dependent class would make this gate's verdict depend on the runner's
 # LANG. Every use of these two patterns therefore goes through `LC_ALL=C grep`.
-OTHER_MAPPABLE_RE="^- (:[a-z0-9_+-]+: |[^ -~][^ ]* )?($FILEABLE_TYPES)[(:]"
+OTHER_MAPPABLE_RE="^- ((:[a-z0-9_+-]+:|[^ -~][^ ]*) *)*($FILEABLE_TYPES)[(:]"
 # The pre-D-168 pattern, kept ONLY as §8b's regression control. It is what
 # fail-open looked like; nothing outside §8b may use it.
 OTHER_MAPPABLE_RE_PREFIX_REQUIRED="^- :[a-z0-9_]+: ($FILEABLE_TYPES)[(:]"
@@ -611,41 +638,70 @@ anchor_group="$(grep -F -e "$AMBULANCE" "$WORK/clean.groups" | head -1 | cut -f1
 echo "OK: the :ambulance: hotfix renders under Fixes"
 
 awk -F'\t' '$1 == "Other" { print $2 }' "$WORK/clean.groups" >"$WORK/clean.other"
-# Non-empty on BOTH sides of the exemption subtraction below: an empty Other
-# block would make the detector pass for the wrong reason, and an empty exemption
-# list would make the "still renders under Other" assertion pass vacuously.
+# The Other block must be non-empty: an empty one would make the detector below
+# pass for the wrong reason. The EXEMPTION list, by contrast, is allowed to be
+# empty — empty is the post-REDMAIN-N3 steady state, and with no exemptions in
+# force every Other line is checked, which is strictly stronger.
 [[ -s "$WORK/clean.other" ]] \
-  || fail "no bullets extracted for the Other group — the exemption and detector assertions below would both be vacuous (the awk range or the render is broken)"
+  || fail "no bullets extracted for the Other group — the detector assertion below would be vacuous (the awk range or the render is broken)"
+
+# SHAs whose RENDERED entry is knowingly still mis-filed under Other. TEMPORARY —
+# see the section header: this answers "is the entry still mis-filed?", NOT "is
+# the subject still a literal emoji?", and REDMAIN-N3 makes the first false while
+# the second stays true forever. When N3 lands, DELETE THE LINE BELOW and nothing
+# else; commit_subject_gate.sh's LEGACY_ALLOW_SHAS is not touched.
+#   dfdae69 — `- 👷 ci(docs): stop uploading the Pages artifact on pull requests`,
+#             the REDMAIN-N2 entry. cliff.toml has no parser for a literal-emoji
+#             prefix, so it renders under Other; adding one is REDMAIN-N3.
+OTHER_EXEMPT_SHAS=(
+  dfdae69143c3bd5b4819df106bf6fbbad18eb4fc
+)
 
 SUBJECT_GATE="$ROOT/hack/release/commit_subject_gate.sh"
-[[ -f "$SUBJECT_GATE" ]] || fail "missing $SUBJECT_GATE — §8's exemption and §9 both read it (REDMAIN-N1/N2, D-168)"
-bash "$SUBJECT_GATE" --legacy-subjects >"$WORK/legacy.subjects" 2>"$WORK/legacy.err" || {
-  cat "$WORK/legacy.err" >&2
-  fail "'commit_subject_gate.sh --legacy-subjects' failed — §8 cannot establish which Other entries are exempt published history"
-}
-[[ -s "$WORK/legacy.subjects" ]] \
-  || fail "'commit_subject_gate.sh --legacy-subjects' printed nothing while LEGACY_ALLOW_SHAS is expected non-empty — the single authority for the exemption is broken, so the subtraction below would be a no-op that nobody notices"
+[[ -f "$SUBJECT_GATE" ]] || fail "missing $SUBJECT_GATE — §8's subset invariant and §9 both read it (REDMAIN-N1/N2, D-168)"
 
 : >"$WORK/other.exempt"
-while IFS= read -r legacy_subject; do
-  [[ -n "$legacy_subject" ]] || continue
-  grep -qxF -e "- $legacy_subject" "$WORK/clean.other" \
-    || fail "the published-history exemption '- $legacy_subject' no longer renders under Other — cliff.toml now files it correctly (REDMAIN-N3), so the exemption is dead scaffolding: drop that SHA from LEGACY_ALLOW_SHAS in hack/release/commit_subject_gate.sh (REQ-REDMAIN-N2-02)"
-  printf '%s\n' "- $legacy_subject" >>"$WORK/other.exempt"
-done <"$WORK/legacy.subjects"
-[[ -s "$WORK/other.exempt" ]] \
-  || fail "the exemption file is empty after reading a non-empty --legacy-subjects list — the read loop is broken"
-grep -v -x -F -f "$WORK/other.exempt" "$WORK/clean.other" >"$WORK/clean.other.checked" || true
+n_exempt=0
+if ((${#OTHER_EXEMPT_SHAS[@]} > 0)); then
+  # The one-way link that replaced the deadlocking one: every SHA excused HERE
+  # must already be an acknowledged unrewritable literal-emoji commit THERE. The
+  # empty set trivially satisfies this, which is why it cannot deadlock.
+  bash "$SUBJECT_GATE" --legacy-shas >"$WORK/legacy.shas" 2>"$WORK/legacy.err" || {
+    cat "$WORK/legacy.err" >&2
+    fail "'commit_subject_gate.sh --legacy-shas' failed — §8 cannot check that its exemptions are a subset of the acknowledged published-history set"
+  }
+  [[ -s "$WORK/legacy.shas" ]] \
+    || fail "'commit_subject_gate.sh --legacy-shas' printed nothing while §8 lists ${#OTHER_EXEMPT_SHAS[@]} exemption(s) — the subset check below would be vacuous"
+  for sha in "${OTHER_EXEMPT_SHAS[@]}"; do
+    grep -qxF -e "$sha" "$WORK/legacy.shas" \
+      || fail "§8 exempts $sha from the Other check, but it is NOT in LEGACY_ALLOW_SHAS in hack/release/commit_subject_gate.sh — this section may only excuse a rendered entry whose commit is already an acknowledged, unrewritable literal-emoji subject"
+    subject="$(git -C "$ROOT" log -1 --format=%s "$sha" 2>/dev/null || true)"
+    [[ -n "$subject" ]] \
+      || fail "§8 exempts $sha but no subject can be read for it in this repository — the exemption names a commit that is not here"
+    grep -qxF -e "- $subject" "$WORK/clean.other" \
+      || fail "the exempted entry '- $subject' ($sha) no longer renders under Other — cliff.toml files it correctly now, so REDMAIN-N3 has landed and this exemption is dead scaffolding. REMEDY: delete $sha from OTHER_EXEMPT_SHAS in hack/release/changelog_gate_test.sh §8, and NOTHING else. Do NOT touch LEGACY_ALLOW_SHAS in hack/release/commit_subject_gate.sh — that list is keyed on the commit SUBJECT, which re-filing does not change, and removing it there would red the commit-subject gate on this very commit (REQ-REDMAIN-N2-02)"
+    printf '%s\n' "- $subject" >>"$WORK/other.exempt"
+  done
+  [[ -s "$WORK/other.exempt" ]] \
+    || fail "the exemption file is empty after iterating ${#OTHER_EXEMPT_SHAS[@]} non-empty exemption(s) — the loop is broken"
+  n_exempt="$(wc -l <"$WORK/other.exempt" | tr -d ' ')"
+  grep -v -x -F -f "$WORK/other.exempt" "$WORK/clean.other" >"$WORK/clean.other.checked" || true
+else
+  cp "$WORK/clean.other" "$WORK/clean.other.checked"
+fi
 n_other="$(wc -l <"$WORK/clean.other" | tr -d ' ')"
-n_exempt="$(wc -l <"$WORK/other.exempt" | tr -d ' ')"
 n_checked="$(wc -l <"$WORK/clean.other.checked" | tr -d ' ')"
 [[ "$n_checked" -eq $((n_other - n_exempt)) ]] \
   || fail "exemption subtraction removed $((n_other - n_checked)) line(s) for $n_exempt exemption(s) — the filter is not matching whole lines"
-echo "OK: $n_exempt published-history exemption(s) still render under Other, $n_checked line(s) left to check"
+if ((n_exempt == 0)); then
+  echo "OK: no published-history exemption in force — all $n_checked Other line(s) are checked"
+else
+  echo "OK: $n_exempt published-history exemption(s) still render under Other, $n_checked line(s) left to check"
+fi
 
 if LC_ALL=C grep -nE "$OTHER_MAPPABLE_RE" "$WORK/clean.other.checked" >"$WORK/clean.other.mappable"; then
   cat "$WORK/clean.other.mappable" >&2
-  fail "the lines above declare a conventional type this repo files, yet render under Other — extend cliff.toml's type-keyed parsers (REL-14). A literal-emoji prefix is no longer a way past this check (REDMAIN-N2 / D-168)"
+  fail "the lines above declare a conventional type this repo files, yet render under Other — extend cliff.toml's type-keyed parsers (REL-14). A literal-emoji prefix, in any spacing, is no longer a way past this check (REDMAIN-N2 / D-168)"
 fi
 echo "OK: nothing in Other declares a fileable type ($n_other line(s) in Other: $n_exempt exempt published-history entr(y/ies) + $n_checked by design — revert, which has no group, and one malformed ':test(release):' subject that declares no parseable type)"
 
@@ -690,30 +746,51 @@ echo "OK: identical subject multiset before and after grouping — the parsers o
 # collapse into each other and this section reds.
 
 echo "== 8b. the Other detector sees a fileable type behind any prefix (REDMAIN-N2 / D-168) =="
+# The last four accept-lines are the shapes review found slipping past the first
+# version of this fix, which required exactly one non-ASCII token and exactly one
+# space. Each would render into Other with a fileable type and go unseen.
 cat >"$WORK/other.probe" <<'PROBE'
 - 👷 ci(docs): literal-emoji prefix, fileable type — the REDMAIN-N2 defect
 - :bug: fix(forge): ASCII shortcode prefix, fileable type
 - ci(docs): no prefix at all, fileable type
+- 👷  ci(docs): literal emoji then TWO spaces, fileable type
+- 👷ci(docs): literal emoji with NO space, fileable type
+- 🚀 :rocket: feat(x): literal emoji AND a shortcode, fileable type
+- 👷 :zap: ⚡ perf(core): three prefix tokens of both kinds, fileable type
 - :rewind: revert(kind): revert is deliberately not fileable — must NOT be flagged
 - :test(release): malformed subject declaring no parseable type — must NOT be flagged
 - Merge pull request #1 from org/branch — not a conventional subject at all
+- 👷 revert(kind): a literal emoji does not make revert fileable — must NOT be flagged
+- some release notes about a fix(thing): prose, not a prefix — must NOT be flagged
 PROBE
-[[ "$(wc -l <"$WORK/other.probe" | tr -d ' ')" -eq 6 ]] \
-  || fail "the §8b probe did not land with its 6 lines — the heredoc is broken and every count below is meaningless"
+[[ "$(wc -l <"$WORK/other.probe" | tr -d ' ')" -eq 12 ]] \
+  || fail "the §8b probe did not land with its 12 lines — the heredoc is broken and every count below is meaningless"
 
 LC_ALL=C grep -nE "$OTHER_MAPPABLE_RE" "$WORK/other.probe" >"$WORK/probe.hits" || true
-[[ "$(wc -l <"$WORK/probe.hits" | tr -d ' ')" -eq 3 ]] \
-  || { cat "$WORK/probe.hits" >&2; fail "the Other detector flags $(wc -l <"$WORK/probe.hits" | tr -d ' ') of the 6 probe lines, want exactly 3 (the three fileable ones)"; }
-for want in 'ci(docs): literal-emoji prefix' 'fix(forge): ASCII shortcode prefix' 'ci(docs): no prefix at all'; do
+[[ "$(wc -l <"$WORK/probe.hits" | tr -d ' ')" -eq 7 ]] \
+  || { cat "$WORK/probe.hits" >&2; fail "the Other detector flags $(wc -l <"$WORK/probe.hits" | tr -d ' ') of the 12 probe lines, want exactly 7 (the seven fileable ones)"; }
+for want in \
+  'ci(docs): literal-emoji prefix' \
+  'fix(forge): ASCII shortcode prefix' \
+  'ci(docs): no prefix at all' \
+  'literal emoji then TWO spaces' \
+  'literal emoji with NO space' \
+  'literal emoji AND a shortcode' \
+  'three prefix tokens of both kinds'; do
   grep -qF -e "$want" "$WORK/probe.hits" \
-    || fail "the Other detector does NOT flag the probe line containing '$want' — a mis-filed entry of that shape would render on the Release page unseen"
+    || fail "the Other detector does NOT flag the probe line containing '$want' — a mis-filed entry of that shape would render on the Release page unseen, which is the REDMAIN-N2 defect in a different spacing"
 done
-for reject in 'revert is deliberately not fileable' 'declaring no parseable type' 'not a conventional subject at all'; do
+for reject in \
+  'revert is deliberately not fileable' \
+  'declaring no parseable type' \
+  'not a conventional subject at all' \
+  'does not make revert fileable' \
+  'prose, not a prefix'; do
   if grep -qF -e "$reject" "$WORK/probe.hits"; then
     fail "the Other detector flags the probe line containing '$reject' — it is over-firing on entries that belong in Other, which would make this gate unfixable"
   fi
 done
-echo "OK: 3/6 probe lines flagged — shortcode, literal emoji and bare type all seen; revert/malformed/merge all left alone"
+echo "OK: 7/12 probe lines flagged — shortcode, literal emoji (one space, two spaces, no space), emoji+shortcode, three mixed tokens and a bare type all seen; revert (with and without emoji), the malformed subject, a merge subject and prose all left alone"
 
 LC_ALL=C grep -nE "$OTHER_MAPPABLE_RE_PREFIX_REQUIRED" "$WORK/other.probe" >"$WORK/probe.hits.old" || true
 [[ "$(wc -l <"$WORK/probe.hits.old" | tr -d ' ')" -eq 1 ]] \
@@ -721,7 +798,7 @@ LC_ALL=C grep -nE "$OTHER_MAPPABLE_RE_PREFIX_REQUIRED" "$WORK/other.probe" >"$WO
 if grep -qF -e 'literal-emoji prefix' "$WORK/probe.hits.old"; then
   fail "the pre-D-168 pattern flags the literal-emoji line — then REDMAIN-N2 was not a real fail-open and OTHER_MAPPABLE_RE has been reverted to the prefix-required form"
 fi
-echo "OK: regression control — the pre-D-168 pattern sees 1 of the 3, and is blind to the literal-emoji entry that caused REDMAIN-N2"
+echo "OK: regression control — the pre-D-168 pattern sees 1 of the 7, and is blind to every literal-emoji spelling that caused REDMAIN-N2"
 
 # ------- 9. a literal-emoji commit subject is rejected by a gate (REDMAIN-N1) --
 #
@@ -743,8 +820,9 @@ echo "OK: regression control — the pre-D-168 pattern sees 1 of the 3, and is b
 #     literal-emoji commit reds its own PR instead of reddening main after merge.
 #
 # Polarities proved here, in order: green on real history; green on an all-ASCII
-# sandbox; RED the moment a literal-emoji commit is added to that sandbox; RED on
-# real history with the published-history exemption stripped.
+# sandbox; RED the moment a literal-emoji commit is added to that sandbox; the
+# allowlist pinned to an exact expected content so it cannot grow unremarked; and
+# RED on real history with the published-history exemption stripped.
 
 echo "== 9. a literal-emoji commit subject is rejected by a gate (REDMAIN-N1 / D-168) =="
 
@@ -847,7 +925,41 @@ grep -qF 'shortcode' "$WORK/subject.sandbox.bad" \
   || fail "the gate's failure message does not tell the author to use the ASCII shortcode — it reds without a remedy"
 echo "OK: adding ONE literal-emoji commit to the same sandbox turns the gate red and names it"
 
-echo "== 9d. the published-history exemption is load-bearing, not decoration =="
+echo "== 9d. the published-history exemption is load-bearing, pinned, and not decoration =="
+# The exemption list is an ALLOWLIST, so its size is a security property, not a
+# detail. Without this pin a lane could land a literal-emoji commit and append its
+# SHA to LEGACY_ALLOW_SHAS in a later commit of the SAME pull request, and every
+# self-check inside the gate would still pass: the new SHA resolves, it is an
+# ancestor of HEAD, and it genuinely IS a detection. Pinning the exact content
+# here — in a different file — makes growing the allowlist a deliberate two-file
+# change a reviewer sees, the same mechanism CHECK_STAGES uses on `task check`'s
+# stage list. Adding an entry means editing BOTH lists and recording why in
+# docs/decisions/decisions.md.
+LEGACY_EXPECTED=(
+  dfdae69143c3bd5b4819df106bf6fbbad18eb4fc
+)
+bash "$SUBJECT_GATE" --legacy-shas >"$WORK/legacy.actual" 2>"$WORK/legacy.actual.err" || {
+  cat "$WORK/legacy.actual.err" >&2
+  fail "'commit_subject_gate.sh --legacy-shas' failed — the allowlist cannot be pinned"
+}
+# Non-empty on BOTH sides: a mistyped path or a silently empty mode must fail
+# loudly rather than compare two empty files and report agreement. The expected
+# side is guarded on ARRAY LENGTH, not on file size — `printf '%s\n' "${a[@]}"`
+# on an empty array still writes one blank line, so a file-size guard here would
+# be dead code that never fires (and the array expansion itself is unsafe under
+# `set -u` on bash 3.2 when empty).
+((${#LEGACY_EXPECTED[@]} > 0)) \
+  || fail "LEGACY_EXPECTED is empty — this pin would accept any allowlist at all; if LEGACY_ALLOW_SHAS is genuinely empty now, delete this whole pin deliberately rather than emptying it"
+printf '%s\n' "${LEGACY_EXPECTED[@]}" | sort >"$WORK/legacy.expected.sorted"
+sort "$WORK/legacy.actual" >"$WORK/legacy.actual.sorted"
+[[ -s "$WORK/legacy.actual.sorted" ]] \
+  || fail "'--legacy-shas' printed nothing — either LEGACY_ALLOW_SHAS is empty (then delete this pin deliberately) or the mode is broken; either way the comparison below would be vacuous"
+if ! diff -u "$WORK/legacy.expected.sorted" "$WORK/legacy.actual.sorted" >"$WORK/legacy.diff"; then
+  cat "$WORK/legacy.diff" >&2
+  fail "LEGACY_ALLOW_SHAS in hack/release/commit_subject_gate.sh does not match LEGACY_EXPECTED here (${#LEGACY_EXPECTED[@]} pinned, $(wc -l <"$WORK/legacy.actual.sorted" | tr -d ' ') actual). An exemption is a DECISION: adding one means editing both lists in the same change and recording the reason in docs/decisions/decisions.md — it must never be an unremarked append"
+fi
+echo "OK: allowlist pinned at exactly ${#LEGACY_EXPECTED[@]} exemption(s), content-identical across the two files"
+
 # If the gate were vacuous over real history, deleting the exemption would change
 # nothing. It must red, and it must red naming dfdae69 — the REDMAIN-N1 commit.
 LEGACY_ANCHOR='dfdae69143c3bd5b4819df106bf6fbbad18eb4fc'
