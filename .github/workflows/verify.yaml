@@ -131,6 +131,29 @@ jobs:
       # change COVERAGE_MIN in Taskfile.yml instead.
       - name: coverage gate (D-010 — threshold single-sourced from Taskfile.yml)
         run: task coverage
+      # D-177 — CI-based SonarCloud analysis. Automatic Analysis was disabled on
+      # 2026-08-04 and the scanner half of that migration was never built, so the
+      # project sat a month with NO analysis of any kind while every SONAR-* row in
+      # the backlog kept citing figures frozen at that date. Running the scanner as a
+      # workflow step is what turns "no analysis" into a VISIBLE red instead of
+      # silence — an analyser outside the gate matrix is worth nothing here.
+      # PLACEMENT IS LOAD-BEARING: `task coverage` above writes cov.out, which
+      # sonar.go.coverage.reportPaths reads. Moving this step before it leaves the
+      # report path pointing at a file that does not yet exist, which the scanner
+      # treats as a warning rather than an error — so coverage silently goes
+      # unreported instead of failing. hack/lint/workflow_pins_test.sh pins both the
+      # step's presence and this ordering.
+      # NOT continue-on-error, deliberately: that is the disarm shape the audit gates
+      # refuse, and it would rebuild the exact silence this step exists to end.
+      # Fork PRs carry no SONAR_TOKEN, so the step is skipped there rather than
+      # hard-failing. That is a real coverage gap, recorded in D-177 rather than
+      # papered over.
+      - name: SonarCloud analysis (D-150/D-177 — CI-based; replaces Automatic Analysis)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
       - run: CGO_ENABLED=0 go build ./...
       - name: dogfood examples (EX-S08 — shared discovery script; every examples/packs/<name> with .assent/tests gates itself green under the real `assent test` CLI)
         run: bash hack/dogfood-examples.sh
