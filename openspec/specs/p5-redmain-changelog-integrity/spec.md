@@ -65,8 +65,11 @@ it explicitly rather than pretend it is not there.
 - **Not in scope:** enforcing the *whole* of the commit convention (a conventional type, a
   scope, a shortcode present at all). `build(deps): bump …` from Dependabot and `Merge pull
   request …` from GitHub both violate the full rule and both are legitimate; the narrow rule
-  "the subject must not START with a non-ASCII character" is the one with zero false positives
-  over all 893 commits of this repo's history and is the one that breaks the classifier.
+  "the subject must not START with a non-ASCII character" is the one that breaks the classifier,
+  and it is the one that flags **exactly one commit in the whole of this repository's history** —
+  `dfdae69`, the defect itself — while the full-convention rule would reject dozens of bot and
+  merge subjects it has no business rejecting. (A count of commits is deliberately not quoted
+  here: it grows with every push, and a self-dating number in a spec rots.)
 - **Not in scope:** a new `task check` stage. The stage list is pinned by `CHECK_STAGES` in
   `hack/audit/exitgate_test.sh`, which asserts the Taskfile's `check:` list is *equal* to it — a
   22nd stage is a change to that pin, and it is out of this lane's fence. Both halves therefore
@@ -97,19 +100,41 @@ it explicitly rather than pretend it is not there.
   stale exemption. Test: `hack/release/commit_subject_gate.sh` self-checks + §9 mutation (strip
   the exemption ⇒ the gate reds naming `dfdae69`); Verify: `bash
   hack/release/changelog_gate_test.sh`; Level: L1
+- **REQ-REDMAIN-N1-04** *(the allowlist cannot grow unremarked)* — `LEGACY_ALLOW_SHAS` is an
+  allowlist, so its **length and content are pinned from a second file**: §9d holds
+  `LEGACY_EXPECTED` and asserts set-equality against `commit_subject_gate.sh --legacy-shas`,
+  both sides guarded non-empty. **Given** a lane that lands a literal-emoji commit and appends
+  its SHA to `LEGACY_ALLOW_SHAS` in a later commit of the same PR — which passes every
+  self-check inside the gate, because the SHA resolves, is an ancestor, and genuinely *is* a
+  detection — **then** §9d reds on the pin. Growing the allowlist is a deliberate two-file
+  change plus a decision-log entry, the same ratchet `CHECK_STAGES` applies to `task check`'s
+  stage list. Test: `hack/release/changelog_gate_test.sh` §9d; Verify: `bash
+  hack/release/changelog_gate_test.sh`; Level: L1
 - **REQ-REDMAIN-N2-01** *(the `### Other` detector sees every prefix shape)* — an entry
   rendered under `### Other` that declares a fileable conventional type is reported regardless
-  of whether the type is preceded by an ASCII gitmoji shortcode, by a literal emoji, or by
-  nothing. **Given** a rendered `### Other` block containing `- 👷 ci(docs): …`, **when** §8's
-  detector runs, **then** that line is reported; the pre-fix detector is shown, in the same
-  section, not to report it. Test: `hack/release/changelog_gate_test.sh` §8 + §8b; Verify: `bash
+  of how the type is prefixed: an ASCII gitmoji shortcode, a literal emoji (with one space, more
+  than one space, or none at all), several such tokens in any mixture, or no prefix whatever.
+  **Given** a rendered `### Other` block containing `- 👷 ci(docs): …`, **when** §8's detector
+  runs, **then** that line is reported; the pre-fix detector is shown, in the same section, not
+  to report it. The detector must NOT fire on entries that belong in `### Other` — `revert(…)`
+  with or without an emoji, the malformed `:test(release):` subject, a merge subject, or prose
+  that happens to contain `fix(thing):`. Test: `hack/release/changelog_gate_test.sh` §8 + §8b
+  (a 12-line probe whose expected verdict is asserted line by line); Verify: `bash
   hack/release/changelog_gate_test.sh`; Level: L1
-- **REQ-REDMAIN-N2-02** *(the legacy exemption is self-retiring)* — §8's exemption for
-  `dfdae69`'s rendered entry is derived from the SAME SHA list as REQ-REDMAIN-N1-03 (one
-  authority, not two), and an exempt subject that no longer appears under `### Other` reds the
-  gate with "remove the exemption". So when `cliff.toml` gains the parser entry that files this
-  line under Chores, the scaffolding is forced out rather than left behind. Test:
-  `hack/release/changelog_gate_test.sh` §8; Verify: `bash
+- **REQ-REDMAIN-N2-02** *(the legacy exemption retires cleanly, into a state that is green)* —
+  §8 keeps its **own** exemption list, `OTHER_EXEMPT_SHAS`, whose predicate is *"this commit's
+  rendered entry is still mis-filed under `### Other`"*. That is a different and **temporary**
+  fact from `LEGACY_ALLOW_SHAS`'s *"this commit's subject is still a literal emoji"*, which is
+  **permanent** — the two decouple at exactly the moment REDMAIN-N3 lands, so deriving one from
+  the other leaves no green state (keep the entry and §8 reds as stale; drop it and the
+  commit-subject gate reds on `dfdae69`). The lists are linked only by the **one-way subset
+  invariant** `OTHER_EXEMPT_SHAS ⊆ LEGACY_ALLOW_SHAS`, which the empty set satisfies. **Given**
+  a `cliff.toml` that files the literal-emoji entry under Chores, **when** the gate runs,
+  **then** §8 reds naming the entry and instructs the reader to delete that one SHA from
+  `OTHER_EXEMPT_SHAS` and nothing else; **and when** that instruction is followed literally,
+  **then** both gates are green with an empty exemption list and every `### Other` line checked.
+  Test: `hack/release/changelog_gate_test.sh` §8 (subset invariant, empty-list path, retire
+  message) proved end-to-end by simulating N3 in a scratch clone; Verify: `bash
   hack/release/changelog_gate_test.sh`; Level: L1
 
 ## Verification
