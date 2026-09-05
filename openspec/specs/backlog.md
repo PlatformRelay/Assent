@@ -819,8 +819,8 @@ recipes, not a `task check` stage, so that work adds no `CHECK_STAGES` entry eit
 
 ## P5-DOCSNAV — Published-site reachability of `docs/**` (D-170)
 
-Spec: [p5-docsnav-site-reachability/spec.md](p5-docsnav-site-reachability/spec.md). One story,
-`[autonomous]`, **DONE**. `mkdocs.yml` set `validation.omitted_files: info` and `--strict`
+Spec: [p5-docsnav-site-reachability/spec.md](p5-docsnav-site-reachability/spec.md). Two stories,
+`[autonomous]`, both **DONE**. `mkdocs.yml` set `validation.omitted_files: info` and `--strict`
 escalates WARNING and above only, so a `docs/**.md` page in no `nav:` entry built green:
 **56 of 66 measured on `main` at `20c80cb`** — a number that conflated 25 product pages that fell
 out of E9-S08's nav trim (all 22 ADRs, `architecture/policy-profiles.md`, both frozen
@@ -832,11 +832,16 @@ the 25, naming the 31 in a commented `not_in_nav:` list, and raising `omitted_fi
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
 | DOCSNAV-S01 | ✅ **DONE (D-170)** — nav completeness gated; exclusions explicit and justified; `.github/workflows/docs.yaml` carries the gate's own guard (pins `--strict` on `Build site`; probes with a page in neither list and asserts the strict build fails naming it) | **[autonomous]** | none | a new unlisted docs page reds the docs workflow; disarming the gate reds the guard |
+| DOCSNAV-S02 | ✅ **DONE (D-174)** — S01 armed the gate in CI **only**, so the invariant had no local pre-merge evidence: `task check` was green over a page in neither list and `main` reddened on push, taking the Pages deploy with it. `docs-build` is now a `check:` stage (the 15th of **22**) and pinned in `CHECK_STAGES` in the same commit. Same `mkdocs build --strict`, same `mkdocs.yml` — one implementation, local and CI, so the two halves cannot skew | **[autonomous]** | S01 | an unlisted docs page reds `task check` locally, at the `docs-build` stage, naming the page |
 
-**Residual, tracked independently**: `validation.anchors` is still `info` — the same invisibility
-class, for intra-page targets rather than site reachability. One real broken anchor exists today
+**Residuals, tracked independently** (`DOCSNAV-R01`/`R02` in the epic spec): **R01** —
+`validation.anchors` is still `info`, the same invisibility class, for intra-page targets rather
+than site reachability. One real broken anchor exists today
 (`planning/spikes/spike-secure-setup.md`) and builds green; raising the level needs that fixed
-first. `DOCSNAV-R01` in the epic spec.
+first. **R02** — deleting *any* `check:` stage is graded only by `CHECK_STAGES`, whose sole CI
+caller (`release-exitgate`) is guarded off `pull_request`, so the deletion merges green and reds
+`main`: the RELSE-08 visibility class, pre-existing and repo-wide, restated here because D-174 added
+a stage that inherits it.
 
 ## Phase 5 — REDMAIN-N changelog classifier integrity (D-168)
 
