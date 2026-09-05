@@ -150,6 +150,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(backlog): correct SONAR-SHELL to 53 of 54 and re-measure R01 as 12
 - :memo: docs(decisions): record D-173 -- withdraw "54 of 54", require an instrument per count
 - :memo: docs(backlog): file BASH32-N5N6 — a sentinel that proved the wrong thing, and a completeness claim that outran its sweep
+- :memo: docs(backlog): close SONAR-GO-MISC — all 15 findings already fixed (D-172)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
