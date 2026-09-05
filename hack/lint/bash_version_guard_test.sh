@@ -16,7 +16,10 @@
 #       carries `|| exit 1` (the callers run `set -u` WITHOUT `-e`, so a failed
 #       source or a missing function would otherwise just carry on);
 #   (2) the scan still SEES the known population — a typo in a detection pattern
-#       must red, not silently match nothing and pass;
+#       must red, not silently match nothing and pass — and every assertion of
+#       ABSENCE names a file the SAME `find` is shown to have ENUMERATED, so
+#       "no pattern detected it" can never be a statement about a file that was
+#       never in the population (N5/D-169);
 #   (3) negative control: real copies of the guarded scripts, guard lines stripped,
 #       ARE flagged; a floor lowered below its feature's minimum IS flagged; a
 #       dropped `|| exit 1` IS flagged;
@@ -52,24 +55,32 @@
 #            number is not read, so `hack/audit/aud2_exitgate_test.sh` is graded
 #            on having a guard, not on its value).
 #
-#   GUARD SHAPES NOT RECOGNISED — all of these FAIL CLOSED, i.e. a file written
-#            this way reds with "declares NO bash version floor" even though it
-#            plainly has a guard. None occurs in this tree. If you hit that
-#            message on a file you know is guarded, this list is why; the fix is
-#            to add the shape here with a control in (e), or to spell the guard
-#            one of the recognised ways. Measured, each one:
-#              `[ 4 -gt "${BASH_VERSINFO[0]}" ]` — BASH_VERSINFO must be on the
-#                LEFT of the operator, for the fail-open reason recorded at
-#                has_versinfo_guard;
-#              `[ "${BASH_VERSINFO[0]}" = 3 ]` and `[[ … != 4 ]]` / `(( … != 4 ))`
-#                — bare `=` and `!=` are not in the operator set: `=` was what let
-#                `BASH_VERSINFO_NOTE=1` through, and `!=` was never separated from
-#                it. `==` IS recognised;
-#              `(( BASH_VERSINFO[0] < want_major ))` — a SYMBOLIC operator is
-#                recognised only against a literal digit (a variable right-hand
-#                side is indistinguishable from a redirection target). The word
-#                operators have no such restriction, so
-#                `[ "${BASH_VERSINFO[0]}" -gt "$want_major" ]` is fine.
+#   GUARD SHAPES NOT RECOGNISED — a hand-rolled guard is recognised in exactly
+#            ONE spelling: `BASH_VERSINFO` on the LEFT of a comparison, on ONE
+#            line, with nothing between the token and the operator but an
+#            optional numeric subscript, a closing brace, a closing quote and
+#            whitespace, and — for the symbolic operators — a literal digit on
+#            the right. The reasoning for each of those restrictions is recorded
+#            at has_versinfo_guard. THAT RULE IS THE COMPLETE STATEMENT. Every
+#            other spelling FAILS CLOSED: a file written another way reds with
+#            "declares NO bash version floor" even though it plainly has a
+#            guard, and the fix is to add the shape to the recognised set with a
+#            control in (e), or to spell the guard a recognised way.
+#
+#            The individual shapes that have been MEASURED failing closed live in
+#            GUARD_SHAPES_UNRECOGNISED below, where control (i) grades every one
+#            of them as rejected. They are a sample, NOT a catalogue, and this
+#            paragraph deliberately no longer says otherwise. The wording it
+#            replaces — "If you hit that message on a file you know is guarded,
+#            this list is why" — read as exhaustive and was not: every claim the
+#            old list made was true, but `case "${BASH_VERSINFO[0]}" in
+#            0|1|2|3) exit 1;; esac` is a perfectly good guard, is rejected
+#            (measured), and was absent from it, as are guards reading
+#            `$BASH_VERSION`, guards split across lines, and guards that go
+#            through a variable. The rejected set is *every spelling that is not
+#            the accepted one*, so no list of it can be complete — which is why
+#            the fix here was to state the rule and GRADE the samples rather
+#            than to lengthen the list (D-169/N6).
 #
 # THIS FILE IS BASH-3.2-CLEAN ON PURPOSE and asserts that about itself below: a
 # gate about bash floors must still be able to run, and report, on the very shell
@@ -186,6 +197,45 @@ PATTERN_NONPROBES=(
   'printf "%s\n" "coproc wait -n readarray typeset -A"'
 )
 
+# --- guard shapes documented as unrecognised (N6, D-169) ---------------------
+# `has_versinfo_guard` accepts one spelling; everything else fails closed. These
+# are the shapes measured doing so, and control (i) asserts each is STILL
+# rejected — so the header paragraph cannot drift away from the predicate the
+# way a hand-maintained prose list does. A shape that later becomes recognised
+# reds here instead of leaving a comment quietly wrong.
+#
+# This list is deliberately NOT complete and cannot be made complete: the
+# rejected set is every spelling that is not the one accepted spelling. That is
+# the whole point of N6 — the block above used to imply otherwise, and the
+# `case` entry is the guard that implication was wrong about.
+GUARD_SHAPES_UNRECOGNISED=(
+  # BASH_VERSINFO must be on the LEFT. The reversed form was written into the
+  # predicate once and REMOVED: with the digit on the left and nothing required
+  # on the right it also accepted `2> "$BASH_VERSINFO_LOG"`.
+  '[ 4 -gt "${BASH_VERSINFO[0]}" ]'
+  # Bare `=` and `!=` are not in the operator set — `=` is what let
+  # `BASH_VERSINFO_NOTE=1` through, and `!=` was never separated from it.
+  # `==` IS recognised.
+  '[ "${BASH_VERSINFO[0]}" = 3 ]'
+  '[[ "${BASH_VERSINFO[0]}" != 4 ]]'
+  '(( "${BASH_VERSINFO[0]}" != 4 ))'
+  # A SYMBOLIC operator is recognised only against a literal digit: a variable
+  # right-hand side is indistinguishable from a redirection target. The word
+  # operators carry no such restriction, so
+  # `[ "${BASH_VERSINFO[0]}" -gt "$want_major" ]` IS recognised.
+  '(( BASH_VERSINFO[0] < want_major ))'
+  # The entry the prose list was missing, and the reason this array exists: a
+  # `case` head is a comparison containing no operator character at all.
+  'case "${BASH_VERSINFO[0]}" in 0|1|2|3) exit 1;; esac'
+  # A whole FAMILY the predicate never looks for: guards that read the
+  # `$BASH_VERSION` string rather than the `BASH_VERSINFO` array.
+  'case $BASH_VERSION in 3.*) exit 1;; esac'
+  # A regex test and a substring expansion — neither puts a recognised operator
+  # adjacent to the token.
+  '[[ "${BASH_VERSINFO[0]}" =~ ^[0-3]$ ]] && exit 1'
+  '[ "${BASH_VERSINFO:0:1}" -lt 4 ]'
+)
+
 # --- version arithmetic (3.2-safe) -------------------------------------------
 ver_ge() { # <a> <b> — true when a >= b
   local a="$1" b="$2" amaj amin bmaj bmin
@@ -199,12 +249,34 @@ ver_ge() { # <a> <b> — true when a >= b
 }
 
 # --- the scan ----------------------------------------------------------------
+# enumerate_scripts <root> — the POPULATION scan_features grades, one path
+# relative to <root> per line.
+#
+# Factored out of the scan on purpose (N5, D-169). An assertion that the scan
+# reported NOTHING about a fixture is satisfied two ways that look identical in
+# the scan's output: the fixture was graded and cleared, or the fixture was never
+# in the population at all. `find` is the single point where a file drops out of
+# the population, and it drops out for two reasons — living outside `hack/`, or
+# not ending in `.sh`. Measured on a scratch copy of this gate: writing ONLY the
+# nonprobe fixture one directory outside the walked root, and separately naming
+# it `probe.txt`, EACH left all four absence assertions below green, 0 FAILs, the
+# gate at exit 0, with a PASS count identical to the honest run. A sentinel
+# beside the fixture does not close that: it proves the ROOT was walked, which is
+# a strictly weaker claim than "this file was enumerated".
+enumerate_scripts() { # <root>
+  local root="$1" f
+  while IFS= read -r f; do
+    printf '%s\n' "${f#"$root"/}"
+  done < <(find "$root/hack" -type f -name '*.sh' | sort)
+  return 0
+}
+
 # scan_features <root> — one line per feature-using script:
 #   <path relative to root>|<highest minimum required>|<features found>
 scan_features() { # <root>
   local root="$1" f rel spec pat min desc need feats
-  while IFS= read -r f; do
-    rel="${f#"$root"/}"
+  while IFS= read -r rel; do
+    f="$root/$rel"
     need=""
     feats=""
     for spec in "${FEATURES[@]}"; do
@@ -220,7 +292,7 @@ scan_features() { # <root>
     if [ -n "$need" ]; then
       printf '%s|%s|%s\n' "$rel" "$need" "$feats"
     fi
-  done < <(find "$root/hack" -type f -name '*.sh' | sort)
+  done < <(enumerate_scripts "$root")
   return 0
 }
 
@@ -346,6 +418,18 @@ SCAN="$WORK/scan.txt"
 scan_features "$ROOT" >"$SCAN"
 scanned="$(wc -l <"$SCAN" | tr -d '[:space:]')"
 
+# The population itself, kept beside the scan output because they answer
+# different questions: this one says which files were LOOKED AT, the scan says
+# which of them were flagged. MUST_BE_CLEAN below needs the first, and asserting
+# it against the second is the N5 defect.
+REAL_ENUM="$WORK/enum.txt"
+enumerate_scripts "$ROOT" >"$REAL_ENUM"
+if [ ! -s "$REAL_ENUM" ]; then
+  fail "enumerate_scripts listed NO *.sh file under hack/ at all — the scan has no population, so every assertion in this gate is about a set of files nobody opened"
+else
+  pass "the population under hack/ is non-empty: $(wc -l <"$REAL_ENUM" | tr -d '[:space:]') script(s) enumerated for grading"
+fi
+
 if [ "$scanned" -eq 0 ]; then
   fail "the scan found NO bash 4+ feature user anywhere under hack/ — ${#FEATURES[@]} patterns matched nothing, so every assertion in this gate would be vacuous. A mistyped pattern looks exactly like this."
 else
@@ -409,31 +493,83 @@ for probe_line in "${PATTERN_NONPROBES[@]}"; do
   probe_i=$((probe_i + 1))
   proot="$WORK/nonprobe$probe_i"
   mkdir -p "$proot/hack"
-  printf '%s\n' '#!/usr/bin/env bash' "$probe_line" >"$proot/hack/probe.sh"
-  # The anti-vacuity partner these checks need, for the same reason MUST_BE_CLEAN
-  # below needs one: "the scan detected nothing here" is satisfied just as well by
-  # a root the scan never walked. Measured — writing these fixtures to a directory
-  # `scan_features` does not descend into left all four reporting success, 0 FAILs,
-  # the gate at exit 0. So each root also carries a line the scan certainly DOES
-  # detect, and the absence below only counts once that sentinel is present.
+  nonprobe_rel="hack/probe.sh"
+  nonprobe_path="$proot/$nonprobe_rel"
+  printf '%s\n' '#!/usr/bin/env bash' "$probe_line" >"$nonprobe_path"
+  # These are assertions of ABSENCE, and absence needs TWO anti-vacuity partners,
+  # because it has two innocent-looking causes and they are not the same cause:
+  #
+  #   ENUMERATION — the fixture ITSELF must be in the list `scan_features`
+  #     grades, asserted by exact match against `enumerate_scripts`. A sentinel
+  #     alone proves only that the fixture ROOT was walked, which is strictly
+  #     weaker: measured (N5/D-169), moving JUST the probe write one directory
+  #     outside the walked root, and separately naming the fixture `probe.txt`
+  #     so `find -name '*.sh'` never lists it, each left all four of these
+  #     assertions green with 0 FAILs and the gate at exit 0 — the sentinel
+  #     sitting exactly where it always sat, reporting exactly what it always
+  #     reported. A sentinel proves the room was entered, not that anyone looked
+  #     at this file.
+  #   GRADING — the sentinel stays, and still earns its keep: enumeration proves
+  #     the file was offered to the scan, not that the scan can still report
+  #     anything at all. A scan degraded to print nothing would enumerate the
+  #     probe and "clear" it too.
+  #
+  # Both sides carry a non-empty guard, and the fixture's existence on disk is
+  # checked first, so a mistyped path reds loudly instead of passing vacuously.
   printf '%s\n' '#!/usr/bin/env bash' 'declare -A sentinel=()' >"$proot/hack/sentinel.sh"
+  enum="$(enumerate_scripts "$proot")"
   got="$(scan_features "$proot")"
-  if ! echo "$got" | grep -q '^hack/sentinel\.sh|'; then
-    fail "detection probe: the scan did not report the sentinel beside '${probe_line}' — this fixture root was not scanned at all, so the absence asserted below would be vacuous rather than a finding. scan said: ${got:-<nothing>}"
-  elif echo "$got" | grep -q '^hack/probe\.sh|'; then
+  if [ ! -f "$nonprobe_path" ]; then
+    fail "detection probe: the fixture for '${probe_line}' was not written to ${nonprobe_path} — everything below would be asserted about a file that is not there"
+  elif [ -z "$nonprobe_rel" ] || [ -z "$enum" ]; then
+    fail "detection probe: the fixture path is empty, or enumerate_scripts listed NOTHING under ${proot} — either way the absence asserted below is vacuous. enumeration was: ${enum:-<nothing>}"
+  elif ! echo "$enum" | grep -Fqx "$nonprobe_rel"; then
+    fail "detection probe: the fixture carrying '${probe_line}' was NOT enumerated as '${nonprobe_rel}' by the same find scan_features uses — it is outside the walked root or not named *.sh, so 'no pattern detected it' is a statement about a file nobody opened. enumeration was: ${enum}"
+  elif ! echo "$got" | grep -q '^hack/sentinel\.sh|'; then
+    fail "detection probe: the scan did not report the sentinel beside '${probe_line}' — this root is enumerated but nothing in it is being graded, so the absence asserted below would be vacuous rather than a finding. scan said: ${got:-<nothing>}"
+  elif echo "$got" | grep -q "^${nonprobe_rel}|"; then
     fail "detection probe: '${probe_line}' does not put the construct at a command position, so nothing may detect it, but the scan reported it — a pattern has lost its anchor and now matches prose, which would make every probe above pass for the wrong reason. scan said: ${got}"
   else
-    pass "detection probe: '${probe_line}' is correctly seen by no pattern, in a root the sentinel proves was scanned"
+    pass "detection probe: '${probe_line}' is enumerated as '${nonprobe_rel}' and seen by no pattern, in a root the sentinel proves is still being graded"
   fi
 done
+
+# The enumeration assertion's OWN control: it must be able to fail, and it must
+# fail on each of the two misdirections that the sentinel-only version passed at
+# exit 0. Graded in both directions so "was enumerated" is a discrimination and
+# not a function that says yes to everything (N5/D-169).
+ectl="$WORK/enumctl"
+mkdir -p "$ectl/hack" "$ectl/outside"
+printf '%s\n' '#!/usr/bin/env bash' 'declare -A sentinel=()' >"$ectl/hack/sentinel.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'true' >"$ectl/outside/probe.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'true' >"$ectl/hack/probe.txt"
+ectl_out="$(enumerate_scripts "$ectl")"
+if [ -z "$ectl_out" ]; then
+  fail "enumeration control: enumerate_scripts listed nothing for a root that certainly contains hack/sentinel.sh — the enumeration assertions above can only ever pass vacuously"
+elif ! echo "$ectl_out" | grep -Fqx 'hack/sentinel.sh'; then
+  fail "enumeration control: enumerate_scripts did not list hack/sentinel.sh, a file directly under the walked root — the enumeration assertions above would red on every honest fixture. enumeration was: ${ectl_out}"
+elif echo "$ectl_out" | grep -Fqx 'outside/probe.sh'; then
+  fail "enumeration control: enumerate_scripts listed a file OUTSIDE hack/, so it is not the population scan_features grades and 'was enumerated' would prove nothing about being scanned. enumeration was: ${ectl_out}"
+elif echo "$ectl_out" | grep -Fq 'probe.txt'; then
+  fail "enumeration control: enumerate_scripts listed a non-'.sh' file, so it is not the population scan_features grades. enumeration was: ${ectl_out}"
+else
+  pass "enumeration control: enumerate_scripts lists hack/sentinel.sh and lists NEITHER a file outside hack/ NOR a non-.sh file — both misdirections that left the sentinel-only absence check green are visible to it"
+fi
 
 for clean in "${MUST_BE_CLEAN[@]}"; do
   # An assertion of ABSENCE from the scan passes for two indistinguishable
   # reasons: the file really is clean, or the path no longer names a file the
   # scan ever looks at (renamed, moved, deleted). Every other check here has an
-  # anti-vacuity partner; this is its one.
+  # anti-vacuity partner; these are its two. Existence is the weaker of them and
+  # is NOT sufficient on its own — a file that exists at `hack/lib/require-bash`
+  # or at `tools/require-bash.sh` exists and is still outside the population, so
+  # membership in `enumerate_scripts` is what actually has to hold (N5/D-169).
   if [ ! -f "$ROOT/$clean" ]; then
     fail "$clean does not exist — its 'is bash-3.2-clean' assertion would pass forever about a file that is not there"
+    continue
+  fi
+  if ! grep -Fqx "$clean" "$REAL_ENUM"; then
+    fail "$clean exists but is NOT in the population scan_features grades — it is outside hack/ or not named *.sh, so its absence from the scan is a statement about a file nobody opened, not a finding"
     continue
   fi
   if grep -q "^${clean}|" "$SCAN"; then
@@ -659,6 +795,34 @@ for realguard in \
     pass "mutant control: a real BASH_VERSINFO comparison IS accepted as a guard: ${realguard}"
   else
     fail "mutant control: a real BASH_VERSINFO guard was rejected, so hack/audit/aud2_exitgate_test.sh would red for having the guard it actually has. Shape: ${realguard} — grade_root said: $out"
+  fi
+done
+
+# (i) the shapes this file DOCUMENTS as unrecognised are graded, not asserted in
+#     prose. The header block used to carry a hand-maintained list introduced by
+#     "if you hit that message on a file you know is guarded, this list is why" —
+#     a completeness claim with nothing behind it. Every entry in it was true;
+#     the framing was not, and `case "${BASH_VERSINFO[0]}" in …` — a real guard,
+#     really rejected — was missing from it for as long as the list was prose
+#     (N6/D-169). Prose cannot be kept honest by review alone, so each entry is
+#     now asserted rejected END-TO-END through grade_root, the same path
+#     aud2_exitgate_test.sh's green depends on. The acceptance loop directly
+#     above is this loop's partner: without it, a has_versinfo_guard that
+#     rejected everything would satisfy every assertion here.
+for unrec in "${GUARD_SHAPES_UNRECOGNISED[@]}"; do
+  {
+    echo "$unrec"
+    cat "$WORK/nogua.sh"
+  } >"$MUT/hack/docs/truthlag_pins_test.sh"
+  if ! bash -n "$MUT/hack/docs/truthlag_pins_test.sh" 2>/dev/null; then
+    fail "documented-unrecognised control: the mutant carrying '${unrec}' does not parse, so whatever grade_root says about it is for the wrong reason"
+    continue
+  fi
+  out="$(grade_root "$MUT" versinfo-unrecognised)"
+  if echo "$out" | grep -q "^hack/docs/truthlag_pins_test.sh: uses .* declares NO bash version floor"; then
+    pass "documented-unrecognised control: '${unrec}' fails closed, exactly as the header says it does"
+  else
+    fail "documented-unrecognised control: '${unrec}' IS accepted as a version guard, but this file documents it as unrecognised — the documentation and the predicate have drifted apart, which is the N6 defect reopened. grade_root said: ${out:-<nothing>}"
   fi
 done
 cp "$ROOT/hack/docs/truthlag_pins_test.sh" "$MUT/hack/docs/truthlag_pins_test.sh"
