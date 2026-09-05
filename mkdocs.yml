@@ -75,6 +75,7 @@ nav:
       - "ADR-0019 — Publication marker and reconciliation": adr/0019-publication-marker-reconciliation-protocol.md
       - "ADR-0020 — Forge snapshot changed-file completeness": adr/0020-forge-snapshot-changed-file-completeness.md
       - "ADR-0021 — Multi-adapter forge seam": adr/0021-multi-adapter-forge-seam.md
+      - "ADR-0022 — Container image distribution and OCI namespace layout": adr/0022-container-image-distribution.md
   - Architecture:
       - Context: architecture/c4-context.md
       - Containers: architecture/c4-container.md
