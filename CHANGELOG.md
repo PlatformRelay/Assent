@@ -165,6 +165,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(decisions): replace D-176's unfalsifiable clause with dates
 - :memo: docs(decisions): put the recurrence record in D-176, not an ordinal
 - :memo: docs(backlog): file AUD-DISPO-OWNER — the disposition gate resolves the wrong property
+- :memo: docs(decisions): record what the first scan actually produced
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
