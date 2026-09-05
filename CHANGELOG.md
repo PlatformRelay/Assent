@@ -152,6 +152,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(backlog): file BASH32-N5N6 — a sentinel that proved the wrong thing, and a completeness claim that outran its sweep
 - :memo: docs(openspec): DOCSNAV-S02 — the nav gate needs local pre-merge evidence (D-174)
 - :memo: docs(decisions): D-174 — nav gate local evidence, four stale stage counts, the published AUD2 floor, two withdrawn-claim backlog rows
+- :memo: docs(gates): name the two costs the docs-build stage imposes (D-174)
+- :memo: docs(decisions): D-174 records the review round — the ordinal it got wrong, the sites it missed, the costs it left unstated
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
@@ -181,6 +183,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :pencil2: fix(lint): the population-coupling control could return no verdict at all, and the rule never named its operator set (D-169)
 - :pencil2: fix(docs): four published `task check` stage counts said 19/14 while the list held 21 (D-174)
 - :pencil2: fix(backlog): two rows still restated the ADR-0002 claim D-166 withdrew (D-174)
+- :pencil2: fix(docs): a wrong ordinal this lane published, and four more stale stage counts (D-174)
+- :pencil2: fix(backlog): give D-166's surviving residual its own OPEN row (D-174)
 
 ### Other
 - 👷 ci(docs): stop uploading the Pages artifact on pull requests
