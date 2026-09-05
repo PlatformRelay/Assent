@@ -837,6 +837,18 @@ class, for intra-page targets rather than site reachability. One real broken anc
 (`planning/spikes/spike-secure-setup.md`) and builds green; raising the level needs that fixed
 first. `DOCSNAV-R01` in the epic spec.
 
+## Phase 5 — REDMAIN-N changelog classifier integrity (D-168)
+
+Full spec in [p5-redmain-changelog-integrity/spec.md](p5-redmain-changelog-integrity/spec.md).
+Two INBOX items filed 2026-09-03 by the REDMAIN-F01 reviewer and left unclaimed; the INBOX
+states they are two halves of one defect and must land together.
+
+| ID | Item | Status | Needs operator | Notes |
+| --- | --- | --- | --- | --- |
+| **REDMAIN-N1** | Literal emoji in a commit subject defeats `cliff.toml`'s classifier (every parser keys on the ASCII shortcode) and nothing rejected it at commit time | ✅ **DONE (D-168)** | no (agent lane) | New `hack/release/commit_subject_gate.sh`; reachable on `pull_request` as a `verify:` step and locally through the existing `release-changelog-gate-test` stage — **no new `task check` stage**, so `CHECK_STAGES` in `hack/audit/exitgate_test.sh` stays at 21. `dfdae69` is exempt **by SHA**, and the exemption must itself be a real detection or the gate reds |
+| **REDMAIN-N2** | `changelog_gate_test.sh` §8's `### Other` detector required an ASCII shortcode, so it was fail-open for exactly the literal-emoji shape that causes the mis-filing it exists to catch | ✅ **DONE (D-168)** | no (agent lane) | Detector now matches a fileable type behind a shortcode, behind a literal emoji, or behind no prefix; §8b pins the regression by showing the pre-fix pattern miss the same probe. Re-filing the rendered line out of `### Other` needs a `cliff.toml` parser entry and is **not** in this lane's fence — tracked as REDMAIN-N3 |
+| **REDMAIN-N3** | `cliff.toml` has no parser for a literal-emoji subject, so `dfdae69`'s entry still renders under `### Other` on the published Release page | **OPEN** | no (agent lane) | One `commit_parsers` entry keyed on the conventional type after a non-ASCII prefix, in the `# REL-14` block. When it lands, §8's SHA exemption stops matching and the gate reds telling you to delete it — that red **is** the hand-off, by design (REQ-REDMAIN-N2-02) |
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
