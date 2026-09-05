@@ -88,6 +88,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :arrow_up: build(deps): bump sbom-action to v0.24.2 and action-gh-release to v3.0.3
 - :arrow_up: build(deps): bump fast-uri from 3.1.5 to 3.1.7 in schemas-validator
 - :arrow_up: chore(deps): bump golang.org/x/mod to v0.40.0
+- :construction_worker: ci(sonar): implement D-150 — CI-based analysis, pinned in place
 
 ### Documentation
 - :memo: docs(changelog): stamp the v0.3.0 section after tagging
@@ -162,6 +163,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(decisions): drop the drifting occurrence count from D-176
 - :memo: docs(decisions): replace D-176's unfalsifiable clause with dates
 - :memo: docs(decisions): put the recurrence record in D-176, not an ordinal
+- :memo: docs(backlog): file AUD-DISPO-OWNER — the disposition gate resolves the wrong property
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
