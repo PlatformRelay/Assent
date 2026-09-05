@@ -151,7 +151,15 @@ tasks:
       # hash-checked docs toolchain, cached thereafter by go-task's sources:/generates:
       # (measured 2026-09-05: ~1.7s for the build itself). `release-exitgate` in
       # verify.yaml already installs Python and uv for this task, so the `task check` the
-      # AUD-S18 gate runs there needs no new setup.
+      # AUD-S18 gate runs there needs no new setup. Two costs, stated so nobody has to
+      # discover them: `task check` now REQUIRES uv + Python 3.12 on PATH (mise.toml is
+      # untracked, so an environment with Go but no uv reds here on a clean tree), and
+      # this stage grades the WORKING TREE -- an untracked, in-progress docs/**.md page
+      # in neither list reds `task check` and blocks unrelated commits until it is
+      # listed. Unblocking it is the publication decision the gate exists to force: give
+      # the page its `nav:` row, or a justified `not_in_nav:` glob, or keep the draft
+      # outside docs/ until it is ready. Widening `not_in_nav:` to swallow the tree is
+      # not a third option -- the D-170 workflow guard reds on exactly that.
       - task: docs-build
       # AUD-S07 / D-123: `task lint` proves only the CLEAN depguard polarity. Without
       # this, deleting `- depguard` from .golangci.yml passes every wired gate.
