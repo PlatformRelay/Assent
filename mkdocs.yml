@@ -51,17 +51,72 @@ plugins:
 nav:
   - Home: index.md
   - Vision: vision.md
-  - ADRs: adr/README.md
+  - ADRs:
+      - Index: adr/README.md
+      - "ADR-0001 — Language: Go, single static binary": adr/0001-language-go-single-binary.md
+      - "ADR-0002 — Policy surface: YAML envelope, pluggable backends": adr/0002-policy-frontends-rego-declarative.md
+      - "ADR-0003 — Canonical change model": adr/0003-canonical-change-model.md
+      - "ADR-0004 — Plugin architecture for providers": adr/0004-plugin-architecture.md
+      - "ADR-0005 — Forge abstraction: GitLab first": adr/0005-forge-abstraction-gitlab-first.md
+      - "ADR-0006 — Testing strategy": adr/0006-testing-strategy.md
+      - "ADR-0007 — Rule effects and decision aggregation": adr/0007-rule-effects-decision-aggregation.md
+      - "ADR-0008 — Classification, routing, and rule scope": adr/0008-change-classification-routing-scope.md
+      - "ADR-0009 — Execution modes": adr/0009-execution-modes.md
+      - "ADR-0010 — Configuration files and repo layout": adr/0010-config-files-repo-layout.md
+      - "ADR-0011 — Core ports and contracts": adr/0011-core-ports-and-contracts.md
+      - "ADR-0012 — Presentation: rendering and debug": adr/0012-presentation-templates-debug.md
+      - "ADR-0013 — assert syntax and backend": adr/0013-assert-syntax-and-backend.md
+      - "ADR-0013 appendix — assert syntax gallery": adr/0013-appendix-syntax-gallery.md
+      - "ADR-0014 — Adopter test format": adr/0014-adopter-test-format.md
+      - "ADR-0015 — Trust boundaries and merge integrity": adr/0015-trust-boundaries-merge-integrity.md
+      - "ADR-0016 — Presentation theming": adr/0016-presentation-theming.md
+      - "ADR-0017 — Contract model and obligations": adr/0017-contract-model-obligations.md
+      - "ADR-0018 — Policy lifecycle: phase, profiles, comparison": adr/0018-policy-lifecycle-phase-profile-comparison.md
+      - "ADR-0019 — Publication marker and reconciliation": adr/0019-publication-marker-reconciliation-protocol.md
+      - "ADR-0020 — Forge snapshot changed-file completeness": adr/0020-forge-snapshot-changed-file-completeness.md
+      - "ADR-0021 — Multi-adapter forge seam": adr/0021-multi-adapter-forge-seam.md
   - Architecture:
       - Context: architecture/c4-context.md
       - Containers: architecture/c4-container.md
+      - Policy profiles: architecture/policy-profiles.md
   - Usage:
       - Install: usage/install.md
       - CLI reference: usage/cli.md
       - Walkthrough: usage/walkthrough.md
+  - Contracts:
+      - Marker grammar: contracts/p3-e5-publication-protocol/marker-grammar.md
+      - Reconciliation state table: contracts/p3-e5-publication-protocol/reconciliation-state-table.md
   - API stability: api-stability.md
   - Decisions: decisions/decisions.md
+
+# D-170: the ONLY sanctioned reason a docs/**.md page may be absent from `nav:` above.
+# Everything not matched here and not in the nav fails `mkdocs build --strict` via
+# `validation.omitted_files: warn` below. Adding a glob here is a publication decision:
+# it says "this page is deliberately not part of the published product docs", and it must
+# be justified in the decision log — never used to silence a page that simply lacks a nav row.
+not_in_nav: |
+  # Planning / working documents. GUIDELINES.md ("Repository discipline") and D-103 / E9-S08
+  # keep the planning subtree out of the product nav; the files stay on disk and stay linked
+  # from the decision log and the ADR index, which is why they are excluded here rather than
+  # via `exclude_docs` (excluding them from the build would break 19 links from published
+  # pages, 10 of them in decisions.md).
+  planning/**
+  # Maintainer runbooks for regenerating repository assets (brand SVGs, VHS demo tapes).
+  # Instructions for building the repo's own artwork, not pages a reader navigates to.
+  assets/**
+  # Per-story evidence artifacts attached to a decision row; reachable from decisions.md,
+  # not a standalone product page.
+  decisions/evidence/**
+  # Authoring stub with placeholder content ("ADR-nnnn: Title"); linked from the ADR index
+  # for contributors, meaningless as a nav destination.
+  adr/template.md
+
 validation:
-  omitted_files: info
+  # D-170: `info` here is why 56 of 66 docs pages could sit outside the nav unnoticed —
+  # `--strict` escalates WARNING and above only, so an unlinked page built green. `warn` is
+  # the strongest level mkdocs accepts for this check (`error` is rejected as a config value),
+  # so the gate depends on `--strict`; `.github/workflows/docs.yaml` therefore carries a
+  # control step that proves the gate can still return "found".
+  omitted_files: warn
   unrecognized_links: warn
   absolute_links: relative_to_docs
