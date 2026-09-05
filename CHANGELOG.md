@@ -87,6 +87,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :arrow_up: build(deps): bump all three github/codeql-action refs to v4.37.9
 - :arrow_up: build(deps): bump sbom-action to v0.24.2 and action-gh-release to v3.0.3
 - :arrow_up: build(deps): bump fast-uri from 3.1.5 to 3.1.7 in schemas-validator
+- :arrow_up: chore(deps): bump golang.org/x/mod to v0.40.0
 
 ### Documentation
 - :memo: docs(changelog): stamp the v0.3.0 section after tagging
@@ -140,6 +141,12 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(backlog): track the D-154 guard-idiom S7688 residual as SONAR-SHELL-R01
 - :memo: docs(decisions): correct SONAR-SHELL to 54 of 54 and withdraw two overstated figures (D-171)
 - :memo: docs(decisions): repoint D-166 at the shifted E11 backlog lines (:594->:602, :613->:621)
+- :memo: specs(redmain): the literal-emoji commit subject defect, both halves (REDMAIN-N1/N2)
+- :memo: docs(decisions): D-168 records the REDMAIN-N1/N2 fix, its narrowness and its hand-off
+- :memo: specs(redmain): N2-02 states the decoupled retire path; add N1-04 for the allowlist pin
+- :memo: docs(decisions): D-168 (d) is corrected — one authority was the wrong instinct here
+- :memo: specs(redmain): N2-02 stops claiming coverage the script does not have; file REDMAIN-N4
+- :memo: docs(decisions): D-168 (f) records the unexercised paths and points at REDMAIN-N4
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
@@ -164,6 +171,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(lint): a redirection is not a version guard — require an adjacent comparison
 - :bug: fix(lint): the include check missed 'source', one of its two spellings
 - :bug: fix(lint): drop the reversed-form guard pattern — it opened a fresh fail-open
+- :bug: fix(release): decouple the two exemption lists so REDMAIN-N3 has a green state (D-168)
 
 ### Other
 - 👷 ci(docs): stop uploading the Pages artifact on pull requests
@@ -196,6 +204,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(ci): grade the shared PR-reach helper itself, on fixtures (D-157)
 - :white_check_mark: test(lint): pin all eleven detection patterns, not the four the tree happens to use
 - :white_check_mark: test(lint): give the non-probe absence assertions an anti-vacuity partner
+- :white_check_mark: test(release): reject literal-emoji commit subjects, and let §8 see them (D-168)
 ## [0.3.0] - 2026-08-18
 
 ### Chores
