@@ -16,10 +16,12 @@
 #       carries `|| exit 1` (the callers run `set -u` WITHOUT `-e`, so a failed
 #       source or a missing function would otherwise just carry on);
 #   (2) the scan still SEES the known population — a typo in a detection pattern
-#       must red, not silently match nothing and pass — and every assertion of
-#       ABSENCE names a file the SAME `find` is shown to have ENUMERATED, so
-#       "no pattern detected it" can never be a statement about a file that was
-#       never in the population (N5/D-169);
+#       must red, not silently match nothing and pass — and every assertion that
+#       THE SCAN DETECTED NOTHING about a given file (the PATTERN_NONPROBES four
+#       and MUST_BE_CLEAN; not the controls that assert an empty grade_root
+#       output, which have mutant partners of their own) names a file the SAME
+#       `find` is shown to have ENUMERATED, so "no pattern detected it" can never
+#       be a statement about a file that was never in the population (N5/D-169);
 #   (3) negative control: real copies of the guarded scripts, guard lines stripped,
 #       ARE flagged; a floor lowered below its feature's minimum IS flagged; a
 #       dropped `|| exit 1` IS flagged;
@@ -55,17 +57,29 @@
 #            number is not read, so `hack/audit/aud2_exitgate_test.sh` is graded
 #            on having a guard, not on its value).
 #
-#   GUARD SHAPES NOT RECOGNISED — a hand-rolled guard is recognised in exactly
-#            ONE spelling: `BASH_VERSINFO` on the LEFT of a comparison, on ONE
-#            line, with nothing between the token and the operator but an
-#            optional numeric subscript, a closing brace, a closing quote and
-#            whitespace, and — for the symbolic operators — a literal digit on
-#            the right. The reasoning for each of those restrictions is recorded
-#            at has_versinfo_guard. THAT RULE IS THE COMPLETE STATEMENT. Every
-#            other spelling FAILS CLOSED: a file written another way reds with
+#   GUARD SHAPES NOT RECOGNISED — a hand-rolled guard is recognised in a narrow
+#            spelling: `BASH_VERSINFO` on the LEFT of a comparison, on ONE line,
+#            with NO `#` anywhere earlier on that line, with nothing between the
+#            token and the operator but an optional numeric subscript, a closing
+#            brace, a closing quote and whitespace, and — for the symbolic
+#            operators — a literal digit on the right. The reasoning for each of
+#            those restrictions is recorded at has_versinfo_guard. Every other
+#            spelling FAILS CLOSED: a file written another way reds with
 #            "declares NO bash version floor" even though it plainly has a
 #            guard, and the fix is to add the shape to the recognised set with a
 #            control in (e), or to spell the guard a recognised way.
+#
+#            THAT PARAGRAPH IS PROSE RESTATING A REGEXP, and it does not get to
+#            certify itself. It is written as a rule rather than a list because
+#            the REJECTED set cannot be enumerated — but a rule stated in English
+#            can still be narrower than the predicate, and this one WAS: it said
+#            "on ONE line" and omitted the `#` clause, so an argument-checking
+#            prologue on the same line — `[ $# -gt 0 ] && [ "${BASH_VERSINFO[0]}"
+#            -lt 4 ] && exit 1` — satisfied every word of it and was rejected
+#            anyway (measured; found by review of the very change that replaced
+#            the old list, i.e. the N6 species committed again one corner
+#            smaller). The regexp at has_versinfo_guard is the authority. What is
+#            kept honest by a TEST is not this paragraph but the array below.
 #
 #            The individual shapes that have been MEASURED failing closed live in
 #            GUARD_SHAPES_UNRECOGNISED below, where control (i) grades every one
@@ -234,6 +248,15 @@ GUARD_SHAPES_UNRECOGNISED=(
   # adjacent to the token.
   '[[ "${BASH_VERSINFO[0]}" =~ ^[0-3]$ ]] && exit 1'
   '[ "${BASH_VERSINFO:0:1}" -lt 4 ]'
+  # The `^[^#]*` prefix. It was written to skip COMMENT lines and it does more
+  # than that: it rejects a guard with ANY `#` earlier on the line, and `$#` is
+  # how an argument-checking prologue is spelled. Both of these are real guards,
+  # in the recognised operator shapes, on one line, with BASH_VERSINFO on the
+  # left — and both fail closed purely because of the `$#` to their left
+  # (measured). `${#arr[@]}` and a `${var#pfx}` expansion do the same. A comment
+  # AFTER the token is harmless, which is why this went unnoticed.
+  '[ $# -gt 0 ] && [ "${BASH_VERSINFO[0]}" -lt 4 ] && exit 1'
+  'if [ $# -eq 0 ] || ((BASH_VERSINFO[0] < 4)); then exit 1; fi'
 )
 
 # --- version arithmetic (3.2-safe) -------------------------------------------
@@ -317,7 +340,7 @@ declared_floor() {
 # narrowed it: `>` is an operator character AND a redirection, so
 # `echo "…BASH_VERSINFO…" >&2` — exactly what a hand-rolled guard looks like after
 # its `if` has been deleted — was still accepted, as were `> file`, `>>log`, and
-# `BASH_VERSINFO_NOTE=1`. Measured, all four. So two things are required now:
+# `BASH_VERSINFO_NOTE=1`. Measured, all four. So three things are required now:
 #
 #   ADJACENCY — nothing may sit between the token and the operator except an
 #     optional numeric subscript, a closing brace, a closing quote and whitespace.
@@ -328,6 +351,20 @@ declared_floor() {
 #     operators (`-lt` … `-ne`) are never redirections, so their right-hand side
 #     stays free — `[ "${BASH_VERSINFO[0]}" -gt "$want_major" ]`, the shape in
 #     hack/lib/require-bash.sh, is a guard.
+#   NO `#` BEFORE THE TOKEN — the `^[^#]*` prefix. It is here to skip COMMENT
+#     lines, which is what control (e)'s `# TODO: add a BASH_VERSINFO check`
+#     mutant pins, but it is spelled as "no `#` earlier on the line" and that is
+#     strictly more than it was meant to say. `$#` is how an argument-checking
+#     prologue is written, so `[ $# -gt 0 ] && [ "${BASH_VERSINFO[0]}" -lt 4 ]
+#     && exit 1` and `if [ $# -eq 0 ] || ((BASH_VERSINFO[0] < 4)); then exit 1;
+#     fi` are real guards in recognised operator shapes and BOTH fail closed
+#     (measured); `${#arr[@]}` and a `${var#pfx}` expansion do the same. A `#`
+#     AFTER the token — an end-of-line comment — is harmless, which is why the
+#     over-reach went unnoticed. Not narrowed to a leading-`#` anchor here: a
+#     comment can be indented or trail a line of code, so distinguishing "this
+#     line is a comment" from "this line contains a `#`" is the quoting/parsing
+#     problem that produced this file's other scars. It stays a documented,
+#     GRADED fail-closed limit instead (GUARD_SHAPES_UNRECOGNISED, control (i)).
 #
 # BASH_VERSINFO MUST BE ON THE LEFT. A second pattern accepting the reversed
 # spelling (`[ 4 -gt "${BASH_VERSINFO[0]}" ]`) was written here and REMOVED: with
@@ -554,6 +591,52 @@ elif echo "$ectl_out" | grep -Fq 'probe.txt'; then
   fail "enumeration control: enumerate_scripts listed a non-'.sh' file, so it is not the population scan_features grades. enumeration was: ${ectl_out}"
 else
   pass "enumeration control: enumerate_scripts lists hack/sentinel.sh and lists NEITHER a file outside hack/ NOR a non-.sh file — both misdirections that left the sentinel-only absence check green are visible to it"
+fi
+
+# The coupling between the two. Everything above assumes `scan_features` grades
+# the population `enumerate_scripts` defines; today it does so by construction,
+# because it reads from it. That is exactly the kind of "holds by construction"
+# an edit dissolves without noticing: reintroducing a divergent `find` inside
+# scan_features would leave every enumeration assertion above TRUE about a set of
+# files that is no longer the set being graded — the N5 defect restored through
+# the one door the N5 fix does not watch. Asserted in BOTH directions, because
+# each catches a different divergence and neither catches the other's:
+#   SUBSET   — nothing may be graded that was not enumerated (a WIDER find).
+#   SUPERSET — every enumerated file that uses a feature must be graded (a
+#              NARROWER find, which a subset check cannot see).
+#
+# The fixture is built so BOTH directions are reachable. Three feature-using
+# `.sh` files at three depths make a narrower walk (a `-maxdepth`, say) visible;
+# two further feature-using files that are deliberately OUT of the population —
+# one non-`.sh`, one outside `hack/` — make a wider walk visible. Without those
+# two the subset half would be unfalsifiable on this fixture, which is the shape
+# of vacuity this whole lane is about.
+sroot="$WORK/scanpop"
+mkdir -p "$sroot/hack/a/b" "$sroot/hack/c" "$sroot/outside"
+printf '%s\n' '#!/usr/bin/env bash' 'declare -A one=()' >"$sroot/hack/top.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'mapfile -t two < /dev/null' >"$sroot/hack/a/b/deep.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'coproc three true' >"$sroot/hack/c/mid.sh"
+printf '%s\n' '#!/usr/bin/env bash' 'declare -A four=()' >"$sroot/hack/notscript.txt"
+printf '%s\n' '#!/usr/bin/env bash' 'declare -A five=()' >"$sroot/outside/away.sh"
+# Every fixture here uses a feature, so an honest scan reports ALL of them and
+# the two lists must be equal, in the same order (both come from the same sorted
+# walk). Equality catches both divergences at once; the diagnosis below then says
+# which way they went, per file, so a failure names the file rather than the set.
+spop_enum="$(enumerate_scripts "$sroot")"
+spop_scan="$(scan_features "$sroot" | cut -d'|' -f1)"
+if [ -z "$spop_enum" ] || [ -z "$spop_scan" ]; then
+  fail "population coupling: enumerate_scripts or scan_features reported NOTHING for a root holding three feature-using scripts — the comparison below would be two empty sets trivially agreeing. enumerated: ${spop_enum:-<nothing>}; graded: ${spop_scan:-<nothing>}"
+elif [ "$spop_enum" = "$spop_scan" ]; then
+  pass "population coupling: scan_features grades exactly the files enumerate_scripts lists, at three directory depths — neither a wider nor a narrower find survives here"
+else
+  for spop_f in $spop_scan; do
+    echo "$spop_enum" | grep -Fqx "$spop_f" ||
+      fail "population coupling: scan_features graded '${spop_f}', which enumerate_scripts never listed — the two have diverged (a WIDER find inside the scan), so the enumeration assertions above are true about a population that is no longer the one being graded"
+  done
+  for spop_f in $spop_enum; do
+    echo "$spop_scan" | grep -Fqx "$spop_f" ||
+      fail "population coupling: enumerate_scripts listed '${spop_f}' and scan_features did not grade it, though it uses a bash 4+ feature — the scan's population is NARROWER (a divergent find), so a file can be proven enumerated and still never be looked at: the N5 defect through the one door the enumeration check cannot see"
+  done
 fi
 
 for clean in "${MUST_BE_CLEAN[@]}"; do
