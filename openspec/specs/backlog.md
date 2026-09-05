@@ -808,6 +808,27 @@ story (D-152), so the five-story claim is untouched by it either. It is also sta
 the `-count=1` lane that logged it added a *step* to the `verify` job and rewrote `Taskfile.yml`
 recipes, not a `task check` stage, so that work adds no `CHECK_STAGES` entry either (the array itself is 21 as of ORPHAN/D-159, not the 19 this paragraph was written against).
 
+## P5-DOCSNAV — Published-site reachability of `docs/**` (D-170)
+
+Spec: [p5-docsnav-site-reachability/spec.md](p5-docsnav-site-reachability/spec.md). One story,
+`[autonomous]`, **DONE**. `mkdocs.yml` set `validation.omitted_files: info` and `--strict`
+escalates WARNING and above only, so a `docs/**.md` page in no `nav:` entry built green:
+**56 of 66 measured on `main` at `20c80cb`** — a number that conflated 25 product pages that fell
+out of E9-S08's nav trim (all 22 ADRs, `architecture/policy-profiles.md`, both frozen
+`contracts/p3-e5-publication-protocol/` documents) with 31 pages that are deliberately not product
+docs (`planning/**`, `assets/**`, `decisions/evidence/**`, the ADR template). Fixed by navigating
+the 25, naming the 31 in a commented `not_in_nav:` list, and raising `omitted_files` to `warn`
+(`error` is not an accepted value for that key) so `--strict` reds on anything that is neither.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| DOCSNAV-S01 | ✅ **DONE (D-170)** — nav completeness gated; exclusions explicit and justified; `.github/workflows/docs.yaml` carries the gate's own guard (pins `--strict` on `Build site`; probes with a page in neither list and asserts the strict build fails naming it) | **[autonomous]** | none | a new unlisted docs page reds the docs workflow; disarming the gate reds the guard |
+
+**Residual, tracked independently**: `validation.anchors` is still `info` — the same invisibility
+class, for intra-page targets rather than site reachability. One real broken anchor exists today
+(`planning/spikes/spike-secure-setup.md`) and builds green; raising the level needs that fixed
+first. `DOCSNAV-R01` in the epic spec.
+
 ## Phases 3–5
 
 Epic paragraphs (goal, ADR constraints, exit gate, story seeds) in
