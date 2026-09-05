@@ -648,6 +648,168 @@ check_validator_lockfile() {
   return "$rc"
 }
 
+# D-177: the SonarCloud scanner step is PRESENT, SHA-pinned, ARMED, and ORDERED
+# after the coverage gate that writes the profile it uploads.
+#
+# This gate exists because of how the analysis was lost the first time. Automatic
+# Analysis was switched off on 2026-08-04 in favour of CI-based analysis, the
+# scanner half was never built, and the project sat a month with no analysis at
+# all while the backlog kept citing frozen figures. Nothing went red, because
+# nothing was watching. Deleting this step would restore exactly that state, so
+# the step is pinned here the way every other gate step in this file is.
+check_sonar_scan_wired() {
+  local dir="$1"
+  local wf="$dir/verify.yaml"
+  local rc=0
+
+  [[ -f "$wf" ]] || {
+    echo "  missing $wf (D-177)" >&2
+    return 1
+  }
+
+  # Positive control: both anchors must exist before any ordering claim is made.
+  # Without this an extraction that silently stopped matching would report
+  # "ordered correctly" from two empty results.
+  local scan_ln cov_ln
+  scan_ln="$(awk '/uses: SonarSource\/sonarqube-scan-action@/ { print FNR; exit }' "$wf")"
+  cov_ln="$(awk '/^        run: task coverage$/ { print FNR; exit }' "$wf")"
+
+  if [[ -z "$scan_ln" ]]; then
+    echo "  verify.yaml runs no SonarSource/sonarqube-scan-action step — CI-based analysis is the ONLY analysis this project has since Automatic Analysis was disabled (D-150/D-177), so deleting it ends all Sonar coverage silently" >&2
+    return 1
+  fi
+  if [[ -z "$cov_ln" ]]; then
+    echo "  verify.yaml has no 'run: task coverage' step — the anchor this check orders the scanner against is gone, so the ordering assertion below would be vacuous (D-177)" >&2
+    return 1
+  fi
+
+  # The action must be pinned to a full 40-hex commit SHA. A tag is mutable and
+  # would let an upstream retag change what runs inside the gate.
+  local pinned
+  pinned="$(awk '/uses: SonarSource\/sonarqube-scan-action@[0-9a-f]{40}([ \t]|$)/ { n++ } END { print n+0 }' "$wf")"
+  if [[ "$pinned" -lt 1 ]]; then
+    echo "  the SonarSource/sonarqube-scan-action reference is not pinned to a 40-hex commit SHA (D-177 / SEC-04) — a mutable tag lets an upstream retag change gate behaviour" >&2
+    rc=1
+  fi
+
+  # cov.out is written by `task coverage`. A scanner step ordered BEFORE it
+  # uploads no coverage and does not fail while doing so.
+  if [[ "$scan_ln" -lt "$cov_ln" ]]; then
+    echo "  the SonarCloud scan step (line $scan_ln) runs BEFORE the coverage gate (line $cov_ln) — sonar.go.coverage.reportPaths reads cov.out, which 'task coverage' writes, so this ordering reports 0% coverage to SonarCloud WITHOUT failing (D-177)" >&2
+    rc=1
+  fi
+
+  # The step must not be disarmed. `continue-on-error` and a constant `if:` both
+  # leave the step present and grep-satisfying while it stops gating anything --
+  # the shapes hack/audit/exitgate_test.sh already refuses on its own gate steps.
+  local block="$WORK/sonar.block"
+  awk -v want="$scan_ln" '
+    /^      - / { start = FNR; inblock = 0 }
+    FNR == want { inblock = 1 }
+    { line[FNR] = $0 }
+    END {
+      for (i = 1; i <= FNR; i++) {
+        if (line[i] ~ /^      - /) s = i
+        if (i == want) { for (j = s; j <= FNR; j++) { if (j > s && line[j] ~ /^      - /) break; print line[j] } }
+      }
+    }
+  ' "$wf" >"$block"
+
+  if [[ ! -s "$block" ]]; then
+    echo "  the SonarCloud step block extraction returned nothing — every disarm assertion below would be vacuous (D-177)" >&2
+    return 1
+  fi
+
+  local dis="$WORK/sonar.disarm"
+  grep -nE "^[ ]+continue-on-error:" "$block" >"$dis" || true
+  if [[ -s "$dis" ]]; then
+    echo "  the SonarCloud scan step carries continue-on-error — present, green, and gating nothing, which is the exact silence D-177 exists to end:" >&2
+    sed 's/^/    /' "$dis" >&2
+    rc=1
+  fi
+
+  # Normalise the `if:` the way the AUD gate does before judging it: unwrap
+  # ${{ }}, strip quotes and a comment tail, trim, lowercase. A literal true/false
+  # is refused; a real expression (the fork-PR guard) is not.
+  local ifval
+  ifval="$(awk '
+    /^[ ]+if:/ {
+      sub(/^[ ]+if:[ ]*/, "")
+      gsub(/\$\{\{/, ""); gsub(/\}\}/, "")
+      sub(/[ ]+#.*$/, "")
+      gsub(/^[ \t]+|[ \t]+$/, "")
+      gsub(/^["'"'"']|["'"'"']$/, "")
+      gsub(/^[ \t]+|[ \t]+$/, "")
+      print tolower($0)
+      exit
+    }' "$block")"
+  if [[ "$ifval" == "false" || "$ifval" == "true" ]]; then
+    echo "  the SonarCloud scan step's if: normalises to the constant '$ifval' — a constant condition disarms the step while leaving it present and SUCCESS-reporting (D-177)" >&2
+    rc=1
+  fi
+
+  return "$rc"
+}
+
+# D-177: the properties file that makes CI-based analysis possible at all is
+# present and names the project SonarCloud actually holds. Its presence is also
+# the switch that keeps Automatic Analysis off -- the two are mutually exclusive.
+check_sonar_properties() {
+  local dir="$1"
+  local f="$dir/sonar-project.properties"
+  local rc=0
+
+  [[ -f "$f" ]] || {
+    echo "  missing sonar-project.properties — without it the scanner has no project key and Automatic Analysis silently resumes ownership (D-150/D-177)" >&2
+    return 1
+  }
+
+  local key org
+  key="$(awk -F= '/^sonar\.projectKey=/ { print $2; exit }' "$f")"
+  org="$(awk -F= '/^sonar\.organization=/ { print $2; exit }' "$f")"
+
+  # The key is verified live, not guessed: api/components/show reports
+  # PlatformRelay_assent (display name "Assent"), and the capitalised key does not
+  # exist. Changing this creates a SECOND project and orphans all history.
+  if [[ "$key" != "PlatformRelay_assent" ]]; then
+    echo "  sonar.projectKey is '$key', expected 'PlatformRelay_assent' — SonarCloud project keys are immutable and independent of the GitHub repo name; a different key silently creates a NEW project and orphans every historical measurement (D-177)" >&2
+    rc=1
+  fi
+  if [[ "$org" != "platformrelay" ]]; then
+    echo "  sonar.organization is '$org', expected 'platformrelay' (D-177)" >&2
+    rc=1
+  fi
+
+  # The coverage wiring is the reason the workflow ordering above is pinned.
+  local cov
+  cov="$(awk -F= '/^sonar\.go\.coverage\.reportPaths=/ { print $2; exit }' "$f")"
+  if [[ "$cov" != "cov.out" ]]; then
+    echo "  sonar.go.coverage.reportPaths is '$cov', expected 'cov.out' — that is the profile 'task coverage' writes, and the workflow ordering pin above is meaningless if this points elsewhere (D-177)" >&2
+    rc=1
+  fi
+
+  # D-150's actual purpose. Losing this block silently re-floods the project with
+  # the 34 test-file S3776 smells the decision exists to exempt.
+  local rule res
+  rule="$(awk -F= '/^sonar\.issue\.ignore\.multicriteria\.e1\.ruleKey=/ { print $2; exit }' "$f")"
+  res="$(awk -F= '/^sonar\.issue\.ignore\.multicriteria\.e1\.resourceKey=/ { print $2; exit }' "$f")"
+  if [[ "$rule" != "go:S3776" || "$res" != '**/*_test.go' ]]; then
+    echo "  the D-150 S3776 test-file exemption is missing or altered (ruleKey='$rule', resourceKey='$res') — that exemption is the ONLY reason this file exists instead of Automatic Analysis (D-150/D-177)" >&2
+    rc=1
+  fi
+
+  return "$rc"
+}
+
+sonar_props_mutant() { # <name> -> prints a fresh dir holding a copy of sonar-project.properties
+  local name="$1"
+  local dir="$WORK/smutant-$name"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  cp "$ROOT/sonar-project.properties" "$dir/"
+  printf '%s\n' "$dir"
+}
+
 # ------------------------------------------------------- mutation harness --
 # The reason this file is a gate and not a comment. Each check is proven RED
 # against a tree carrying its violation, on every run — so a check that stops
@@ -1684,6 +1846,72 @@ mutate_awk "$m/schemas.yml" \
   'stage # 2'
 expect_red check_no_quoted_hash "$m" "a quoted ' #' hides a live global install from command_view (N6)" \
   "inside a quoted scalar"
+
+# ------------------------------- 7. D-177: SonarCloud analysis stays wired --
+
+echo "== 7. D-177: the SonarCloud scanner step is present, pinned, armed and ordered =="
+expect_green check_sonar_scan_wired "$WORKFLOWS" \
+  "verify.yaml runs a SHA-pinned, undisarmed SonarSource scan after the coverage gate"
+
+m="$(mutant sonar-step-deleted)"
+mutate "$m/verify.yaml" \
+  "\\|^        uses: SonarSource/sonarqube-scan-action@|d" \
+  "run: task coverage"
+expect_red check_sonar_scan_wired "$m" "the SonarCloud scan step was deleted — the state the project spent a month in" \
+  "runs no SonarSource/sonarqube-scan-action step"
+
+m="$(mutant sonar-step-unpinned)"
+mutate "$m/verify.yaml" \
+  "s|uses: SonarSource/sonarqube-scan-action@[0-9a-f]*|uses: SonarSource/sonarqube-scan-action@v8|" \
+  "sonarqube-scan-action@v8"
+expect_red check_sonar_scan_wired "$m" "the scan action was repointed at a mutable tag instead of a commit SHA" \
+  "not pinned to a 40-hex commit SHA"
+
+m="$(mutant sonar-step-continue-on-error)"
+mutate_awk "$m/verify.yaml" \
+  '{ print; if ($0 ~ /^        uses: SonarSource\/sonarqube-scan-action@/) print "        continue-on-error: true" }' \
+  "continue-on-error: true"
+expect_red check_sonar_scan_wired "$m" "the scan step was disarmed with continue-on-error — present, green, gating nothing" \
+  "carries continue-on-error"
+
+m="$(mutant sonar-step-if-false)"
+mutate "$m/verify.yaml" \
+  "s|^        if: github.event_name != .pull_request. .*|        if: \${{ false }}|" \
+  "if: \${{ false }}"
+expect_red check_sonar_scan_wired "$m" "the scan step was disarmed with a constant if: — a skipped job reports SUCCESS" \
+  "normalises to the constant 'false'"
+
+m="$(mutant sonar-step-before-coverage)"
+mutate_awk "$m/verify.yaml" \
+  '{ if ($0 ~ /^        run: task coverage$/) { covline = $0; next } if ($0 ~ /^          SONAR_HOST_URL:/) { print; print "      - name: coverage gate (moved)"; print covline; next } print }' \
+  "coverage gate (moved)"
+expect_red check_sonar_scan_wired "$m" "the scan step was moved BEFORE the coverage gate — uploads 0% coverage without failing" \
+  "runs BEFORE the coverage gate"
+
+echo "== 7b. D-177: sonar-project.properties names the project SonarCloud holds =="
+expect_green check_sonar_properties "$ROOT" \
+  "sonar-project.properties pins the live project key, org, coverage path and the D-150 S3776 exemption"
+
+sm="$(sonar_props_mutant projectkey-recased)"
+mutate "$sm/sonar-project.properties" \
+  "s|^sonar.projectKey=PlatformRelay_assent$|sonar.projectKey=PlatformRelay_Assent|" \
+  "sonar.projectKey=PlatformRelay_Assent"
+expect_red check_sonar_properties "$sm" "the project key was 'corrected' to match the renamed GitHub repo — which creates a SECOND project" \
+  "orphans every historical measurement"
+
+sm="$(sonar_props_mutant coverage-path-drift)"
+mutate "$sm/sonar-project.properties" \
+  "s|^sonar.go.coverage.reportPaths=cov.out$|sonar.go.coverage.reportPaths=coverage.out|" \
+  "reportPaths=coverage.out"
+expect_red check_sonar_properties "$sm" "the coverage report path drifted away from the profile task coverage writes" \
+  "that is the profile 'task coverage' writes"
+
+sm="$(sonar_props_mutant s3776-exemption-dropped)"
+mutate "$sm/sonar-project.properties" \
+  "s|^sonar.issue.ignore.multicriteria.e1.ruleKey=go:S3776$|sonar.issue.ignore.multicriteria.e1.ruleKey=go:S1234|" \
+  "ruleKey=go:S1234"
+expect_red check_sonar_properties "$sm" "the D-150 S3776 test-file exemption was altered — the only reason this file exists" \
+  "the ONLY reason this file exists"
 
 echo
 echo "workflow_pins_test.sh: PASS"
