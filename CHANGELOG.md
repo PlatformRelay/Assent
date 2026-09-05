@@ -147,6 +147,8 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(decisions): D-168 (d) is corrected — one authority was the wrong instinct here
 - :memo: specs(redmain): N2-02 stops claiming coverage the script does not have; file REDMAIN-N4
 - :memo: docs(decisions): D-168 (f) records the unexercised paths and points at REDMAIN-N4
+- :memo: docs(backlog): correct SONAR-SHELL to 53 of 54 and re-measure R01 as 12
+- :memo: docs(decisions): record D-173 -- withdraw "54 of 54", require an instrument per count
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
@@ -179,6 +181,7 @@ repository still gets a decision, never by following the link; no release carrie
 ### Refactoring
 - :recycle: refactor(audit): pin REL-03 and REL-07 by test name, demote source shape
 - :recycle: refactor(forge): extract the conformance suite into an importable package with an explicit observation surface (E10-S01)
+- :art: style(hack): add the explicit return decode_b64 was missing (shelldre:S7682)
 
 ### Security
 - :lock: fix(cmd): discriminate absent provider declaration from forge failure (REL-03)
