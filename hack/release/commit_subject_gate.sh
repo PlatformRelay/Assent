@@ -33,21 +33,37 @@
 #       known-good subject, so a mistyped pattern fails loudly instead of matching
 #       nothing and reporting success (the vacuity mode this repo has shipped
 #       twice).
+#   The list's LENGTH AND CONTENT are pinned from outside this file, in
+#   changelog_gate_test.sh §9d — otherwise a lane could land a literal-emoji
+#   commit and append its SHA in a later commit of the same PR, and all three
+#   self-checks above would still pass (it resolves, it is an ancestor, it IS a
+#   real detection). Growing this list is a two-file change on purpose.
+#
+# WHAT THIS LIST IS *NOT* (P2-1 — read this before deleting an entry)
+#   Its predicate is "this COMMIT SUBJECT is a literal emoji and cannot be
+#   rewritten". That fact is PERMANENT: `dfdae69`'s subject stays a literal emoji
+#   for the life of the repository, so this entry is permanent too.
+#   `changelog_gate_test.sh` §8 keeps a SEPARATE list, OTHER_EXEMPT_SHAS, whose
+#   predicate is the different and TEMPORARY one "this commit's RENDERED entry is
+#   still mis-filed under `### Other`". When REDMAIN-N3 teaches `cliff.toml` to
+#   file the entry correctly, §8's list retires and THIS one does not. The two
+#   were briefly derived from one another; that coupling had no green state after
+#   N3 (keep the entry and §8 reds as stale; drop it and this gate reds on
+#   `dfdae69`), so they are deliberately independent, linked only by the one-way
+#   subset invariant §8 asserts through `--legacy-shas`.
 #
 # USAGE
-#   commit_subject_gate.sh                    scan this repository (self mode)
-#   commit_subject_gate.sh <repo-dir>         scan another repository (foreign
-#                                             mode — used by
-#                                             changelog_gate_test.sh §9 to drive
-#                                             both polarities over a sandbox; the
-#                                             exemption self-checks are skipped
-#                                             because the SHAs do not exist there)
-#   commit_subject_gate.sh --legacy-subjects  print the exempt subjects, one per
-#                                             line (self mode only). This is the
-#                                             SINGLE authority changelog_gate_test.sh
-#                                             §8 reads for its `### Other`
-#                                             exemption, so the two halves of
-#                                             D-168 cannot drift apart.
+#   commit_subject_gate.sh                 scan this repository (self mode)
+#   commit_subject_gate.sh <repo-dir>      scan another repository (foreign mode —
+#                                          used by changelog_gate_test.sh §9 to
+#                                          drive both polarities over a sandbox;
+#                                          the exemption self-checks are skipped
+#                                          because the SHAs do not exist there)
+#   commit_subject_gate.sh --legacy-shas   print the exempt SHAs, one per line
+#                                          (self mode only). §8 reads it to assert
+#                                          its own OTHER_EXEMPT_SHAS is a SUBSET
+#                                          of this list, and §9d reads it to pin
+#                                          the list's exact content.
 #
 # Deliberately bash-3.2 clean (no associative arrays, no mapfile) — see
 # hack/lint/bash_version_guard_test.sh for why that matters in this tree.
@@ -57,23 +73,25 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # Full 40-hex SHAs of commits in PUBLISHED history that violate the rule and
 # cannot be rewritten. Append only with a recorded reason; never a prefix, never
-# a pattern.
+# a pattern. Adding one here ALSO requires updating LEGACY_EXPECTED in
+# changelog_gate_test.sh §9d, which is what makes it a deliberate decision.
 #   dfdae69 — `👷 ci(docs): stop uploading the Pages artifact on pull requests`.
 #             Landed before any gate existed; REDMAIN-N1. Rewriting it would
-#             rewrite published history (hard rule 2).
+#             rewrite published history (hard rule 2). PERMANENT — see "WHAT THIS
+#             LIST IS NOT" above; REDMAIN-N3 does not retire it.
 LEGACY_ALLOW_SHAS=(
   dfdae69143c3bd5b4819df106bf6fbbad18eb4fc
 )
 
-MODE_SUBJECTS=0
+MODE_SHAS=0
 REPO="$ROOT"
 case "${1:-}" in
-  --legacy-subjects)
-    MODE_SUBJECTS=1
+  --legacy-shas)
+    MODE_SHAS=1
     ;;
   "") ;;
   -*)
-    echo "usage: $(basename "$0") [--legacy-subjects | <repo-dir>]" >&2
+    echo "usage: $(basename "$0") [--legacy-shas | <repo-dir>]" >&2
     exit 2
     ;;
   *)
@@ -129,40 +147,42 @@ git -C "$REPO" log --format="%H${TAB}%s" HEAD >"$WORK/log" 2>"$WORK/log.err" || 
   fail "could not read commit subjects from $REPO"
 }
 [[ -s "$WORK/log" ]] \
-  || fail "no commit subjects read from $REPO — the scan below would pass vacuously (shallow clone? empty repository?)"
+  || fail "git log listed NO commits in $REPO, so the scan below would pass vacuously. Either the repository is empty, or HEAD is unborn, or the checkout has no history to walk (CI checks out with fetch-depth: 0 for exactly this reason — a truncated clone must not be read as a clean history)"
 
 detect "$WORK/log" "$WORK/raw"
 
-# Resolve the exemptions against THIS repository's history.
+# Resolve the exemptions against THIS repository's history. The length guard is
+# not decoration: `"${arr[@]}"` on an EMPTY array is an unbound-variable error
+# under `set -u` on bash 3.2, and an empty allowlist is a legitimate future state.
 : >"$WORK/exempt.shas"
-: >"$WORK/exempt.subjects"
 resolved=0
-for sha in "${LEGACY_ALLOW_SHAS[@]}"; do
-  full="$(git -C "$REPO" rev-parse --verify --quiet "${sha}^{commit}" || true)"
-  if [[ -z "$full" ]]; then
-    # Foreign mode: the sandbox repositories §9 builds do not contain this
-    # project's commits, so an unresolvable exemption is expected there and is
-    # simply inert. In self mode it is a hard error (below).
-    continue
-  fi
-  git -C "$REPO" merge-base --is-ancestor "$full" HEAD \
-    || fail "exempt commit $sha resolves in $REPO but is NOT an ancestor of HEAD — an exemption must name published history, not a dangling object"
-  subject="$(git -C "$REPO" log -1 --format=%s "$full")"
-  [[ -n "$subject" ]] || fail "exempt commit $sha has an empty subject — refusing to exempt an unreadable commit"
-  printf '%s\n' "$full" >>"$WORK/exempt.shas"
-  printf '%s\n' "$subject" >>"$WORK/exempt.subjects"
-  resolved=$((resolved + 1))
-done
+if ((${#LEGACY_ALLOW_SHAS[@]} > 0)); then
+  for sha in "${LEGACY_ALLOW_SHAS[@]}"; do
+    full="$(git -C "$REPO" rev-parse --verify --quiet "${sha}^{commit}" || true)"
+    if [[ -z "$full" ]]; then
+      # Foreign mode: the sandbox repositories §9 builds do not contain this
+      # project's commits, so an unresolvable exemption is expected there and is
+      # simply inert. In self mode it is a hard error (below).
+      continue
+    fi
+    git -C "$REPO" merge-base --is-ancestor "$full" HEAD \
+      || fail "exempt commit $sha resolves in $REPO but is NOT an ancestor of HEAD — an exemption must name published history, not a dangling object"
+    subject="$(git -C "$REPO" log -1 --format=%s "$full")"
+    [[ -n "$subject" ]] || fail "exempt commit $sha has an empty subject — refusing to exempt an unreadable commit"
+    printf '%s\n' "$full" >>"$WORK/exempt.shas"
+    resolved=$((resolved + 1))
+  done
+fi
 
 if ((SELF == 1)); then
   ((resolved == ${#LEGACY_ALLOW_SHAS[@]})) \
-    || fail "only $resolved of ${#LEGACY_ALLOW_SHAS[@]} exempt SHA(s) resolve in this repository — an exemption naming a commit that is not here exempts nothing and hides what it was for"
+    || fail "only $resolved of ${#LEGACY_ALLOW_SHAS[@]} exempt SHA(s) resolve in this repository. Either an exemption names a commit that is not here — which exempts nothing and hides what it was for — or this checkout does not reach far enough back to contain it (CI uses fetch-depth: 0; a truncated clone must fail here rather than silently scan a shorter history)"
   # ANTI-ROT, and simultaneously the live positive control: each exempt commit
   # must itself be a detection. If a listed SHA stops being a violation, the
   # exemption is dead scaffolding and must go.
   while read -r full; do
     grep -q "^${full}${TAB}" "$WORK/raw" \
-      || fail "exempt commit $full is NOT a violation — the exemption is stale; delete it from LEGACY_ALLOW_SHAS"
+      || fail "exempt commit $full is NOT a violation — its subject no longer leads with a non-ASCII character, so the exemption is stale; delete it from LEGACY_ALLOW_SHAS here AND from LEGACY_EXPECTED in changelog_gate_test.sh §9d. (Note this can only happen if history was rewritten. Re-FILING the rendered changelog entry, which is what REDMAIN-N3 does, does not change any commit subject and must NOT be answered by editing this list — see 'WHAT THIS LIST IS NOT' in the header.)"
   done <"$WORK/exempt.shas"
 fi
 
@@ -175,8 +195,8 @@ else
   cp "$WORK/raw" "$WORK/violations"
 fi
 
-if ((SELF == 1)) && ((MODE_SUBJECTS == 1)); then
-  cat "$WORK/exempt.subjects"
+if ((SELF == 1)) && ((MODE_SHAS == 1)); then
+  cat "$WORK/exempt.shas"
   exit 0
 fi
 
