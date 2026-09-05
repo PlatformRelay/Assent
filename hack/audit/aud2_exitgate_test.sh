@@ -63,8 +63,10 @@ set -euo pipefail
 # This script uses namerefs (`local -n`) to pass array names into check functions.
 # Stock macOS /bin/bash is 3.2, which has no namerefs: it aborted at the first
 # nameref, after one section header had already printed, and EXITED 0. A tree
-# with every AUD2 remediation reverted would then pass `task check` stage 19 for
-# anyone whose `bash` resolves to 3.2 — and AGENTS.md rule 4 makes a green local
+# with every AUD2 remediation reverted would then pass this script's `task check`
+# stage for anyone whose `bash` resolves to 3.2 — the stage is named, not numbered,
+# because the ordinal is graded by nothing and read "19" while the list held 21
+# (DOCTRUTH / D-174) — and AGENTS.md rule 4 makes a green local
 # `task check` a per-commit precondition, so that is not a theoretical path. CI
 # is ubuntu/bash 5, so nothing merges through it; the anti-vacuity gate silently
 # certifying nothing on a maintainer's machine is the defect regardless.

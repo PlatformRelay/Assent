@@ -193,7 +193,10 @@ This terminates the escape class: it is indifferent to how the production revert
 out (`t.Skip`, a no-op body, a deleted assertion), because it reports what the tests **do**.
 Nothing is written to the real tree. Measured cost: the tracked-file copy is ~1,200 files / 8.6 MB
 and is effectively instant; the two `go test -run <pinned>` runs take a few seconds each. The
-whole gate runs in ~40-50s, at `check:` stage 19, after `task test` has already built the packages.
+whole gate runs in ~40-50s, placed in `check:` **after `task test`** so the packages are already
+built. No stage ordinal is quoted: `CHECK_STAGES` in `hack/audit/exitgate_test.sh` is the single
+source, an ordinal restated here is graded by nothing, and this sentence said "stage 19" while the
+list held 21 (DOCTRUTH / D-174).
 
 The name and case pins are kept beside it — they say *which* test or case was lost, which a
 go-test transcript does not — but they are a pre-check, not the property. Case pins now read a
