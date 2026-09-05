@@ -156,6 +156,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(gates): name the two costs the docs-build stage imposes (D-174)
 - :memo: docs(decisions): D-174 records the review round — the ordinal it got wrong, the sites it missed, the costs it left unstated
 - :memo: docs(decisions): D-174 records the line-joined sweep and the completeness claim that was false twice
+- :memo: docs(agents): track AGENTS.md; withdraw DOC-03's false premise
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
