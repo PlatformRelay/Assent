@@ -138,9 +138,11 @@ jobs:
       # workflow step is what turns "no analysis" into a VISIBLE red instead of
       # silence — an analyser outside the gate matrix is worth nothing here.
       # PLACEMENT IS LOAD-BEARING: `task coverage` above writes cov.out, which
-      # sonar.go.coverage.reportPaths reads. Moving this step before it reports 0%
-      # coverage to SonarCloud without failing. hack/lint/workflow_pins_test.sh pins
-      # both the step's presence and this ordering.
+      # sonar.go.coverage.reportPaths reads. Moving this step before it leaves the
+      # report path pointing at a file that does not yet exist, which the scanner
+      # treats as a warning rather than an error — so coverage silently goes
+      # unreported instead of failing. hack/lint/workflow_pins_test.sh pins both the
+      # step's presence and this ordering.
       # NOT continue-on-error, deliberately: that is the disarm shape the audit gates
       # refuse, and it would rebuild the exact silence this step exists to end.
       # Fork PRs carry no SONAR_TOKEN, so the step is skipped there rather than

@@ -648,6 +648,37 @@ check_validator_lockfile() {
   return "$rc"
 }
 
+# sonar_step_value <isolated-step-file> <normalised-key> — the VALUE of a step
+# key, located by NORMALISED name so `if : `, `"if":` and `'if' :` reach it too,
+# then normalised for comparison. _assent_map_keys deliberately returns names
+# only; this mirrors its normalisation on the value side rather than duplicating
+# a literal pattern, which is the defect it exists to prevent (G5-02).
+sonar_step_value() {
+  awk -v want="$2" '
+    { line = $0
+      gsub(/\r/, "", line)
+      if (line ~ /^[[:space:]]*$/ || line ~ /^[[:space:]]*#/) next
+      sub(/^[ ]*- /, "  ", line)
+      match(line, /^[ ]*/)
+      rest = substr(line, RLENGTH + 1)
+      c = index(rest, ":")
+      if (c == 0) next
+      k = substr(rest, 1, c - 1)
+      sub(/[[:space:]]+$/, "", k); sub(/^[[:space:]]+/, "", k)
+      if (k ~ /^".*"$/ || k ~ /^\x27.*\x27$/) k = substr(k, 2, length(k) - 2)
+      sub(/[[:space:]]+$/, "", k); sub(/^[[:space:]]+/, "", k)
+      if (k != want) next
+      v = substr(rest, c + 1)
+      gsub(/\$\{\{/, "", v); gsub(/\}\}/, "", v)
+      sub(/[ \t]+#.*$/, "", v)
+      sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v)
+      if (v ~ /^".*"$/ || v ~ /^\x27.*\x27$/) v = substr(v, 2, length(v) - 2)
+      sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v)
+      print tolower(v)
+      exit
+    }' "$1"
+}
+
 # D-177: the SonarCloud scanner step is PRESENT, SHA-pinned, ARMED, and ORDERED
 # after the coverage gate that writes the profile it uploads.
 #
@@ -695,7 +726,7 @@ check_sonar_scan_wired() {
   # cov.out is written by `task coverage`. A scanner step ordered BEFORE it
   # uploads no coverage and does not fail while doing so.
   if [[ "$scan_ln" -lt "$cov_ln" ]]; then
-    echo "  the SonarCloud scan step (line $scan_ln) runs BEFORE the coverage gate (line $cov_ln) — sonar.go.coverage.reportPaths reads cov.out, which 'task coverage' writes, so this ordering reports 0% coverage to SonarCloud WITHOUT failing (D-177)" >&2
+    echo "  the SonarCloud scan step (line $scan_ln) runs BEFORE the coverage gate (line $cov_ln) — sonar.go.coverage.reportPaths reads cov.out, which 'task coverage' writes, so this ordering leaves the report path pointing at a file that does not yet exist, which the scanner treats as a warning — coverage goes silently unreported rather than failing (D-177)" >&2
     rc=1
   fi
 
@@ -704,8 +735,6 @@ check_sonar_scan_wired() {
   # the shapes hack/audit/exitgate_test.sh already refuses on its own gate steps.
   local block="$WORK/sonar.block"
   awk -v want="$scan_ln" '
-    /^      - / { start = FNR; inblock = 0 }
-    FNR == want { inblock = 1 }
     { line[FNR] = $0 }
     END {
       for (i = 1; i <= FNR; i++) {
@@ -720,32 +749,42 @@ check_sonar_scan_wired() {
     return 1
   fi
 
-  local dis="$WORK/sonar.disarm"
-  grep -nE "^[ ]+continue-on-error:" "$block" >"$dis" || true
-  if [[ -s "$dis" ]]; then
-    echo "  the SonarCloud scan step carries continue-on-error — present, green, and gating nothing, which is the exact silence D-177 exists to end:" >&2
-    sed 's/^/    /' "$dis" >&2
+  # DISARM DETECTION IS GRADED BY NORMALISED KEY NAME, NOT BY LITERAL PATTERN.
+  # This check first shipped with fresh literal readers (`grep -nE "^[ ]+continue-on-error:"`,
+  # `awk '/^[ ]+if:/'`) and independent review measured FIVE spellings walking
+  # straight past them while disarming the step for a conformant parser:
+  # `if : ${{ false }}`, `"if": false`, `if: ${{ false }}<CR>`,
+  # `continue-on-error : true` and `"continue-on-error": true`. That is G5-02,
+  # already documented and already SOLVED in hack/lib/pr_reach.sh, which this
+  # file sources. Writing a sixth literal reader beside a shared normalising one
+  # is precisely what D-157 exists to stop, so the shared reader is used here.
+  local keys="$WORK/sonar.stepkeys"
+  _assent_step_keys "$block" >"$keys"
+
+  if grep -qx '?unreadable' "$keys"; then
+    echo "  the SonarCloud scan step carries a mapping key that cannot be normalised to a plain identifier — refused rather than guessed, because an unreadable key is exactly where a disarm hides (G5-02 / D-177)" >&2
+    return 1
+  fi
+
+  # Presence is refused, not just a truthy value: a gate step has no legitimate
+  # reason to carry continue-on-error at all, and grading the VALUE would re-open
+  # the spelling problem one level down.
+  if grep -qx 'continue-on-error' "$keys"; then
+    echo "  the SonarCloud scan step carries continue-on-error — present, green, and gating nothing, which is the exact silence D-177 exists to end" >&2
     rc=1
   fi
 
-  # Normalise the `if:` the way the AUD gate does before judging it: unwrap
-  # ${{ }}, strip quotes and a comment tail, trim, lowercase. A literal true/false
-  # is refused; a real expression (the fork-PR guard) is not.
-  local ifval
-  ifval="$(awk '
-    /^[ ]+if:/ {
-      sub(/^[ ]+if:[ ]*/, "")
-      gsub(/\$\{\{/, ""); gsub(/\}\}/, "")
-      sub(/[ ]+#.*$/, "")
-      gsub(/^[ \t]+|[ \t]+$/, "")
-      gsub(/^["'"'"']|["'"'"']$/, "")
-      gsub(/^[ \t]+|[ \t]+$/, "")
-      print tolower($0)
-      exit
-    }' "$block")"
-  if [[ "$ifval" == "false" || "$ifval" == "true" ]]; then
-    echo "  the SonarCloud scan step's if: normalises to the constant '$ifval' — a constant condition disarms the step while leaving it present and SUCCESS-reporting (D-177)" >&2
-    rc=1
+  # `if:` is legitimate here (the fork-PR guard), so the VALUE is graded. It is
+  # located by normalised key name so the alternate spellings above reach it, then
+  # normalised the way the AUD gate normalises its own: CR stripped, ${{ }}
+  # unwrapped, comment tail dropped, quotes stripped, trimmed, lowercased.
+  if grep -qx 'if' "$keys"; then
+    local ifval
+    ifval="$(sonar_step_value "$block" if)"
+    if [[ "$ifval" == "false" || "$ifval" == "true" ]]; then
+      echo "  the SonarCloud scan step's if: normalises to the constant '$ifval' — a constant condition disarms the step while leaving it present and SUCCESS-reporting (D-177)" >&2
+      rc=1
+    fi
   fi
 
   return "$rc"
@@ -789,7 +828,8 @@ check_sonar_properties() {
   fi
 
   # D-150's actual purpose. Losing this block silently re-floods the project with
-  # the 34 test-file S3776 smells the decision exists to exempt.
+  # the test-file S3776 smells the decision exists to exempt. No count here: the
+  # live figure moves with every analysis (D-177 carries it, dated).
   local rule res
   rule="$(awk -F= '/^sonar\.issue\.ignore\.multicriteria\.e1\.ruleKey=/ { print $2; exit }' "$f")"
   res="$(awk -F= '/^sonar\.issue\.ignore\.multicriteria\.e1\.resourceKey=/ { print $2; exit }' "$f")"
@@ -1881,11 +1921,56 @@ mutate "$m/verify.yaml" \
 expect_red check_sonar_scan_wired "$m" "the scan step was disarmed with a constant if: — a skipped job reports SUCCESS" \
   "normalises to the constant 'false'"
 
+# G5-02 REGRESSION CONTROLS. Every one of these five went GREEN against the
+# literal readers this check first shipped with, while disarming the step for a
+# conformant YAML parser. They are pinned so the fix cannot silently rot back.
+m="$(mutant sonar-step-if-spaced-key)"
+mutate "$m/verify.yaml" \
+  "s|^        if: github.event_name.*|        if : \${{ false }}|" \
+  "if : \${{ false }}"
+expect_red check_sonar_scan_wired "$m" "the if: key is spelled 'if : ' — identical to a parser, invisible to a literal pattern (G5-02)" \
+  "normalises to the constant 'false'"
+
+m="$(mutant sonar-step-if-quoted-key)"
+mutate "$m/verify.yaml" \
+  "s|^        if: github.event_name.*|        \"if\": false|" \
+  '"if": false'
+expect_red check_sonar_scan_wired "$m" "the if: key is quoted as \"if\": — same disarm, different spelling (G5-02)" \
+  "normalises to the constant 'false'"
+
+m="$(mutant sonar-step-if-carriage-return)"
+mutate_awk "$m/verify.yaml" \
+  '{ if ($0 ~ /^        if: github.event_name/) { printf "        if: ${{ false }}\r\n" } else print }' \
+  'if: ${{ false }}'
+expect_red check_sonar_scan_wired "$m" "a constant if: carrying a trailing CR — the G4-01 shape, which a byte-literal comparison misses" \
+  "normalises to the constant 'false'"
+
+m="$(mutant sonar-step-coe-spaced-key)"
+mutate_awk "$m/verify.yaml" \
+  '{ print; if ($0 ~ /^        uses: SonarSource\/sonarqube-scan-action@/) print "        continue-on-error : true" }' \
+  "continue-on-error : true"
+expect_red check_sonar_scan_wired "$m" "continue-on-error spelled with a space before the colon (G5-02)" \
+  "carries continue-on-error"
+
+m="$(mutant sonar-step-coe-quoted-key)"
+mutate_awk "$m/verify.yaml" \
+  '{ print; if ($0 ~ /^        uses: SonarSource\/sonarqube-scan-action@/) print "        \"continue-on-error\": true" }' \
+  '"continue-on-error": true'
+expect_red check_sonar_scan_wired "$m" "continue-on-error with a quoted key (G5-02)" \
+  "carries continue-on-error"
+
+m="$(mutant sonar-step-unreadable-key)"
+mutate_awk "$m/verify.yaml" \
+  '{ print; if ($0 ~ /^        uses: SonarSource\/sonarqube-scan-action@/) print "        <<: *disarm" }' \
+  "<<: *disarm"
+expect_red check_sonar_scan_wired "$m" "the step carries a merge-key/alias the reader cannot normalise — refused, not guessed" \
+  "cannot be normalised to a plain identifier"
+
 m="$(mutant sonar-step-before-coverage)"
 mutate_awk "$m/verify.yaml" \
   '{ if ($0 ~ /^        run: task coverage$/) { covline = $0; next } if ($0 ~ /^          SONAR_HOST_URL:/) { print; print "      - name: coverage gate (moved)"; print covline; next } print }' \
   "coverage gate (moved)"
-expect_red check_sonar_scan_wired "$m" "the scan step was moved BEFORE the coverage gate — uploads 0% coverage without failing" \
+expect_red check_sonar_scan_wired "$m" "the coverage gate was moved AFTER the scan step, inverting the ordering the profile depends on" \
   "runs BEFORE the coverage gate"
 
 echo "== 7b. D-177: sonar-project.properties names the project SonarCloud holds =="
