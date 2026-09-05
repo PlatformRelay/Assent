@@ -158,6 +158,24 @@ property and free to drift from the one CI grades, which is the defect this epic
 `.github/workflows/verify.yaml`'s `release-exitgate` job already installs Python and `uv` for
 exactly this task, so the `task check` it runs there needs no new setup.
 
+**Two costs this story imposes, stated rather than discovered.** (1) **`task check` now requires
+`uv` and Python 3.12 on `PATH`**, through `docs-install`. That is a new hard tool prerequisite for
+the per-commit gate, and it matters more than it looks because `mise.toml` is untracked: a
+contributor whose environment supplies Go and `golangci-lint` but not `uv` now fails `check:` at
+`docs-build` on a tree with nothing wrong in it. (2) **The stage grades the WORKING TREE, not the
+commit.** `mkdocs build --strict` reads `docs/` as it is on disk, so an *untracked, in-progress*
+`docs/**.md` page in neither list reds `task check` and therefore blocks every unrelated commit
+until it is listed — the reviewer's probe demonstrated exactly that, and the shared checkout's
+in-progress `docs/adr/0022-container-image-distribution.md` is in neither list today (the nav
+carries ADR-0001..0021), so its author's next `task check` goes red the moment this lands. That is
+the gate working — it is the same red they would otherwise have taken on `main`, moved earlier and
+made cheaper — but the unblocking move must be published, not guessed: add the page's `nav:` row if
+it is product documentation, or a justified `not_in_nav:` glob if it is deliberately not, which is
+the publication decision REQ-DOCSNAV-S01-02 exists to force; for a page that is genuinely scratch,
+keep it outside `docs/` until it is ready. No third option is offered on purpose: silencing the
+page by widening `not_in_nav:` to swallow the tree is the disarmament REQ-DOCSNAV-S01-03's guard
+already reds on.
+
 **Known residual, named rather than implied**: the only thing that reds when `- task: docs-build`
 is deleted from `check:` is `hack/audit/exitgate_test.sh`'s `CHECK_STAGES` equality assertion,
 which reaches CI **only** through the `release-exitgate` job — and that job carries
