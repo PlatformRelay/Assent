@@ -46,6 +46,43 @@ jobs:
           pip install --only-binary=:all: --require-hashes -r docs/requirements-docs.txt
       - name: Build site
         run: mkdocs build --strict
+      # D-170: the nav-completeness gate's own guard, and the ONLY thing that reds when the
+      # gate is disarmed. `validation.omitted_files` cannot be raised above `warn` (mkdocs
+      # rejects `error` for that key), so a docs page missing from `nav:` fails ONLY while
+      # `--strict` is on the build above. This step proves the gate still bites: it creates a
+      # page that is in neither `nav:` nor `not_in_nav:` and asserts the strict build fails
+      # *naming that page*. Dropping `--strict`, lowering `omitted_files` back to `info`, or
+      # widening `not_in_nav` to swallow the tree all make the probe build succeed -- and this
+      # step reds instead of silently going along with it.
+      - name: Prove the nav-completeness gate can fail (D-170)
+        run: |
+          set -uo pipefail
+          # The config-level gate only bites under --strict, so pin the build step that
+          # supplies it. Without this line, rewriting "Build site" to a non-strict build
+          # disarms the gate while the probe below (which passes its own --strict) still
+          # reports it armed.
+          if ! grep -qE '^ +run: mkdocs build --strict$' .github/workflows/docs.yaml; then
+            echo "::error::the 'Build site' step no longer runs 'mkdocs build --strict'; the D-170 nav-completeness gate is disarmed for the published build."
+            exit 1
+          fi
+          probe='docs/zz-nav-gate-probe.md'
+          if [ -e "$probe" ]; then
+            echo "::error::${probe} already exists in the tree; the D-170 guard needs that path free."
+            exit 1
+          fi
+          trap 'rm -f "$probe"' EXIT
+          printf '# nav gate probe\n\nTemporary page written by the docs workflow.\n' >"$probe"
+          out=$(mkdocs build --strict --site-dir "${RUNNER_TEMP}/nav-gate-probe-site" 2>&1) && rc=0 || rc=$?
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::mkdocs build --strict accepted ${probe}, a page in neither nav: nor not_in_nav: -- the D-170 nav-completeness gate is NOT armed."
+            exit 1
+          fi
+          if ! printf '%s\n' "$out" | grep -q 'zz-nav-gate-probe.md'; then
+            echo "::error::the strict probe build failed, but not because of ${probe}; the D-170 gate cannot be shown to be armed."
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          echo "D-170 nav-completeness gate is armed: a docs page absent from nav fails mkdocs build --strict."
       # Keep the --strict build above running on PRs -- that is the docs gate.
       # Only upload the Pages artifact when it can actually be deployed: the
       # deploy job below is skipped for pull_request, so a PR upload was pure
