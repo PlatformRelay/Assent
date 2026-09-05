@@ -217,7 +217,7 @@ jobs:
       # DOCTRUTH / D-174: no stage COUNT is quoted above. The single source is that
       # script's own CHECK_STAGES array, which the gate asserts the Taskfile `check:`
       # list is EQUAL to; a number restated in prose is graded by nothing, and this
-      # one went stale twice — it read "14" until AUD2-S05 and "19" until D-174, while
-      # the array held 21.
+      # one went stale twice — it read "14" until AUD2-S05 and "19" until D-174, by
+      # which time the array had already reached 21.
       - name: AUD audit exit gate (AUD-S18 — REQ-AUD-S18-01/02)
         run: bash hack/audit/exitgate_test.sh

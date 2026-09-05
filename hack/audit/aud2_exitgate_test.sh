@@ -365,7 +365,7 @@ assert_no_raw_string() {
 
 # block_from <file> <ERE for the opening line> — the brace-matched block a line
 # opens: from the first line matching the pattern to the `}` at the SAME
-# indentation. gofmt (check stage 1) is what makes indentation load-bearing
+# indentation. gofmt (the `fmt` check stage) is what makes indentation load-bearing
 # rather than cosmetic, so no brace counting is needed.
 block_from() {
   awk -v re="$2" '
@@ -387,7 +387,7 @@ block_from() {
 # block, from its `if` line to the `}` at the SAME indentation. Brace-matched on
 # indentation rather than counting braces: gofmt guarantees the closing brace of
 # a block sits at the block's own indent, and the whole tree is gofmt-clean
-# (`task fmt` is check stage 1).
+# (`task fmt` is a check stage, and the first one).
 guard_block() {
   awk '
     !ing && /if !errors\.Is\(err, forge\.ErrNotFound\)/ {
@@ -694,7 +694,7 @@ check_behavioural_revert() {
 # The primary pin: the named behavioural tests still exist, by name, in the named
 # file — the same idiom TEST-02 is pinned by, and the half of the composition
 # that a revert-plus-delete-the-tests cannot walk around. It deliberately does
-# NOT run them: `go test` is check stage 4 and a step of the same PR-visible
+# NOT run them: `go test` is the `test` check stage and a step of the same PR-visible
 # `verify` job, so a revert that keeps the tests is already red before this gate
 # runs. What is unique here is catching their DELETION or RENAME, which `go test`
 # reports as success.
@@ -1058,7 +1058,7 @@ check_notfound_discrimination() { # <provider_host.go>
   #     if !errors.Is(err, forge.ErrNotFound) && errors.Is(err, context.Canceled) {
   # has no fall-through, returns at the correct body indent, and passes every
   # check below while reverting REL-03 in full. The named-test pin above plus
-  # `go test` (check stage 4, and a step of the same PR-visible verify job) is
+  # `go test` (the `test` check stage, and a step of the same PR-visible verify job) is
   # what actually holds this closed. Do not re-promote these to "the property".
 
   # (a) PRESENCE, at the guard's body indent. A return that is only reachable
@@ -1874,7 +1874,7 @@ expect_red check_named_tests "the 401 case was dropped from the auth table while
 # gofmt/vet/build clean, and it reverts REL-03 in full. It passes EVERY
 # source-shape heuristic below — deliberately NOT patched around, because the
 # space of such spellings does not shrink and four rounds of trying proved it.
-# It is caught by `go test` (check stage 4, and a step of the same PR-visible
+# It is caught by `go test` (the `test` check stage, and a step of the same PR-visible
 # verify job), whose named tests this gate pins. Recording the blind spot as an
 # executable fact rather than a comment means a future "simplification" that
 # drops the name pin turns this control red instead of passing quietly.
