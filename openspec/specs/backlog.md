@@ -113,6 +113,14 @@ SONAR-GO-CX-PROD as subtest-extraction work.
 decision). None gate a release; all are startable once the operator wants to spend cycles on
 hygiene rather than E2 feature work.
 
+**SONAR-SHELL residual, tracked independently of the lane** — because SONAR-SHELL is now DONE,
+and a residual mentioned only inside a closed row leaves tracking with it (the failure mode
+[D-166] recorded against E11-R01):
+
+| ID | Item | Status | Needs operator | Notes |
+| --- | --- | --- | --- | --- |
+| **SONAR-SHELL-R01** | The D-154 bash-floor guard bootstrap still spells its two tests with POSIX `[`, so it carries 2 open `shelldre:S7688` findings. Four sites, and they must move **together**: `hack/lib/require-bash.sh:40-41` (the canonical USAGE block every other copy is written from), `hack/validate-schemas-stock.sh:55-56`, `hack/release/verify-artifacts.sh:21-22`, `hack/docs/truthlag_pins_test.sh:45-46` | **OPEN** | no (agent lane) | Not part of SONAR-SHELL's 54 — `895ff7e` introduced these 20 days after `9a772d4` cleared that set. Converting one copy alone puts the idiom at odds with its own canonical form in `require-bash.sh`'s USAGE block, for a 2-issue non-gating maintainability win, so the piecemeal fix was deliberately declined (D-171). `[[` is bash 2.02+, so the conversion does not raise the effective floor these lines exist to assert; the operands are already quoted, so `[[` changes neither splitting nor globbing. The lane that takes this must re-run `hack/lint/bash_version_guard_test.sh`, whose mutation controls delete the block as the range `/^_assent_lib=/,/^require_bash[[:space:]]/` — anchors `[[` does not disturb. A second, larger candidate lives here: this lane's differential harness was never committed (see D-171's marked note), and `hack/lint/` is where it would become a standing gate |
+
 ## Reference-derived coverage findings & example candidates
 
 A read-only analysis (2026-08-03) of four real self-service repo shapes (provided as gitignored
