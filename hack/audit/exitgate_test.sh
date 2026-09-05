@@ -151,6 +151,12 @@ CHECK_STAGES=(
   # and `--clean` on dist/).
   release-verify-test
   docs-gates
+  # DOCSNAV-S02 (D-174): the nav-completeness gate (`mkdocs build --strict`). Added in
+  # the same commit as its `check:` line, which is what this array exists to force. D-170
+  # armed the gate in `.github/workflows/docs.yaml` alone, so the invariant it states --
+  # a `docs/**.md` page in neither `nav:` nor `not_in_nav:` fails the build -- had no
+  # local pre-merge evidence and reddened `main` after the push instead of the commit.
+  docs-build
   lint-depguard-test
   lint-workflow-pins-test
   # BASH32-F01 (D-154): the bash-version-floor gate. Added in the same commit as
