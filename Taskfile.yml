@@ -271,13 +271,19 @@ tasks:
       - .venv-docs/bin/mkdocs serve
 
   docs-build:
-    desc: Build the MkDocs site with strict validation
+    # DOCSNAV-S02 / D-174: this is a `check:` stage, so `uv` + Python 3.12 are a hard
+    # prerequisite of `task check` and an unlisted docs/**.md page in the WORKING TREE
+    # reds it. Both costs, and how to unblock, are spelled out at the `check:` entry.
+    desc: Build the MkDocs site with strict validation (a `check:` stage — see the note at `check:`)
     deps: [docs-install]
     cmds:
       - .venv-docs/bin/mkdocs build --strict
 
   docs-install:
-    desc: Install the locked documentation toolchain
+    # Reached from `check:` through docs-build (D-174). `uv: command not found` here
+    # means `task check` cannot run: install `uv` and Python 3.12, or use the mise
+    # invocation in the contributor docs. go-task caches this via sources:/generates:.
+    desc: Install the locked documentation toolchain (needed by `task check` via docs-build)
     sources:
       - docs/requirements-docs.txt
     generates:
