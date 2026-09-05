@@ -90,6 +90,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :arrow_up: chore(deps): bump golang.org/x/mod to v0.40.0
 - :construction_worker: ci(sonar): implement D-150 — CI-based analysis, pinned in place
 - :construction_worker: ci(sonar): close the disarm fail-open in the D-177 gate
+- :construction_worker: ci(sonar): refuse a block-scalar if:, and stop adding smells
 
 ### Documentation
 - :memo: docs(changelog): stamp the v0.3.0 section after tagging
