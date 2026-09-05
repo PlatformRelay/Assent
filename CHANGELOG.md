@@ -89,6 +89,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :arrow_up: build(deps): bump fast-uri from 3.1.5 to 3.1.7 in schemas-validator
 - :arrow_up: chore(deps): bump golang.org/x/mod to v0.40.0
 - :construction_worker: ci(sonar): implement D-150 — CI-based analysis, pinned in place
+- :construction_worker: ci(sonar): close the disarm fail-open in the D-177 gate
 
 ### Documentation
 - :memo: docs(changelog): stamp the v0.3.0 section after tagging
