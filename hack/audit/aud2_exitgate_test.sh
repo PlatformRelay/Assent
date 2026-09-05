@@ -107,6 +107,10 @@ CLASSIFY_TEST="$ROOT/internal/compare/classify_intervention_test.go"
 TASKFILE="$ROOT/Taskfile.yml"
 AUD_GATE="$ROOT/hack/audit/exitgate_test.sh"
 WORKFLOW="$ROOT/.github/workflows/verify.yaml"
+# GATES3-F01 (D-174): this gate's own published documentation. It states the
+# mode-aware control floor, and until now it merely RESTATED it — see
+# check_readme_floor and section (7).
+AUD2_README="$ROOT/hack/audit/README.md"
 
 # This gate's own `task check` stage, and the script the stage must invoke.
 STAGE="audit-aud2-exitgate-test"
@@ -1293,6 +1297,44 @@ check_stage_pinned() { # <hack/audit/exitgate_test.sh>
   return 0
 }
 
+# GATES3-F01 / D-174 — the control floor this script pins is also PUBLISHED, in
+# hack/audit/README.md's `--text-only` section. It was restated there rather than
+# asserted, so it drifted exactly as an ungraded number does: the README read
+# "38 full, 32 text-only" against a code floor of 57/51, having stopped matching
+# when D-157 raised the floor twice and being stale before that. Correcting the
+# number without grading it would only reset the clock — the original filing
+# (backlog `GATES3-F01`) asked whether the floor should be asserted against the
+# README instead, and this is that assertion.
+#
+# The sentence is parsed, not searched: the check reads the two integers out of
+# the ONE published claim and compares them to the floors this script pins, so
+# raising the floor without editing the README reds, and editing the README
+# without raising the floor reds too. `exactly one` is load-bearing — zero
+# matches means the claim was reworded out of reach of this check (a floor
+# nothing grades again), and two mean the check would be grading whichever copy
+# it happened to read first.
+check_readme_floor() { # <readme> <full-floor> <text-only-floor>
+  local readme="$1" want_full="$2" want_text="$3"
+  [[ -f "$readme" ]] || {
+    echo "  REQ-AUD2-S05-02: missing $readme — this gate's published control floor cannot be graded (GATES3-F01)" >&2
+    return 1
+  }
+  local -a hits=()
+  mapfile -t hits < <(grep -oE 'control floor is mode-aware \([0-9]+ full, [0-9]+ text-only\)' "$readme")
+  if ((${#hits[@]} != 1)); then
+    echo "  REQ-AUD2-S05-02: expected exactly ONE 'control floor is mode-aware (<n> full, <n> text-only)' claim in $readme, found ${#hits[@]} — a published floor this check cannot locate is a floor nothing grades, which is how that sentence came to read 38/32 against a code floor of 57/51 (GATES3-F01)" >&2
+    return 1
+  fi
+  local got_full got_text
+  got_full="$(sed -E 's/.*\(([0-9]+) full.*/\1/' <<<"${hits[0]}")"
+  got_text="$(sed -E 's/.*, ([0-9]+) text-only.*/\1/' <<<"${hits[0]}")"
+  if [[ "$got_full" != "$want_full" || "$got_text" != "$want_text" ]]; then
+    echo "  REQ-AUD2-S05-02: $readme publishes the control floor as ${got_full} full / ${got_text} text-only, but this script pins ${want_full} full / ${want_text} text-only — the published floor is ASSERTED against the code, not restated beside it (GATES3-F01). Move both together." >&2
+    return 1
+  fi
+  return 0
+}
+
 # REQ-AUD2-S05-05: RELSE-08 not reproduced. release-exitgate carries
 # `if: github.event_name != 'pull_request'`, so anything that runs ONLY there is
 # invisible on pull requests — which is how AUD-S18's stale pin survived four
@@ -2389,10 +2431,14 @@ expect_green check_pr_wiring "a block-scalar 'run: |' invocation of this gate is
 
 
 # The floor is a FLOOR, and the banner below says exactly that. An earlier
-# wording claimed the controls proved "every assertion" could fail; this script
-# emits roughly forty distinct findings and thirty-eight of them carry a control,
-# so that claim overstated the gate's own coverage — the D-124 failure mode this
-# epic exists to close, in the gate built to close it. What IS asserted: every
+# wording claimed the controls proved "every assertion" could fail; some findings
+# this script emits carry no control, so that claim overstated the gate's own
+# coverage — the D-124 failure mode this epic exists to close, in the gate built
+# to close it. (D-174: that sentence used to quote "roughly forty distinct
+# findings and thirty-eight of them carry a control", a pair of counts nothing
+# graded and both long stale — the same species as the published floor now
+# asserted in section (7). The claim is made without them because it does not
+# need them.) What IS asserted: every
 # control that exists ran, each went red for its own pinned message, and every
 # REQ-bearing assertion (REQ-AUD2-S05-02/03/04/05 and the four findings) has one.
 # Mode-aware floor: --text-only legitimately skips the four behavioural
@@ -2409,8 +2455,61 @@ expect_green check_pr_wiring "a block-scalar 'run: |' invocation of this gate is
 # modes and both floors move together. Not bumping would not have reddened —
 # the floor is `>=` — which is exactly why it has to be bumped: an unbumped
 # floor stops pinning the sections it was raised for.
-CONTROL_FLOOR=57
-((TEXT_ONLY == 0)) || CONTROL_FLOOR=51
+# D-174 raised both floors by 4: the four controls over check_readme_floor in
+# section (7) below (each published integer drifted in turn, the claim reworded
+# out of reach, and the claim duplicated). Pure text, so they run in BOTH modes
+# and both floors move together.
+#
+# The two floors are named constants because section (7) needs BOTH of them at
+# once: it grades the pair hack/audit/README.md publishes, and a run knows only
+# its own mode.
+CONTROL_FLOOR_FULL=61
+CONTROL_FLOOR_TEXT_ONLY=55
+CONTROL_FLOOR=$CONTROL_FLOOR_FULL
+((TEXT_ONLY == 0)) || CONTROL_FLOOR=$CONTROL_FLOOR_TEXT_ONLY
+
+echo
+echo "== (7) GATES3-F01 — the PUBLISHED control floor is graded, not restated =="
+expect_green check_readme_floor "hack/audit/README.md publishes ${CONTROL_FLOOR_FULL} full / ${CONTROL_FLOOR_TEXT_ONLY} text-only, the floors this script pins" \
+  "$AUD2_README" "$CONTROL_FLOOR_FULL" "$CONTROL_FLOOR_TEXT_ONLY"
+
+echo "== (7b) the published-floor assertion proved capable of going RED =="
+# The pre-fix shape, both halves and each half alone: this is precisely the state
+# the README was in for two D-157 floor raises.
+m="$WORK/README.stalefull.md"
+sed "s/control floor is mode-aware (${CONTROL_FLOOR_FULL} full/control floor is mode-aware (38 full/" "$AUD2_README" >"$m"
+assert_changed "$AUD2_README" "$m"
+expect_red check_readme_floor "the README's FULL-mode floor drifted below the pinned one (the D-157 shape)" \
+  "publishes the control floor as 38 full / ${CONTROL_FLOOR_TEXT_ONLY} text-only" \
+  "$m" "$CONTROL_FLOOR_FULL" "$CONTROL_FLOOR_TEXT_ONLY"
+
+m="$WORK/README.staletext.md"
+sed "s/${CONTROL_FLOOR_TEXT_ONLY} text-only)/32 text-only)/" "$AUD2_README" >"$m"
+assert_changed "$AUD2_README" "$m"
+expect_red check_readme_floor "the README's TEXT-ONLY floor drifted while the full-mode one stayed right" \
+  "publishes the control floor as ${CONTROL_FLOOR_FULL} full / 32 text-only" \
+  "$m" "$CONTROL_FLOOR_FULL" "$CONTROL_FLOOR_TEXT_ONLY"
+
+# Vacuity, both directions. A rewording that puts the claim out of this check's
+# reach must fail LOUDLY rather than silently grade nothing — the exact defect
+# class GATES3-F01 filed. And a second copy must fail too: two published claims
+# means the check grades whichever it reads first while the other rots.
+m="$WORK/README.nofloor.md"
+sed 's/control floor is mode-aware/control floor is mode aware/' "$AUD2_README" >"$m"
+assert_changed "$AUD2_README" "$m"
+expect_red check_readme_floor "the published claim was reworded out of the check's reach — a floor nothing grades again" \
+  "found 0" "$m" "$CONTROL_FLOOR_FULL" "$CONTROL_FLOOR_TEXT_ONLY"
+
+m="$WORK/README.twofloors.md"
+awk -v want="control floor is mode-aware (${CONTROL_FLOOR_FULL} full, ${CONTROL_FLOOR_TEXT_ONLY} text-only)" \
+  'BEGIN { done = 0 }
+   { print }
+   !done && index($0, want) { print "The control floor is mode-aware (38 full, 32 text-only)."; done = 1 }' \
+  "$AUD2_README" >"$m"
+assert_changed "$AUD2_README" "$m"
+expect_red check_readme_floor "a SECOND published floor was added — the check would grade one copy while the other rots" \
+  "found 2" "$m" "$CONTROL_FLOOR_FULL" "$CONTROL_FLOOR_TEXT_ONLY"
+
 ((MUTATIONS_PROVED >= CONTROL_FLOOR)) ||
   fail "only ${MUTATIONS_PROVED} mutation controls ran in $([[ $TEXT_ONLY == 1 ]] && echo --text-only || echo full) mode, fewer than the pinned floor of ${CONTROL_FLOOR} — a section was skipped, so REQ-AUD2-S05-02's evidence is incomplete"
 
