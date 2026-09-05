@@ -159,6 +159,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(adr): ADR-0022 — publish a container image and register it on Artifact Hub
 - :memo: docs(adr): add ADR-0022 to the MkDocs nav
 - :memo: docs(agents): track AGENTS.md; withdraw DOC-03's false premise
+- :memo: docs(decisions): drop the drifting occurrence count from D-176
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
