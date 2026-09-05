@@ -135,9 +135,11 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(dem): disclose the four uncovered halves the review found, and correct the Level provenance
 - :memo: docs(dem): stop claiming mkdocs proves nav linkage, and stop naming two tests that do not exist
 - :memo: docs(dem): retract a coverage gap asserted from a symbol-name grep, and arm the docs claim correctly
+- :memo: docs(spec): specify published-site reachability for docs/** (DOCSNAV-S01)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
+- :sparkles: docs(nav): navigate the 25 product pages, name the 31 exclusions, and gate both (D-170)
 
 ### Fixes
 - :bug: docs(decisions): reference the AUD2 spec as a path, not an mkdocs link
