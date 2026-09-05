@@ -30,14 +30,21 @@ justification is in the decision log — and anything that is neither fails the 
 
 **Scope**: (S01) partition every `docs/**.md` into nav pages and a graded exclusion list, arm
 `validation.omitted_files: warn` so `--strict` catches the residue, and guard the gate itself in
-`.github/workflows/docs.yaml`.
+`.github/workflows/docs.yaml`; (S02) give that gate local pre-merge evidence by making the strict
+build a `task check` stage.
 
 **Non-goals** (fenced): removing any page from the site (`exclude_docs` is rejected — see
-REQ-DOCSNAV-S01-02); editing page bodies; `Taskfile.yml` wiring (`docs-build` is not a `check:`
-stage today and this epic does not change that); `hack/**`; the theme; raising
-`validation.anchors` (a different defect class — recorded as a residual below).
+REQ-DOCSNAV-S01-02); editing page bodies; `hack/**`; the theme; raising `validation.anchors` (a
+different defect class — recorded as a residual below).
 
-**ADRs / decisions**: D-170 (this epic). Prior art: D-103 / E9-S08 (product-only nav trim),
+> **Amended 2026-09-05 (D-174).** This list also fenced off "`Taskfile.yml` wiring (`docs-build` is
+> not a `check:` stage today and this epic does not change that)", quoted here verbatim because
+> **DOCSNAV-S02 below reverses it**. Leaving the wiring out is what left the S01 invariant with
+> **zero local pre-merge evidence**: `task check` was green over a `docs/**.md` page in neither
+> list, and `main` reddened on push, taking the Pages deploy with it. The fence was written when
+> S01's gate did not exist yet; once it did, "CI-only" was the defect, not the scope.
+
+**ADRs / decisions**: D-170 (S01), D-174 (S02). Prior art: D-103 / E9-S08 (product-only nav trim),
 D-044 (MkDocs pipeline), GUIDELINES.md "Repository discipline".
 
 ---
@@ -110,8 +117,57 @@ page `<title>`; the guard step red in all three disarmament states.
 
 ---
 
+## DOCSNAV-S02 — The nav gate has local pre-merge evidence `[autonomous]`
+
+**As a** maintainer **I want** the nav-completeness gate to run in `task check` **so that** an
+unlisted page reds on my machine, before the commit, rather than on `main` after the push.
+
+S01 armed the gate in `.github/workflows/docs.yaml` only. `task docs-build` is not a `check:`
+stage, so the S01 invariant had **no local pre-merge evidence at all**: `task check` — the
+per-commit precondition this repository grades everything else against — was green over a page in
+neither `nav:` nor `not_in_nav:`, and the first signal was a red `docs` workflow on `main`, which
+also fails the Pages deploy. This is the D-124 species ("a gate invoked by nothing is not a gate")
+in its weaker form: a gate invoked only where it is too late to act on cheaply.
+
+**REQ-DOCSNAV-S02-01** — `docs-build` (`mkdocs build --strict`) is a stage of `Taskfile.yml`'s
+`check:` list, and is pinned in `CHECK_STAGES` in `hack/audit/exitgate_test.sh` **in the same
+commit**. The gate's implementation is not duplicated locally: the local stage and the CI `Build
+site` step run the same `mkdocs build --strict` against the same `mkdocs.yml`, so there is one
+implementation of nav completeness and it cannot skew.
+
+- Given a `docs/**.md` page in neither `nav:` nor `not_in_nav:`, when `task check` runs, then it
+  exits non-zero at the `docs-build` stage with a message naming that page.
+- Given a page under a `not_in_nav:` pattern (for example `docs/planning/**`), when `task check`
+  runs, then the `docs-build` stage is green — the stage grades *unlisted*, not *new*.
+- Given `- task: docs-build` deleted from `check:` **or** `docs-build` deleted from
+  `CHECK_STAGES`, when `hack/audit/exitgate_test.sh` runs, then it fails: the two lists must be
+  *equal*, so neither half can move alone.
+- Test: `Taskfile.yml`, `hack/audit/exitgate_test.sh`
+- Verify: `mise exec -- task check` (22 stages)
+- Level: L1
+
+**Cost, measured rather than assumed** (2026-09-05, this worktree): the stage itself is **~1.7 s**
+after `docs-install`, whose `uv venv` + `uv pip install --require-hashes` is cached by go-task's
+`sources:`/`generates:` and re-runs only when `docs/requirements-docs.txt` changes. It is the one
+`check:` stage that is **not** offline on a cold machine — the first run downloads the pinned,
+hash-checked docs toolchain. That was accepted deliberately: the alternative, a bash
+re-implementation of mkdocs' `nav:`/`not_in_nav:` matching, would be a second implementation of the
+property and free to drift from the one CI grades, which is the defect this epic exists to remove.
+`.github/workflows/verify.yaml`'s `release-exitgate` job already installs Python and `uv` for
+exactly this task, so the `task check` it runs there needs no new setup.
+
+**Known residual, named rather than implied**: the only thing that reds when `- task: docs-build`
+is deleted from `check:` is `hack/audit/exitgate_test.sh`'s `CHECK_STAGES` equality assertion,
+which reaches CI **only** through the `release-exitgate` job — and that job carries
+`if: github.event_name != 'pull_request'`. So deleting the stage is invisible on a pull request:
+the RELSE-08 visibility class, unchanged by this story and not newly introduced by it (every one
+of the 21 pre-existing stages sits behind the same pin). Tracked as `DOCSNAV-R02` below.
+
+---
+
 ## Residual (not this epic)
 
 | ID | Item | Status | Notes |
 | --- | --- | --- | --- |
 | DOCSNAV-R01 | `validation.anchors` defaults to `info`, the same invisibility class this epic closes for `omitted_files`. One real broken anchor exists today (`planning/spikes/spike-secure-setup.md` → `#setup-walkthrough-draft--clean-room-runner`) and builds green under `--strict` | **OPEN** | Raising it to `warn` requires fixing that anchor first; a separate lane, because it gates a different property (intra-page targets) than site reachability |
+| DOCSNAV-R02 | Deleting a `check:` stage is graded **only** by `CHECK_STAGES` in `hack/audit/exitgate_test.sh`, whose sole CI caller is the `release-exitgate` job, guarded `if: github.event_name != 'pull_request'` — so a PR that drops `- task: docs-build` (or any other stage) merges green and reds `main` afterwards | **OPEN** | Pre-existing and repo-wide, not specific to `docs-build`; it is the RELSE-08 class the AUD2-S05 and GATES3 lanes closed for individual gates by making each gate assert its own stage wiring. The general fix is a PR-visible assertion that the `check:` list equals `CHECK_STAGES`; D-174 declined to bolt that onto `hack/audit/aud2_exitgate_test.sh`, whose REQs are the 2026-08-18 remediations, rather than invent a scope for it |
