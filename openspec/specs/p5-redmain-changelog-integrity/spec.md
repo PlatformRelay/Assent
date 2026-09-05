@@ -133,9 +133,20 @@ it explicitly rather than pretend it is not there.
   **then** §8 reds naming the entry and instructs the reader to delete that one SHA from
   `OTHER_EXEMPT_SHAS` and nothing else; **and when** that instruction is followed literally,
   **then** both gates are green with an empty exemption list and every `### Other` line checked.
-  Test: `hack/release/changelog_gate_test.sh` §8 (subset invariant, empty-list path, retire
-  message) proved end-to-end by simulating N3 in a scratch clone; Verify: `bash
-  hack/release/changelog_gate_test.sh`; Level: L1
+  Test: `hack/release/changelog_gate_test.sh` §8 — **what running it actually exercises is the
+  single live path**: the one exemption in `OTHER_EXEMPT_SHAS` is checked to be a subset member,
+  to resolve, and to still render under `### Other`, and the surviving `### Other` lines are run
+  through the detector. **NOT exercised by running the script** — stated plainly rather than
+  implied by the sentence above: on the real tree the subset grep always passes, the empty-list
+  branch is never taken, and the retire message is never emitted, so the three properties this
+  requirement is really about have **no standing control**, unlike §8a/§8b/§9b/§9d which each
+  carry one. They were verified by one-off scratch-clone **simulation** (a REDMAIN-N3 parser
+  added to `cliff.toml`, `CHANGELOG.md` regenerated, the red observed, its printed remedy
+  followed literally, both gates green, plus the control that the other remedy still reds) —
+  evidence that this lane produced once, not a probe that re-runs. Closing that gap is
+  **REDMAIN-N4** (`openspec/specs/backlog.md`), deliberately deferred to its own lane because a
+  §8c is a new gate surface. Verify: `bash hack/release/changelog_gate_test.sh` (live path only;
+  the simulation above is not re-run by it); Level: L1
 
 ## Verification
 
