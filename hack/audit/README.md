@@ -214,9 +214,18 @@ docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:stable-slim bash hack/audit/aud2
 ```
 
 Its PASS banner says plainly that it certifies **nothing** about whether `REL-03` and `REL-07` are
-still held closed. The control floor is mode-aware (38 full, 32 text-only) so neither mode can
+still held closed. The control floor is mode-aware (61 full, 55 text-only) so neither mode can
 quietly shrink, and both the `task check` stage and the `verify.yaml` step are asserted to invoke
 the script with **no arguments**, so the flag cannot be used to disarm the gate where it counts.
+
+**Those two numbers are asserted, not restated** (`GATES3-F01`, D-174). `check_readme_floor` in
+`aud2_exitgate_test.sh` parses the sentence above and reds when either integer disagrees with the
+floor the script pins — so raising the floor without editing this line fails the gate, and editing
+this line without raising the floor fails it too. It is graded because it was wrong: this sentence
+published `38`/`32` against a code floor of `57`/`51`, having stopped matching when D-157 raised
+the floor twice and being stale before that. A published number nothing grades is the same D-124
+species this gate exists to close, and correcting it without grading it would only have reset the
+clock.
 
 ### Scoping is the whole gate
 
