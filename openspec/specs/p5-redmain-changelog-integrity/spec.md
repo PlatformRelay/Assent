@@ -151,6 +151,6 @@ it explicitly rather than pretend it is not there.
 ## Verification
 
 ```
-mise exec -- task check          # 21 stages; stage 11 (release-changelog-gate-test) carries §8/§8b/§9
+mise exec -- task check          # every stage; stage 11 (release-changelog-gate-test) carries §8/§8b/§9
 bash hack/release/commit_subject_gate.sh
 ```
