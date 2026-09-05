@@ -63,8 +63,10 @@ set -euo pipefail
 # This script uses namerefs (`local -n`) to pass array names into check functions.
 # Stock macOS /bin/bash is 3.2, which has no namerefs: it aborted at the first
 # nameref, after one section header had already printed, and EXITED 0. A tree
-# with every AUD2 remediation reverted would then pass `task check` stage 19 for
-# anyone whose `bash` resolves to 3.2 — and AGENTS.md rule 4 makes a green local
+# with every AUD2 remediation reverted would then pass this script's `task check`
+# stage for anyone whose `bash` resolves to 3.2 — the stage is named, not numbered,
+# because the ordinal is graded by nothing and read "19" while the list held 21
+# (DOCTRUTH / D-174) — and AGENTS.md rule 4 makes a green local
 # `task check` a per-commit precondition, so that is not a theoretical path. CI
 # is ubuntu/bash 5, so nothing merges through it; the anti-vacuity gate silently
 # certifying nothing on a maintainer's machine is the defect regardless.
@@ -105,6 +107,10 @@ CLASSIFY_TEST="$ROOT/internal/compare/classify_intervention_test.go"
 TASKFILE="$ROOT/Taskfile.yml"
 AUD_GATE="$ROOT/hack/audit/exitgate_test.sh"
 WORKFLOW="$ROOT/.github/workflows/verify.yaml"
+# GATES3-F01 (D-174): this gate's own published documentation. It states the
+# mode-aware control floor, and until now it merely RESTATED it — see
+# check_readme_floor and section (7).
+AUD2_README="$ROOT/hack/audit/README.md"
 
 # This gate's own `task check` stage, and the script the stage must invoke.
 STAGE="audit-aud2-exitgate-test"
@@ -359,7 +365,7 @@ assert_no_raw_string() {
 
 # block_from <file> <ERE for the opening line> — the brace-matched block a line
 # opens: from the first line matching the pattern to the `}` at the SAME
-# indentation. gofmt (check stage 1) is what makes indentation load-bearing
+# indentation. gofmt (the `fmt` check stage) is what makes indentation load-bearing
 # rather than cosmetic, so no brace counting is needed.
 block_from() {
   awk -v re="$2" '
@@ -381,7 +387,7 @@ block_from() {
 # block, from its `if` line to the `}` at the SAME indentation. Brace-matched on
 # indentation rather than counting braces: gofmt guarantees the closing brace of
 # a block sits at the block's own indent, and the whole tree is gofmt-clean
-# (`task fmt` is check stage 1).
+# (`task fmt` is a `check:` stage, so the tree is gofmt-clean before this gate reads it).
 guard_block() {
   awk '
     !ing && /if !errors\.Is\(err, forge\.ErrNotFound\)/ {
@@ -688,7 +694,7 @@ check_behavioural_revert() {
 # The primary pin: the named behavioural tests still exist, by name, in the named
 # file — the same idiom TEST-02 is pinned by, and the half of the composition
 # that a revert-plus-delete-the-tests cannot walk around. It deliberately does
-# NOT run them: `go test` is check stage 4 and a step of the same PR-visible
+# NOT run them: `go test` is the `test` check stage and a step of the same PR-visible
 # `verify` job, so a revert that keeps the tests is already red before this gate
 # runs. What is unique here is catching their DELETION or RENAME, which `go test`
 # reports as success.
@@ -1052,7 +1058,7 @@ check_notfound_discrimination() { # <provider_host.go>
   #     if !errors.Is(err, forge.ErrNotFound) && errors.Is(err, context.Canceled) {
   # has no fall-through, returns at the correct body indent, and passes every
   # check below while reverting REL-03 in full. The named-test pin above plus
-  # `go test` (check stage 4, and a step of the same PR-visible verify job) is
+  # `go test` (the `test` check stage, and a step of the same PR-visible verify job) is
   # what actually holds this closed. Do not re-promote these to "the property".
 
   # (a) PRESENCE, at the guard's body indent. A return that is only reachable
@@ -1286,6 +1292,44 @@ check_stage_pinned() { # <hack/audit/exitgate_test.sh>
   fi
   if ! grep -qx "$STAGE" "$arr"; then
     echo "  REQ-AUD2-S05-03: '${STAGE}' is not in CHECK_STAGES in hack/audit/exitgate_test.sh — the AUD-S18 release exit gate would not grade this stage, and deleting it from the Taskfile would be invisible there ($(wc -l <"$arr" | tr -d ' ') stages pinned)" >&2
+    return 1
+  fi
+  return 0
+}
+
+# GATES3-F01 / D-174 — the control floor this script pins is also PUBLISHED, in
+# hack/audit/README.md's `--text-only` section. It was restated there rather than
+# asserted, so it drifted exactly as an ungraded number does: the README read
+# "38 full, 32 text-only" against a code floor of 57/51, having stopped matching
+# when D-157 raised the floor twice and being stale before that. Correcting the
+# number without grading it would only reset the clock — the original filing
+# (backlog `GATES3-F01`) asked whether the floor should be asserted against the
+# README instead, and this is that assertion.
+#
+# The sentence is parsed, not searched: the check reads the two integers out of
+# the ONE published claim and compares them to the floors this script pins, so
+# raising the floor without editing the README reds, and editing the README
+# without raising the floor reds too. `exactly one` is load-bearing — zero
+# matches means the claim was reworded out of reach of this check (a floor
+# nothing grades again), and two mean the check would be grading whichever copy
+# it happened to read first.
+check_readme_floor() { # <readme> <full-floor> <text-only-floor>
+  local readme="$1" want_full="$2" want_text="$3"
+  [[ -f "$readme" ]] || {
+    echo "  REQ-AUD2-S05-02: missing $readme — this gate's published control floor cannot be graded (GATES3-F01)" >&2
+    return 1
+  }
+  local -a hits=()
+  mapfile -t hits < <(grep -oE 'control floor is mode-aware \([0-9]+ full, [0-9]+ text-only\)' "$readme")
+  if ((${#hits[@]} != 1)); then
+    echo "  REQ-AUD2-S05-02: expected exactly ONE 'control floor is mode-aware (<n> full, <n> text-only)' claim in $readme, found ${#hits[@]} — a published floor this check cannot locate is a floor nothing grades, which is how that sentence came to read 38/32 against a code floor of 57/51 (GATES3-F01)" >&2
+    return 1
+  fi
+  local got_full got_text
+  got_full="$(sed -E 's/.*\(([0-9]+) full.*/\1/' <<<"${hits[0]}")"
+  got_text="$(sed -E 's/.*, ([0-9]+) text-only.*/\1/' <<<"${hits[0]}")"
+  if [[ "$got_full" != "$want_full" || "$got_text" != "$want_text" ]]; then
+    echo "  REQ-AUD2-S05-02: $readme publishes the control floor as ${got_full} full / ${got_text} text-only, but this script pins ${want_full} full / ${want_text} text-only — the published floor is ASSERTED against the code, not restated beside it (GATES3-F01). Move both together." >&2
     return 1
   fi
   return 0
@@ -1830,7 +1874,7 @@ expect_red check_named_tests "the 401 case was dropped from the auth table while
 # gofmt/vet/build clean, and it reverts REL-03 in full. It passes EVERY
 # source-shape heuristic below — deliberately NOT patched around, because the
 # space of such spellings does not shrink and four rounds of trying proved it.
-# It is caught by `go test` (check stage 4, and a step of the same PR-visible
+# It is caught by `go test` (the `test` check stage, and a step of the same PR-visible
 # verify job), whose named tests this gate pins. Recording the blind spot as an
 # executable fact rather than a comment means a future "simplification" that
 # drops the name pin turns this control red instead of passing quietly.
@@ -2387,10 +2431,14 @@ expect_green check_pr_wiring "a block-scalar 'run: |' invocation of this gate is
 
 
 # The floor is a FLOOR, and the banner below says exactly that. An earlier
-# wording claimed the controls proved "every assertion" could fail; this script
-# emits roughly forty distinct findings and thirty-eight of them carry a control,
-# so that claim overstated the gate's own coverage — the D-124 failure mode this
-# epic exists to close, in the gate built to close it. What IS asserted: every
+# wording claimed the controls proved "every assertion" could fail; some findings
+# this script emits carry no control, so that claim overstated the gate's own
+# coverage — the D-124 failure mode this epic exists to close, in the gate built
+# to close it. (D-174: that sentence used to quote "roughly forty distinct
+# findings and thirty-eight of them carry a control", a pair of counts nothing
+# graded and both long stale — the same species as the published floor now
+# asserted in section (7). The claim is made without them because it does not
+# need them.) What IS asserted: every
 # control that exists ran, each went red for its own pinned message, and every
 # REQ-bearing assertion (REQ-AUD2-S05-02/03/04/05 and the four findings) has one.
 # Mode-aware floor: --text-only legitimately skips the four behavioural
@@ -2407,8 +2455,61 @@ expect_green check_pr_wiring "a block-scalar 'run: |' invocation of this gate is
 # modes and both floors move together. Not bumping would not have reddened —
 # the floor is `>=` — which is exactly why it has to be bumped: an unbumped
 # floor stops pinning the sections it was raised for.
-CONTROL_FLOOR=57
-((TEXT_ONLY == 0)) || CONTROL_FLOOR=51
+# D-174 raised both floors by 4: the four controls over check_readme_floor in
+# section (7) below (each published integer drifted in turn, the claim reworded
+# out of reach, and the claim duplicated). Pure text, so they run in BOTH modes
+# and both floors move together.
+#
+# The two floors are named constants because section (7) needs BOTH of them at
+# once: it grades the pair hack/audit/README.md publishes, and a run knows only
+# its own mode.
+CONTROL_FLOOR_FULL=61
+CONTROL_FLOOR_TEXT_ONLY=55
+CONTROL_FLOOR=$CONTROL_FLOOR_FULL
+((TEXT_ONLY == 0)) || CONTROL_FLOOR=$CONTROL_FLOOR_TEXT_ONLY
+
+echo
+echo "== (7) GATES3-F01 — the PUBLISHED control floor is graded, not restated =="
+expect_green check_readme_floor "hack/audit/README.md publishes ${CONTROL_FLOOR_FULL} full / ${CONTROL_FLOOR_TEXT_ONLY} text-only, the floors this script pins" \
+  "$AUD2_README" "$CONTROL_FLOOR_FULL" "$CONTROL_FLOOR_TEXT_ONLY"
+
+echo "== (7b) the published-floor assertion proved capable of going RED =="
+# The pre-fix shape, both halves and each half alone: this is precisely the state
+# the README was in for two D-157 floor raises.
+m="$WORK/README.stalefull.md"
+sed "s/control floor is mode-aware (${CONTROL_FLOOR_FULL} full/control floor is mode-aware (38 full/" "$AUD2_README" >"$m"
+assert_changed "$AUD2_README" "$m"
+expect_red check_readme_floor "the README's FULL-mode floor drifted below the pinned one (the D-157 shape)" \
+  "publishes the control floor as 38 full / ${CONTROL_FLOOR_TEXT_ONLY} text-only" \
+  "$m" "$CONTROL_FLOOR_FULL" "$CONTROL_FLOOR_TEXT_ONLY"
+
+m="$WORK/README.staletext.md"
+sed "s/${CONTROL_FLOOR_TEXT_ONLY} text-only)/32 text-only)/" "$AUD2_README" >"$m"
+assert_changed "$AUD2_README" "$m"
+expect_red check_readme_floor "the README's TEXT-ONLY floor drifted while the full-mode one stayed right" \
+  "publishes the control floor as ${CONTROL_FLOOR_FULL} full / 32 text-only" \
+  "$m" "$CONTROL_FLOOR_FULL" "$CONTROL_FLOOR_TEXT_ONLY"
+
+# Vacuity, both directions. A rewording that puts the claim out of this check's
+# reach must fail LOUDLY rather than silently grade nothing — the exact defect
+# class GATES3-F01 filed. And a second copy must fail too: two published claims
+# means the check grades whichever it reads first while the other rots.
+m="$WORK/README.nofloor.md"
+sed 's/control floor is mode-aware/control floor is mode aware/' "$AUD2_README" >"$m"
+assert_changed "$AUD2_README" "$m"
+expect_red check_readme_floor "the published claim was reworded out of the check's reach — a floor nothing grades again" \
+  "found 0" "$m" "$CONTROL_FLOOR_FULL" "$CONTROL_FLOOR_TEXT_ONLY"
+
+m="$WORK/README.twofloors.md"
+awk -v want="control floor is mode-aware (${CONTROL_FLOOR_FULL} full, ${CONTROL_FLOOR_TEXT_ONLY} text-only)" \
+  'BEGIN { done = 0 }
+   { print }
+   !done && index($0, want) { print "The control floor is mode-aware (38 full, 32 text-only)."; done = 1 }' \
+  "$AUD2_README" >"$m"
+assert_changed "$AUD2_README" "$m"
+expect_red check_readme_floor "a SECOND published floor was added — the check would grade one copy while the other rots" \
+  "found 2" "$m" "$CONTROL_FLOOR_FULL" "$CONTROL_FLOOR_TEXT_ONLY"
+
 ((MUTATIONS_PROVED >= CONTROL_FLOOR)) ||
   fail "only ${MUTATIONS_PROVED} mutation controls ran in $([[ $TEXT_ONLY == 1 ]] && echo --text-only || echo full) mode, fewer than the pinned floor of ${CONTROL_FLOOR} — a section was skipped, so REQ-AUD2-S05-02's evidence is incomplete"
 

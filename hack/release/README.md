@@ -16,6 +16,41 @@ template emits **categorized subject lines only — no commit SHAs** (D-101, oss
 | `task changelog-verify` | Fail closed if `CHANGELOG.md` drifts from `cliff.toml` output (release gate) |
 | `bash hack/release/verify-changelog.sh` | Same check as `task changelog-verify` (script entry point) |
 | `task release-changelog-gate-test` | AUD-S02: proves the drift gate is wired and fires — in `task check` (REQ-AUD-S02-01/02) |
+| `bash hack/release/commit_subject_gate.sh` | REDMAIN-N1 / D-168: rejects a commit subject that leads with a **literal emoji** instead of the ASCII gitmoji shortcode |
+
+### Commit subjects must lead with the ASCII shortcode (REDMAIN-N1 / D-168)
+
+`cliff.toml`'s `commit_parsers` key on the ASCII gitmoji **shortcode**
+(`:construction_worker:`), which is also what `GUIDELINES.md` § Repository discipline mandates.
+A subject that leads with the **literal emoji** (`👷 ci(docs): …`) matches none of them and falls
+through the `.*` catch-all into `### Other` on the published GitHub Release page — the REL-14 /
+D-137 defect reached through a different door. `dfdae69` is the commit where human attention
+failed; `commit_subject_gate.sh` is the replacement for that attention.
+
+- The rule is narrow on purpose: **the first character of the subject must be ASCII.** It is not
+  "the subject matches the whole convention" — Dependabot's `build(deps): bump …` and GitHub's
+  `Merge pull request #N from …` carry no shortcode and are legitimate.
+- Published history is tolerated **by full commit SHA** (`LEGACY_ALLOW_SHAS`), never by shape, and
+  each exempt SHA must still *be* a detection — a stale exemption reds the gate. The list's exact
+  content is pinned from a second file (`LEGACY_EXPECTED`, `changelog_gate_test.sh` §9d), so it
+  cannot grow through an unremarked append: adding an exemption is a two-file change plus a row in
+  `docs/decisions/decisions.md`.
+- Reachable two ways: a step of `verify.yaml`'s `verify:` job (**not** guarded off
+  `pull_request`, so a PR reds while the subject can still be reworded) and, locally, `task check`
+  through `changelog_gate_test.sh` §9. No 22nd `task check` stage was added — `CHECK_STAGES` in
+  `hack/audit/exitgate_test.sh` asserts the Taskfile's `check:` list is *equal* to it.
+- Both polarities and the exemption's load-bearingness are proved in `changelog_gate_test.sh`
+  §9/§9a–§9d; the matching `### Other` detector fix is §8/§8b.
+
+**Two exemption lists, and they are not interchangeable.** `LEGACY_ALLOW_SHAS`
+(`commit_subject_gate.sh`) answers *"is this commit's SUBJECT still a literal emoji?"* — permanent,
+because hard rule 2 forbids rewriting the subject. `OTHER_EXEMPT_SHAS` (`changelog_gate_test.sh`
+§8) answers *"is this commit's RENDERED ENTRY still mis-filed under `### Other`?"* — temporary,
+because REDMAIN-N3 will teach `cliff.toml` to file it correctly. Deriving one from the other left
+**no green state** after N3 (keep the entry, §8 reds as stale; drop it, the commit-subject gate
+reds on `dfdae69`), so they are separate, linked only by the one-way invariant
+`OTHER_EXEMPT_SHAS ⊆ LEGACY_ALLOW_SHAS` — which the empty set satisfies. **When N3 lands, delete
+the SHA from `OTHER_EXEMPT_SHAS` and nothing else**; §8's failure message says exactly this.
 
 Long-lived notes for consumers of released artifacts (currently the **D-120 `pins.toolDigest`**
 warning) live in `cliff.toml`'s `[changelog] header`, not in `CHANGELOG.md`: the file is

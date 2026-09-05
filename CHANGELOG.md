@@ -87,6 +87,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :arrow_up: build(deps): bump all three github/codeql-action refs to v4.37.9
 - :arrow_up: build(deps): bump sbom-action to v0.24.2 and action-gh-release to v3.0.3
 - :arrow_up: build(deps): bump fast-uri from 3.1.5 to 3.1.7 in schemas-validator
+- :arrow_up: chore(deps): bump golang.org/x/mod to v0.40.0
 
 ### Documentation
 - :memo: docs(changelog): stamp the v0.3.0 section after tagging
@@ -135,9 +136,30 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(dem): disclose the four uncovered halves the review found, and correct the Level provenance
 - :memo: docs(dem): stop claiming mkdocs proves nav linkage, and stop naming two tests that do not exist
 - :memo: docs(dem): retract a coverage gap asserted from a symbol-name grep, and arm the docs claim correctly
+- :memo: docs(spec): specify published-site reachability for docs/** (DOCSNAV-S01)
+- :memo: docs(backlog): close SONAR-SHELL — 52 of its 54 findings were already gone (D-171)
+- :memo: docs(backlog): track the D-154 guard-idiom S7688 residual as SONAR-SHELL-R01
+- :memo: docs(decisions): correct SONAR-SHELL to 54 of 54 and withdraw two overstated figures (D-171)
+- :memo: docs(decisions): repoint D-166 at the shifted E11 backlog lines (:594->:602, :613->:621)
+- :memo: specs(redmain): the literal-emoji commit subject defect, both halves (REDMAIN-N1/N2)
+- :memo: docs(decisions): D-168 records the REDMAIN-N1/N2 fix, its narrowness and its hand-off
+- :memo: specs(redmain): N2-02 states the decoupled retire path; add N1-04 for the allowlist pin
+- :memo: docs(decisions): D-168 (d) is corrected — one authority was the wrong instinct here
+- :memo: specs(redmain): N2-02 stops claiming coverage the script does not have; file REDMAIN-N4
+- :memo: docs(decisions): D-168 (f) records the unexercised paths and points at REDMAIN-N4
+- :memo: docs(backlog): correct SONAR-SHELL to 53 of 54 and re-measure R01 as 12
+- :memo: docs(decisions): record D-173 -- withdraw "54 of 54", require an instrument per count
+- :memo: docs(backlog): file BASH32-N5N6 — a sentinel that proved the wrong thing, and a completeness claim that outran its sweep
+- :memo: docs(backlog): close SONAR-GO-MISC — all 15 findings already fixed (D-172)
+- :memo: docs(openspec): DOCSNAV-S02 — the nav gate needs local pre-merge evidence (D-174)
+- :memo: docs(decisions): D-174 — nav gate local evidence, four stale stage counts, the published AUD2 floor, two withdrawn-claim backlog rows
+- :memo: docs(gates): name the two costs the docs-build stage imposes (D-174)
+- :memo: docs(decisions): D-174 records the review round — the ordinal it got wrong, the sites it missed, the costs it left unstated
+- :memo: docs(decisions): D-174 records the line-joined sweep and the completeness claim that was false twice
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
+- :sparkles: docs(nav): navigate the 25 product pages, name the 31 exclusions, and gate both (D-170)
 
 ### Fixes
 - :bug: docs(decisions): reference the AUD2 spec as a path, not an mkdocs link
@@ -158,6 +180,15 @@ repository still gets a decision, never by following the link; no release carrie
 - :bug: fix(lint): a redirection is not a version guard — require an adjacent comparison
 - :bug: fix(lint): the include check missed 'source', one of its two spellings
 - :bug: fix(lint): drop the reversed-form guard pattern — it opened a fresh fail-open
+- :bug: fix(release): decouple the two exemption lists so REDMAIN-N3 has a green state (D-168)
+- :pencil2: fix(lint): the replacement rule omitted the predicate's no-hash-before-the-token anchor, and prose restating a regexp does not certify itself (D-169)
+- :pencil2: fix(lint): the population-coupling control could return no verdict at all, and the rule never named its operator set (D-169)
+- :pencil2: fix(docs): four published `task check` stage counts said 19/14 while the list held 21 (D-174)
+- :pencil2: fix(backlog): two rows still restated the ADR-0002 claim D-166 withdrew (D-174)
+- :pencil2: fix(docs): a wrong ordinal this lane published, and four more stale stage counts (D-174)
+- :pencil2: fix(backlog): give D-166's surviving residual its own OPEN row (D-174)
+- :pencil2: fix(audit): a wrong stage ordinal survived three sweeps because it was split by a line wrap (D-174)
+- :pencil2: fix(docs): the positional claims the numeric sweep could not see (D-174)
 
 ### Other
 - 👷 ci(docs): stop uploading the Pages artifact on pull requests
@@ -165,6 +196,7 @@ repository still gets a decision, never by following the link; no release carrie
 ### Refactoring
 - :recycle: refactor(audit): pin REL-03 and REL-07 by test name, demote source shape
 - :recycle: refactor(forge): extract the conformance suite into an importable package with an explicit observation surface (E10-S01)
+- :art: style(hack): add the explicit return decode_b64 was missing (shelldre:S7682)
 
 ### Security
 - :lock: fix(cmd): discriminate absent provider declaration from forge failure (REL-03)
@@ -190,6 +222,10 @@ repository still gets a decision, never by following the link; no release carrie
 - :white_check_mark: test(ci): grade the shared PR-reach helper itself, on fixtures (D-157)
 - :white_check_mark: test(lint): pin all eleven detection patterns, not the four the tree happens to use
 - :white_check_mark: test(lint): give the non-probe absence assertions an anti-vacuity partner
+- :white_check_mark: test(release): reject literal-emoji commit subjects, and let §8 see them (D-168)
+- :white_check_mark: fix(lint): the bash-guard gate's absence assertions now name a file the scan is shown to have enumerated (D-169)
+- :white_check_mark: test(gates): the nav-completeness gate now reds `task check`, not only CI (D-174)
+- :white_check_mark: test(audit): assert the published AUD2 control floor instead of restating it (D-174)
 ## [0.3.0] - 2026-08-18
 
 ### Chores

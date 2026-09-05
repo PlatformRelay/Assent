@@ -139,6 +139,28 @@ tasks:
       # `deps:` entry) — go-task runs deps in parallel and readme_smoke_test.sh builds
       # a binary while `fmt` rewrites the tree.
       - task: docs-gates
+      # DOCSNAV-S02 / D-174 (REQ-DOCSNAV-S02-01): the nav-completeness gate. D-170 armed
+      # it -- `mkdocs.yml` sets `validation.omitted_files: warn` and `--strict` escalates
+      # that to an error -- but only in `.github/workflows/docs.yaml`, so a `docs/**.md`
+      # page in neither `nav:` nor `not_in_nav:` passed `task check` and reddened main on
+      # push, taking the Pages deploy with it. This runs the SAME `mkdocs build --strict`
+      # against the SAME `mkdocs.yml` as the CI `Build site` step: one implementation of
+      # nav completeness, so local and CI cannot skew. Placed with docs-gates, after the
+      # tree is otherwise settled (`fmt` rewrites files this reads). The one `check:`
+      # stage that is not offline on a cold machine: `docs-install` fetches the pinned,
+      # hash-checked docs toolchain, cached thereafter by go-task's sources:/generates:
+      # (measured 2026-09-05: ~1.7s for the build itself). `release-exitgate` in
+      # verify.yaml already installs Python and uv for this task, so the `task check` the
+      # AUD-S18 gate runs there needs no new setup. Two costs, stated so nobody has to
+      # discover them: `task check` now REQUIRES uv + Python 3.12 on PATH (mise.toml is
+      # untracked, so an environment with Go but no uv reds here on a clean tree), and
+      # this stage grades the WORKING TREE -- an untracked, in-progress docs/**.md page
+      # in neither list reds `task check` and blocks unrelated commits until it is
+      # listed. Unblocking it is the publication decision the gate exists to force: give
+      # the page its `nav:` row, or a justified `not_in_nav:` glob, or keep the draft
+      # outside docs/ until it is ready. Widening `not_in_nav:` to swallow the tree is
+      # not a third option -- the D-170 workflow guard reds on exactly that.
+      - task: docs-build
       # AUD-S07 / D-123: `task lint` proves only the CLEAN depguard polarity. Without
       # this, deleting `- depguard` from .golangci.yml passes every wired gate.
       - task: lint-depguard-test
@@ -249,13 +271,19 @@ tasks:
       - .venv-docs/bin/mkdocs serve
 
   docs-build:
-    desc: Build the MkDocs site with strict validation
+    # DOCSNAV-S02 / D-174: this is a `check:` stage, so `uv` + Python 3.12 are a hard
+    # prerequisite of `task check` and an unlisted docs/**.md page in the WORKING TREE
+    # reds it. Both costs, and how to unblock, are spelled out at the `check:` entry.
+    desc: Build the MkDocs site with strict validation (a `check:` stage — see the note at `check:`)
     deps: [docs-install]
     cmds:
       - .venv-docs/bin/mkdocs build --strict
 
   docs-install:
-    desc: Install the locked documentation toolchain
+    # Reached from `check:` through docs-build (D-174). `uv: command not found` here
+    # means `task check` cannot run: install `uv` and Python 3.12, or use the mise
+    # invocation in the contributor docs. go-task caches this via sources:/generates:.
+    desc: Install the locked documentation toolchain (needed by `task check` via docs-build)
     sources:
       - docs/requirements-docs.txt
     generates:

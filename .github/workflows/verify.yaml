@@ -97,6 +97,19 @@ jobs:
         run: go run github.com/zricethezav/gitleaks/v8@v8.30.1 detect --source . --no-banner --redact --log-opts="HEAD"
       - name: sanitization check (D-002, REQ-E7-S05-01)
         run: bash hack/check-sanitization.sh
+      # REDMAIN-N1 / D-168 (REQ-REDMAIN-N1-02) — commit subjects must not lead with
+      # a LITERAL emoji: cliff.toml's parsers key on the ASCII gitmoji shortcode, so
+      # such a subject matches none of them and is published under "### Other" on the
+      # Release page (the REL-14/D-137 defect through another door). Deliberately NOT
+      # guarded off pull_request, unlike the changelog drift gate below (D-125/OQ-30):
+      # a PR is the LAST moment the subject can still be reworded, because hard rule 2
+      # forbids rewriting it once it is on main. Needs the full history the gitleaks
+      # comment above already requires (fetch-depth: 0); no argument — the argument
+      # form is the sandbox mode that skips the published-history exemption checks.
+      # Also runs locally in `task check` via hack/release/changelog_gate_test.sh §9,
+      # which is where both of its polarities are proved.
+      - name: commit subject gate (REDMAIN-N1 — no literal emoji, D-168)
+        run: bash hack/release/commit_subject_gate.sh
       - run: go test -race ./...
       # E7-S04 — determinism gate (P4-E1-S12): double-run named engine + conformance goldens.
       # Keep this block distinct — E7-S05 adds sanitization steps below/after.
@@ -196,11 +209,15 @@ jobs:
       - name: E9 release exit gate (RELSE-03 — REQ-E9-S13)
         run: bash hack/release/exitgate_test.sh
       # AUD-S18 (REQ-AUD-S18-01/02) — the P5-AUD exit gate: the 2026-08-06 audit's
-      # conditions closed, all 19 `task check` stages green (the count is pinned in
-      # that script's CHECK_STAGES array — it read "14" until AUD2-S05), coverage at the raised
+      # conditions closed, EVERY `task check` stage green, coverage at the raised
       # bar, the frozen JSON schemas unchanged against the v0.1.0 tag, and every
       # audit finding dispositioned. Invoked with NO arguments on purpose:
       # `--text-only` skips the toolchain layer, and the gate's own CI-wiring check
       # reds if this line ever grows an argument, an `if:` or a `continue-on-error:`.
+      # DOCTRUTH / D-174: no stage COUNT is quoted above. The single source is that
+      # script's own CHECK_STAGES array, which the gate asserts the Taskfile `check:`
+      # list is EQUAL to; a number restated in prose is graded by nothing, and this
+      # one went stale twice — it read "14" until AUD2-S05 and "19" until D-174, by
+      # which time the array had already reached 21.
       - name: AUD audit exit gate (AUD-S18 — REQ-AUD-S18-01/02)
         run: bash hack/audit/exitgate_test.sh

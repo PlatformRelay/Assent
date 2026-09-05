@@ -137,8 +137,8 @@ still present in the tree. Every failure names the audit finding ID it reopens.
 | 4 | `isStricterInterventionEffect` still classifies `EffectChallenge`, and the named unit case that kills the auditor's demonstrated mutant still exists | `TEST-02` |
 | 5 | The gate is a `check:` stage, is pinned in `CHECK_STAGES`, and runs in the **pull-request-visible** `verify` job, undisarmed | `REQ-AUD2-S05-03/04/05` |
 
-Unlike `exitgate_test.sh`, this one **is** a `task check` stage (`audit-aud2-exitgate-test`, the
-19th) and is also a step of `verify.yaml`'s `verify` job. That placement is the point, and the
+Unlike `exitgate_test.sh`, this one **is** a `task check` stage (`audit-aud2-exitgate-test`) and is
+also a step of `verify.yaml`'s `verify` job. That placement is the point, and the
 reason is *not* that the gate is cheap — it runs `go test` against reverted copies of the tree
 and takes ~40-50s. It is that the `verify` job is the one that fires on **pull requests**, while
 `release-exitgate`, where the AUD-S18 gate lives, carries
@@ -193,7 +193,14 @@ This terminates the escape class: it is indifferent to how the production revert
 out (`t.Skip`, a no-op body, a deleted assertion), because it reports what the tests **do**.
 Nothing is written to the real tree. Measured cost: the tracked-file copy is ~1,200 files / 8.6 MB
 and is effectively instant; the two `go test -run <pinned>` runs take a few seconds each. The
-whole gate runs in ~40-50s, at `check:` stage 19, after `task test` has already built the packages.
+whole gate runs in ~40-50s, placed in `check:` **after `task test`** so the packages are already
+built. **No stage ordinal is quoted anywhere in this file**, other than inside a quotation of
+wording that has been withdrawn: `CHECK_STAGES` in `hack/audit/exitgate_test.sh` is the single
+graded source, and an ordinal restated in prose is graded by nothing. Two sentences in this file
+proved it — this one said "stage 19" while the list held 21, and the AUD2 section above called
+`audit-aud2-exitgate-test` "the 19th" while it was the 22nd. The second survived three sweeps
+because it was **split across a line wrap** (`the` / `19th`), which no line-oriented `grep` can
+match; both were found only by a line-JOINED sweep (DOCTRUTH / D-174).
 
 The name and case pins are kept beside it — they say *which* test or case was lost, which a
 go-test transcript does not — but they are a pre-check, not the property. Case pins now read a
@@ -211,9 +218,18 @@ docker run --rm -v "$PWD:$PWD" -w "$PWD" debian:stable-slim bash hack/audit/aud2
 ```
 
 Its PASS banner says plainly that it certifies **nothing** about whether `REL-03` and `REL-07` are
-still held closed. The control floor is mode-aware (38 full, 32 text-only) so neither mode can
+still held closed. The control floor is mode-aware (61 full, 55 text-only) so neither mode can
 quietly shrink, and both the `task check` stage and the `verify.yaml` step are asserted to invoke
 the script with **no arguments**, so the flag cannot be used to disarm the gate where it counts.
+
+**Those two numbers are asserted, not restated** (`GATES3-F01`, D-174). `check_readme_floor` in
+`aud2_exitgate_test.sh` parses the sentence above and reds when either integer disagrees with the
+floor the script pins — so raising the floor without editing this line fails the gate, and editing
+this line without raising the floor fails it too. It is graded because it was wrong: this sentence
+published `38`/`32` against a code floor of `57`/`51`, having stopped matching when D-157 raised
+the floor twice and being stale before that. A published number nothing grades is the same D-124
+species this gate exists to close, and correcting it without grading it would only have reset the
+clock.
 
 ### Scoping is the whole gate
 
