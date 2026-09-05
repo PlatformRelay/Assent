@@ -61,13 +61,15 @@
 #            spelling: `BASH_VERSINFO` on the LEFT of a comparison, on ONE line,
 #            with NO `#` anywhere earlier on that line, with nothing between the
 #            token and the operator but an optional numeric subscript, a closing
-#            brace, a closing quote and whitespace, and — for the symbolic
-#            operators — a literal digit on the right. The reasoning for each of
-#            those restrictions is recorded at has_versinfo_guard. Every other
-#            spelling FAILS CLOSED: a file written another way reds with
-#            "declares NO bash version floor" even though it plainly has a
-#            guard, and the fix is to add the shape to the recognised set with a
-#            control in (e), or to spell the guard a recognised way.
+#            brace, a closing quote and whitespace, with the operator drawn from
+#            exactly `-lt -le -gt -ge -eq -ne < > <= >= ==` (bare `=` and `!=`
+#            are NOT in it), and — for the symbolic five — a literal digit on the
+#            right. The reasoning for each of those restrictions is recorded at
+#            has_versinfo_guard. Every other spelling FAILS CLOSED: a file
+#            written another way reds with "declares NO bash version floor" even
+#            though it plainly has a guard, and the fix is to add the shape to
+#            the recognised set with a control in (e), or to spell the guard a
+#            recognised way.
 #
 #            THAT PARAGRAPH IS PROSE RESTATING A REGEXP, and it does not get to
 #            certify itself. It is written as a rule rather than a list because
@@ -619,24 +621,57 @@ printf '%s\n' '#!/usr/bin/env bash' 'coproc three true' >"$sroot/hack/c/mid.sh"
 printf '%s\n' '#!/usr/bin/env bash' 'declare -A four=()' >"$sroot/hack/notscript.txt"
 printf '%s\n' '#!/usr/bin/env bash' 'declare -A five=()' >"$sroot/outside/away.sh"
 # Every fixture here uses a feature, so an honest scan reports ALL of them and
-# the two lists must be equal, in the same order (both come from the same sorted
-# walk). Equality catches both divergences at once; the diagnosis below then says
-# which way they went, per file, so a failure names the file rather than the set.
-spop_enum="$(enumerate_scripts "$sroot")"
-spop_scan="$(scan_features "$sroot" | cut -d'|' -f1)"
+# the two lists must hold the same paths with the same multiplicities.
+#
+# BOTH SIDES ARE SORTED before comparing, because ORDER IS NOT PART OF THE
+# INVARIANT: what has to hold is that the graded population and the enumerated
+# population are the same collection of files, not that two functions happen to
+# emit them in the same sequence. Comparing unsorted made this control fail its
+# own equality on a mere reordering — a `sort -r` inside scan_features gave
+# EXIT=0, 0 FAILs and NO "population coupling" line at all, because the
+# order-sensitive equality below said "different" while the set-based diagnosis
+# that follows said "nothing to report" (measured). `sort`, NOT `sort -u`: plain
+# sort preserves duplicates, so a scan emitting a file twice still differs here
+# and is not quietly collapsed into agreement.
+#
+# AND THE ELSE-BRANCH ALWAYS RETURNS A VERDICT. Sorting closes the reordering
+# case; it does not close the CLASS. Any future difference the per-file
+# membership loops cannot name — a multiplicity difference, trailing whitespace,
+# a duplicate — would leave this control emitting neither PASS nor FAIL, and
+# nothing in this gate pins a total PASS count, so a silent control reads exactly
+# like a satisfied one. So the loops record whether they said anything, and a
+# diagnosis-free difference is itself a FAIL. A control that can stop asserting
+# without saying so is the defect this whole lane exists to remove; it does not
+# get an exemption for being the fix.
+spop_enum="$(enumerate_scripts "$sroot" | sort)"
+spop_scan="$(scan_features "$sroot" | cut -d'|' -f1 | sort)"
+spop_diagnosed=0
 if [ -z "$spop_enum" ] || [ -z "$spop_scan" ]; then
   fail "population coupling: enumerate_scripts or scan_features reported NOTHING for a root holding three feature-using scripts — the comparison below would be two empty sets trivially agreeing. enumerated: ${spop_enum:-<nothing>}; graded: ${spop_scan:-<nothing>}"
 elif [ "$spop_enum" = "$spop_scan" ]; then
   pass "population coupling: scan_features grades exactly the files enumerate_scripts lists, at three directory depths — neither a wider nor a narrower find survives here"
 else
-  for spop_f in $spop_scan; do
-    echo "$spop_enum" | grep -Fqx "$spop_f" ||
+  while IFS= read -r spop_f; do
+    [ -n "$spop_f" ] || continue
+    if ! echo "$spop_enum" | grep -Fqx "$spop_f"; then
+      spop_diagnosed=1
       fail "population coupling: scan_features graded '${spop_f}', which enumerate_scripts never listed — the two have diverged (a WIDER find inside the scan), so the enumeration assertions above are true about a population that is no longer the one being graded"
-  done
-  for spop_f in $spop_enum; do
-    echo "$spop_scan" | grep -Fqx "$spop_f" ||
+    fi
+  done <<EOF
+$spop_scan
+EOF
+  while IFS= read -r spop_f; do
+    [ -n "$spop_f" ] || continue
+    if ! echo "$spop_scan" | grep -Fqx "$spop_f"; then
+      spop_diagnosed=1
       fail "population coupling: enumerate_scripts listed '${spop_f}' and scan_features did not grade it, though it uses a bash 4+ feature — the scan's population is NARROWER (a divergent find), so a file can be proven enumerated and still never be looked at: the N5 defect through the one door the enumeration check cannot see"
-  done
+    fi
+  done <<EOF
+$spop_enum
+EOF
+  if [ "$spop_diagnosed" -eq 0 ]; then
+    fail "population coupling: the enumerated and graded populations DIFFER, but every path in each appears in the other — a difference in multiplicity or in exact text (a duplicate, trailing whitespace) that the per-file diagnosis cannot name. Reported rather than passed over: this branch must never return without a verdict. enumerated: $(echo "$spop_enum" | tr '\n' ' '); graded: $(echo "$spop_scan" | tr '\n' ' ')"
+  fi
 fi
 
 for clean in "${MUST_BE_CLEAN[@]}"; do
