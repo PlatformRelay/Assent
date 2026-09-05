@@ -139,6 +139,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(backlog): close SONAR-SHELL — 52 of its 54 findings were already gone (D-171)
 - :memo: docs(backlog): track the D-154 guard-idiom S7688 residual as SONAR-SHELL-R01
 - :memo: docs(decisions): correct SONAR-SHELL to 54 of 54 and withdraw two overstated figures (D-171)
+- :memo: docs(decisions): repoint D-166 at the shifted E11 backlog lines (:594->:602, :613->:621)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
