@@ -143,7 +143,9 @@ implementation of nav completeness and it cannot skew.
   `CHECK_STAGES`, when `hack/audit/exitgate_test.sh` runs, then it fails: the two lists must be
   *equal*, so neither half can move alone.
 - Test: `Taskfile.yml`, `hack/audit/exitgate_test.sh`
-- Verify: `mise exec -- task check` (22 stages)
+- Verify: `mise exec -- task check` (the `docs-build` stage). Deliberately no stage count or
+  ordinal: `CHECK_STAGES` is the single graded source, and every prose restatement of it in this
+  repository has gone stale (D-174).
 - Level: L1
 
 **Cost, measured rather than assumed** (2026-09-05, this worktree): the stage itself is **~1.7 s**
@@ -160,8 +162,8 @@ exactly this task, so the `task check` it runs there needs no new setup.
 is deleted from `check:` is `hack/audit/exitgate_test.sh`'s `CHECK_STAGES` equality assertion,
 which reaches CI **only** through the `release-exitgate` job — and that job carries
 `if: github.event_name != 'pull_request'`. So deleting the stage is invisible on a pull request:
-the RELSE-08 visibility class, unchanged by this story and not newly introduced by it (every one
-of the 21 pre-existing stages sits behind the same pin). Tracked as `DOCSNAV-R02` below.
+the RELSE-08 visibility class, unchanged by this story and not newly introduced by it (every other
+`check:` stage sits behind the same pin). Tracked as `DOCSNAV-R02` below.
 
 ---
 
