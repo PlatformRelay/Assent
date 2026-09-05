@@ -416,8 +416,8 @@ wording). Lane D.
 
 **Definition of done**: all six findings closed; smoke test green; strict docs build green.
 
-**Not in scope**: C4 diagrams (S17); CLI reference (S05); local gitignored AGENTS.md (DOC-03,
-operator-local).
+**Not in scope**: C4 diagrams (S17); CLI reference (S05); the operator-local AGENTS.md (DOC-03 — untracked at the time,
+not gitignored as that finding's disposition claimed; tracked since D-176).
 
 Requirements:
 - **REQ-AUD-S06-01** *(DOC-07 · executable truth)* — every README quick-start command runs green against the built binary. Test: `hack/docs/readme_smoke_test.sh` (new); Verify: `bash hack/docs/readme_smoke_test.sh`; Level: L1
@@ -991,7 +991,7 @@ it does **not** mean "all known fail-opens are closed" and it is **not** a relea
 | SEC-02 | P3 | Accepted | D-132 | check-gap compensated by the four required CI contexts |
 | SEC-07 | P3 | Accepted | D-132 | in-place asset replacement; patch-tag runbook line landed in AUD-S06 |
 | TEST-04 | P3 | Accepted | D-132 | `cmd/assent` outside the D-010 denominator; compensated by binary dogfood gates |
-| DOC-03 | P3 | Accepted | D-132 | globally-gitignored operator-local `AGENTS.md`; not in the tree |
+| DOC-03 | P3 | Accepted | D-176 | "globally-gitignored" was false (never ignored, only untracked); `AGENTS.md` is now tracked and de-staled — no freshness gate yet |
 | DOC-04 | P3 | Accepted | D-132 | planning docs out of the public nav by design |
 | A-01 | P3 | Accepted | D-132 | glob recompile; no hot-path evidence (E3) |
 
