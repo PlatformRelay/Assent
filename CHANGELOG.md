@@ -161,6 +161,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(agents): track AGENTS.md; withdraw DOC-03's false premise
 - :memo: docs(decisions): drop the drifting occurrence count from D-176
 - :memo: docs(decisions): replace D-176's unfalsifiable clause with dates
+- :memo: docs(decisions): put the recurrence record in D-176, not an ordinal
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
