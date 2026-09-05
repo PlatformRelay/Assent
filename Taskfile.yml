@@ -139,6 +139,20 @@ tasks:
       # `deps:` entry) — go-task runs deps in parallel and readme_smoke_test.sh builds
       # a binary while `fmt` rewrites the tree.
       - task: docs-gates
+      # DOCSNAV-S02 / D-174 (REQ-DOCSNAV-S02-01): the nav-completeness gate. D-170 armed
+      # it -- `mkdocs.yml` sets `validation.omitted_files: warn` and `--strict` escalates
+      # that to an error -- but only in `.github/workflows/docs.yaml`, so a `docs/**.md`
+      # page in neither `nav:` nor `not_in_nav:` passed `task check` and reddened main on
+      # push, taking the Pages deploy with it. This runs the SAME `mkdocs build --strict`
+      # against the SAME `mkdocs.yml` as the CI `Build site` step: one implementation of
+      # nav completeness, so local and CI cannot skew. Placed with docs-gates, after the
+      # tree is otherwise settled (`fmt` rewrites files this reads). The one `check:`
+      # stage that is not offline on a cold machine: `docs-install` fetches the pinned,
+      # hash-checked docs toolchain, cached thereafter by go-task's sources:/generates:
+      # (measured 2026-09-05: ~1.7s for the build itself). `release-exitgate` in
+      # verify.yaml already installs Python and uv for this task, so the `task check` the
+      # AUD-S18 gate runs there needs no new setup.
+      - task: docs-build
       # AUD-S07 / D-123: `task lint` proves only the CLEAN depguard polarity. Without
       # this, deleting `- depguard` from .golangci.yml passes every wired gate.
       - task: lint-depguard-test
