@@ -168,6 +168,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :memo: docs(backlog): file AUD-DISPO-OWNER — the disposition gate resolves the wrong property
 - :memo: docs(decisions): record what the first scan actually produced
 - :memo: docs(decisions): re-measure D-177's scan paragraph at the analysed head
+- :memo: docs(decisions): correct D-177's new-code mechanism (review T4/T5/T6)
 
 ### Features
 - :sparkles: feat(audit): measure REL-03/REL-07 by real mutation run, not by name
