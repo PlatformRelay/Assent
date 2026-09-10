@@ -123,8 +123,10 @@ if grep -nE '^## Unreleased$' "$ROOT/CHANGELOG.md" >"$WORK/committed.unreleased"
   fail "CHANGELOG.md carries an '## Unreleased' section (line $(cut -d: -f1 "$WORK/committed.unreleased")) — REQ-AUD-S02-01 as amended by D-180: the committed file holds released versions only; run 'task changelog-write' (it renders released-only) and commit"
 fi
 # ...and its newest section is the newest tag reachable from HEAD, i.e. the
-# post-tag stamp has happened. (verify-changelog.sh would red on this too; the
-# assertion here names the cause instead of printing a diff.)
+# post-tag stamp has happened. (verify-changelog.sh reds on this too once any
+# commit lands on the tag; on the tagged commit itself it deliberately stays
+# green — D-181, so CI re-runs on the tagged SHA cannot lock the release — and
+# this local-only assertion is then the reminder to stamp.)
 latest_tag="$(git -C "$ROOT" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
 [[ -n "$latest_tag" ]] || fail "no v[0-9]* tag is reachable from HEAD — a shallow or tagless checkout; the released-only assertions below need the tags"
 first_section="$(grep -m1 -E '^## \[' "$ROOT/CHANGELOG.md" || true)"
@@ -1076,9 +1078,14 @@ echo "OK: deleting the exemption reds the gate on real history, naming $LEGACY_A
 #       for; its mutant (the pre-D-180 render) goes RED on the same commits.
 #   10b RED on a hand edit, and RED on a cliff.toml change that re-renders
 #       released history.
-#   10c RED on a pushed tag without its stamp commit; the Release body is right
-#       at that very moment (it reads tags); the stamp commit adds the section
-#       and is green with no amend; the next ordinary commit stays green.
+#   10c a pushed tag without its stamp commit: GREEN only while the tag is HEAD
+#       itself and its section is the only difference (D-181 — a verify re-run
+#       on the tagged SHA must not lock the tag out of REQ-AUD-S03-01); RED on a
+#       hand edit or a history re-render at that same tagged HEAD, RED once any
+#       commit lands on the unstamped tag, RED for an older unstamped tag behind
+#       a newer tagged HEAD. The Release body is right at that very moment (it
+#       reads tags); the stamp commit adds the section and is green with no
+#       amend; the next ordinary commit stays green.
 #   10d the pre-release detectors (§8's `### Other` / fileable-type check) read
 #       the WITH-unreleased render: a malformed unreleased subject is flagged
 #       there, is invisible in the committed form (the mutation), and stays
@@ -1225,10 +1232,47 @@ echo "OK: an exported ASSENT_CHANGELOG_RELEASED_ONLY=1 does not blind render_ful
 dverify malformed || { cat "$WORK/dv.malformed" >&2; fail "drift gate RED after an unreleased malformed commit — the commit-subject gate and §8 catch it; the drift gate must not"; }
 echo "OK: and the drift gate stays green on it — catching it is the detectors' job, not the drift gate's"
 
-echo "== 10c. a pushed tag without its stamp commit is RED; the stamp commit adds the section =="
+echo "== 10c. an unstamped tag: tolerated only AS HEAD and only for its own section (D-181); the stamp commit adds the section =="
 dgit tag v99.0.0
-expect_red tag-unstamped '## \[99\.0\.0\]' "a new release tag must red the gate until its section is stamped into CHANGELOG.md"
-echo "OK: a tag without its stamp commit reds the gate, naming the missing [99.0.0] section"
+# Positive control: the plain released-only render of this state DOES differ
+# from the committed file by the [99.0.0] section — without it, the green below
+# could just mean "the tag renders nothing".
+GIT_CLIFF_BIN="$CLIFF" bash "$DSB/hack/release/render-changelog.sh" "$WORK/dsb.tagged.md" 2>/dev/null
+grep -qE '^## \[99\.0\.0\] - ' "$WORK/dsb.tagged.md" \
+  || fail "positive control: the released-only render of the tagged sandbox has no [99.0.0] section — the rows below would prove nothing"
+cmp -s "$DSB/CHANGELOG.md" "$WORK/dsb.tagged.md" \
+  && fail "positive control: the committed CHANGELOG.md already equals the tagged render — the tag is not actually unstamped"
+dverify tag-at-head || { cat "$WORK/dv.tag-at-head" >&2; fail "drift gate RED on the tagged-but-unstamped commit itself — every verify run that checks out the tagged SHA after the tag exists (a re-run, the weekly schedule) would red and lock the tag out of release.yaml's verify-green gate (REQ-AUD-S03-01, D-181)"; }
+grep -qF 'tolerated (D-181)' "$WORK/dv.tag-at-head" \
+  || { cat "$WORK/dv.tag-at-head" >&2; fail "drift gate green on the tagged HEAD but not through the D-181 allowance — it must say so, and name the stamp commit to land"; }
+grep -qF "stamp the v99.0.0 section after tagging" "$WORK/dv.tag-at-head" \
+  || { cat "$WORK/dv.tag-at-head" >&2; fail "the D-181 message does not name the stamp commit for v99.0.0"; }
+GITHUB_ACTIONS=true dverify tag-at-head-ci || { cat "$WORK/dv.tag-at-head-ci" >&2; fail "drift gate RED on the tagged HEAD under GITHUB_ACTIONS"; }
+grep -qE '^::warning title=CHANGELOG\.md not stamped::' "$WORK/dv.tag-at-head-ci" \
+  || { cat "$WORK/dv.tag-at-head-ci" >&2; fail "under GITHUB_ACTIONS the D-181 allowance does not raise a ::warning:: annotation — a tolerated unstamped tag would pass CI silently"; }
+echo "OK: the tagged-but-unstamped HEAD is GREEN through the D-181 allowance, naming the stamp to land (and warning in CI)"
+
+# The allowance must not widen into "anything goes on a tagged HEAD".
+printf '\n- a hand-written line\n' >>"$DSB/CHANGELOG.md"
+expect_red tagged-hand-edit '- a hand-written line' "a hand edit on a tagged-but-unstamped HEAD is still drift — the D-181 allowance covers the tag's own missing section and nothing else"
+cp "$WORK/dsb.changelog.orig" "$DSB/CHANGELOG.md"
+sed 's/group = "Fixes"/group = "Bug fixes"/g' "$WORK/dsb.cliff.orig" >"$DSB/cliff.toml"
+expect_red tagged-cliff-regroup '### Bug fixes' "a cliff.toml change that re-renders released history is still drift on a tagged HEAD"
+cp "$WORK/dsb.cliff.orig" "$DSB/cliff.toml"
+dgit diff --quiet || fail "the drift sandbox is not clean after the tagged-HEAD mutations"
+echo "OK: on the same tagged HEAD a hand edit and a history re-render are still RED"
+
+printf 't\n' >>"$DSB/sandbox-ordinary.txt"
+dgit add -A && dgit commit -q -m ':sparkles: feat(sandbox): an ordinary commit on top of the unstamped tag'
+expect_red tag-unstamped '## \[99\.0\.0\]' "once anything lands on an unstamped tag the gate must red, naming the missing section — otherwise the stamp can be forgotten for good"
+echo "OK: one commit on top of the unstamped tag reds the gate, naming the missing [99.0.0] section"
+dgit tag v99.0.1
+expect_red older-tag-unstamped '## \[99\.0\.0\]' "the allowance covers the tags ON HEAD only; an older unstamped tag behind a newer tagged HEAD must stay red"
+echo "OK: tagging that commit too does not excuse the older v99.0.0 — the allowance is HEAD's tags only"
+dgit tag -d v99.0.1 >/dev/null
+dgit reset -q --hard HEAD~1
+[[ "$(dgit tag --points-at HEAD)" == "v99.0.0" ]] || fail "the drift sandbox HEAD is not back on v99.0.0 after undoing the rows above"
+dverify tag-at-head-again || { cat "$WORK/dv.tag-at-head-again" >&2; fail "drift gate not green back on the tagged HEAD — the rows below would start from a red state"; }
 # The Release body at this moment — rendered with release.yaml's own args — is
 # already right: it reads the tag, not CHANGELOG.md (which lacks the section).
 render_full --config "$DSB/cliff.toml" --repository "$DSB" "${cliff_argv[@]}" >"$WORK/dsb.release-body.md" 2>/dev/null \
@@ -1256,4 +1300,4 @@ dgit add -A && dgit commit -q -m ':sparkles: feat(sandbox): the first ordinary c
 dverify after-release || { cat "$WORK/dv.after-release" >&2; fail "drift gate RED on the first ordinary commit after a stamped release"; }
 echo "OK: the next ordinary commit after the release stays green"
 
-echo "PASS: changelog drift gate regenerated, wired into task check + verify.yaml, and proven at both polarities (REQ-AUD-S02-01/02); release body carries the compatibility notes and no merge subject (D-136); every fileable subject reaches its real group (REL-14 / D-137) behind any prefix shape, a literal-emoji commit subject is rejected by a gate rather than by a human (REDMAIN-N1/N2 / D-168); and CHANGELOG.md holds released versions only, so the drift gate reds on a hand edit, a history-re-rendering cliff.toml change or an unstamped tag, and never on an ordinary commit (D-180)"
+echo "PASS: changelog drift gate regenerated, wired into task check + verify.yaml, and proven at both polarities (REQ-AUD-S02-01/02); release body carries the compatibility notes and no merge subject (D-136); every fileable subject reaches its real group (REL-14 / D-137) behind any prefix shape, a literal-emoji commit subject is rejected by a gate rather than by a human (REDMAIN-N1/N2 / D-168); and CHANGELOG.md holds released versions only, so the drift gate reds on a hand edit, a history-re-rendering cliff.toml change or an unstamped tag with anything on top of it, and never on an ordinary commit (D-180) nor on the tagged commit itself before its stamp (D-181)"
