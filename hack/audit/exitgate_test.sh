@@ -164,6 +164,10 @@ CHECK_STAGES=(
   # bash 3.2 after dying at its `declare -A`, so `task check` was locally green
   # while certifying almost nothing, and no CI lane can see that (ubuntu is bash 5).
   lint-bash-version-guard-test
+  # LOCALE-F01 (D-179): the collation-pin gate. Added in the same commit as its
+  # `check:` line — `task check` was red on a clean main under en_US.UTF-8 and
+  # green on CI's C.UTF-8, so its verdict depended on the machine running it.
+  lint-locale-pin-test
   dogfood-wiring-test
   ci-audit-test
   # AUD2-S05 (REQ-AUD2-S05-03): the P5-AUD2 exit gate — the four 2026-08-18
@@ -203,6 +207,7 @@ STAGE_BODY_PINS=(
   'lint-workflow-pins-test|bash hack/lint/workflow_pins_test.sh|a wired stage with a gutted body is the same defect one level down'
   'ci-audit-test|bash hack/release/ci_audit_test.sh|a wired stage with a gutted body is the same defect one level down'
   'lint-bash-version-guard-test|bash hack/lint/bash_version_guard_test.sh|a wired stage with a gutted body is the same defect one level down (BASH32-F01)'
+  'lint-locale-pin-test|bash hack/lint/locale_pin_test.sh|a wired stage with a gutted body is the same defect one level down (LOCALE-F01 / D-179)'
   # ORPHAN (D-159). Pinned per MODE, not by the bare script path, and that is the
   # whole point: `verify_test.sh` with no argument runs mode `all`, which calls
   # `task release-snapshot` (network `go install`, a `go mod tidy` before-hook
@@ -917,7 +922,7 @@ extract_determinism_tests() { # <taskfile> -> one name per line
     tr '|' '\n' |
     sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' |
     grep -E '^Test[A-Za-z0-9_]+$' |
-    sort -u
+    LC_ALL=C sort -u
 }
 
 check_determinism_transcript() { # <transcript> <names-file>
@@ -1000,13 +1005,13 @@ check_schema_extensions() { # <schemas-dir>
       n = $0
       sub(/.*\//, "", n)
       if (n ~ /\./) { sub(/.*\./, "", n); print n } else { print "(none)" }
-    }' | sort -u >"$exts"
+    }' | LC_ALL=C sort -u >"$exts"
   if [[ ! -s "$exts" ]]; then
     echo "  ARCH-03: no files found under $dir — the extension pin would be vacuous" >&2
     return 1
   fi
   local want
-  want="$(printf '%s\n' $SCHEMA_EXTENSIONS | sort -u)"
+  want="$(printf '%s\n' $SCHEMA_EXTENSIONS | LC_ALL=C sort -u)"
   local got
   got="$(cat "$exts")"
   if [[ "$want" != "$got" ]]; then
@@ -1181,11 +1186,11 @@ check_disposition_table() { # <spec> <backlog> <decisions>
   done
 
   local known="$WORK/disposition.known"
-  printf '%s\n' "${AUDIT_FINDINGS[@]}" | sort >"$known"
+  printf '%s\n' "${AUDIT_FINDINGS[@]}" | LC_ALL=C sort >"$known"
   local seen="$WORK/disposition.seen"
-  cut -d'|' -f1 "$rows" | sort -u >"$seen"
+  cut -d'|' -f1 "$rows" | LC_ALL=C sort -u >"$seen"
   local extra="$WORK/disposition.extra"
-  comm -13 "$known" "$seen" >"$extra" || true
+  LC_ALL=C comm -13 "$known" "$seen" >"$extra" || true
   if [[ -s "$extra" ]]; then
     echo "  REQ-AUD-S18-02: Appendix B carries row(s) for ID(s) that are not 2026-08-06 audit findings — the table and the gate's canonical list disagree, so one of them is wrong:" >&2
     sed 's/^/    /' "$extra" >&2
@@ -1212,7 +1217,7 @@ check_disposition_table() { # <spec> <backlog> <decisions>
         rc=1
       }
       local reqs
-      reqs="$(printf '%s\n' "$rev" | grep -Eo 'REQ-AUD-S[0-9]+-[0-9]+' | sort -u || true)"
+      reqs="$(printf '%s\n' "$rev" | grep -Eo 'REQ-AUD-S[0-9]+-[0-9]+' | LC_ALL=C sort -u || true)"
       if [[ -z "$reqs" ]]; then
         echo "  $rid: disposition Done but the evidence cell names no REQ-AUD-Snn-nn requirement — 'Done' with no evidence is an assertion, not a disposition" >&2
         rc=1
@@ -1306,7 +1311,7 @@ check_post_audit_blockers() { # <spec> <open-questions>
 
   local line ids
   while IFS= read -r line; do
-    ids="$(printf '%s\n' "$line" | grep -Eo 'OQ-[0-9]+' | sort -u || true)"
+    ids="$(printf '%s\n' "$line" | grep -Eo 'OQ-[0-9]+' | LC_ALL=C sort -u || true)"
     if [[ -z "$ids" ]]; then
       echo "  AUD-S18: a Post-audit release blocker row cites no OQ-<n>, so it resolves to nothing: $line" >&2
       rc=1

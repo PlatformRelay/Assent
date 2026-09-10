@@ -177,6 +177,13 @@ tasks:
       # survived; the gate is cheap and offline, and its behavioural control runs
       # only where a bash 3.2 exists and says so loudly when it skips.
       - task: lint-bash-version-guard-test
+      # LOCALE-F01 / D-179: every sort/comm/join/uniq in hack/** runs LC_ALL=C.
+      # Without it, `task check` was RED on a clean main for a developer with
+      # LANG=en_US.UTF-8 (uutils `sort` collated by locale, `comm` checked bytes)
+      # and green on CI's C.UTF-8 — a gate whose verdict depended on who ran it.
+      # Cheap and offline; its behavioural control skips loudly without a UTF-8
+      # locale locally and FAILS on CI rather than skip.
+      - task: lint-locale-pin-test
       # EX-S08 (REQ-EX-S08-03): the dogfood-examples gate's own guard. Without
       # this, deleting `- task: dogfood-examples` from check: above passes
       # every wired gate — the same manual-gate defect D-124 closed elsewhere.
@@ -211,6 +218,11 @@ tasks:
     desc: "BASH32-F01 gate: every hack/** script using a bash 4+ feature declares a sufficient bash version floor (D-154)"
     cmds:
       - bash hack/lint/bash_version_guard_test.sh
+
+  lint-locale-pin-test:
+    desc: "LOCALE-F01 gate: every sort/comm/join/uniq in hack/**/*.sh is LC_ALL=C-pinned, and the unpinned pipeline misbehaves under a UTF-8 locale (D-179)"
+    cmds:
+      - bash hack/lint/locale_pin_test.sh
 
   lint-depguard-test:
     desc: "AUD-S07 gate: adversarial proof the D-123 depguard boundary rules fire (REQ-AUD-S07-01)"

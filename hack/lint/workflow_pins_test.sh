@@ -81,7 +81,7 @@ fail() {
 WORKFLOW_FILES=()
 while IFS= read -r f; do
   WORKFLOW_FILES+=("$f")
-done < <(find "$WORKFLOWS" -type f \( -name '*.yml' -o -name '*.yaml' \) | sort)
+done < <(find "$WORKFLOWS" -type f \( -name '*.yml' -o -name '*.yaml' \) | LC_ALL=C sort)
 
 ((${#WORKFLOW_FILES[@]} >= 8)) ||
   fail "found only ${#WORKFLOW_FILES[@]} workflow files under $WORKFLOWS — the inventory glob stopped matching, so every check below would pass vacuously"

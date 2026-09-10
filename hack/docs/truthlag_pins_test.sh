@@ -284,8 +284,10 @@ wt_case_count="$(wc -l < "$WT_CASES" | tr -d ' ')"
 if [[ "$wt_case_count" -eq 0 ]]; then
   fail "REQ-EX-S09-01: $WT has no 'PASS <case> (<decision>)' console lines to pin — vacuous"
 else
-  missing_cases="$(comm -23 "$WT_CASES" "$REAL_CASES")"
-  extra_cases="$(comm -13 "$WT_CASES" "$REAL_CASES")"
+  # comm is pinned like the sorts above (D-179): an unpinned comm checks the
+  # C-ordered files against the caller's collation, which is a different order.
+  missing_cases="$(LC_ALL=C comm -23 "$WT_CASES" "$REAL_CASES")"
+  extra_cases="$(LC_ALL=C comm -13 "$WT_CASES" "$REAL_CASES")"
   if [[ -n "$missing_cases" ]]; then
     fail "REQ-EX-S09-01: $WT shows case/decision pair(s) absent from real 'assent test' output (invented case, or a decision that doesn't match the real run):"
     printf '      %s\n' "$missing_cases" >&2

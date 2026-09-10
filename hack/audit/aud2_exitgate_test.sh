@@ -574,7 +574,7 @@ drop_unused_imports() {
   for ((i = 0; i < 12; i++)); do
     out="$WORK/imports.$$.$i"
     (cd "$tree" && go build "$pkg" && go vet "$pkg") >"$out" 2>&1 && return 0
-    unused="$(sed -nE 's/.*"([^"]+)" imported and not used.*/\1/p' "$out" | sort -u)"
+    unused="$(sed -nE 's/.*"([^"]+)" imported and not used.*/\1/p' "$out" | LC_ALL=C sort -u)"
     [[ -n "$unused" ]] || return 0
     while IFS= read -r imp; do
       [[ -n "$imp" ]] || continue
@@ -1128,11 +1128,11 @@ check_notfound_discrimination() { # <provider_host.go>
 # ============================================================================
 
 extract_issuer() {
-  sed -nE "s/.*--certificate-oidc-issuer[[:space:]]+['\"]?([^'\"[:space:]]+)['\"]?.*/\1/p" "$1" | sort -u
+  sed -nE "s/.*--certificate-oidc-issuer[[:space:]]+['\"]?([^'\"[:space:]]+)['\"]?.*/\1/p" "$1" | LC_ALL=C sort -u
 }
 
 extract_identity() {
-  sed -nE "s/.*--certificate-identity-regexp[[:space:]]+'([^']*)'.*/\1/p" "$1" | sort -u
+  sed -nE "s/.*--certificate-identity-regexp[[:space:]]+'([^']*)'.*/\1/p" "$1" | LC_ALL=C sort -u
 }
 
 # hack/install.sh ran `cosign verify-blob --bundle` with NO identity/issuer
