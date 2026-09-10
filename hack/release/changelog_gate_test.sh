@@ -113,14 +113,14 @@ echo "OK: verify: job extracted ($(wc -l <"$WORK/verify.control" | tr -d ' ') li
 
 # --------------------------------------------- 1. REQ-AUD-S02-01 (content) --
 
-echo "== 1. REQ-AUD-S02-01: CHANGELOG.md carries the released v0.1.0 section =="
+echo "== 1. REQ-AUD-S02-01 (amended by D-180): released v0.1.0 section present, NO Unreleased section, newest tag stamped =="
 grep -qE '^## \[0\.1\.0\] - 2026-08-05$' "$ROOT/CHANGELOG.md" \
   || fail "CHANGELOG.md has no '## [0.1.0] - 2026-08-05' section — run 'task changelog-write' and commit (REQ-AUD-S02-01)"
 # D-180: the committed file holds RELEASED versions only. An `## Unreleased`
 # heading in it means the preview form (a bare `git-cliff -o`) was committed —
 # which is exactly the shape that made every ordinary commit stale it.
 if grep -nE '^## Unreleased$' "$ROOT/CHANGELOG.md" >"$WORK/committed.unreleased"; then
-  fail "CHANGELOG.md carries an '## Unreleased' section (line $(cut -d: -f1 "$WORK/committed.unreleased")) — since D-180 the committed file holds released versions only; run 'task changelog-write' (it renders released-only) and commit"
+  fail "CHANGELOG.md carries an '## Unreleased' section (line $(cut -d: -f1 "$WORK/committed.unreleased")) — REQ-AUD-S02-01 as amended by D-180: the committed file holds released versions only; run 'task changelog-write' (it renders released-only) and commit"
 fi
 # ...and its newest section is the newest tag reachable from HEAD, i.e. the
 # post-tag stamp has happened. (verify-changelog.sh would red on this too; the
@@ -129,7 +129,7 @@ latest_tag="$(git -C "$ROOT" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev
 [[ -n "$latest_tag" ]] || fail "no v[0-9]* tag is reachable from HEAD — a shallow or tagless checkout; the released-only assertions below need the tags"
 first_section="$(grep -m1 -E '^## \[' "$ROOT/CHANGELOG.md" || true)"
 [[ "$first_section" == "## [${latest_tag#v}] - "* ]] \
-  || fail "CHANGELOG.md's newest section is '$first_section' but the newest tag is $latest_tag — the post-tag stamp commit is missing: run 'task changelog-write' and commit it as ':memo: chore(release): stamp the $latest_tag section after tagging' (D-180)"
+  || fail "CHANGELOG.md's newest section is '$first_section' but the newest tag is $latest_tag — the post-tag stamp commit is missing: run 'task changelog-write' and commit it as ':memo: chore(release): stamp the $latest_tag section after tagging' (REQ-AUD-S02-01 as amended by D-180)"
 echo "OK: [0.1.0] present, no Unreleased section, newest section is the newest tag ($latest_tag)"
 
 # The D-120 record-consumer warning is generated from cliff.toml's header, so a
@@ -187,8 +187,16 @@ if grep -qE '^[[:space:]]+- .*(GIT_CLIFF_BIN|bin/git-cliff|git-cliff )' "$WORK/d
 fi
 grep -qF 'bash hack/release/render-changelog.sh' "$ROOT/hack/release/verify-changelog.sh" \
   || fail "verify-changelog.sh does not render through hack/release/render-changelog.sh — the checker and the writer can disagree (D-180)"
-grep -qF 'ASSENT_CHANGELOG_RELEASED_ONLY=1' "$ROOT/hack/release/render-changelog.sh" \
-  || fail "render-changelog.sh no longer sets ASSENT_CHANGELOG_RELEASED_ONLY=1 — it would commit the Unreleased section again (D-180)"
+# render_sets_switch <file> — does <file> RUN git-cliff with the switch set? Anchored
+# on the whole invocation line, not on the token: render-changelog.sh's header
+# comment also names `ASSENT_CHANGELOG_RELEASED_ONLY=1`, so a bare-token grep
+# stayed green with the real assignment deleted (review finding F4). §2b proves
+# the anchor by deleting exactly that line.
+render_sets_switch() {
+  grep -qE '^ASSENT_CHANGELOG_RELEASED_ONLY=1 "\$\{CLIFF\}" --config ' "$1"
+}
+render_sets_switch "$ROOT/hack/release/render-changelog.sh" \
+  || fail "render-changelog.sh no longer RUNS git-cliff with ASSENT_CHANGELOG_RELEASED_ONLY=1 — it would commit the Unreleased section again (D-180)"
 extract_block "$TASKFILE" changelog >"$WORK/def.changelog"
 grep -qF -- '--unreleased' "$WORK/def.changelog" \
   || fail "the changelog preview task no longer renders --unreleased — the only place the unreleased entries are visible before a release (D-180)"
@@ -203,6 +211,22 @@ grep -q 'hack/lint/depguard_test.sh' "$WORK/def.lint-depguard-test" \
 echo "OK: each wired task still invokes its script"
 
 echo "== 2b. the wiring assertion itself can fail (mutation) =="
+# F4: delete the ONE line that runs git-cliff with the switch; the header comment
+# naming the token stays. The assertion must go red on that file.
+mutant_render="$WORK/render-changelog.no-switch.sh"
+grep -vE '^ASSENT_CHANGELOG_RELEASED_ONLY=1 ' "$ROOT/hack/release/render-changelog.sh" >"$mutant_render"
+[[ "$(wc -l <"$mutant_render")" -eq $(($(wc -l <"$ROOT/hack/release/render-changelog.sh") - 1)) ]] \
+  || fail "mutation did not land: exactly one line (the switched git-cliff invocation) should have been removed from render-changelog.sh"
+grep -qF 'ASSENT_CHANGELOG_RELEASED_ONLY=1' "$mutant_render" \
+  || fail "mutation control is weaker than intended: the mutant no longer mentions the token anywhere, so it does not reproduce the comment-only shape F4 found"
+if render_sets_switch "$mutant_render"; then
+  fail "render_sets_switch reports the switch set in a render-changelog.sh whose invocation line is deleted — the assertion is satisfied by the comment (F4)"
+fi
+sed 's/^ASSENT_CHANGELOG_RELEASED_ONLY=1 /ASSENT_CHANGELOG_RELEASED_ONLY=0 /' "$ROOT/hack/release/render-changelog.sh" >"$mutant_render"
+if render_sets_switch "$mutant_render"; then
+  fail "render_sets_switch reports the switch set in a render-changelog.sh that runs git-cliff with ASSENT_CHANGELOG_RELEASED_ONLY=0"
+fi
+echo "OK: deleting the switched invocation (comment left in place) or setting it to 0 turns the render-changelog.sh assertion red"
 for t in "${WIRED_TASKS[@]}"; do
   mutant="$WORK/Taskfile.no-$t.yml"
   grep -vE "^[[:space:]]+- task: $t\$" "$TASKFILE" >"$mutant"

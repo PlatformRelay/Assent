@@ -163,7 +163,9 @@ stale commit SHAs (oss-playbook #4).
 only, grouped per existing gitmoji parsers). Add `task changelog` (preview) + `task changelog-write`
 (update `CHANGELOG.md`). Add `hack/release/verify-changelog.sh` or CI step ensuring
 `CHANGELOG.md` is fresh vs `cliff.toml` output (mkurator `changelog-sync` pattern, lightweight).
-Seed `CHANGELOG.md` with Unreleased section.
+Seed `CHANGELOG.md` with Unreleased section. *(Amended by D-180, 2026-09-10: the committed
+`CHANGELOG.md` holds released versions only; the Unreleased section is previewed by
+`task changelog` and never committed.)*
 
 **Dependencies**: E9-S02 (tag pattern aligned).
 
