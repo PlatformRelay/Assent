@@ -105,7 +105,9 @@ tasks:
       # makes this red and no lane regenerates after its commits. It reds on exactly
       # three things: a hand edit, a cliff.toml change that re-renders released
       # history, and a pushed tag whose section has not been stamped
-      # (`task changelog-write`, committed as `:memo: chore(release): stamp …`).
+      # (`task changelog-write`, committed as `:memo: chore(release): stamp …`)
+      # once anything lands on it — on the tagged commit itself it is tolerated
+      # (D-181) and release-changelog-gate-test §1 below is the reminder.
       - task: changelog-verify
       # AUD-S02: the drift gate's own guard, and the ONLY thing that reds when the
       # `- task: changelog-verify` line above is deleted. Runs after changelog-verify

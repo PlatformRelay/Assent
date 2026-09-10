@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# render-changelog.sh <output-path> — render the COMMITTED form of CHANGELOG.md.
+# render-changelog.sh <output-path> [git-cliff args…] — render the COMMITTED form
+# of CHANGELOG.md. Extra arguments go to git-cliff verbatim; the only caller
+# that passes any is verify-changelog.sh's tagged-HEAD allowance (D-181), which
+# adds `--ignore-tags` to render the form as it was before the tag.
 #
 # D-180: the committed CHANGELOG.md carries RELEASED versions only — the header
 # (with the compatibility notes), one `## [x.y.z]` section per tag, and the
@@ -24,7 +27,8 @@
 # silently blinding a detector.
 set -euo pipefail
 
-out="${1:?usage: render-changelog.sh <output-path>}"
+out="${1:?usage: render-changelog.sh <output-path> [git-cliff args...]}"
+shift
 case "$out" in
 /*) ;;
 *) out="$PWD/$out" ;;
@@ -40,4 +44,4 @@ if [[ ! -x "${CLIFF}" ]]; then
   CLIFF="${ROOT}/bin/git-cliff"
 fi
 
-ASSENT_CHANGELOG_RELEASED_ONLY=1 "${CLIFF}" --config "${CLIFF_CONFIG:-cliff.toml}" -o "${out}"
+ASSENT_CHANGELOG_RELEASED_ONLY=1 "${CLIFF}" --config "${CLIFF_CONFIG:-cliff.toml}" -o "${out}" "$@"
