@@ -60,6 +60,13 @@ jobs:
         # comment lines live INSIDE the step on purpose, as the AUD2 step
         # documents.
         run: bash hack/examples/dogfood_wiring_test.sh
+      - name: collation pins (LOCALE-F01 — D-179)
+        # Every sort/comm/join/uniq in hack/** is LC_ALL=C. Runs HERE, on
+        # pull_request, not only via `task check` in release-exitgate: the
+        # runner's C.UTF-8 hides the defect, so the text scan is what
+        # catches a new unpinned call before merge. Its behavioural half
+        # needs en_US.UTF-8 and FAILS (not skips) on CI without it.
+        run: bash hack/lint/locale_pin_test.sh
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable # go.mod stays the minimum; CI runs latest stable (govulncheck needs it)

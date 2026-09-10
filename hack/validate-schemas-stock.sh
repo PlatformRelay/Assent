@@ -121,7 +121,7 @@ report_fail() {
 }
 
 # All schema files (sorted for determinism).
-mapfile -t all_schemas < <(find "$schema_root" -name '*.schema.json' -type f | sort)
+mapfile -t all_schemas < <(find "$schema_root" -name '*.schema.json' -type f | LC_ALL=C sort)
 if [[ "${#all_schemas[@]}" -eq 0 ]]; then
   report_fail "no-schemas" "found no $schema_root/**/*.schema.json"
   echo "stock-validator check FAILED (P3-P1-3)" >&2
@@ -226,7 +226,7 @@ echo "== negative self-test (must be REJECTED) =="
 if [[ -d "$neg_root" ]]; then
   while IFS= read -r fixture; do
     validate_fixture "$fixture" reject
-  done < <(find "$neg_root" -type f \( -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) | sort)
+  done < <(find "$neg_root" -type f \( -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) | LC_ALL=C sort)
 else
   report_fail "missing-negative" "$neg_root not found — the non-vacuity self-test is mandatory"
 fi
@@ -236,7 +236,7 @@ echo "== contract fixtures (must PASS) =="
 if [[ -d "$contracts_root" ]]; then
   while IFS= read -r fixture; do
     validate_fixture "$fixture" pass
-  done < <(find "$contracts_root" -type f \( -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) | sort)
+  done < <(find "$contracts_root" -type f \( -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) | LC_ALL=C sort)
 else
   echo "note: $contracts_root not present — no contract fixtures to validate"
 fi

@@ -168,7 +168,7 @@ cosign_invocations() {
 
 # extract_issuer <file> — every distinct --certificate-oidc-issuer value.
 extract_issuer() {
-  sed -nE "s/.*--certificate-oidc-issuer[[:space:]]+['\"]?([^'\"[:space:]]+)['\"]?.*/\1/p" "$1" | sort -u
+  sed -nE "s/.*--certificate-oidc-issuer[[:space:]]+['\"]?([^'\"[:space:]]+)['\"]?.*/\1/p" "$1" | LC_ALL=C sort -u
 }
 
 # extract_identity <file> — every distinct --certificate-identity-regexp value.
@@ -182,7 +182,7 @@ extract_issuer() {
 # pin gate erodes. A bare value still extracts as nothing here, and pin_violations
 # names QUOTE STYLE as the cause instead of misdiagnosing it as a wrong value.
 extract_identity() {
-  sed -nE "s/.*--certificate-identity-regexp[[:space:]]+'([^']*)'.*/\1/p;s/.*--certificate-identity-regexp[[:space:]]+\"([^\"]*)\".*/\1/p" "$1" | sort -u
+  sed -nE "s/.*--certificate-identity-regexp[[:space:]]+'([^']*)'.*/\1/p;s/.*--certificate-identity-regexp[[:space:]]+\"([^\"]*)\".*/\1/p" "$1" | LC_ALL=C sort -u
 }
 
 # --------------------------- UC-01 / UC-02: per-OCCURRENCE grading ----------

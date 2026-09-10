@@ -292,7 +292,7 @@ enumerate_scripts() { # <root>
   local root="$1" f
   while IFS= read -r f; do
     printf '%s\n' "${f#"$root"/}"
-  done < <(find "$root/hack" -type f -name '*.sh' | sort)
+  done < <(find "$root/hack" -type f -name '*.sh' | LC_ALL=C sort)
   return 0
 }
 
@@ -643,8 +643,8 @@ printf '%s\n' '#!/usr/bin/env bash' 'declare -A five=()' >"$sroot/outside/away.s
 # diagnosis-free difference is itself a FAIL. A control that can stop asserting
 # without saying so is the defect this whole lane exists to remove; it does not
 # get an exemption for being the fix.
-spop_enum="$(enumerate_scripts "$sroot" | sort)"
-spop_scan="$(scan_features "$sroot" | cut -d'|' -f1 | sort)"
+spop_enum="$(enumerate_scripts "$sroot" | LC_ALL=C sort)"
+spop_scan="$(scan_features "$sroot" | cut -d'|' -f1 | LC_ALL=C sort)"
 spop_diagnosed=0
 if [ -z "$spop_enum" ] || [ -z "$spop_scan" ]; then
   fail "population coupling: enumerate_scripts or scan_features reported NOTHING for a root holding three feature-using scripts — the comparison below would be two empty sets trivially agreeing. enumerated: ${spop_enum:-<nothing>}; graded: ${spop_scan:-<nothing>}"

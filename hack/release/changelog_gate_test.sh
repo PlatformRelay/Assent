@@ -401,11 +401,15 @@ echo "OK: deleting the merge-skip parser puts $mutant_merges merge subject(s) ba
 # (REL-14) moves bullets between sections. The honest claim is: no bullet appears
 # that was not there before, and the only bullets that disappear are merge
 # subjects.
-grep -E '^- ' "$WORK/clean-full.md" | sort >"$WORK/clean.bullets"
-grep -E '^- ' "$WORK/mutant-full.md" | sort >"$WORK/mutant.bullets"
+# Every sort and comm below is LC_ALL=C (D-179): comm requires both inputs in
+# the order IT compares by, and under en_US.UTF-8 on uutils coreutils `sort`
+# collated by locale while `comm` checked bytes — "comm: file 1 is not in sorted
+# order" on a clean main. hack/lint/locale_pin_test.sh enforces the pin.
+grep -E '^- ' "$WORK/clean-full.md" | LC_ALL=C sort >"$WORK/clean.bullets"
+grep -E '^- ' "$WORK/mutant-full.md" | LC_ALL=C sort >"$WORK/mutant.bullets"
 [[ -s "$WORK/clean.bullets" ]] || fail "clean render has no bullets at all — the comparison below would be vacuous"
-comm -13 "$WORK/clean.bullets" "$WORK/mutant.bullets" >"$WORK/only-in-mutant"
-comm -23 "$WORK/clean.bullets" "$WORK/mutant.bullets" >"$WORK/only-in-clean"
+LC_ALL=C comm -13 "$WORK/clean.bullets" "$WORK/mutant.bullets" >"$WORK/only-in-mutant"
+LC_ALL=C comm -23 "$WORK/clean.bullets" "$WORK/mutant.bullets" >"$WORK/only-in-clean"
 [[ -s "$WORK/only-in-mutant" ]] || fail "clean and mutant renders carry the same bullets — the merge-skip parser has no effect"
 if [[ -s "$WORK/only-in-clean" ]]; then
   cat "$WORK/only-in-clean" >&2
@@ -421,11 +425,11 @@ fi
 # Keying on `git log --merges` is also STRICTLY STRONGER in the other direction:
 # an ordinary commit merely titled "Merge …" would have satisfied the old grep
 # and now fails, because it is not a merge commit.
-git -C "$ROOT" log --merges --format=%s | sort -u >"$WORK/merge-subjects"
+git -C "$ROOT" log --merges --format=%s | LC_ALL=C sort -u >"$WORK/merge-subjects"
 [[ -s "$WORK/merge-subjects" ]] \
   || fail "git log --merges lists no merge commits — the membership check below would pass vacuously"
-sed -e 's/^- //' "$WORK/only-in-mutant" | sort -u >"$WORK/only-in-mutant.subjects"
-comm -23 "$WORK/only-in-mutant.subjects" "$WORK/merge-subjects" >"$WORK/only-in-mutant.extra"
+sed -e 's/^- //' "$WORK/only-in-mutant" | LC_ALL=C sort -u >"$WORK/only-in-mutant.subjects"
+LC_ALL=C comm -23 "$WORK/only-in-mutant.subjects" "$WORK/merge-subjects" >"$WORK/only-in-mutant.extra"
 if [[ -s "$WORK/only-in-mutant.extra" ]]; then
   cat "$WORK/only-in-mutant.extra" >&2
   fail "the merge-skip parser removes bullets that are not merge commits — it is over-skipping ordinary commits"
@@ -624,7 +628,7 @@ OTHER_MAPPABLE_RE_PREFIX_REQUIRED="^- :[a-z0-9_]+: ($FILEABLE_TYPES)[(:]"
 
 group_lines "$WORK/clean-full.md" >"$WORK/clean.groups"
 [[ -s "$WORK/clean.groups" ]] || fail "group extraction produced no lines — section 8's assertions would all be vacuous"
-distinct_groups="$(cut -f1 "$WORK/clean.groups" | sort -u | wc -l | tr -d ' ')"
+distinct_groups="$(cut -f1 "$WORK/clean.groups" | LC_ALL=C sort -u | wc -l | tr -d ' ')"
 [[ "$distinct_groups" -ge 5 ]] \
   || fail "group extraction found only $distinct_groups distinct group(s) — the awk range is broken"
 anchor_hits="$(grep -cF -e "$AMBULANCE" "$WORK/clean.groups" || true)"
@@ -725,8 +729,8 @@ mutant_anchor_group="$(grep -F -e "$AMBULANCE" "$WORK/mutant.groups" | head -1 |
 echo "OK: removing the $removed REL-14 parser entries puts the hotfix back under Other"
 
 # The parsers must only RE-FILE lines, never add or drop one.
-cut -f2 "$WORK/clean.groups" | sort >"$WORK/clean.subjects"
-cut -f2 "$WORK/mutant.groups" | sort >"$WORK/mutant.subjects"
+cut -f2 "$WORK/clean.groups" | LC_ALL=C sort >"$WORK/clean.subjects"
+cut -f2 "$WORK/mutant.groups" | LC_ALL=C sort >"$WORK/mutant.subjects"
 if ! cmp -s "$WORK/clean.subjects" "$WORK/mutant.subjects"; then
   fail "the REL-14 parsers change WHICH subjects render, not just where they are filed — they must only re-group"
 fi
@@ -950,8 +954,8 @@ bash "$SUBJECT_GATE" --legacy-shas >"$WORK/legacy.actual" 2>"$WORK/legacy.actual
 # `set -u` on bash 3.2 when empty).
 ((${#LEGACY_EXPECTED[@]} > 0)) \
   || fail "LEGACY_EXPECTED is empty — this pin would accept any allowlist at all; if LEGACY_ALLOW_SHAS is genuinely empty now, delete this whole pin deliberately rather than emptying it"
-printf '%s\n' "${LEGACY_EXPECTED[@]}" | sort >"$WORK/legacy.expected.sorted"
-sort "$WORK/legacy.actual" >"$WORK/legacy.actual.sorted"
+printf '%s\n' "${LEGACY_EXPECTED[@]}" | LC_ALL=C sort >"$WORK/legacy.expected.sorted"
+LC_ALL=C sort "$WORK/legacy.actual" >"$WORK/legacy.actual.sorted"
 [[ -s "$WORK/legacy.actual.sorted" ]] \
   || fail "'--legacy-shas' printed nothing — either LEGACY_ALLOW_SHAS is empty (then delete this pin deliberately) or the mode is broken; either way the comparison below would be vacuous"
 if ! diff -u "$WORK/legacy.expected.sorted" "$WORK/legacy.actual.sorted" >"$WORK/legacy.diff"; then

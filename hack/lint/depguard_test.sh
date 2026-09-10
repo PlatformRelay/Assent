@@ -305,7 +305,7 @@ scan_gitlab_symbols() {
       while IFS=: read -r ln sym; do
         printf '%s:%s:%s\n' "$rel" "$ln" "${sym#gitlab.}"
       done
-  done < <(find "$dir" -name '*.go' | sort)
+  done < <(find "$dir" -name '*.go' | LC_ALL=C sort)
 }
 
 # gitlab_symbol_violations reads scan output on stdin, prints the not-allowed ones.
@@ -337,7 +337,7 @@ aliased_gitlab_imports() {
       while IFS= read -r hit; do
         printf '%s:%s\n' "$rel" "$hit"
       done
-  done < <(find "$dir" -name '*.go' | sort)
+  done < <(find "$dir" -name '*.go' | LC_ALL=C sort)
 }
 
 CMD_DIR="$ROOT/cmd/assent"
