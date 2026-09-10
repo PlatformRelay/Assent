@@ -80,6 +80,10 @@ repository still gets a decision, never by following the link; no release carrie
 
 ## Unreleased
 
+### Documentation
+- :memo: docs(changelog): stamp the v0.4.0 section after tagging
+## [0.4.0] - 2026-09-06
+
 ### Chores
 - build(deps): bump github/codeql-action/init from 4.37.7 to 4.37.8
 - build(deps): bump github/codeql-action/analyze from 4.37.7 to 4.37.8
