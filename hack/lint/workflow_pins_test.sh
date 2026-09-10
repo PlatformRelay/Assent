@@ -781,23 +781,83 @@ check_sonar_scan_wired() {
     rc=1
   fi
 
-  # `if:` is legitimate here (the fork-PR guard), so the VALUE is graded. It is
-  # located by normalised key name so the alternate spellings above reach it, then
-  # normalised the way the AUD gate normalises its own: CR stripped, ${{ }}
-  # unwrapped, comment tail dropped, quotes stripped, trimmed, lowercased.
-  if grep -qx 'if' "$keys"; then
-    local ifval
-    ifval="$(sonar_step_value "$block" if)"
-    if [[ "$ifval" == "?unreadable" ]]; then
-      echo "  the SonarCloud scan step's if: is a BLOCK SCALAR — its value lives on following lines, so no key-line reader can grade it; refused rather than guessed, because 'if: >-' followed by 'false' disarms the step and reads as a non-constant (T2 / D-177)" >&2
-      return 1
-    fi
-    if [[ "$ifval" == "false" || "$ifval" == "true" ]]; then
-      echo "  the SonarCloud scan step's if: normalises to the constant '$ifval' — a constant condition disarms the step while leaving it present and SUCCESS-reporting (D-177)" >&2
-      rc=1
-    fi
+  # `if:` is legitimate here (the fork-PR and Dependabot guard), so the VALUE is
+  # graded. It is located by normalised key name so the alternate spellings above
+  # reach it, then normalised the way the AUD gate normalises its own: CR
+  # stripped, ${{ }} unwrapped, comment tail dropped, quotes stripped, trimmed,
+  # lowercased.
+  #
+  # D-178: the guard is now REQUIRED, not merely tolerated. Runs triggered by
+  # dependabot[bot] receive no Actions secrets, so without the skip every
+  # Dependabot PR reds `verify` on an empty SONAR_TOKEN.
+  if ! grep -qx 'if' "$keys"; then
+    echo "  the SonarCloud scan step carries no if: — the fork-PR and Dependabot skip guard is gone, so every run without SONAR_TOKEN (fork PRs, every Dependabot PR) reds verify on a guaranteed scanner failure (D-177/D-178)" >&2
+    return 1
   fi
+  local ifval
+  ifval="$(sonar_step_value "$block" if)"
+  if [[ "$ifval" == "?unreadable" ]]; then
+    echo "  the SonarCloud scan step's if: is a BLOCK SCALAR — its value lives on following lines, so no key-line reader can grade it; refused rather than guessed, because 'if: >-' followed by 'false' disarms the step and reads as a non-constant (T2 / D-177)" >&2
+    return 1
+  fi
+  if [[ "$ifval" == "false" || "$ifval" == "true" ]]; then
+    echo "  the SonarCloud scan step's if: normalises to the constant '$ifval' — a constant condition disarms the step while leaving it present and SUCCESS-reporting (D-177)" >&2
+    rc=1
+  fi
+  sonar_if_guard_ok "$ifval" || rc=1
 
+  return "$rc"
+}
+
+# D-178: the SonarCloud step's skip guard, graded on its NORMALISED value
+# (lowercased, ${{ }} unwrapped, whitespace runs collapsed here). Three named
+# properties, each with its own finding and mutation control, then an exact pin
+# as the catch-all so an unnamed rewrite cannot slip between them.
+#
+#   (1) push and schedule are NEVER skipped. The whole condition must open with
+#       the unconditional non-PR arm, so every other clause is scoped to
+#       pull_request events. The post-merge push run is what analyses the merged
+#       code — the reason skipping PRs loses nothing.
+#   (2) Dependabot runs ARE skipped, keyed on `github.actor`. That is the
+#       identity whose privileges a run executes with, and so the one that
+#       decides whether secrets are present: a maintainer re-running a Dependabot
+#       run leaves `github.actor` as dependabot[bot] and the run stays secretless.
+#   (3) NOT `github.triggering_actor`: on that re-run it names the maintainer, so
+#       the step would un-skip into a guaranteed red on an empty SONAR_TOKEN.
+#       (`github.event.pull_request.user.login` is refused by (2) and the pin:
+#       it names the PR AUTHOR, so it would also skip a maintainer's own push to
+#       a Dependabot branch — a run that DOES carry secrets.)
+SONAR_IF_PIN="github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')"
+SONAR_IF_NONPR_ARM="github.event_name != 'pull_request' || "
+SONAR_IF_ACTOR_CLAUSE="github.actor != 'dependabot[bot]'"
+
+sonar_if_guard_ok() { # <normalised if: value>
+  local v rc=0
+  v="$(printf '%s' "$1" | tr -s '[:space:]' ' ')"
+  case "$v" in
+    "$SONAR_IF_NONPR_ARM"*) : ;;
+    *)
+      echo "  the SonarCloud scan step's if: does not OPEN with the unconditional non-PR arm \"$SONAR_IF_NONPR_ARM…\" — a clause outside the pull_request scope can skip the push-to-main run, which is the analysis of the merged code (D-178): '$v'" >&2
+      rc=1
+      ;;
+  esac
+  case "$v" in
+    *"github.triggering_actor"*)
+      echo "  the SonarCloud scan step's if: keys on github.triggering_actor — a maintainer re-running a Dependabot run becomes the triggering actor while the run keeps Dependabot's secretless privileges, so the step un-skips into a guaranteed red (D-178)" >&2
+      rc=1
+      ;;
+  esac
+  case "$v" in
+    *"$SONAR_IF_ACTOR_CLAUSE"*) : ;;
+    *)
+      echo "  the SonarCloud scan step's if: does not skip Dependabot-triggered runs by github.actor ($SONAR_IF_ACTOR_CLAUSE) — those runs get no Actions secrets, so every Dependabot PR reds verify on an empty SONAR_TOKEN (D-178)" >&2
+      rc=1
+      ;;
+  esac
+  if [[ "$v" != "$SONAR_IF_PIN" ]]; then
+    echo "  the SonarCloud scan step's if: is not the pinned skip guard — expected '$SONAR_IF_PIN', found '$v' (D-177/D-178)" >&2
+    rc=1
+  fi
   return "$rc"
 }
 
@@ -1997,6 +2057,45 @@ mutate_awk "$m/verify.yaml" \
   "coverage gate (moved)"
 expect_red check_sonar_scan_wired "$m" "the coverage gate was moved AFTER the scan step, inverting the ordering the profile depends on" \
   "runs BEFORE the coverage gate"
+
+# D-178 — the Dependabot skip guard. Each control rewrites ONLY the step's if:
+# line and pins the finding for its own named property.
+SONAR_IF_LINE_RE='^        if: github.event_name != .pull_request. '
+
+m="$(mutant sonar-step-if-no-dependabot)"
+mutate "$m/verify.yaml" \
+  "s|${SONAR_IF_LINE_RE}.*|        if: github.event_name != 'pull_request' \\|\\| github.event.pull_request.head.repo.full_name == github.repository|" \
+  "|| github.event.pull_request.head.repo.full_name == github.repository"
+expect_red check_sonar_scan_wired "$m" "the Dependabot clause was dropped — the pre-D-178 guard, which reds every Dependabot PR" \
+  "does not skip Dependabot-triggered runs by github.actor"
+
+m="$(mutant sonar-step-if-triggering-actor)"
+mutate "$m/verify.yaml" \
+  "/${SONAR_IF_LINE_RE}/s|github.actor != |github.triggering_actor != |" \
+  "github.triggering_actor != 'dependabot[bot]'"
+expect_red check_sonar_scan_wired "$m" "the guard keys on github.triggering_actor — a maintainer re-run un-skips it into a red" \
+  "keys on github.triggering_actor"
+
+m="$(mutant sonar-step-if-pr-author)"
+mutate "$m/verify.yaml" \
+  "/${SONAR_IF_LINE_RE}/s|github.actor != |github.event.pull_request.user.login != |" \
+  "github.event.pull_request.user.login != 'dependabot[bot]'"
+expect_red check_sonar_scan_wired "$m" "the guard keys on the PR author, not the run's actor" \
+  "does not skip Dependabot-triggered runs by github.actor"
+
+m="$(mutant sonar-step-if-skips-push)"
+mutate "$m/verify.yaml" \
+  "s|${SONAR_IF_LINE_RE}.*|        if: github.actor != 'dependabot[bot]' \\&\\& (github.event_name != 'pull_request' \\|\\| github.event.pull_request.head.repo.full_name == github.repository)|" \
+  "if: github.actor != 'dependabot[bot]' && ("
+expect_red check_sonar_scan_wired "$m" "the Dependabot clause was hoisted outside the pull_request scope — it can now skip a push to main" \
+  "does not OPEN with the unconditional non-PR arm"
+
+m="$(mutant sonar-step-if-deleted)"
+mutate "$m/verify.yaml" \
+  "\\|${SONAR_IF_LINE_RE}|d" \
+  "uses: SonarSource/sonarqube-scan-action@"
+expect_red check_sonar_scan_wired "$m" "the if: guard was deleted outright — every secretless run reds" \
+  "carries no if:"
 
 echo "== 7b. D-177: sonar-project.properties names the project SonarCloud holds =="
 expect_green check_sonar_properties "$ROOT" \
