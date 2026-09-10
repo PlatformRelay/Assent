@@ -125,10 +125,13 @@ unstamped tag once any other commit lands on it. Therefore:
    task changelog-verify     # ok — no amend needed
    ```
 
-Until the stamp lands, `task check` on the tagged commit is red on `release-changelog-gate-test`
-§1 ("the post-tag stamp commit is missing") — deliberately, so the stamp cannot be forgotten
-locally; `changelog-verify` alone passes there with the D-181 notice. `changelog_gate_test.sh`
-§10c pins the allowance at both polarities. Use the
+Until the stamp lands, every check on the tagged commit itself passes with a warning — not only
+`changelog-verify` but also `release-changelog-gate-test` §1 ("the post-tag stamp commit is
+missing"), because CI runs the whole of `task check` in `release-exitgate`
+(`hack/audit/exitgate_test.sh`) and a red there would lock the tag out just the same. What keeps
+the stamp from being forgotten is the other half: the first commit on top of an unstamped tag is
+red everywhere. `changelog_gate_test.sh` §10c pins the allowance at both polarities, and §10e runs
+that whole script on a tagged-but-unstamped commit (green) and with a commit on top (red). Use the
 `:memo: chore(release):` prefix: `cliff.toml` skips it, which keeps the stamp out of the NEXT
 release's notes. Since D-180 that skip rule matters only for stamp commits (and any other
 `cliff.toml`-driven regeneration); ordinary regeneration commits no longer exist.

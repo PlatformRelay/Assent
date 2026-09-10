@@ -42,8 +42,10 @@ if cmp -s CHANGELOG.md "${scratch}"; then
   exit 0
 fi
 
-# D-181 — release tags on HEAD itself (same glob as cliff.toml's tag_pattern and
-# changelog_gate_test.sh §1). Tags further back are never tolerated.
+# D-181 — release tags on HEAD itself, by the `v[0-9]*` glob changelog_gate_test.sh
+# §1 also uses. cliff.toml's tag_pattern is an unanchored regex that matches a
+# superset of these, so a HEAD tag outside the glob renders a section but is not
+# tolerated: that fails closed. Tags further back are never tolerated.
 head_tags=""
 ignore_re=""
 last_tag=""
@@ -56,11 +58,16 @@ while IFS= read -r t; do
     e="${e//"${c}"/\\${c}}"
   done
   ignore_re+="${ignore_re:+|}${e}"
-  last_tag="${t}"
+  # The stamp hint names the release tag, not a pre-release one on the same commit.
+  if [[ -z "${last_tag}" || "${t}" != *-* ]]; then
+    last_tag="${t}"
+  fi
 done < <(git tag --points-at HEAD --list 'v[0-9]*')
 if [[ -n "${head_tags}" ]]; then
-  bash hack/release/render-changelog.sh "${pretag}" --ignore-tags "^(${ignore_re})\$"
-  if cmp -s CHANGELOG.md "${pretag}"; then
+  # A failed render falls through to the diff below rather than ending the
+  # script under `set -e` with the reason unprinted.
+  if bash hack/release/render-changelog.sh "${pretag}" --ignore-tags "^(${ignore_re})\$" &&
+    cmp -s CHANGELOG.md "${pretag}"; then
     msg="HEAD is tagged ${head_tags} and CHANGELOG.md lacks only that section — tolerated (D-181); land the stamp commit next: 'task changelog-write' and commit it as ':memo: chore(release): stamp the ${last_tag} section after tagging'"
     if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
       echo "::warning title=CHANGELOG.md not stamped::${msg}"
