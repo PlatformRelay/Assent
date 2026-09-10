@@ -197,9 +197,11 @@ jobs:
       # cannot match") was measured and is FALSE — see OQ-30 for all three
       # measurements. The guard is retained without a demonstrated reason on purpose:
       # changing CI gating needs its own evidence, and it is fail-safe either way
-      # because `task check` runs this gate on every local commit and push-to-main is
-      # the backstop. Do not delete this line to "clean up a dead premise" — close
-      # OQ-30 first.
+      # because `task check` runs this gate on every local commit. D-180: CHANGELOG.md
+      # holds released versions only, so an ordinary commit (a Dependabot merge
+      # included) never reds this step; it reds on a hand edit, a cliff.toml change
+      # that re-renders history, or a pushed tag not yet stamped. Do not delete this
+      # line to "clean up a dead premise" — close OQ-30 first.
       - name: changelog drift gate (AUD-S02 — REQ-AUD-S02-02)
         if: github.event_name != 'pull_request'
         run: task changelog-verify
