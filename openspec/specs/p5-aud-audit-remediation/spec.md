@@ -222,7 +222,9 @@ gate to fire on every commit and CI run **so that** the changelog can never agai
 after a tag (it regressed once already — fixed at `49ba1ad`, drifted at HEAD).
 
 **Goal**: (1) `task changelog-write` + commit — `## [0.1.0] - 2026-08-05` section present, the 7+
-post-tag commits under `## Unreleased`; (2) add `changelog-verify` to the `check` task list in
+post-tag commits under `## Unreleased` *(amended by D-180, 2026-09-10: the committed file now
+holds released versions only — post-tag commits are shown by `task changelog`, never committed)*;
+(2) add `changelog-verify` to the `check` task list in
 `Taskfile.yml` (after `compare-exitgate-test`); (3) add a `changelog-verify` step to the `verify`
 job in `.github/workflows/verify.yaml` (uses the pinned `tools:git-cliff`, `GIT_CLIFF_VERSION`
 v2.13.1 — no new mutable install). Judgment call (b): both placements; CI-only walk-back is
@@ -236,9 +238,13 @@ contract artifact; flag in the commit body.
 **Acceptance criteria (G-W-T)**:
 - Given HEAD after this story, when `task changelog-verify` runs fresh, then it exits 0 and
   `CHANGELOG.md` contains a `## [0.1.0] - 2026-08-05` section.
-- Given a subsequent commit that does NOT regenerate the changelog, when `task check` (or the
-  verify workflow) runs, then it FAILS with the drift diff (gate proven in the failing direction —
-  demonstrate once in a scratch worktree, pin via the gate-script test).
+- ~~Given a subsequent commit that does NOT regenerate the changelog, when `task check` (or the
+  verify workflow) runs, then it FAILS with the drift diff.~~ **Amended by D-180 (2026-09-10):**
+  given an ordinary subsequent commit with no regeneration, the gate stays GREEN (the committed
+  file is released-only, so ordinary commits never drift it); given a hand edit of `CHANGELOG.md`,
+  a `cliff.toml` change that re-renders released history, or a pushed release tag whose section
+  has not been stamped, `task check` (or the verify workflow) FAILS with the drift diff. Both
+  polarities pinned by `hack/release/changelog_gate_test.sh` §5 and §10.
 - Given `cliff.toml` output identical to `CHANGELOG.md`, when the gate runs, then it passes with no
   network access beyond the pinned git-cliff download.
 
@@ -248,7 +254,7 @@ verify.yaml step added; both-polarity proof recorded.
 **Not in scope**: release.yaml (S03); raising the coverage floor; changelog content policy changes.
 
 Requirements:
-- **REQ-AUD-S02-01** — `CHANGELOG.md` regenerated: `[0.1.0]` section present, post-tag commits under Unreleased; `task changelog-verify` green. Test: `hack/release/verify-changelog.sh` (existing); Verify: `task changelog-verify`; Level: L1
+- **REQ-AUD-S02-01** — `CHANGELOG.md` regenerated: `[0.1.0]` section present; `task changelog-verify` green. *Amended by D-180 (2026-09-10):* ~~post-tag commits under Unreleased~~ — the committed file carries NO `## Unreleased` section (released versions only) and its newest section is the newest reachable release tag; ordinary commits never make it drift. Test: `hack/release/verify-changelog.sh` (existing); Verify: `task changelog-verify`; Level: L1
 - **REQ-AUD-S02-02** *(gate wiring · both polarities)* — `task check` and the verify workflow each run `changelog-verify`; an injected stale changelog fails them. Test: `hack/release/changelog_gate_test.sh` (new — asserts wiring presence + failing polarity in a temp copy); Verify: `bash hack/release/changelog_gate_test.sh`; Level: L1
 
 ## AUD-S03 — RELSE-05: release job asserts verify-green on the tag SHA before building [autonomous · release-sensitive]

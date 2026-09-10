@@ -100,18 +100,34 @@ fileable-type detector, the merge-skip check) inspect the *with-unreleased* rend
 malformed subject is still caught before it reaches a Release page;
 `changelog_gate_test.sh` §10 proves all of the above at both polarities.
 
-**Cutting a release — the changelog step.** Tag and push as usual; the GitHub Release body is
-rendered from the tag by `release.yaml` (`git-cliff --latest`), not from `CHANGELOG.md`, so it is
-right immediately. Then, on `main`, **stamp the section**:
+**Cutting a release — the changelog step. The ORDER is load-bearing.** Between pushing the tag
+and landing the stamp, any `verify` run that checks out the tagged commit reds on
+`changelog-verify` (it fetches tags, so the released-only render already has the new section and
+the committed file does not). `release.yaml`'s verify-green tag gate (REQ-AUD-S03-01) requires
+EVERY `verify` run on the tagged SHA to be completed green — so one such red locks the tag out of
+the release job, its re-runs and `workflow_dispatch` rebuilds. Therefore:
 
-```bash
-task changelog-write      # adds the new `## [x.y.z]` section
-git commit -am ':memo: chore(release): stamp the vX.Y.Z section after tagging'
-task changelog-verify     # ok — no amend needed
-```
+1. **Wait until every `verify` run on the commit you are about to tag has COMPLETED green** — the
+   push run's `verify` and `release-exitgate` jobs included. A job that checks out after the tag
+   exists renders the new section and reds.
+2. **Tag and push** (`git tag vX.Y.Z && git push origin vX.Y.Z`). The GitHub Release body is
+   rendered from the tag by `release.yaml` (`git-cliff --latest`), not from `CHANGELOG.md`, so it
+   is right immediately.
+3. **Land the stamp promptly** — at the latest before the next scheduled `verify` run (weekly,
+   Monday 06:00 UTC), which would otherwise check out the still-unstamped tagged tip and red:
 
-Until that commit lands, `task check` and main's scheduled/push `verify` are red on
-`changelog-verify` for everyone — deliberately, so the stamp cannot be forgotten. Use the
+   ```bash
+   task changelog-write      # adds the new `## [x.y.z]` section
+   git commit -am ':memo: chore(release): stamp the vX.Y.Z section after tagging'
+   task changelog-verify     # ok — no amend needed
+   ```
+
+4. **Never re-run a `verify` run on the tagged SHA after the tag exists** — the re-run fetches the
+   tag and reds for the same reason, which then blocks the release job for that tag.
+
+Until the stamp lands, `task check` on any checkout of `main` is red on `changelog-verify` —
+deliberately, so the stamp cannot be forgotten. (This window is not new: before D-180 the same tag
+turned the committed `## Unreleased` block into a missing `## [x.y.z]` section too.) Use the
 `:memo: chore(release):` prefix: `cliff.toml` skips it, which keeps the stamp out of the NEXT
 release's notes. Since D-180 that skip rule matters only for stamp commits (and any other
 `cliff.toml`-driven regeneration); ordinary regeneration commits no longer exist.

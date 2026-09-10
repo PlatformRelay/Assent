@@ -565,7 +565,10 @@ Requirements:
 rebasing rewrites the SHAs the generator reads — a changelog written pre-rebase is stale by
 construction) and `openspec/specs/backlog.md`'s AUD2 status column. Both are shared across all
 five lanes and have reddened `main` twice in three days when edited per-lane (INBOX
-2026-08-16, 2026-08-18/RELSE-01).
+2026-08-16, 2026-08-18/RELSE-01). *(Historical — superseded for `CHANGELOG.md` by D-180,
+2026-09-10: the committed file holds released versions only, so ordinary commits and rebases no
+longer change it and nobody regenerates it after a rebase; it is regenerated only as the post-tag
+stamp or after a `cliff.toml` change.)*
 
 S03 and S05 both touch `Taskfile.yml` **and** `hack/audit/exitgate_test.sh`: every lane that adds
 a `check:` stage must add its own `CHECK_STAGES` entry *in the same commit*, because the AUD-S18
