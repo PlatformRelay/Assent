@@ -84,6 +84,7 @@ repository still gets a decision, never by following the link; no release carrie
 - :construction_worker: ci(sonar): skip the scan on Dependabot-triggered runs (D-178)
 - build(deps): bump actions/deploy-pages from 5.0.0 to 5.0.1
 - build(deps): bump orhun/git-cliff-action from 4.8.0 to 4.9.0
+- build(deps): bump js-yaml in /hack/schemas-validator
 
 ### Documentation
 - :memo: docs(changelog): stamp the v0.4.0 section after tagging
