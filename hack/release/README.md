@@ -11,9 +11,10 @@ template emits **categorized subject lines only — no commit SHAs** (D-101, oss
 
 | Task | Purpose |
 | --- | --- |
-| `task changelog` | Preview the **Unreleased** section (stdout) |
-| `task changelog-write` | Regenerate `CHANGELOG.md` from tags + unreleased commits |
-| `task changelog-verify` | Fail closed if `CHANGELOG.md` drifts from `cliff.toml` output (release gate) |
+| `task changelog` | Preview the **Unreleased** section (stdout) — the only place it is rendered; it is never committed (D-180) |
+| `task changelog-write` | Regenerate `CHANGELOG.md` — **released versions only** (D-180). Run it after a `cliff.toml` change and as the post-tag stamp; ordinary commits do not change its output |
+| `bash hack/release/render-changelog.sh <out>` | The one definition of the committed form; `changelog-write` and `verify-changelog.sh` both render through it |
+| `task changelog-verify` | Fail closed if `CHANGELOG.md` drifts from the released-only render of `cliff.toml` (release gate) |
 | `bash hack/release/verify-changelog.sh` | Same check as `task changelog-verify` (script entry point) |
 | `task release-changelog-gate-test` | AUD-S02: proves the drift gate is wired and fires — in `task check` (REQ-AUD-S02-01/02) |
 | `bash hack/release/commit_subject_gate.sh` | REDMAIN-N1 / D-168: rejects a commit subject that leads with a **literal emoji** instead of the ASCII gitmoji shortcode |
@@ -76,18 +77,54 @@ the merged branch's own commits still render. Both polarities are pinned in
 `hack/release/changelog_gate_test.sh` §7; the `{ message = ".*", group = "Other" }` catch-all at
 the end of the parser list stays, it is load-bearing for the D-125 drift gate.
 
+**`CHANGELOG.md` holds released versions only (D-180).** The committed file is the header (with
+the compatibility notes), one `## [x.y.z]` section per tag, and the footer. The `## Unreleased`
+section is **never committed** — `task changelog` shows it. The committed file is therefore a
+function of the tags and `cliff.toml`, not of `HEAD`, and the drift gate reds on exactly three
+things:
+
+1. a **hand edit** of `CHANGELOG.md`;
+2. a **`cliff.toml` change that re-renders released history** (header, grouping, template) —
+   commit the `task changelog-write` output in the same change;
+3. a **pushed tag whose section is not stamped yet** — see *Cutting a release* below.
+
+An ordinary commit — a lane's, or a Dependabot bump that cannot run `task changelog-write` on its
+own branch — **never** makes it red, so lanes no longer add a regeneration commit or amend one
+into place after their commits. Mechanism: `cliff.toml`'s body template renders nothing for the
+unreleased release when `ASSENT_CHANGELOG_RELEASED_ONLY=1`, which only `render-changelog.sh`
+sets; every other git-cliff call (the preview, the Release body, the pre-release detectors in
+`changelog_gate_test.sh` §7/§8) renders everything by default, so a forgotten switch fails
+closed. **What is lost:** reading `CHANGELOG.md` on `main` no longer shows what is queued for the
+next release — run `task changelog`. The pre-release quality checks (§8's `### Other` /
+fileable-type detector, the merge-skip check) inspect the *with-unreleased* render, so a
+malformed subject is still caught before it reaches a Release page;
+`changelog_gate_test.sh` §10 proves all of the above at both polarities.
+
+**Cutting a release — the changelog step.** Tag and push as usual; the GitHub Release body is
+rendered from the tag by `release.yaml` (`git-cliff --latest`), not from `CHANGELOG.md`, so it is
+right immediately. Then, on `main`, **stamp the section**:
+
+```bash
+task changelog-write      # adds the new `## [x.y.z]` section
+git commit -am ':memo: chore(release): stamp the vX.Y.Z section after tagging'
+task changelog-verify     # ok — no amend needed
+```
+
+Until that commit lands, `task check` and main's scheduled/push `verify` are red on
+`changelog-verify` for everyone — deliberately, so the stamp cannot be forgotten. Use the
+`:memo: chore(release):` prefix: `cliff.toml` skips it, which keeps the stamp out of the NEXT
+release's notes. Since D-180 that skip rule matters only for stamp commits (and any other
+`cliff.toml`-driven regeneration); ordinary regeneration commits no longer exist.
+
 **In `task check` since AUD-S02 (D-125).** `verify-changelog.sh` shipped in E9-S03 wired to
 nothing, and `CHANGELOG.md` lost its released section entirely after the v0.1.0 tag with nothing
 going red. Where it runs now:
 
-- **Local:** `task check` runs `changelog-verify` after `compare-exitgate-test`. It is
-  deliberately one commit behind — `check` is green at HEAD, the next commit makes the changelog
-  stale, and the following `check` is red until `task changelog-write` is committed. Prefix the
-  regeneration commit `:memo: chore(release):` or `:wrench: chore(release):` (the two subjects
-  `cliff.toml` skips), or the regeneration itself creates fresh drift — this half of the D-125
-  working rule is still load-bearing, because a regeneration commit is an ordinary commit.
-  Regenerate after your last content commit and after any `git merge origin/main`: the merge
-  changes which commits are in range even though the merge commit itself no longer renders.
+- **Local:** `task check` runs `changelog-verify` after `compare-exitgate-test`. Since D-180 it
+  is no longer "one commit behind": ordinary commits and `git merge origin/main` do not touch the
+  released-only render, so D-125's lane working rule (regenerate after the last content commit
+  and after every merge, then amend until it is a fixed point) is **retired**. It reds only for
+  the three causes above.
 - **CI:** the `verify` job in `.github/workflows/verify.yaml`, guarded
   `if: github.event_name != 'pull_request'` — push-to-main and the weekly schedule only.
   **The guard currently has no demonstrated reason.** D-125 added it because
@@ -97,7 +134,9 @@ going red. Where it runs now:
   movement ends in a clean match or in a conflict that leaves no merge ref). It is retained
   pending evidence, not because the PR placement is known to be wrong — see
   [OQ-30](../../docs/planning/open-questions.md) for the measurements and the ruling needed.
-  The placement is fail-safe either way: `task check` and push-to-main both run the gate.
+  The placement is fail-safe either way: `task check` and push-to-main both run the gate. Since
+  D-180 the push-to-main run is no longer the backstop for ordinary drift (there is none); it
+  catches an unstamped tag or an unregenerated `cliff.toml` change.
 - **Release paths:** PRs touching them still run the `snapshot` job in
   `.github/workflows/release.yaml` (goreleaser `--snapshot --skip=publish`).
 
@@ -161,8 +200,9 @@ fake signatures outside GitHub Actions OIDC.
 
 Verification commands: [`SECURITY.md`](../SECURITY.md) (REQ-E9-S06-03).
 
-Maintainers regenerate `CHANGELOG.md` on main via `task changelog-write` after merging user-facing
-commits; `verify-changelog.sh` keeps the committed file in sync.
+`CHANGELOG.md` holds released versions only (D-180): maintainers run `task changelog-write` as the
+post-tag stamp and after a `cliff.toml` change — never after ordinary commits;
+`verify-changelog.sh` keeps the committed file in sync.
 
 ## Verify-green tag gate (AUD-S03, REQ-AUD-S03-01/02)
 
