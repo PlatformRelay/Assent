@@ -89,6 +89,9 @@ repository still gets a decision, never by following the link; no release carrie
 ### Documentation
 - :memo: docs(changelog): stamp the v0.4.0 section after tagging
 - :memo: docs(decisions): record D-178 — Dependabot PRs as the second Sonar coverage gap
+
+### Fixes
+- :bug: fix(gates): pin collation on every sort/comm in hack scripts (D-179)
 ## [0.4.0] - 2026-09-06
 
 ### Chores
