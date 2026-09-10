@@ -78,20 +78,6 @@ The two side directories may themselves be symlinks; only what lies beneath them
 Loosening this will mean folding the refusal into the opaque, fail-safe REVIEW path so such a
 repository still gets a decision, never by following the link; no release carries that yet.
 
-## Unreleased
-
-### Chores
-- :construction_worker: ci(sonar): skip the scan on Dependabot-triggered runs (D-178)
-- build(deps): bump actions/deploy-pages from 5.0.0 to 5.0.1
-- build(deps): bump orhun/git-cliff-action from 4.8.0 to 4.9.0
-- build(deps): bump js-yaml in /hack/schemas-validator
-
-### Documentation
-- :memo: docs(changelog): stamp the v0.4.0 section after tagging
-- :memo: docs(decisions): record D-178 — Dependabot PRs as the second Sonar coverage gap
-
-### Fixes
-- :bug: fix(gates): pin collation on every sort/comm in hack scripts (D-179)
 ## [0.4.0] - 2026-09-06
 
 ### Chores

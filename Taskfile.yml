@@ -100,13 +100,12 @@ tasks:
       - task: dogfood-comparison
       - task: compare-exitgate-test
       # AUD-S02 (REQ-AUD-S02-02): CHANGELOG.md drift gate. It is the LOCAL half of the
-      # wiring — CI runs it only off pull_request (D-125). That guard's original reason
-      # died with D-136 (the merge ref's synthetic merge subject is now skipped) and its
-      # proposed successor measured false; whether the PR placement is viable is now
-      # OQ-30, so the guard stands unexplained rather than re-justified.
-      # Consequence, stated plainly: a commit that changes history without regenerating
-      # CHANGELOG.md makes the NEXT `task check` red until `task changelog-write` is
-      # committed.
+      # wiring — CI runs it only off pull_request (D-125, kept by D-148/D-163).
+      # D-180: CHANGELOG.md holds released versions only, so an ordinary commit never
+      # makes this red and no lane regenerates after its commits. It reds on exactly
+      # three things: a hand edit, a cliff.toml change that re-renders released
+      # history, and a pushed tag whose section has not been stamped
+      # (`task changelog-write`, committed as `:memo: chore(release): stamp …`).
       - task: changelog-verify
       # AUD-S02: the drift gate's own guard, and the ONLY thing that reds when the
       # `- task: changelog-verify` line above is deleted. Runs after changelog-verify
@@ -399,16 +398,24 @@ tasks:
       - bash hack/install-git-cliff.sh {{.GIT_CLIFF_VERSION}} {{.GIT_CLIFF_BIN}}
 
   changelog:
-    desc: Preview unreleased changelog section (stdout, no SHAs)
+    # D-180: the ONLY place the unreleased entries are rendered for a human — the
+    # committed CHANGELOG.md holds released versions only. `env -u` so a stray
+    # exported ASSENT_CHANGELOG_RELEASED_ONLY=1 cannot make the preview empty.
+    desc: Preview the unreleased section (stdout, no SHAs) — never committed (D-180)
     deps: [tools:git-cliff]
     cmds:
-      - "{{.GIT_CLIFF_BIN}} --config {{.CLIFF_CONFIG}} --unreleased -o -"
+      - "env -u ASSENT_CHANGELOG_RELEASED_ONLY {{.GIT_CLIFF_BIN}} --config {{.CLIFF_CONFIG}} --unreleased -o -"
 
   changelog-write:
-    desc: Regenerate CHANGELOG.md from git tags and unreleased commits
+    # D-180: released versions only. Run it after a cliff.toml change and as the
+    # post-tag stamp (`:memo: chore(release): stamp the vX.Y.Z section after
+    # tagging`) — NOT after ordinary commits, which no longer change its output.
+    # Goes through the same script verify-changelog.sh renders with, so the
+    # writer and the checker cannot disagree.
+    desc: "Regenerate CHANGELOG.md — released versions only (D-180); stamp a new tag's section with it"
     deps: [tools:git-cliff]
     cmds:
-      - "{{.GIT_CLIFF_BIN}} --config {{.CLIFF_CONFIG}} -o CHANGELOG.md"
+      - bash hack/release/render-changelog.sh CHANGELOG.md
 
   changelog-verify:
     desc: Fail if CHANGELOG.md is stale vs cliff.toml output (REQ-E9-S03-03)

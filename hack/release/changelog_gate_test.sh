@@ -116,16 +116,21 @@ echo "OK: verify: job extracted ($(wc -l <"$WORK/verify.control" | tr -d ' ') li
 echo "== 1. REQ-AUD-S02-01: CHANGELOG.md carries the released v0.1.0 section =="
 grep -qE '^## \[0\.1\.0\] - 2026-08-05$' "$ROOT/CHANGELOG.md" \
   || fail "CHANGELOG.md has no '## [0.1.0] - 2026-08-05' section — run 'task changelog-write' and commit (REQ-AUD-S02-01)"
-grep -qE '^## Unreleased$' "$ROOT/CHANGELOG.md" \
-  || fail "CHANGELOG.md has no '## Unreleased' section (REQ-AUD-S02-01)"
-# Post-tag commits must sit under Unreleased, i.e. ABOVE the released section.
-unrel_line="$(grep -nE '^## Unreleased$' "$ROOT/CHANGELOG.md" | head -1 | cut -d: -f1)"
-rel_line="$(grep -nE '^## \[0\.1\.0\] - 2026-08-05$' "$ROOT/CHANGELOG.md" | head -1 | cut -d: -f1)"
-[[ "$unrel_line" -lt "$rel_line" ]] \
-  || fail "CHANGELOG.md orders [0.1.0] before Unreleased (line $rel_line vs $unrel_line)"
-[[ $((rel_line - unrel_line)) -gt 2 ]] \
-  || fail "CHANGELOG.md Unreleased section is empty — the post-tag commits are missing (REQ-AUD-S02-01)"
-echo "OK: [0.1.0] at line $rel_line, non-empty Unreleased above it at line $unrel_line"
+# D-180: the committed file holds RELEASED versions only. An `## Unreleased`
+# heading in it means the preview form (a bare `git-cliff -o`) was committed —
+# which is exactly the shape that made every ordinary commit stale it.
+if grep -nE '^## Unreleased$' "$ROOT/CHANGELOG.md" >"$WORK/committed.unreleased"; then
+  fail "CHANGELOG.md carries an '## Unreleased' section (line $(cut -d: -f1 "$WORK/committed.unreleased")) — since D-180 the committed file holds released versions only; run 'task changelog-write' (it renders released-only) and commit"
+fi
+# ...and its newest section is the newest tag reachable from HEAD, i.e. the
+# post-tag stamp has happened. (verify-changelog.sh would red on this too; the
+# assertion here names the cause instead of printing a diff.)
+latest_tag="$(git -C "$ROOT" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
+[[ -n "$latest_tag" ]] || fail "no v[0-9]* tag is reachable from HEAD — a shallow or tagless checkout; the released-only assertions below need the tags"
+first_section="$(grep -m1 -E '^## \[' "$ROOT/CHANGELOG.md" || true)"
+[[ "$first_section" == "## [${latest_tag#v}] - "* ]] \
+  || fail "CHANGELOG.md's newest section is '$first_section' but the newest tag is $latest_tag — the post-tag stamp commit is missing: run 'task changelog-write' and commit it as ':memo: chore(release): stamp the $latest_tag section after tagging' (D-180)"
+echo "OK: [0.1.0] present, no Unreleased section, newest section is the newest tag ($latest_tag)"
 
 # The D-120 record-consumer warning is generated from cliff.toml's header, so a
 # hand-edit of CHANGELOG.md cannot carry it and `changelog-write` cannot wipe it.
@@ -169,6 +174,26 @@ done
 # a gutted body is the same defect one level down.
 grep -q 'hack/release/verify-changelog.sh' "$WORK/def.changelog-verify" \
   || fail "the changelog-verify task no longer runs hack/release/verify-changelog.sh"
+# D-180: ONE definition of the committed form. If `changelog-write` rendered by
+# its own git-cliff line it could drift from what verify-changelog.sh compares
+# against — the writer and the checker disagreeing is a gate that is red after
+# every regeneration, or green over a file nobody can reproduce.
+extract_block "$TASKFILE" changelog-write >"$WORK/def.changelog-write"
+[[ -s "$WORK/def.changelog-write" ]] || fail "Taskfile.yml defines no changelog-write task"
+grep -qE '^[[:space:]]+- bash hack/release/render-changelog\.sh CHANGELOG\.md"?$' "$WORK/def.changelog-write" \
+  || fail "the changelog-write task does not write CHANGELOG.md through hack/release/render-changelog.sh — the committed form must have one definition (D-180)"
+if grep -qE '^[[:space:]]+- .*(GIT_CLIFF_BIN|bin/git-cliff|git-cliff )' "$WORK/def.changelog-write"; then
+  fail "the changelog-write task calls git-cliff directly — it must go through render-changelog.sh, or it can render something verify-changelog.sh does not compare against (D-180)"
+fi
+grep -qF 'bash hack/release/render-changelog.sh' "$ROOT/hack/release/verify-changelog.sh" \
+  || fail "verify-changelog.sh does not render through hack/release/render-changelog.sh — the checker and the writer can disagree (D-180)"
+grep -qF 'ASSENT_CHANGELOG_RELEASED_ONLY=1' "$ROOT/hack/release/render-changelog.sh" \
+  || fail "render-changelog.sh no longer sets ASSENT_CHANGELOG_RELEASED_ONLY=1 — it would commit the Unreleased section again (D-180)"
+extract_block "$TASKFILE" changelog >"$WORK/def.changelog"
+grep -qF -- '--unreleased' "$WORK/def.changelog" \
+  || fail "the changelog preview task no longer renders --unreleased — the only place the unreleased entries are visible before a release (D-180)"
+grep -qF 'env -u ASSENT_CHANGELOG_RELEASED_ONLY' "$WORK/def.changelog" \
+  || fail "the changelog preview task does not clear ASSENT_CHANGELOG_RELEASED_ONLY — a stray export would make the preview silently empty (D-180)"
 grep -q 'hack/docs/readme_smoke_test.sh' "$WORK/def.docs-gates" \
   || fail "the docs-gates task no longer runs hack/docs/readme_smoke_test.sh (D-124)"
 grep -q 'hack/docs/truthlag_pins_test.sh' "$WORK/def.docs-gates" \
@@ -275,6 +300,17 @@ if [[ ! -x "$CLIFF" ]]; then
   CLIFF="$ROOT/bin/git-cliff"
 fi
 
+# render_full <git-cliff args…> — the WITH-UNRELEASED render every quality check
+# below (§6 release body, §7 merge skip, §8 grouping/Other detector) inspects.
+# D-180 made the committed CHANGELOG.md released-only, so the unreleased entries
+# — the ones about to reach the next Release page — exist only in this render.
+# `env -u` is load-bearing: a caller with ASSENT_CHANGELOG_RELEASED_ONLY=1
+# exported would otherwise blind every detector to exactly those entries. §10d
+# proves both halves.
+render_full() {
+  env -u ASSENT_CHANGELOG_RELEASED_ONLY "$CLIFF" "$@"
+}
+
 # The `args:` of the git-cliff step, scoped to that step: `args:` also appears in
 # both goreleaser steps, so a file-wide grep would pick the wrong one.
 cliff_args="$(awk '
@@ -287,7 +323,7 @@ cliff_args="$(awk '
 echo "OK: release.yaml renders the body with: git-cliff $cliff_args"
 
 read -r -a cliff_argv <<<"$cliff_args"
-"$CLIFF" --config "$ROOT/cliff.toml" "${cliff_argv[@]}" >"$WORK/release-body.md" 2>"$WORK/release-body.err" || {
+render_full --config "$ROOT/cliff.toml" "${cliff_argv[@]}" >"$WORK/release-body.md" 2>"$WORK/release-body.err" || {
   cat "$WORK/release-body.err" >&2
   fail "git-cliff failed with release.yaml's own arguments ($cliff_args)"
 }
@@ -314,10 +350,21 @@ if grep -nE '^- Merge ' "$WORK/release-body.md" >"$WORK/release-body.merges"; th
 fi
 echo "OK: rendered release body carries no merge-commit subject"
 
+# D-180: the Release body is rendered from the TAGS, never from the committed
+# CHANGELOG.md, so the released-only switch must not change it. (§10c shows the
+# stronger form: a freshly pushed tag's body is right even BEFORE its section is
+# stamped into CHANGELOG.md.)
+ASSENT_CHANGELOG_RELEASED_ONLY=1 "$CLIFF" --config "$ROOT/cliff.toml" "${cliff_argv[@]}" \
+  >"$WORK/release-body.released-only.md" 2>/dev/null \
+  || fail "git-cliff failed rendering the release body with ASSENT_CHANGELOG_RELEASED_ONLY=1"
+cmp -s "$WORK/release-body.md" "$WORK/release-body.released-only.md" \
+  || fail "the GitHub Release body changes with ASSENT_CHANGELOG_RELEASED_ONLY — release.yaml's '$cliff_args' must render the latest TAG's section whatever the switch says (D-180)"
+echo "OK: release body is identical with and without the released-only switch"
+
 # Polarity control: re-render WITH the bug. If the note survives `--strip
 # header` too, then the grep above passes for some unrelated reason and this
 # section is not testing what it claims.
-"$CLIFF" --config "$ROOT/cliff.toml" "${cliff_argv[@]}" --strip header \
+render_full --config "$ROOT/cliff.toml" "${cliff_argv[@]}" --strip header \
   >"$WORK/release-body-stripped.md" 2>/dev/null || true
 [[ -s "$WORK/release-body-stripped.md" ]] \
   || fail "polarity control rendered empty — cannot conclude anything from its missing note"
@@ -359,7 +406,7 @@ echo "== 7. merge commits never render into the changelog (D-136) =="
 
 MERGE_SKIP_RULE='field = "merge_commit"'
 
-"$CLIFF" --config "$ROOT/cliff.toml" -o "$WORK/clean-full.md" 2>"$WORK/clean-full.err" || {
+render_full --config "$ROOT/cliff.toml" -o "$WORK/clean-full.md" 2>"$WORK/clean-full.err" || {
   cat "$WORK/clean-full.err" >&2
   fail "git-cliff failed rendering the full changelog from cliff.toml"
 }
@@ -385,7 +432,7 @@ fi
 if [[ "$(wc -l <"$mutant_cfg")" -eq "$(wc -l <"$ROOT/cliff.toml")" ]]; then
   fail "mutation did not land: $mutant_cfg has the same line count as cliff.toml"
 fi
-"$CLIFF" --config "$mutant_cfg" -o "$WORK/mutant-full.md" 2>"$WORK/mutant-full.err" || {
+render_full --config "$mutant_cfg" -o "$WORK/mutant-full.md" 2>"$WORK/mutant-full.err" || {
   cat "$WORK/mutant-full.err" >&2
   fail "git-cliff failed rendering with the mutant config — the mutation broke the TOML instead of removing the rule"
 }
@@ -485,7 +532,7 @@ printf 'e\n' >"$SANDBOX/e.txt"; sgit add -A; sgit commit -q -m ':sparkles: feat(
 sgit checkout -q main
 sgit merge -q --no-ff side3 -m ':sparkles: feat(sandbox): integrator wrote a real subject on a merge commit'
 
-"$CLIFF" --config "$ROOT/cliff.toml" --repository "$SANDBOX" -o "$WORK/sandbox.md" 2>"$WORK/sandbox.err" || {
+render_full --config "$ROOT/cliff.toml" --repository "$SANDBOX" -o "$WORK/sandbox.md" 2>"$WORK/sandbox.err" || {
   cat "$WORK/sandbox.err" >&2
   fail "git-cliff failed rendering the sandbox repository"
 }
@@ -520,7 +567,7 @@ echo "OK: none of the ${#SANDBOX_MERGES[@]} merge subjects render (default, CI m
 
 # Sandbox polarity control: without the parser all three come back, so the three
 # negatives above are about the rule and not about a render that lost the commits.
-"$CLIFF" --config "$mutant_cfg" --repository "$SANDBOX" -o "$WORK/sandbox-mutant.md" 2>/dev/null \
+render_full --config "$mutant_cfg" --repository "$SANDBOX" -o "$WORK/sandbox-mutant.md" 2>/dev/null \
   || fail "git-cliff failed rendering the sandbox with the mutant config"
 for line in "${SANDBOX_MERGES[@]}"; do
   grep -qxF -e "$line" "$WORK/sandbox-mutant.md" \
@@ -718,7 +765,7 @@ fi
 removed=$(( $(wc -l <"$ROOT/cliff.toml") - $(wc -l <"$mutant_cfg2") ))
 [[ "$removed" -ge 2 ]] \
   || fail "mutation did not land: only $removed line(s) removed from cliff.toml — the REL-14 parsers are not tagged '# REL-14'"
-"$CLIFF" --config "$mutant_cfg2" -o "$WORK/mutant-groups.md" 2>"$WORK/mutant-groups.err" || {
+render_full --config "$mutant_cfg2" -o "$WORK/mutant-groups.md" 2>"$WORK/mutant-groups.err" || {
   cat "$WORK/mutant-groups.err" >&2
   fail "git-cliff failed with the type-parser mutation — the mutation broke the TOML instead of removing the entries"
 }
@@ -984,4 +1031,205 @@ grep -qF "$LEGACY_ANCHOR" "$WORK/subject.no-exemption" \
   || fail "the exemption-free gate reds on this repository but does not name $LEGACY_ANCHOR — it is failing for some other reason"
 echo "OK: deleting the exemption reds the gate on real history, naming $LEGACY_ANCHOR"
 
-echo "PASS: changelog drift gate regenerated, wired into task check + verify.yaml, and proven at both polarities (REQ-AUD-S02-01/02); release body carries the compatibility notes and no merge subject (D-136); every fileable subject reaches its real group (REL-14 / D-137) behind any prefix shape, and a literal-emoji commit subject is rejected by a gate rather than by a human (REDMAIN-N1/N2 / D-168)"
+# ------ 10. the drift gate's scope: released versions only (D-180) ----------
+#
+# Until D-180 the committed CHANGELOG.md carried an `## Unreleased` section and
+# verify-changelog.sh diffed the WHOLE render against it, so EVERY
+# changelog-relevant commit made main stale until a regeneration commit landed.
+# Lanes absorbed that with a regenerate-then-amend dance; Dependabot cannot run
+# `task changelog-write` on its own branch, so every bot merge reddened main's
+# push run and needed a hand-made regen PR (#131, #132).
+#
+# D-180 commits released versions only. The gate must now be red for exactly
+# three causes and GREEN for everything else. Every row runs the REAL scripts
+# (verify-changelog.sh, render-changelog.sh — the one `task changelog-write`
+# runs) inside a clone of this repository, so real tags and real history are
+# rendered; the working-tree copies of the changelog files are overlaid first,
+# so the rows grade the tree under test, not HEAD.
+#
+#   10a GREEN after ordinary commits — a feature, a fix and a Dependabot-shaped
+#       bump land after HEAD and the gate stays green. The property D-180 exists
+#       for; its mutant (the pre-D-180 render) goes RED on the same commits.
+#   10b RED on a hand edit, and RED on a cliff.toml change that re-renders
+#       released history.
+#   10c RED on a pushed tag without its stamp commit; the Release body is right
+#       at that very moment (it reads tags); the stamp commit adds the section
+#       and is green with no amend; the next ordinary commit stays green.
+#   10d the pre-release detectors (§8's `### Other` / fileable-type check) read
+#       the WITH-unreleased render: a malformed unreleased subject is flagged
+#       there, is invisible in the committed form (the mutation), and stays
+#       flagged when the released-only switch leaks in from the environment.
+
+echo "== 10. the drift gate's scope: released versions only (D-180) =="
+
+DSB="$WORK/drift-sandbox"
+dgit() {
+  env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
+    -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
+    git -C "$DSB" \
+    -c user.name='changelog gate' -c user.email='gate@example.invalid' \
+    -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+    -c advice.detachedHead=false "$@"
+}
+head_sha="$(git -C "$ROOT" rev-parse HEAD)"
+env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
+  -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
+  git clone -q --no-checkout "$ROOT" "$DSB" >/dev/null 2>&1 || fail "could not clone this repository into the drift sandbox"
+[[ -d "$DSB/.git" ]] || fail "drift sandbox has no .git — the clone landed somewhere else"
+dsb_expected="$(cd "$DSB" && pwd -P)"
+dsb_actual="$(cd "$(dgit rev-parse --show-toplevel)" && pwd -P)"
+[[ "$dsb_actual" == "$dsb_expected" ]] \
+  || fail "drift sandbox git commands resolve to '$dsb_actual', not '$dsb_expected' — the environment is redirecting them at another repository"
+dgit checkout -q -B sandbox "$head_sha" || fail "could not check out HEAD ($head_sha) in the drift sandbox"
+[[ -n "$(dgit tag --list 'v[0-9]*')" ]] || fail "the drift sandbox has no release tags — every row below would render no released section and prove nothing"
+
+# The files that decide the committed form, as they are in the WORKING TREE.
+DRIFT_FILES=(cliff.toml CHANGELOG.md hack/release/verify-changelog.sh hack/release/render-changelog.sh hack/install-git-cliff.sh)
+for f in "${DRIFT_FILES[@]}"; do
+  [[ -f "$ROOT/$f" ]] || fail "missing $f — the drift sandbox cannot be built from the tree under test"
+  cp "$ROOT/$f" "$DSB/$f"
+done
+# `:memo: chore(release):` is a cliff-skipped subject, so the overlay commit does
+# not itself render.
+dgit add -A && dgit commit -q --allow-empty -m ':memo: chore(release): drift sandbox baseline (working-tree overlay)' \
+  || fail "could not commit the working-tree overlay in the drift sandbox"
+mkdir -p "$DSB/bin" && ln -sf "$CLIFF" "$DSB/bin/git-cliff"
+
+# dverify <label> — run the sandbox's own verify-changelog.sh; output to $WORK/dv.<label>.
+dverify() {
+  GIT_CLIFF_BIN="$CLIFF" env -u ASSENT_CHANGELOG_RELEASED_ONLY \
+    bash "$DSB/hack/release/verify-changelog.sh" >"$WORK/dv.$1" 2>&1
+}
+# expect_red <label> <line the diff must add or remove> <why>
+expect_red() {
+  if dverify "$1"; then
+    cat "$WORK/dv.$1" >&2
+    fail "drift gate GREEN on '$1' — $3"
+  fi
+  grep -q 'CHANGELOG.md drift' "$WORK/dv.$1" \
+    || { cat "$WORK/dv.$1" >&2; fail "drift gate red on '$1' but not for drift — it failed for another reason"; }
+  grep -qE "^[-+]$2" "$WORK/dv.$1" \
+    || { cat "$WORK/dv.$1" >&2; fail "drift gate red on '$1' but the diff does not carry '$2' — red for the wrong reason"; }
+}
+
+dverify baseline || { cat "$WORK/dv.baseline" >&2; fail "drift gate RED on the unmodified sandbox — the committed CHANGELOG.md does not match the released-only render of this tree; run 'task changelog-write'"; }
+echo "OK: 10. baseline — the working tree's CHANGELOG.md is the released-only render of real history + tags"
+
+echo "== 10a. ordinary commits after HEAD leave the gate GREEN =="
+ORDINARY_SUBJECTS=(
+  ':sparkles: feat(sandbox): a changelog-relevant feature landed after HEAD'
+  ':bug: fix(sandbox): a changelog-relevant fix landed after HEAD'
+  'build(deps): bump example/action from 1.0.0 to 1.0.1'
+)
+for subj in "${ORDINARY_SUBJECTS[@]}"; do
+  printf '%s\n' "$subj" >>"$DSB/sandbox-ordinary.txt"
+  dgit add -A && dgit commit -q -m "$subj" || fail "could not commit '$subj' in the drift sandbox"
+done
+# Positive control: these commits ARE changelog-relevant — they render in the
+# preview. Without it, "green" could mean "skipped by a parser".
+render_full --config "$DSB/cliff.toml" --repository "$DSB" --unreleased -o "$WORK/dsb.preview.md" 2>/dev/null \
+  || fail "git-cliff failed rendering the sandbox preview"
+for subj in "${ORDINARY_SUBJECTS[@]}"; do
+  grep -qxF -e "- $subj" "$WORK/dsb.preview.md" \
+    || fail "positive control: '$subj' does not render in the unreleased preview — it is not changelog-relevant, so a green below would prove nothing"
+done
+dverify ordinary || { cat "$WORK/dv.ordinary" >&2; fail "drift gate RED after ${#ORDINARY_SUBJECTS[@]} ordinary commits — an ordinary commit (a lane's, or a bot's that cannot regenerate) makes CHANGELOG.md stale again, which is the churn D-180 removed"; }
+echo "OK: ${#ORDINARY_SUBJECTS[@]} changelog-relevant commits (feature, fix, Dependabot bump) after HEAD — all in the preview, gate still GREEN, no regeneration commit"
+
+# The mutant: the pre-D-180 committed form (render everything). Regenerate with
+# it, commit (the old working rule), add ONE more ordinary commit — red. This is
+# the red every Dependabot merge produced on main.
+cp "$DSB/hack/release/render-changelog.sh" "$WORK/render.orig"
+sed 's/ASSENT_CHANGELOG_RELEASED_ONLY=1 /ASSENT_CHANGELOG_RELEASED_ONLY=0 /' "$WORK/render.orig" >"$DSB/hack/release/render-changelog.sh"
+cmp -s "$WORK/render.orig" "$DSB/hack/release/render-changelog.sh" \
+  && fail "mutation did not land: render-changelog.sh still sets ASSENT_CHANGELOG_RELEASED_ONLY=1"
+GIT_CLIFF_BIN="$CLIFF" bash "$DSB/hack/release/render-changelog.sh" "$DSB/CHANGELOG.md" 2>/dev/null
+grep -qE '^## Unreleased$' "$DSB/CHANGELOG.md" \
+  || fail "mutation did not land: the pre-D-180 render has no Unreleased section"
+dgit add -A && dgit commit -q -m ':memo: chore(release): regenerate CHANGELOG.md (pre-D-180 working rule)'
+dverify mutant-fresh || { cat "$WORK/dv.mutant-fresh" >&2; fail "the pre-D-180 mutant is red straight after its own regeneration — the mutant is not a faithful reproduction of the old rule"; }
+printf 'x\n' >>"$DSB/sandbox-ordinary.txt"
+dgit add -A && dgit commit -q -m ':sparkles: feat(sandbox): one more ordinary commit'
+expect_red mutant-stale '- :sparkles: feat\(sandbox\): one more ordinary commit' "the pre-D-180 mutant should go stale on the next ordinary commit; if it does not, row 10a's green proves nothing about D-180"
+echo "OK: mutant — with the pre-D-180 render the same kind of commit reds the gate (the churn), so 10a's green is D-180's doing"
+# Undo the mutant: restore the script, drop the two mutant commits.
+dgit reset -q --hard HEAD~2
+cp "$WORK/render.orig" "$DSB/hack/release/render-changelog.sh"
+dgit diff --quiet || fail "the drift sandbox is not clean after undoing the mutant"
+dverify restored || { cat "$WORK/dv.restored" >&2; fail "drift gate not green after undoing the mutant — the rows below would start from a red state"; }
+
+echo "== 10b. a hand edit, and a cliff.toml change that re-renders history, are RED =="
+cp "$DSB/CHANGELOG.md" "$WORK/dsb.changelog.orig"
+printf '\n- a hand-written line\n' >>"$DSB/CHANGELOG.md"
+expect_red hand-edit '- a hand-written line' "a hand edit of CHANGELOG.md is exactly what the drift gate exists to catch"
+cp "$WORK/dsb.changelog.orig" "$DSB/CHANGELOG.md"
+echo "OK: a hand edit reds the gate"
+
+cp "$DSB/cliff.toml" "$WORK/dsb.cliff.orig"
+sed 's/group = "Fixes"/group = "Bug fixes"/g' "$WORK/dsb.cliff.orig" >"$DSB/cliff.toml"
+cmp -s "$WORK/dsb.cliff.orig" "$DSB/cliff.toml" && fail "mutation did not land: no 'group = \"Fixes\"' in cliff.toml"
+expect_red cliff-regroup '### Bug fixes' "renaming a group re-renders every released section; CHANGELOG.md must be regenerated with it"
+cp "$WORK/dsb.cliff.orig" "$DSB/cliff.toml"
+dverify restored-b || { cat "$WORK/dv.restored-b" >&2; fail "drift gate not green after restoring cliff.toml"; }
+echo "OK: a cliff.toml change that re-renders released history reds the gate"
+
+echo "== 10d. the pre-release detectors read the WITH-unreleased render =="
+# Placed before the tag so the malformed subject is UNRELEASED — the state in
+# which it must be caught, before it reaches a Release page.
+BAD_SUBJECT='👷 ci(sandbox): a literal-emoji subject that must not reach a Release page'
+printf 'bad\n' >>"$DSB/sandbox-ordinary.txt"
+dgit add -A && dgit commit -q -m "$BAD_SUBJECT"
+render_full --config "$DSB/cliff.toml" --repository "$DSB" -o "$WORK/dsb.full.md" 2>/dev/null \
+  || fail "git-cliff failed rendering the sandbox with render_full"
+group_lines "$WORK/dsb.full.md" | awk -F'\t' '$1 == "Other" { print $2 }' >"$WORK/dsb.full.other"
+LC_ALL=C grep -nE "$OTHER_MAPPABLE_RE" "$WORK/dsb.full.other" >"$WORK/dsb.full.hits" || true
+grep -qF -e "- $BAD_SUBJECT" "$WORK/dsb.full.hits" \
+  || fail "§8's detector, fed the render §8 uses, does NOT flag an unreleased '$BAD_SUBJECT' — a malformed subject would reach the next Release page unseen"
+echo "OK: the detector on render_full flags the unreleased malformed subject"
+# The mutation: feed the detector the COMMITTED form instead.
+GIT_CLIFF_BIN="$CLIFF" bash "$DSB/hack/release/render-changelog.sh" "$WORK/dsb.committed.md" 2>/dev/null
+group_lines "$WORK/dsb.committed.md" | awk -F'\t' '$1 == "Other" { print $2 }' >"$WORK/dsb.committed.other"
+if grep -qF -e "- $BAD_SUBJECT" "$WORK/dsb.committed.other"; then
+  fail "the committed form already shows the unreleased malformed subject — then D-180's released-only render is not released-only"
+fi
+echo "OK: mutation — pointed at the committed form (what CHANGELOG.md holds now), the detector is blind to it: the input choice is load-bearing"
+ASSENT_CHANGELOG_RELEASED_ONLY=1 render_full --config "$DSB/cliff.toml" --repository "$DSB" -o "$WORK/dsb.leak.md" 2>/dev/null \
+  || fail "git-cliff failed rendering with the switch exported"
+grep -qxF -e "- $BAD_SUBJECT" "$WORK/dsb.leak.md" \
+  || fail "with ASSENT_CHANGELOG_RELEASED_ONLY=1 exported, render_full drops the unreleased entries — every detector in §7/§8 would go blind for anyone with that variable set"
+echo "OK: an exported ASSENT_CHANGELOG_RELEASED_ONLY=1 does not blind render_full"
+dverify malformed || { cat "$WORK/dv.malformed" >&2; fail "drift gate RED after an unreleased malformed commit — the commit-subject gate and §8 catch it; the drift gate must not"; }
+echo "OK: and the drift gate stays green on it — catching it is the detectors' job, not the drift gate's"
+
+echo "== 10c. a pushed tag without its stamp commit is RED; the stamp commit adds the section =="
+dgit tag v99.0.0
+expect_red tag-unstamped '## \[99\.0\.0\]' "a new release tag must red the gate until its section is stamped into CHANGELOG.md"
+echo "OK: a tag without its stamp commit reds the gate, naming the missing [99.0.0] section"
+# The Release body at this moment — rendered with release.yaml's own args — is
+# already right: it reads the tag, not CHANGELOG.md (which lacks the section).
+render_full --config "$DSB/cliff.toml" --repository "$DSB" "${cliff_argv[@]}" >"$WORK/dsb.release-body.md" 2>/dev/null \
+  || fail "git-cliff failed rendering the sandbox release body"
+grep -qE '^## \[99\.0\.0\] - ' "$WORK/dsb.release-body.md" \
+  || fail "the Release body for the fresh tag has no '## [99.0.0]' section — release.yaml's '$cliff_args' does not render the new tag"
+grep -qxF -e "- ${ORDINARY_SUBJECTS[0]}" "$WORK/dsb.release-body.md" \
+  || fail "the Release body for v99.0.0 does not carry the feature landed before the tag"
+grep -qE '^## \[99\.0\.0\]' "$DSB/CHANGELOG.md" \
+  && fail "the sandbox CHANGELOG.md already has [99.0.0] before the stamp — the row cannot show that the body comes from the tag"
+echo "OK: release.yaml's '$cliff_args' renders the v99.0.0 body from the tag while CHANGELOG.md does not have the section yet"
+# The stamp: exactly what `task changelog-write` runs, committed with the skipped subject.
+GIT_CLIFF_BIN="$CLIFF" bash "$DSB/hack/release/render-changelog.sh" "$DSB/CHANGELOG.md" 2>/dev/null
+grep -qE '^## \[99\.0\.0\] - ' "$DSB/CHANGELOG.md" || fail "the stamp did not add the [99.0.0] section"
+grep -qxF -e "- ${ORDINARY_SUBJECTS[0]}" "$DSB/CHANGELOG.md" || fail "the stamped [99.0.0] section does not carry the feature landed before the tag"
+grep -qE '^## Unreleased$' "$DSB/CHANGELOG.md" && fail "the stamp wrote an Unreleased section"
+dgit add -A && dgit commit -q -m ':memo: chore(release): stamp the v99.0.0 section after tagging'
+dverify stamped || { cat "$WORK/dv.stamped" >&2; fail "drift gate RED straight after the stamp commit — the stamp should need no amend"; }
+render_full --config "$DSB/cliff.toml" --repository "$DSB" --unreleased -o "$WORK/dsb.after-stamp.md" 2>/dev/null
+grep -qF 'stamp the v99.0.0 section' "$WORK/dsb.after-stamp.md" \
+  && fail "the stamp commit renders in the next release's preview — its ':memo: chore(release):' subject must be cliff-skipped"
+echo "OK: the stamp commit adds [99.0.0], is green with no amend, and (cliff-skipped) stays out of the next release's notes"
+printf 'y\n' >>"$DSB/sandbox-ordinary.txt"
+dgit add -A && dgit commit -q -m ':sparkles: feat(sandbox): the first ordinary commit after the release'
+dverify after-release || { cat "$WORK/dv.after-release" >&2; fail "drift gate RED on the first ordinary commit after a stamped release"; }
+echo "OK: the next ordinary commit after the release stays green"
+
+echo "PASS: changelog drift gate regenerated, wired into task check + verify.yaml, and proven at both polarities (REQ-AUD-S02-01/02); release body carries the compatibility notes and no merge subject (D-136); every fileable subject reaches its real group (REL-14 / D-137) behind any prefix shape, a literal-emoji commit subject is rejected by a gate rather than by a human (REDMAIN-N1/N2 / D-168); and CHANGELOG.md holds released versions only, so the drift gate reds on a hand edit, a history-re-rendering cliff.toml change or an unstamped tag, and never on an ordinary commit (D-180)"

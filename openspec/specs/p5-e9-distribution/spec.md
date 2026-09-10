@@ -174,8 +174,10 @@ Requirements:
 - **REQ-E9-S03-01** — `git-cliff --unreleased` output contains no full/commit-short SHA patterns.
   Test: `hack/release/changelog_test.sh`; Verify:
   `! task changelog | grep -qE '[0-9a-f]{7,40}'`; Level: L0
-- **REQ-E9-S03-02** — `CHANGELOG.md` parses and includes Unreleased + at least one historical stub.
-  Test: same; Verify: `test -f CHANGELOG.md && grep -q Unreleased CHANGELOG.md`; Level: doc
+- **REQ-E9-S03-02** — `CHANGELOG.md` parses and includes at least one released section + the
+  historical stub, and — amended by D-180 — NO Unreleased section: the committed file holds
+  released versions only, and `task changelog` previews the unreleased entries.
+  Test: same; Verify: `test -f CHANGELOG.md && ! grep -qE '^## Unreleased$' CHANGELOG.md`; Level: doc
 - **REQ-E9-S03-03** — `hack/release/verify-changelog.sh` exits non-zero when `CHANGELOG.md` is
   stale vs `cliff.toml` output (fail-closed drift gate). Test: `hack/release/changelog_test.sh`;
   Verify: `hack/release/verify-changelog.sh`; Level: L0
