@@ -131,23 +131,57 @@ fi
 # output rather than re-implemented, so the two can never disagree: the newest
 # tag points at HEAD and CHANGELOG.md lacks only that section → a warning. Any
 # commit on top of the unstamped tag still reds here and in the drift gate.
-latest_tag="$(git -C "$ROOT" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
-[[ -n "$latest_tag" ]] || fail "no v[0-9]* tag is reachable from HEAD — a shallow or tagless checkout; the released-only assertions below need the tags"
-first_section="$(grep -m1 -E '^## \[' "$ROOT/CHANGELOG.md" || true)"
-if [[ "$first_section" == "## [${latest_tag#v}] - "* ]]; then
-  echo "OK: [0.1.0] present, no Unreleased section, newest section is the newest tag ($latest_tag)"
-else
-  stamp_msg="CHANGELOG.md's newest section is '$first_section' but the newest tag is $latest_tag — the post-tag stamp commit is missing: run 'task changelog-write' and commit it as ':memo: chore(release): stamp the $latest_tag section after tagging' (REQ-AUD-S02-01 as amended by D-180)"
-  git -C "$ROOT" tag --points-at HEAD --list 'v[0-9]*' >"$WORK/head.tags"
-  grep -qxF -e "$latest_tag" "$WORK/head.tags" || fail "$stamp_msg"
-  bash "$ROOT/hack/release/verify-changelog.sh" >"$WORK/head.allowance" 2>&1 \
-    || { cat "$WORK/head.allowance" >&2; fail "$stamp_msg — and the drift gate is red on this tagged HEAD, so it is not just the missing stamp"; }
-  grep -qF 'tolerated (D-181)' "$WORK/head.allowance" \
-    || { cat "$WORK/head.allowance" >&2; fail "$stamp_msg — the drift gate is green but not through the D-181 allowance"; }
-  [[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::warning title=CHANGELOG.md not stamped::$stamp_msg"
-  echo "WARN: $stamp_msg — tolerated on the tagged commit itself (D-181); land the stamp next"
-  echo "OK: [0.1.0] present, no Unreleased section; newest tag $latest_tag is HEAD and unstamped — tolerated (D-181)"
-fi
+# newest_section_check <repo-root> <label> — the §1 assertion as a function, so
+# §10e can run it on sandbox states without a full nested run. Prints OK/WARN
+# and returns 0, or prints the cause and returns 1. The three green cases:
+#   * the newest section is the newest tag's (the ordinary state);
+#   * the newest tag is on HEAD and verify-changelog.sh says "tolerated (D-181)";
+#   * verify-changelog.sh is PLAINLY green, i.e. the file is byte-identical to
+#     the released-only render of every tag: the newest tag then renders no
+#     section at all (all its commits are cliff-skipped, e.g. a tooling-only
+#     patch), and nothing is missing (review N2).
+newest_section_check() {
+  local root="$1" label="$2" tag first msg
+  tag="$(git -C "$root" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
+  if [[ -z "$tag" ]]; then
+    echo "no v[0-9]* tag is reachable from HEAD in $root — a shallow or tagless checkout; the released-only assertions need the tags"
+    return 1
+  fi
+  first="$(grep -m1 -E '^## \[' "$root/CHANGELOG.md" || true)"
+  if [[ "$first" == "## [${tag#v}] - "* ]]; then
+    echo "OK: newest section is the newest tag ($tag)"
+    return 0
+  fi
+  msg="CHANGELOG.md's newest section is '$first' but the newest tag is $tag — the post-tag stamp commit is missing: run 'task changelog-write' and commit it as ':memo: chore(release): stamp the $tag section after tagging' (REQ-AUD-S02-01 as amended by D-180)"
+  if ! bash "$root/hack/release/verify-changelog.sh" >"$WORK/allowance.$label" 2>&1; then
+    cat "$WORK/allowance.$label"
+    echo "$msg"
+    return 1
+  fi
+  if grep -qF 'tolerated (D-181)' "$WORK/allowance.$label"; then
+    git -C "$root" tag --points-at HEAD --list 'v[0-9]*' >"$WORK/head.tags.$label"
+    if ! grep -qxF -e "$tag" "$WORK/head.tags.$label"; then
+      echo "$msg — the drift gate tolerated a HEAD tag, but the newest tag $tag is not on HEAD"
+      return 1
+    fi
+    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+      echo "::warning title=CHANGELOG.md not stamped::$msg"
+    fi
+    echo "WARN: $msg — tolerated on the tagged commit itself (D-181); land the stamp next"
+    echo "OK: newest tag $tag is HEAD and unstamped — tolerated (D-181)"
+    return 0
+  fi
+  grep -qxF 'verify-changelog: ok' "$WORK/allowance.$label" || {
+    cat "$WORK/allowance.$label"
+    echo "$msg — and the drift gate's output is neither a plain ok nor the D-181 allowance"
+    return 1
+  }
+  echo "OK: the newest tag $tag renders no section (every commit in it is cliff-skipped) and CHANGELOG.md is exactly the released-only render — nothing to stamp"
+  return 0
+}
+newest_section_check "$ROOT" root >"$WORK/newest.root" || { cat "$WORK/newest.root" >&2; fail "§1: see above"; }
+cat "$WORK/newest.root"
+echo "OK: [0.1.0] present, no Unreleased section, newest section consistent with the newest tag"
 
 # The D-120 record-consumer warning is generated from cliff.toml's header, so a
 # hand-edit of CHANGELOG.md cannot carry it and `changelog-write` cannot wipe it.
@@ -1387,9 +1421,20 @@ if [[ -z "${ASSENT_CHANGELOG_GATE_NESTED:-}" ]]; then
   # grades the tree under test.
   (cd "$ROOT" && git ls-files -z | tar -cf - --null -T -) | tar -xf - -C "$TSB" \
     || fail "could not overlay the working tree into the tagged-tree sandbox"
-  tgit add -A && tgit commit -q --allow-empty -m ':memo: chore(release): tagged-tree sandbox overlay' \
+  # NOT a cliff-skipped subject (review N1): if every commit since the newest
+  # real tag is skipped — as it is right after every stamp commit — a skipped
+  # overlay would leave v98.0.0 an empty release, which git-cliff omits, and
+  # the row would test nothing (or red for the wrong reason). The positive
+  # control below pins that v98.0.0 renders.
+  tgit add -A && tgit commit -q --allow-empty -m ':sparkles: feat(sandbox): tagged-tree sandbox overlay' \
     || fail "could not commit the overlay in the tagged-tree sandbox"
   tgit tag v98.0.0
+  GIT_CLIFF_BIN="$CLIFF" bash "$TSB/hack/release/render-changelog.sh" "$WORK/tsb.tagged.md" 2>/dev/null \
+    || fail "git-cliff failed rendering the tagged-tree sandbox"
+  grep -qE '^## \[98\.0\.0\] - ' "$WORK/tsb.tagged.md" \
+    || fail "positive control: v98.0.0 renders no section in the tagged-tree sandbox — it is not an unstamped release, so the nested run would prove nothing"
+  cmp -s "$TSB/CHANGELOG.md" "$WORK/tsb.tagged.md" \
+    && fail "positive control: the tagged-tree CHANGELOG.md already equals the tagged render — v98.0.0 is not unstamped"
   ASSENT_CHANGELOG_GATE_NESTED=1 GIT_CLIFF_BIN="$CLIFF" env -u ASSENT_CHANGELOG_RELEASED_ONLY \
     bash "$TSB/hack/release/changelog_gate_test.sh" >"$WORK/nested.tagged" 2>&1 \
     || { tail -40 "$WORK/nested.tagged" >&2; fail "this script is RED on a tagged-but-unstamped commit — in CI that is a red release-exitgate on the tag SHA, which locks the tag out of release.yaml (REQ-AUD-S03-01, D-181)"; }
@@ -1407,6 +1452,26 @@ if [[ -z "${ASSENT_CHANGELOG_GATE_NESTED:-}" ]]; then
   grep -qF 'the post-tag stamp commit is missing' "$WORK/nested.ontop" \
     || { tail -20 "$WORK/nested.ontop" >&2; fail "the nested run is red with a commit on top of the unstamped tag, but not for the missing stamp"; }
   echo "OK: and RED once a commit lands on the unstamped tag, naming the missing stamp"
+  # The two states after the release, graded by §1's function directly (cheap).
+  tgit reset -q --hard HEAD~1
+  GIT_CLIFF_BIN="$CLIFF" bash "$TSB/hack/release/render-changelog.sh" "$TSB/CHANGELOG.md" 2>/dev/null
+  tgit add -A && tgit commit -q -m ':memo: chore(release): stamp the v98.0.0 section after tagging'
+  GIT_CLIFF_BIN="$CLIFF" newest_section_check "$TSB" stamped >"$WORK/tsb.stamped" \
+    || { cat "$WORK/tsb.stamped" >&2; fail "§1 is RED on the stamp commit — main would go red after every release (review N1)"; }
+  grep -qF 'OK: newest section is the newest tag (v98.0.0)' "$WORK/tsb.stamped" \
+    || { cat "$WORK/tsb.stamped" >&2; fail "§1 green on the stamp commit but not because the stamped section is the newest"; }
+  echo "OK: the stamp commit is green in §1, the newest section being the stamped v98.0.0"
+  printf 'w\n' >>"$TSB/sandbox-nested.txt"
+  tgit add -A && tgit commit -q -m ':memo: chore(release): a tooling-only change'
+  tgit tag v98.0.1
+  GIT_CLIFF_BIN="$CLIFF" bash "$TSB/hack/release/render-changelog.sh" "$WORK/tsb.empty.md" 2>/dev/null
+  grep -qE '^## \[98\.0\.1\]' "$WORK/tsb.empty.md" \
+    && fail "positive control: v98.0.1 (cliff-skipped commits only) renders a section — the row below would not be the empty-release case"
+  GIT_CLIFF_BIN="$CLIFF" newest_section_check "$TSB" empty-release >"$WORK/tsb.empty" \
+    || { cat "$WORK/tsb.empty" >&2; fail "§1 is RED on a release whose commits are all cliff-skipped — it never gets a section, so this would red the tag SHA and main forever (review N2)"; }
+  grep -qF 'renders no section' "$WORK/tsb.empty" \
+    || { cat "$WORK/tsb.empty" >&2; fail "§1 green on the empty release but not through the renders-no-section path"; }
+  echo "OK: a release of cliff-skipped commits only renders no section and §1 accepts it — nothing to stamp"
 fi
 
 echo "PASS: changelog drift gate regenerated, wired into task check + verify.yaml, and proven at both polarities (REQ-AUD-S02-01/02); release body carries the compatibility notes and no merge subject (D-136); every fileable subject reaches its real group (REL-14 / D-137) behind any prefix shape, a literal-emoji commit subject is rejected by a gate rather than by a human (REDMAIN-N1/N2 / D-168); and CHANGELOG.md holds released versions only, so the drift gate reds on a hand edit, a history-re-rendering cliff.toml change or an unstamped tag with anything on top of it, and never on an ordinary commit (D-180) nor on the tagged commit itself before its stamp (D-181)"
