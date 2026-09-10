@@ -100,21 +100,24 @@ fileable-type detector, the merge-skip check) inspect the *with-unreleased* rend
 malformed subject is still caught before it reaches a Release page;
 `changelog_gate_test.sh` §10 proves all of the above at both polarities.
 
-**Cutting a release — the changelog step. The ORDER is load-bearing.** Between pushing the tag
-and landing the stamp, any `verify` run that checks out the tagged commit reds on
-`changelog-verify` (it fetches tags, so the released-only render already has the new section and
-the committed file does not). `release.yaml`'s verify-green tag gate (REQ-AUD-S03-01) requires
-EVERY `verify` run on the tagged SHA to be completed green — so one such red locks the tag out of
-the release job, its re-runs and `workflow_dispatch` rebuilds. Therefore:
+**Cutting a release — the changelog step.** Between pushing the tag and landing the stamp, the
+tagged commit's `CHANGELOG.md` lacks the new section (`changelog-verify` fetches tags, so the
+released-only render already has it). `release.yaml`'s verify-green tag gate (REQ-AUD-S03-01)
+requires EVERY `verify` run on the tagged SHA to be completed green, so a red there would lock
+the tag out of the release job, its re-runs and `workflow_dispatch` rebuilds. **D-181** closes
+that window: when HEAD is itself a release tag and `CHANGELOG.md` equals the released-only render
+with exactly HEAD's tags ignored, `verify-changelog.sh` passes and says so (a `::warning::` in
+CI). A hand edit or a history re-render on the tagged commit is still red, and so is the
+unstamped tag once any other commit lands on it. Therefore:
 
 1. **Wait until every `verify` run on the commit you are about to tag has COMPLETED green** — the
-   push run's `verify` and `release-exitgate` jobs included. A job that checks out after the tag
-   exists renders the new section and reds.
+   push run's `verify` and `release-exitgate` jobs included. (Still required: the tag gate reads
+   every run on the SHA, whatever made it red.)
 2. **Tag and push** (`git tag vX.Y.Z && git push origin vX.Y.Z`). The GitHub Release body is
    rendered from the tag by `release.yaml` (`git-cliff --latest`), not from `CHANGELOG.md`, so it
-   is right immediately.
-3. **Land the stamp promptly** — at the latest before the next scheduled `verify` run (weekly,
-   Monday 06:00 UTC), which would otherwise check out the still-unstamped tagged tip and red:
+   is right immediately. Re-running `verify` on the tagged SHA is safe (D-181).
+3. **Land the stamp as the next commit on `main`** — any other commit on top of the unstamped tag
+   reds the push run:
 
    ```bash
    task changelog-write      # adds the new `## [x.y.z]` section
@@ -122,12 +125,10 @@ the release job, its re-runs and `workflow_dispatch` rebuilds. Therefore:
    task changelog-verify     # ok — no amend needed
    ```
 
-4. **Never re-run a `verify` run on the tagged SHA after the tag exists** — the re-run fetches the
-   tag and reds for the same reason, which then blocks the release job for that tag.
-
-Until the stamp lands, `task check` on any checkout of `main` is red on `changelog-verify` —
-deliberately, so the stamp cannot be forgotten. (This window is not new: before D-180 the same tag
-turned the committed `## Unreleased` block into a missing `## [x.y.z]` section too.) Use the
+Until the stamp lands, `task check` on the tagged commit is red on `release-changelog-gate-test`
+§1 ("the post-tag stamp commit is missing") — deliberately, so the stamp cannot be forgotten
+locally; `changelog-verify` alone passes there with the D-181 notice. `changelog_gate_test.sh`
+§10c pins the allowance at both polarities. Use the
 `:memo: chore(release):` prefix: `cliff.toml` skips it, which keeps the stamp out of the NEXT
 release's notes. Since D-180 that skip rule matters only for stamp commits (and any other
 `cliff.toml`-driven regeneration); ordinary regeneration commits no longer exist.
@@ -152,7 +153,7 @@ going red. Where it runs now:
   [OQ-30](../../docs/planning/open-questions.md) for the measurements and the ruling needed.
   The placement is fail-safe either way: `task check` and push-to-main both run the gate. Since
   D-180 the push-to-main run is no longer the backstop for ordinary drift (there is none); it
-  catches an unstamped tag or an unregenerated `cliff.toml` change.
+  catches an unstamped tag with a commit on top (D-181) or an unregenerated `cliff.toml` change.
 - **Release paths:** PRs touching them still run the `snapshot` job in
   `.github/workflows/release.yaml` (goreleaser `--snapshot --skip=publish`).
 

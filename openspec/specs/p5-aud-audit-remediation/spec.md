@@ -244,7 +244,11 @@ contract artifact; flag in the commit body.
   file is released-only, so ordinary commits never drift it); given a hand edit of `CHANGELOG.md`,
   a `cliff.toml` change that re-renders released history, or a pushed release tag whose section
   has not been stamped, `task check` (or the verify workflow) FAILS with the drift diff. Both
-  polarities pinned by `hack/release/changelog_gate_test.sh` §5 and §10.
+  polarities pinned by `hack/release/changelog_gate_test.sh` §5 and §10. **Amended by D-181
+  (2026-09-10):** the unstamped tag fails `changelog-verify` once any commit lands on it; on the
+  tagged commit itself it passes with a warning (so a `verify` run on the tagged SHA cannot lock
+  the tag out of REQ-AUD-S03-01), and `task check` still fails there via
+  `changelog_gate_test.sh` §1. Pinned by §10c at both polarities.
 - Given `cliff.toml` output identical to `CHANGELOG.md`, when the gate runs, then it passes with no
   network access beyond the pinned git-cliff download.
 
@@ -254,7 +258,7 @@ verify.yaml step added; both-polarity proof recorded.
 **Not in scope**: release.yaml (S03); raising the coverage floor; changelog content policy changes.
 
 Requirements:
-- **REQ-AUD-S02-01** — `CHANGELOG.md` regenerated: `[0.1.0]` section present; `task changelog-verify` green. *Amended by D-180 (2026-09-10):* ~~post-tag commits under Unreleased~~ — the committed file carries NO `## Unreleased` section (released versions only) and its newest section is the newest reachable release tag; ordinary commits never make it drift. Test: `hack/release/verify-changelog.sh` (existing); Verify: `task changelog-verify`; Level: L1
+- **REQ-AUD-S02-01** — `CHANGELOG.md` regenerated: `[0.1.0]` section present; `task changelog-verify` green. *Amended by D-180 (2026-09-10):* ~~post-tag commits under Unreleased~~ — the committed file carries NO `## Unreleased` section (released versions only) and its newest section is the newest reachable release tag; ordinary commits never make it drift. *Amended by D-181 (2026-09-10):* on the tagged commit itself, before its stamp, `changelog-verify` tolerates exactly that tag's missing section; the newest-section assertion (`changelog_gate_test.sh` §1, in `task check`) still reports it. Test: `hack/release/verify-changelog.sh` (existing); Verify: `task changelog-verify`; Level: L1
 - **REQ-AUD-S02-02** *(gate wiring · both polarities)* — `task check` and the verify workflow each run `changelog-verify`; an injected stale changelog fails them. Test: `hack/release/changelog_gate_test.sh` (new — asserts wiring presence + failing polarity in a temp copy); Verify: `bash hack/release/changelog_gate_test.sh`; Level: L1
 
 ## AUD-S03 — RELSE-05: release job asserts verify-green on the tag SHA before building [autonomous · release-sensitive]
