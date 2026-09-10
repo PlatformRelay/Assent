@@ -7,9 +7,20 @@
 #   * a hand edit of CHANGELOG.md;
 #   * a cliff.toml change that re-renders released history (header, grouping,
 #     template);
-#   * a pushed release tag whose section has not been stamped yet — the
-#     post-tag `:memo: chore(release): stamp the vX.Y.Z section after tagging`
-#     commit (`task changelog-write`) is what adds it.
+#   * a release tag whose section has not been stamped yet, once anything else
+#     has landed on top of it — the post-tag `:memo: chore(release): stamp the
+#     vX.Y.Z section after tagging` commit (`task changelog-write`) adds it.
+#
+# D-181: the ONE tolerated drift is "HEAD is itself a release tag and the only
+# difference is that tag's missing section". That is the state of the tagged
+# commit between `git push origin vX.Y.Z` and the stamp commit, and it is the
+# same bytes that were green before the tag existed. Without the allowance, any
+# verify run that checks out the tagged SHA after the tag exists (a re-run, the
+# weekly schedule on an unchanged main) reds, and release.yaml's verify-green
+# tag gate (REQ-AUD-S03-01) then locks that tag out of its release job for good.
+# The allowance is proved, not assumed: CHANGELOG.md must equal the render with
+# exactly the HEAD tags ignored, so a hand edit or a cliff.toml re-render on a
+# tagged HEAD is still red, and so is an unstamped tag with any commit after it.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -21,13 +32,51 @@ if [[ ! -f CHANGELOG.md ]]; then
 fi
 
 scratch="$(mktemp)"
-trap 'rm -f "${scratch}"' EXIT
+pretag="$(mktemp)"
+trap 'rm -f "${scratch}" "${pretag}"' EXIT
 
 bash hack/release/render-changelog.sh "${scratch}"
 
-if ! diff -u CHANGELOG.md "${scratch}"; then
-  echo "verify-changelog: CHANGELOG.md drift — it holds released versions only (D-180), so this means a hand edit, a cliff.toml change that re-renders released history, or a new tag not yet stamped: run 'task changelog-write' and commit it as ':memo: chore(release): …'" >&2
-  exit 1
+if cmp -s CHANGELOG.md "${scratch}"; then
+  echo "verify-changelog: ok"
+  exit 0
 fi
 
-echo "verify-changelog: ok"
+# D-181 — release tags on HEAD itself, by the `v[0-9]*` glob changelog_gate_test.sh
+# §1 also uses. cliff.toml's tag_pattern is an unanchored regex that matches a
+# superset of these, so a HEAD tag outside the glob renders a section but is not
+# tolerated: that fails closed. Tags further back are never tolerated.
+head_tags=""
+ignore_re=""
+last_tag=""
+while IFS= read -r t; do
+  [[ -n "${t}" ]] || continue
+  head_tags+="${head_tags:+ }${t}"
+  # Escape the regex metacharacters a refname may carry (git forbids ^ ~ : ? * [ \).
+  e="${t}"
+  for c in . + '(' ')' '{' '}' '|' '$'; do
+    e="${e//"${c}"/\\${c}}"
+  done
+  ignore_re+="${ignore_re:+|}${e}"
+  # The stamp hint names the release tag, not a pre-release one on the same commit.
+  if [[ -z "${last_tag}" || "${t}" != *-* ]]; then
+    last_tag="${t}"
+  fi
+done < <(git tag --points-at HEAD --list 'v[0-9]*')
+if [[ -n "${head_tags}" ]]; then
+  # A failed render falls through to the diff below rather than ending the
+  # script under `set -e` with the reason unprinted.
+  if bash hack/release/render-changelog.sh "${pretag}" --ignore-tags "^(${ignore_re})\$" &&
+    cmp -s CHANGELOG.md "${pretag}"; then
+    msg="HEAD is tagged ${head_tags} and CHANGELOG.md lacks only that section — tolerated (D-181); land the stamp commit next: 'task changelog-write' and commit it as ':memo: chore(release): stamp the ${last_tag} section after tagging'"
+    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+      echo "::warning title=CHANGELOG.md not stamped::${msg}"
+    fi
+    echo "verify-changelog: ok — ${msg}"
+    exit 0
+  fi
+fi
+
+diff -u CHANGELOG.md "${scratch}" || true
+echo "verify-changelog: CHANGELOG.md drift — it holds released versions only (D-180), so this means a hand edit, a cliff.toml change that re-renders released history, or a release tag not yet stamped with commits already on top of it: run 'task changelog-write' and commit it as ':memo: chore(release): …'" >&2
+exit 1

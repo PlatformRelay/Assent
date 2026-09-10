@@ -181,7 +181,11 @@ Requirements:
   released versions only, and `task changelog` previews the unreleased entries.
   Test: same; Verify: `test -f CHANGELOG.md && ! grep -qE '^## Unreleased$' CHANGELOG.md`; Level: doc
 - **REQ-E9-S03-03** — `hack/release/verify-changelog.sh` exits non-zero when `CHANGELOG.md` is
-  stale vs `cliff.toml` output (fail-closed drift gate). Test: `hack/release/changelog_test.sh`;
+  stale vs `cliff.toml` output (fail-closed drift gate). *Amended by D-181 (2026-09-10):* one
+  drift is tolerated — HEAD is itself a release tag and `CHANGELOG.md` equals the released-only
+  render with exactly HEAD's tags ignored (the tag pushed, its stamp not yet landed); anything
+  else on a tagged HEAD, and an unstamped tag with any commit on top, is still non-zero.
+  Test: `hack/release/changelog_test.sh`, `hack/release/changelog_gate_test.sh` §10c;
   Verify: `hack/release/verify-changelog.sh`; Level: L0
 - **REQ-E9-S03-04** — release workflow will consume git-cliff output (document hook point in
   `hack/release/README.md`). Test: `hack/release/README.md`; Verify:

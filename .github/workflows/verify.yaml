@@ -200,7 +200,9 @@ jobs:
       # because `task check` runs this gate on every local commit. D-180: CHANGELOG.md
       # holds released versions only, so an ordinary commit (a Dependabot merge
       # included) never reds this step; it reds on a hand edit, a cliff.toml change
-      # that re-renders history, or a pushed tag not yet stamped. Do not delete this
+      # that re-renders history, or a pushed tag not yet stamped with a commit on top
+      # (on the tagged SHA itself it passes with a ::warning:: — D-181, so a re-run
+      # there cannot lock the tag out of release.yaml's verify-green gate). Do not delete this
       # line to "clean up a dead premise" — close OQ-30 first.
       - name: changelog drift gate (AUD-S02 — REQ-AUD-S02-02)
         if: github.event_name != 'pull_request'
