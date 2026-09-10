@@ -131,7 +131,8 @@ missing"), because CI runs the whole of `task check` in `release-exitgate`
 (`hack/audit/exitgate_test.sh`) and a red there would lock the tag out just the same. What keeps
 the stamp from being forgotten is the other half: the first commit on top of an unstamped tag is
 red everywhere. `changelog_gate_test.sh` §10c pins the allowance at both polarities, and §10e runs
-that whole script on a tagged-but-unstamped commit (green) and with a commit on top (red). Use the
+that whole script on a tagged-but-unstamped commit (green) and with a commit on top (red). A release whose commits are all cliff-skipped
+renders no section at all, so it has nothing to stamp; the gates accept that (D-181). Use the
 `:memo: chore(release):` prefix: `cliff.toml` skips it, which keeps the stamp out of the NEXT
 release's notes. Since D-180 that skip rule matters only for stamp commits (and any other
 `cliff.toml`-driven regeneration); ordinary regeneration commits no longer exist.
