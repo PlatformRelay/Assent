@@ -145,11 +145,18 @@ jobs:
       # step's presence and this ordering.
       # NOT continue-on-error, deliberately: that is the disarm shape the audit gates
       # refuse, and it would rebuild the exact silence this step exists to end.
-      # Fork PRs carry no SONAR_TOKEN, so the step is skipped there rather than
-      # hard-failing. That is a real coverage gap, recorded in D-177 rather than
-      # papered over.
+      # Two named coverage gaps, each skipped rather than hard-failing, because
+      # the run carries no SONAR_TOKEN and would red on a guaranteed scanner error:
+      #   1. Fork PRs — no secrets for a head repo other than this one (D-177).
+      #   2. Dependabot PRs — runs whose github.actor is dependabot[bot] get no
+      #      Actions secrets (D-178). Keyed on github.actor, NOT triggering_actor:
+      #      a maintainer re-run keeps Dependabot's privileges (still no secrets)
+      #      while triggering_actor would name the maintainer and un-skip it.
+      # Both clauses sit inside the pull_request arm, so push and schedule are
+      # never skipped: the post-merge push run on main analyses the merged code.
+      # hack/lint/workflow_pins_test.sh pins this exact condition.
       - name: SonarCloud analysis (D-150/D-177 — CI-based; replaces Automatic Analysis)
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
