@@ -84,12 +84,21 @@ would be silently overwritten by the next `task changelog-write`.
   repository still gets a decision, never by following the link; no release carries that yet.
 
 """
+# D-180: the committed CHANGELOG.md holds RELEASED versions only. With
+# ASSENT_CHANGELOG_RELEASED_ONLY=1 — set by hack/release/render-changelog.sh, the
+# one renderer behind `task changelog-write` and verify-changelog.sh — the
+# unreleased release renders as nothing, so ordinary commits cannot make the
+# committed file stale. Unset (the default: `task changelog`, release.yaml's
+# `--latest`, every quality check in changelog_gate_test.sh), everything renders.
+# The default is "render everything" on purpose: a forgotten switch then puts an
+# `## Unreleased` block in front of the drift gate (red), instead of silently
+# hiding unreleased entries from a detector.
 body = """
-{% if version %}## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}{% else %}## Unreleased{% endif %}
+{% if version or get_env(name="ASSENT_CHANGELOG_RELEASED_ONLY", default="") != "1" %}{% if version %}## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}{% else %}## Unreleased{% endif %}
 {% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group }}
 {% for commit in commits %}- {{ commit.message | split(pat="\n") | first }}
-{% endfor %}{% endfor %}
+{% endfor %}{% endfor %}{% endif %}
 """
 footer = """
 ## [0.0.0] - 2026-08-04

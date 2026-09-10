@@ -12,13 +12,19 @@ if task changelog | grep -qE '[0-9a-f]{7,40}'; then
 fi
 echo "OK: no SHA tokens in unreleased preview"
 
-echo "== REQ-E9-S03-02: CHANGELOG.md has Unreleased + historical stub =="
+echo "== REQ-E9-S03-02: CHANGELOG.md has released sections + historical stub, and NO Unreleased section (D-180) =="
 if [[ ! -f CHANGELOG.md ]]; then
   echo "FAIL: CHANGELOG.md missing (REQ-E9-S03-02)" >&2
   exit 1
 fi
-if ! grep -q 'Unreleased' CHANGELOG.md; then
-  echo "FAIL: CHANGELOG.md missing Unreleased section (REQ-E9-S03-02)" >&2
+# D-180: the committed file holds released versions only; `task changelog` is
+# where the unreleased entries are shown.
+if grep -qE '^## Unreleased$' CHANGELOG.md; then
+  echo "FAIL: CHANGELOG.md carries an Unreleased section — it holds released versions only since D-180 (REQ-E9-S03-02)" >&2
+  exit 1
+fi
+if ! grep -qE '^## \[[0-9]+\.[0-9]+\.[0-9]+\] - ' CHANGELOG.md; then
+  echo "FAIL: CHANGELOG.md has no released section (REQ-E9-S03-02)" >&2
   exit 1
 fi
 if ! grep -q 'Pre-release development' CHANGELOG.md; then
