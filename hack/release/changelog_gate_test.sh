@@ -1410,6 +1410,53 @@ if [[ -z "${ASSENT_CHANGELOG_GATE_NESTED:-}" ]]; then
   [[ "$(cd "$(tgit rev-parse --show-toplevel)" && pwd -P)" == "$tsb_expected" ]] \
     || fail "tagged-tree sandbox git commands resolve outside '$tsb_expected'"
   tgit checkout -q -B tagged "$head_sha" || fail "could not check out HEAD ($head_sha) in the tagged-tree sandbox"
+  # overlay_worktree <src-root> <dst-checkout> — make <dst-checkout>'s tracked
+  # files exactly <src-root>'s tracked files as they are in its WORKING TREE:
+  # clear every file <dst-checkout> tracks, then copy each of <src-root>'s that
+  # still exists on disk. A bare `git ls-files | tar` would fail on a deletion
+  # not yet staged (tar cannot stat it) and keep a staged one.
+  overlay_worktree() {
+    local src="$1" dst="$2" f
+    local -a present=()
+    (cd "$dst" && env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
+      -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
+      git ls-files -z | xargs -0 rm -f --) || return 1
+    while IFS= read -r -d '' f; do
+      if [[ -e "$src/$f" || -L "$src/$f" ]]; then
+        present+=("$f")
+      fi
+    done < <(cd "$src" && git ls-files -z)
+    ((${#present[@]})) || return 1
+    (cd "$src" && printf '%s\0' "${present[@]}" | tar -cf - --null -T -) | tar -xf - -C "$dst"
+  }
+  # The overlay on a tree with pending deletions — `task check` runs before the
+  # commit, so a tracked file removed with plain `rm` (unstaged) or `git rm`
+  # (staged) is an ordinary state. Neither may red this script for a reason
+  # that is not the changelog, and neither file may survive into the sandbox.
+  OSRC="$WORK/overlay-src" ODST="$WORK/overlay-dst"
+  ogit() {
+    env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
+      -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
+      git -c user.name='changelog gate' -c user.email='gate@example.invalid' \
+      -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"
+  }
+  mkdir -p "$OSRC/sub"
+  echo kept >"$OSRC/kept" && echo unstaged >"$OSRC/unstaged-rm" && echo staged >"$OSRC/sub/staged-rm"
+  ogit -C "$OSRC" init -q && ogit -C "$OSRC" add -A && ogit -C "$OSRC" commit -q -m base \
+    || fail "could not build the overlay fixture repository"
+  ogit clone -q "$OSRC" "$ODST" >/dev/null 2>&1 || fail "could not clone the overlay fixture repository"
+  echo modified >"$OSRC/kept"
+  rm "$OSRC/unstaged-rm"
+  ogit -C "$OSRC" rm -q sub/staged-rm || fail "could not stage a deletion in the overlay fixture"
+  (
+    unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR
+    overlay_worktree "$OSRC" "$ODST"
+  ) >"$WORK/overlay.fixture" 2>&1 \
+    || { cat "$WORK/overlay.fixture" >&2; fail "the working-tree overlay fails on a tracked file deleted but not yet staged — 'task check' before 'git add -A' would red here for a reason that is not the changelog"; }
+  [[ "$(cat "$ODST/kept")" == modified ]] || fail "the working-tree overlay did not carry a modified file into the sandbox"
+  [[ ! -e "$ODST/unstaged-rm" ]] || fail "the working-tree overlay kept a file deleted (unstaged) in the tree under test"
+  [[ ! -e "$ODST/sub/staged-rm" ]] || fail "the working-tree overlay kept a file deleted (staged) in the tree under test"
+  echo "OK: the working-tree overlay carries modifications and both kinds of pending deletion into the sandbox"
   # Same rewind as the §10 sandbox, so a real unstamped tag on HEAD does not
   # sit under the overlay commit.
   while IFS= read -r t; do
@@ -1419,7 +1466,7 @@ if [[ -z "${ASSENT_CHANGELOG_GATE_NESTED:-}" ]]; then
   done < <(tgit tag --points-at "$head_sha" --list 'v[0-9]*')
   # Overlay every tracked file as it is in the WORKING TREE, so the nested run
   # grades the tree under test.
-  (cd "$ROOT" && git ls-files -z | tar -cf - --null -T -) | tar -xf - -C "$TSB" \
+  overlay_worktree "$ROOT" "$TSB" \
     || fail "could not overlay the working tree into the tagged-tree sandbox"
   # NOT a cliff-skipped subject (review N1): if every commit since the newest
   # real tag is skipped — as it is right after every stamp commit — a skipped
