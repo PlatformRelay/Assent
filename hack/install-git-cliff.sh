@@ -34,7 +34,7 @@ mkdir -p "$(dirname "${root}/${OUT}")"
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "${tmpdir}"' EXIT
 
-curl -fsSL "${url}" -o "${tmpdir}/git-cliff.tgz"
+curl --proto '=https' --tlsv1.2 -fsSL "${url}" -o "${tmpdir}/git-cliff.tgz"
 tar -xzf "${tmpdir}/git-cliff.tgz" -C "${tmpdir}"
 install -m 0755 "${tmpdir}/git-cliff-${VER}/git-cliff" "${root}/${OUT}"
 echo "installed ${OUT} (${VERSION} ${platform})"
