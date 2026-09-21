@@ -128,7 +128,7 @@ jobs:
           go test -count=2 ./internal/forge/... -run TestMergeFailsClosedDoubleRun
           go test -count=2 ./internal/render/... -run 'TestRenderGoldens|TestRenderSummaryGolden'
       - name: install Task (coverage + exit gate scripts)
-        run: go install github.com/go-task/task/v3/cmd/task@"${TASK_VERSION}"
+        run: go install -mod=readonly github.com/go-task/task/v3/cmd/task@"${TASK_VERSION}"
       # AUD-S13 / D-128 — the coverage floor is SINGLE-SOURCED in Taskfile.yml's
       # `coverage:` task (var COVERAGE_MIN). This step used to re-implement the gate
       # inline with its own copy of the threshold, so raising the local floor left CI
@@ -240,13 +240,13 @@ jobs:
         with:
           enable-cache: true
       - name: install Task
-        run: go install github.com/go-task/task/v3/cmd/task@"${TASK_VERSION}"
+        run: go install -mod=readonly github.com/go-task/task/v3/cmd/task@"${TASK_VERSION}"
       # AUD-S18: `task check` runs `task lint` and `lint-depguard-test`, both of
       # which need the golangci-lint BINARY on PATH. The verify job lints via the
       # action, which leaves nothing behind for a later step (D-125), so the exit
       # gate needs its own pinned install. Version single-sourced at workflow level.
       - name: install golangci-lint (AUD-S18 — task check needs it on PATH)
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@"${GOLANGCI_LINT_VERSION}"
+        run: go install -mod=readonly github.com/golangci/golangci-lint/v2/cmd/golangci-lint@"${GOLANGCI_LINT_VERSION}"
       - name: E9 release exit gate (RELSE-03 — REQ-E9-S13)
         run: bash hack/release/exitgate_test.sh
       # AUD-S18 (REQ-AUD-S18-01/02) — the P5-AUD exit gate: the 2026-08-06 audit's
