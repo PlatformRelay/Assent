@@ -10,6 +10,11 @@ updates:
     schedule:
       interval: weekly
     labels: [dependencies]
+    groups:
+      # init, analyze and upload-sarif must move together: a run that mixes versions
+      # fails with a configuration version mismatch.
+      codeql-action:
+        patterns: ["github/codeql-action/*"]
   - package-ecosystem: pip
     directory: /docs
     schedule:
