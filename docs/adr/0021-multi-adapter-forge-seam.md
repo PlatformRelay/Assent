@@ -53,11 +53,13 @@ representation* failure — a class the P1-E3-S03 dossier structurally could not
 it studied GitHub's API **endpoints**, not how the port **names** things:
 
 5. **Head-content addressing — the port cannot read a GitHub fork PR's head (P0).**
-   `cmd/assent/run.go:270,274` reads the governed subject's base and head via
-   `FileAtRef(project, path, ref)` with `info.TargetBranch` / `info.SourceBranch` — a **branch
-   name inside one project** — and `forge.MRInfo` carries no source-repository identifier. On
-   GitHub, a fork PR's head branch does not exist in the base repo, so the read 404s;
-   `fileAtRefOrAbsent` (run.go:465-468) maps `forge.ErrNotFound` to `nil`, and
+   `cmd/assent/run.go:281,285` reads the governed subject's base and head via
+   `FileAtRef(project, path, ref)` with `info.TargetSHA` / `info.SourceSHA` — a **ref inside
+   one project** (the refs were branch names before REV1-S01 / D-182 pinned them) — and
+   `forge.MRInfo` carries no source-repository identifier. On
+   GitHub, a fork PR's head branch lives in the fork, not the base repo, so a ref inside the
+   base project does not address it and the read 404s;
+   `fileAtRefOrAbsent` (run.go:476-482) maps `forge.ErrNotFound` to `nil`, and
    `change.OneSidedLifecycle(base, nil)` (`internal/change/onesided.go:20-21`) returns
    `KindDelete, true`. **Every fork PR would be evaluated as a whole-file deletion the
    contributor never made** — a spurious BLOCK, or an APPROVE on fabricated change semantics.
@@ -109,12 +111,12 @@ consisting of four committed pieces:
    **The two accessors are not redundant and neither replaces the other** — item 5 decides
    which is legal where. `FileAtRef` survives because *policy* is ref-addressed by contract:
    ADR-0015 §1 requires the MergePolicy, RulesetBinding, Config and pack to load from the
-   **target ref by name**, which `cmd/assent/run.go:203`, `:211`, `:230` and `:249` do today
+   **target ref by name**, which `cmd/assent/run.go:208`, `:216`, `:235` and `:254` do today
    and must keep doing. **That list is exhaustive for `run.go` and NOT for
    `cmd/assent`**: two further ref-addressed decision-input reads live in
    `cmd/assent/provider_host.go` — the provider host declaration at `:82` and the
    **resource-owner registry** at `:275`. Verify against the tree before relying on either
-   list. Two of the six deserve specific mention. `run.go:230` reads `.assent/config.yaml`,
+   list. Two of the six deserve specific mention. `run.go:235` reads `.assent/config.yaml`,
    which carries the provider-host declarations, so migrating it would let a fork's head
    redefine its own fact semantics. `provider_host.go:275` is the most dangerous read in the
    repository to move, because that registry **decides who may approve**: its own comment
@@ -158,9 +160,9 @@ consisting of four committed pieces:
    adapters. Smuggling `refs/pull/N/head` into `MRInfo.SourceBranch` is explicitly rejected:
    it corrupts a documented field and leaks into rendering.
    **Scope of the narrowing, stated precisely because item 1 keeps both accessors:** it binds
-   the governed subject only — `run.go:270,274`, the reads whose 404-maps-to-`nil` feeds
+   the governed subject only — `run.go:281,285`, the reads whose 404-maps-to-`nil` feeds
    `change.OneSidedLifecycle` and mints the fabricated whole-file DELETE. The **policy** loads
-   at `run.go:203`, `:211`, `:230`, `:249` — **plus `provider_host.go:82` and `:275`** — are
+   at `run.go:208`, `:216`, `:235`, `:254` — **plus `provider_host.go:82` and `:275`** — are
    *deliberately* still `FileAtRef(project, path, targetRef)`:
    they read the protected target ref of the target project, which is exactly the trust
    boundary ADR-0015 §1 draws, and a fork's head must never be able to reach them. Rewriting

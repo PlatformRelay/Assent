@@ -573,9 +573,9 @@ Spec: [p5-e10-github-forge/spec.md](p5-e10-github-forge/spec.md) · ADR: **0021*
 Dossier: [forge-dossier-github.md](../../docs/planning/forge-dossier-github.md).
 **Ordering is normative — S00 before any code, and the seam (S01–S05) before the first GitHub
 API call.** An adversarial review of the first draft (2026-08-10) found **two P0 representation
-defects** by reading the port against the code: the port addresses head content by branch name
+defects** by reading the port against the code: the port addresses head content by a ref
 in one project, so **every GitHub fork PR would mint a fabricated whole-file DELETE**
-(`run.go:274` → `fileAtRefOrAbsent` → `OneSidedLifecycle`); and `$defs.pins` is
+(`run.go:285` → `fileAtRefOrAbsent` → `OneSidedLifecycle`); and `$defs.pins` is
 `additionalProperties:false` with a **single-string** `capabilityGap` required iff
 `mergeResultDigest` is null, so an eleven-capability report **has nowhere valid to be
 recorded**. Both are decided in ADR-0021 (items 5–8) and gated by S00. S00/S02/S04 are

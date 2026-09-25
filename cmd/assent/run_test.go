@@ -29,6 +29,7 @@ type fakeGitLab struct {
 	mergePolicy          string            // MergePolicy served from the TARGET ref.
 	rulesetBinding       string            // RulesetBinding served from the TARGET ref.
 	config               string            // optional Config served from the TARGET ref.
+	pack                 string            // optional Pack served from the pinned TARGET SHA.
 	providerDecls        map[string]string // optional host declarations (.assent/providers/<name>.json)
 	baseFile, headFile   string            // governed-file content at the pinned target/source SHA.
 	// sourceHeadFile, when non-empty, models the MOVED branch tip: bytes served
@@ -418,6 +419,16 @@ func (f *fakeGitLab) serveFile(w http.ResponseWriter, r *http.Request, p string)
 			return
 		}
 		_, _ = w.Write([]byte(f.config))
+		return
+	case strings.Contains(p, "packs"):
+		// REV1-S01: the Pack is a target-side document read at the pinned target
+		// SHA. Serving it only there is the polarity lock — a regression to
+		// info.TargetBranch (the mutable branch name) 400s and the run fails.
+		if ref != f.targetTip {
+			http.Error(w, "the pack MUST load from the pinned target SHA, got "+ref, http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(f.pack))
 		return
 	}
 	// The governed file: base from the pinned TARGET SHA, head from the pinned
@@ -977,6 +988,30 @@ func TestRunEmitToFile(t *testing.T) {
 	// stdout carried only the summary (not the record) when --emit is a file.
 	if strings.Contains(out.String(), "\"kind\":\"DecisionRecord\"") {
 		t.Errorf("record should NOT be on stdout when --emit is a file:\n%s", out.String())
+	}
+}
+
+// validPackManifest is a minimal schema-valid Pack (REQ-E2-S01-01 shape). Its
+// phase:observe ceiling makes the default challenge policy advisory, so the run
+// still emits a DecisionRecord with exit 0 while proving the pack was loaded.
+const validPackManifest = `{"apiVersion":"assent.dev/v1alpha1","kind":"Pack","metadata":{"name":"p"},"spec":{"phase":"observe","version":"1.0.0"}}`
+
+// REV1-S01 (U-04 item 1): the Pack read is one of the six content reads and must
+// resolve the pinned target SHA. The fake serves the pack only at f.targetTip, so
+// reverting run.go:249's ref to info.TargetBranch reddens this test.
+func TestRunPackFromPinnedSHA(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.pack = validPackManifest
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 24\n"
+
+	var out bytes.Buffer
+	code := runRun(runArgs("--pack", ".assent/packs/p/pack.yaml"), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (pack read at the pinned target SHA)\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), `"decision":"REVIEW"`) {
+		t.Fatalf("a phase:observe pack ceiling must cap the challenge to an advisory REVIEW:\n%s", out.String())
 	}
 }
 
