@@ -55,6 +55,7 @@ type Forge struct {
 	MRAuthor     string
 	SourceBranch string
 	TargetBranch string
+	Labels       []string
 	ChangedFiles []string
 	Capabilities forge.CapabilityFlags
 	ResolveMode  ResolveMode

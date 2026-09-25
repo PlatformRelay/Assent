@@ -42,6 +42,7 @@ func (f *Forge) Snapshot(_, _ string) (forge.Snapshot, error) {
 			TargetBranch:      f.TargetBranch,
 			MergeResultDigest: f.CurrentMergeResultDigest,
 			Author:            f.MRAuthor,
+			Labels:            f.Labels,
 		},
 		ChangedFiles: files,
 		// Set EXPLICITLY (ADR-0020 §1): the zero value would fail safe to REVIEW,

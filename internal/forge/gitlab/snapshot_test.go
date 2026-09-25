@@ -82,6 +82,7 @@ func snapshotHandler(t *testing.T, diffs diffsCassette) http.HandlerFunc {
 			_, _ = fmt.Fprintf(w, `{
 				"iid":7,"project_id":42,"sha":"srcSHA","source_branch":"feature","target_branch":"main",
 				"author":{"username":"alice"},
+				"labels":["security-hold","urgent"],
 				"changes_count":%q,
 				"diff_refs":{"base_sha":"mergeBaseNOTused"}
 			}`, diffs.changesCount)
@@ -162,6 +163,10 @@ func TestSnapshotMRHeads(t *testing.T) {
 	}
 	if snap.Heads.Author != "alice" {
 		t.Errorf("Author = %q, want alice", snap.Heads.Author)
+	}
+	// REQ-E4-S02-05: Snapshot's MR read decodes the `labels` array too.
+	if len(snap.Heads.Labels) != 2 || snap.Heads.Labels[0] != "security-hold" || snap.Heads.Labels[1] != "urgent" {
+		t.Errorf("Heads.Labels = %#v, want [security-hold urgent]", snap.Heads.Labels)
 	}
 	wantDig := SyntheticDigest("srcSHA", "tgtTIP")
 	if snap.Heads.MergeResultDigest != wantDig {

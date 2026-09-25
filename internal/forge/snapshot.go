@@ -61,6 +61,9 @@ type MRHeads struct {
 	TargetBranch      string
 	MergeResultDigest string
 	Author            string
+	// Labels are the MR's forge labels (GitLab's string array), surfaced so the
+	// typed read view carries the same MR metadata the engine's `mr` scope needs.
+	Labels []string
 	// ForkMR is true when the MR source project differs from the target project
 	// (GitLab fork workflow). ADR-0015 §8: fork/untrusted context is advisory-only.
 	ForkMR bool

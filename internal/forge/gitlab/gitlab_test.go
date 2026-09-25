@@ -73,6 +73,55 @@ func TestGetMR(t *testing.T) {
 	}
 }
 
+// TestGetMRLabels proves REQ-E4-S02-05: GetMR decodes the MR's `labels` string
+// array into MRInfo.Labels. Before this, the live run path never carried labels,
+// so every `mr.labels` predicate evaluated against an empty list.
+func TestGetMRLabels(t *testing.T) {
+	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		wantToken(t, r)
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/merge_requests/7":
+			_, _ = io.WriteString(w, `{"iid":7,"project_id":42,"sha":"srcSHA","source_branch":"feature","target_branch":"main","labels":["security-hold","urgent"]}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/repository/branches/main":
+			_, _ = io.WriteString(w, `{"commit":{"id":"tgtTIP"}}`)
+		default:
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+		}
+	})
+
+	info, err := c.GetMR("42", "7")
+	if err != nil {
+		t.Fatalf("GetMR: %v", err)
+	}
+	if len(info.Labels) != 2 || info.Labels[0] != "security-hold" || info.Labels[1] != "urgent" {
+		t.Errorf("Labels = %#v, want [security-hold urgent]", info.Labels)
+	}
+}
+
+// TestGetMRNoLabels proves an MR with no `labels` field decodes to an empty list,
+// never an error (REQ-E4-S02-05).
+func TestGetMRNoLabels(t *testing.T) {
+	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		wantToken(t, r)
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/merge_requests/7":
+			_, _ = io.WriteString(w, `{"iid":7,"project_id":42,"sha":"srcSHA","source_branch":"feature","target_branch":"main"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/42/repository/branches/main":
+			_, _ = io.WriteString(w, `{"commit":{"id":"tgtTIP"}}`)
+		default:
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+		}
+	})
+
+	info, err := c.GetMR("42", "7")
+	if err != nil {
+		t.Fatalf("GetMR: %v", err)
+	}
+	if len(info.Labels) != 0 {
+		t.Errorf("Labels = %#v, want empty for an MR with no labels field", info.Labels)
+	}
+}
+
 func TestFileAtRef(t *testing.T) {
 	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		wantToken(t, r)
