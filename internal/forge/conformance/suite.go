@@ -207,30 +207,34 @@ func caseSHAGuardSourceMovedAndRestored(t TB, f Factory) {
 	b := f(t, shaGuardConfig())
 	pins := b.Fixture.Pins()
 
+	// Each phase is a subtest so the sabotage gate reaches BOTH: a failure in
+	// phase 1 aborts only its own subtest, so phase 2 still runs and its
+	// assertions are exercised against the sabotaged backend too.
+
 	// Phase 1: head moved AWAY. The pre-check must fail closed BEFORE any CAS.
-	b.Fixture.MoveSourceHead(movedSource)
-	if _, err := forge.Reconcile(b.Port, testClock(), approveState(pins), armedPre(pins)); !errors.Is(err, forge.ErrSHAMoved) {
-		t.Fatalf("moved-away: want ErrSHAMoved, got %v", err)
-	}
-	if got := b.Observer.MergesPerformed(); got != 0 {
-		t.Fatalf("moved-away: zero merges expected, got %d", got)
-	}
-	if got := b.Observer.MergeAttempts(); got != 0 {
-		t.Fatalf("moved-away: pre-check must fail closed before MergeCAS, got %d attempt(s)", got)
-	}
+	t.Run("moved-away", func(t TB) {
+		b.Fixture.MoveSourceHead(movedSource)
+		if _, err := forge.Reconcile(b.Port, testClock(), approveState(pins), armedPre(pins)); !errors.Is(err, forge.ErrSHAMoved) {
+			t.Fatalf("moved-away: want ErrSHAMoved, got %v", err)
+		}
+		if got := b.Observer.MergesPerformed(); got != 0 {
+			t.Fatalf("moved-away: zero merges expected, got %d", got)
+		}
+		if got := b.Observer.MergeAttempts(); got != 0 {
+			t.Fatalf("moved-away: pre-check must fail closed before MergeCAS, got %d attempt(s)", got)
+		}
+	})
 
 	// Phase 2: head RESTORED to the pin. The CAS now sees current == pin and
 	// merges at the evaluated SHA — the bytes the run path judged at the pin.
-	b.Fixture.MoveSourceHead(pins.SourceSha)
-	if _, err := forge.Reconcile(b.Port, testClock(), approveState(pins), armedPre(pins)); err != nil {
-		t.Fatalf("restored: want a merge at the pin, got %v", err)
-	}
-	if got := b.Observer.MergesPerformed(); got != 1 {
-		t.Fatalf("restored: exactly one merge expected, got %d", got)
-	}
-	if got := b.Observer.MergeAttempts(); got != 1 {
-		t.Fatalf("restored: the CAS must be reached exactly once, got %d", got)
-	}
+	t.Run("restored", func(t TB) {
+		b.Fixture.MoveSourceHead(pins.SourceSha)
+		_, err := forge.Reconcile(b.Port, testClock(), approveState(pins), armedPre(pins))
+		merges, attempts := b.Observer.MergesPerformed(), b.Observer.MergeAttempts()
+		if err != nil || merges != 1 || attempts != 1 {
+			t.Fatalf("restored: want one merge at the pin (err=%v merges=%d attempts=%d)", err, merges, attempts)
+		}
+	})
 }
 
 // reconcileForObservation drives one SHA-guarded reconcile and discards the
