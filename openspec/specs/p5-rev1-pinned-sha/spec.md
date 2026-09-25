@@ -67,7 +67,7 @@ the same URL-escaped parameter), so the fix is one parameter at each of the six 
 **ADRs:** 0005 (forge conformance suite), 0015 §2 (SHA-guarded merge, no TOCTOU), 0020
 (changed-file enumeration completeness — untouched here).
 
-**Decisions:** **D-182** (this lane: read the judged content at the pinned SHA). Related
+**Decisions:** **D-183** (this lane: read the judged content at the pinned SHA). Related
 history the lane must not re-derive: **D-033** (pinned SHAs live in `DecisionRecord.pins`),
 **D-139** (the checkout-path sibling, SEC-01), **D-122** (emit-before-reconcile ordering —
 unchanged).

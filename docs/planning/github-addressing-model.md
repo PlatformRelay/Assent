@@ -48,7 +48,7 @@ split *is* the trust boundary of GUIDELINES Safety 3 / ADR-0015 §1.
 ### The concrete failure this prevents
 
 `code`: `cmd/assent/run.go:281` reads the governed base at `info.TargetSHA` and `:285`
-reads the governed head at `info.SourceSHA` (both pinned by REV1-S01 / D-182; the refs were
+reads the governed head at `info.SourceSHA` (both pinned by REV1-S01 / D-183; the refs were
 branch names when this model was written), both through `fileAtRefOrAbsent`
 (`run.go:476`, calls at `:281`/`:285`), which maps `forge.ErrNotFound` to `nil` bytes. `forge.MRInfo`
 (`internal/forge/port.go:40`) carries `SourceBranch` but **no source-repository identifier**.

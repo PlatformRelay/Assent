@@ -55,7 +55,7 @@ it studied GitHub's API **endpoints**, not how the port **names** things:
 5. **Head-content addressing — the port cannot read a GitHub fork PR's head (P0).**
    `cmd/assent/run.go:281,285` reads the governed subject's base and head via
    `FileAtRef(project, path, ref)` with `info.TargetSHA` / `info.SourceSHA` — a **ref inside
-   one project** (the refs were branch names before REV1-S01 / D-182 pinned them) — and
+   one project** (the refs were branch names before REV1-S01 / D-183 pinned them) — and
    `forge.MRInfo` carries no source-repository identifier. On
    GitHub, a fork PR's head branch lives in the fork, not the base repo, so a ref inside the
    base project does not address it and the read 404s;

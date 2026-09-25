@@ -895,7 +895,7 @@ they are claimed**; this epic claims only U-04 item 1.
 **Follow-on (named, not claimed here):** U-04 items 2–4 — the SHA-bound `/repository/compare`
 enumeration re-fold (shares its mechanism with the D-139 trio, register lane B5), the
 `CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` belt, and the additive `headContentSha` record pin (lane
-B9) — plus the `--checkout` tree↔SHA binding (U-08/QFN-04, lane B5). **D-182** records the lane.
+B9) — plus the `--checkout` tree↔SHA binding (U-08/QFN-04, lane B5). **D-183** records the lane.
 
 ## Phases 3–5
 
