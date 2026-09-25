@@ -73,7 +73,7 @@ history the lane must not re-derive: **D-033** (pinned SHAs live in `DecisionRec
 unchanged).
 
 **Reuse, explicitly:** `forge.FileAtRef` (`internal/forge/gitlab/gitlab.go:474`) already
-accepts an arbitrary `ref`; `fileAtRefOrAbsent` (`cmd/assent/run.go:465`) already maps a 404
+accepts an arbitrary `ref`; `fileAtRefOrAbsent` (`cmd/assent/run.go:476`) already maps a 404
 at that ref to the absent-file presence signal. No new adapter API, no new discriminator.
 
 ---
@@ -178,7 +178,7 @@ Requirements:
   `info.SourceBranch`, when the run-path move-and-restore test runs, then it fails
   (non-vacuity: the test measures the pin, not the fake).
   - Test: mutation performed and recorded in the story's review evidence
-  - Verify: revert `run.go:274` to `info.SourceBranch`; `go test ./cmd/assent/... -run PinnedSHA` reddens
+  - Verify: revert `run.go:285` to `info.SourceBranch`; `go test ./cmd/assent/... -run PinnedSHA` reddens
   - Level: L1
 - **REV1-S01-06** — Given the shipped example fixtures, when the full gate runs, then every
   existing decision outcome is unchanged (the fix is strictly stronger pinning; it alters
