@@ -186,10 +186,13 @@ type Report struct {
 // Build serializes the S03 aggregate outcome + the pins into the DecisionRecord
 // and its companion PresentationModel.
 //
-// P3 SEAM NOTE (S03 review F3, not fixed here): the aggregator treats an empty
-// require as APPROVE-by-design; the CLI wiring (a different lane) must guarantee
-// require is non-empty before an APPROVE is armed. This serializer only reports
-// whatever decision S03 produced — it does not re-derive or change it.
+// P3 SEAM NOTE (S03 review F3): the aggregator treats an empty require as
+// APPROVE-by-design; the CLI wiring (a different lane) must guarantee require is
+// non-empty before an APPROVE is armed. ENFORCED as of RVW-S01 / D-183: the run
+// path refuses a decidable subject whose covering binding has an empty require
+// (cmd/assent/run.go's decide), and `assent lint` hard-errors
+// `binding-require-empty`. This serializer only reports whatever decision S03
+// produced — it does not re-derive or change it.
 func Build(res aggregate.Result, pins Pins) (Report, error) {
 	fs := toFindings(res.Findings)
 

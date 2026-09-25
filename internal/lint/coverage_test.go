@@ -84,6 +84,49 @@ func TestObligationCoverageUncovered(t *testing.T) {
 	}
 }
 
+// TestBindingRequireEmpty — RVW-S01: a binding whose require[] is empty declares
+// no required obligations, so the obligation layer is vacuous; lint emits exactly
+// one located binding-require-empty hard error. The non-empty case is asserted
+// alongside so the guard is not merely "always errors".
+func TestBindingRequireEmpty(t *testing.T) {
+	empty := Lint([]Source{
+		bindingSrc(""),               // require: [] — the vacuous shape
+		ruleSrc("owns", "ownership"), // proves an obligation, but nothing requires it
+		caseDirSrc("p", "ownership"), // keep tests-per-rule silent
+	})
+	diags := empty.Diagnostics()
+	if len(diags) != 1 {
+		t.Fatalf("want exactly 1 diagnostic, got %d: %#v", len(diags), diags)
+	}
+	d := diags[0]
+	if d.Code != CodeBindingRequireEmpty {
+		t.Errorf("code = %q, want %q", d.Code, CodeBindingRequireEmpty)
+	}
+	if d.Severity != SeverityError {
+		t.Errorf("severity = %q, want %q", d.Severity, SeverityError)
+	}
+	if !strings.Contains(d.Location.Name, "kafka-topic") || !strings.Contains(d.Location.Name, "dev") {
+		t.Errorf("location must name the binding (class, environment), got %q", d.Location.Name)
+	}
+	if d.Location.File != ".assent/bindings.yaml" {
+		t.Errorf("location file = %q, want the binding file", d.Location.File)
+	}
+	if !empty.HasErrors() {
+		t.Error("report must signal a non-zero exit when an error diagnostic is present")
+	}
+
+	nonEmpty := Lint([]Source{
+		bindingSrc("ownership"),
+		ruleSrc("owns", "ownership"),
+		caseDirSrc("p", "ownership"),
+	})
+	for _, d := range nonEmpty.Diagnostics() {
+		if d.Code == CodeBindingRequireEmpty {
+			t.Errorf("non-empty require must not emit %q, got %+v", CodeBindingRequireEmpty, d)
+		}
+	}
+}
+
 // TestTolerantIngestionAccumulatesAllDiagnostics — REQ-E3-S01-02 (the critical
 // test): a pack with TWO distinct defects — a strict-schema violation (bad
 // onFailure.effect enum) AND an uncovered obligation — reports BOTH in one run.

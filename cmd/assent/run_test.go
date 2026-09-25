@@ -641,6 +641,18 @@ const rulesetBindingLabelGuard = `{
   ]
 }`
 
+// rulesetBindingEmptyRequire is schema-valid (require is not required, no
+// minItems) but declares no required obligations — the RVW-S01 vacuous shape. The
+// pre-guard engine decides APPROVE with zero findings on a change its block rules
+// do not fire on; the run-path guard must refuse before any forge write.
+const rulesetBindingEmptyRequire = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "RulesetBinding",
+  "bindings": [
+    { "class": "topic-registry", "environment": "prod", "packs": ["topic-safety"], "risk": { "threshold": 10 }, "require": [] }
+  ]
+}`
+
 // configOwnerFailOpen configures the controlling `owner` provider failure:open —
 // a posture ValidateProviderPosture must REJECT (a controlling fact must fail closed).
 const configOwnerFailOpen = `apiVersion: assent.dev/v1alpha1
@@ -739,6 +751,34 @@ func TestRunApproveArmedMerges(t *testing.T) {
 	}
 	if f.discussionsPosted != 0 {
 		t.Errorf("APPROVE must not post a thread: %d", f.discussionsPosted)
+	}
+}
+
+// RVW-S01 polarity: an empty-require binding is refused fail-closed, never
+// APPROVEd. The partitions increase (12 -> 24) is the exact change
+// TestRunApproveArmedMerges shows deciding APPROVE under a non-empty require; with
+// require: [] the obligation layer is vacuous and the pre-guard engine would
+// APPROVE with zero findings and (armed) approve+merge. The guard must stop the
+// run before any forge write and emit no APPROVE record.
+func TestRunEmptyRequireNeverApproves(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.rulesetBinding = rulesetBindingEmptyRequire
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 24\n"
+
+	var out bytes.Buffer
+	code := runRun(runArgs("--arm"), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code == 0 {
+		t.Fatalf("empty require must fail closed (non-zero exit), got 0\n%s", out.String())
+	}
+	if f.approvals != 0 || f.merges != 0 || f.discussionsPosted != 0 {
+		t.Errorf("empty require must write NOTHING to the forge: approvals=%d merges=%d discussions=%d", f.approvals, f.merges, f.discussionsPosted)
+	}
+	if strings.Contains(out.String(), `"decision":"APPROVE"`) {
+		t.Errorf("empty require must never emit an APPROVE record:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "require is empty") {
+		t.Errorf("refusal must be contributor-readable and name the empty require:\n%s", out.String())
 	}
 }
 

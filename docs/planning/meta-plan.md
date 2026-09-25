@@ -95,9 +95,8 @@ GitHub adapter; both moved to the deferred tier, so the numbering shifted.)
 Follow-on epics cut during Phase 5, outside the E1–E9 sequence: **EFE**
 (`p5-e-fileevents`, whole-file `match.fileEvents`), **PCS**
 (`p5-pcs-policy-comparison`, full comparison-suite runner), **AUD**
-(`p5-aud-audit-remediation`, post-release audit remediation), **REV1**
-(`p5-rev1-pinned-sha`, the 2026-09-25 six-review round's first fix slice — read the judged
-content at the pinned SHA; lanes B2–B15 are separate specs as they are claimed).
+(`p5-aud-audit-remediation`, post-release audit remediation), **RVW**
+(`p5-rvw-review-remediation`, six-review fail-open remediation).
 
 Deferred tiers keep their own numbers. **E10** GitHub adapter (**unlocked D-140**, spec
 `p5-e10-github-forge`, governed by ADR-0021) and **E11** Rego backend (**implementation
