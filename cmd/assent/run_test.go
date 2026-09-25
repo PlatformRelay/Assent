@@ -61,6 +61,7 @@ type fakeGitLab struct {
 
 	freeTier            bool
 	mrAuthor            string
+	labels              []string
 	approvalEligible    bool
 	approvalRulesStatus int
 
@@ -144,6 +145,7 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 			"sha":           f.sourceSHA,
 			"source_branch": f.sourceBranch, "target_branch": f.target,
 			"changes_count": f.changesCountBody(),
+			"labels":        f.labels,
 			"author":        map[string]any{"id": 101, "username": f.mrAuthor},
 		})
 	case p == "/api/v4/projects/42/repository/branches/main" && r.Method == http.MethodGet:
@@ -546,6 +548,65 @@ const rulesetBindingOwnership = `{
   ]
 }`
 
+// mergePolicyLabelRequired proves `urgent` ONLY when the MR carries the `urgent`
+// label — the positive half of REQ-E4-S06-08: with labels wired, a labelled MR
+// reaches the engine and the obligation is provable; without them it is not.
+const mergePolicyLabelRequired = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "MergePolicy",
+  "metadata": { "name": "label-required" },
+  "spec": {
+    "entries": { "topic-registry": { "mode": "document", "root": "", "identity": { "pointer": "/metadata/name" } } },
+    "rules": [
+      {
+        "name": "urgent-label-required",
+        "phase": "enforce",
+        "match": { "files": { "paths": ["topics/orders.yaml"] } },
+        "prove": { "obligation": "urgent", "when": "'urgent' in mr.labels" },
+        "onFailure": { "effect": "challenge", "code": "urgent-label-missing" }
+      }
+    ]
+  }
+}`
+
+const rulesetBindingLabelRequired = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "RulesetBinding",
+  "bindings": [
+    { "class": "topic-registry", "environment": "prod", "packs": ["label-required"], "risk": { "threshold": 10 }, "require": ["urgent"] }
+  ]
+}`
+
+// mergePolicyLabelGuard is a NEGATIVE label guard: it proves `no-security-hold`
+// only when the guarded label is ABSENT, and BLOCKs otherwise. Before labels were
+// wired this was vacuously true for every MR (empty label list), so a
+// `security-hold` MR could APPROVE and merge (REQ-E4-S06-08).
+const mergePolicyLabelGuard = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "MergePolicy",
+  "metadata": { "name": "label-guard" },
+  "spec": {
+    "entries": { "topic-registry": { "mode": "document", "root": "", "identity": { "pointer": "/metadata/name" } } },
+    "rules": [
+      {
+        "name": "security-hold-blocks",
+        "phase": "enforce",
+        "match": { "files": { "paths": ["topics/orders.yaml"] } },
+        "prove": { "obligation": "no-security-hold", "when": "!('security-hold' in mr.labels)" },
+        "onFailure": { "effect": "block", "code": "security-hold-present" }
+      }
+    ]
+  }
+}`
+
+const rulesetBindingLabelGuard = `{
+  "apiVersion": "assent.dev/v1alpha1",
+  "kind": "RulesetBinding",
+  "bindings": [
+    { "class": "topic-registry", "environment": "prod", "packs": ["label-guard"], "risk": { "threshold": 10 }, "require": ["no-security-hold"] }
+  ]
+}`
+
 // configOwnerFailOpen configures the controlling `owner` provider failure:open —
 // a posture ValidateProviderPosture must REJECT (a controlling fact must fail closed).
 const configOwnerFailOpen = `apiVersion: assent.dev/v1alpha1
@@ -746,6 +807,93 @@ func TestRunUncoveredObligationRecordValidates(t *testing.T) {
 	}
 	if f.approvals != 0 || f.merges != 0 {
 		t.Errorf("uncovered obligation must not approve/merge: approvals=%d merges=%d", f.approvals, f.merges)
+	}
+}
+
+// REQ-E4-S06-08 positive polarity: an MR carrying a label reaches the engine's
+// `mr.labels` on the live path. The obligation is provable ONLY when the label is
+// present, so before labels were wired the labelled run wrongly REVIEWed.
+func TestRunMRLabelsReachEngine(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.mergePolicy = mergePolicyLabelRequired
+	f.rulesetBinding = rulesetBindingLabelRequired
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 24\n"
+	f.labels = []string{"urgent"}
+
+	var out bytes.Buffer
+	code := runRun(runArgs("--arm"), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "\"decision\":\"APPROVE\"") {
+		t.Errorf("mr.labels=[urgent] must prove the label obligation → APPROVE:\n%s", out.String())
+	}
+	if f.approvals != 1 || f.merges != 1 {
+		t.Errorf("labelled APPROVE must write approve+merge: approvals=%d merges=%d", f.approvals, f.merges)
+	}
+
+	// The same MR without the label → the obligation is unprovable → REVIEW, no writes.
+	f2 := newFakeGitLab(t)
+	f2.mergePolicy = mergePolicyLabelRequired
+	f2.rulesetBinding = rulesetBindingLabelRequired
+	f2.baseFile = "partitions: 12\n"
+	f2.headFile = "partitions: 24\n"
+
+	var out2 bytes.Buffer
+	code = runRun(runArgs("--arm"), env("tok"), fixedClock(), &out2, &out2, f2.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s", code, out2.String())
+	}
+	if !strings.Contains(out2.String(), "\"decision\":\"REVIEW\"") {
+		t.Errorf("an unlabelled MR must not prove a label obligation → REVIEW:\n%s", out2.String())
+	}
+	if f2.approvals != 0 || f2.merges != 0 {
+		t.Errorf("unlabelled REVIEW must not write: approvals=%d merges=%d", f2.approvals, f2.merges)
+	}
+}
+
+// REQ-E4-S06-08 negative-guard polarity: an MR carrying the guarded label must
+// NOT approve. Before labels were wired the empty list made the guard vacuously
+// true, so this exact fixture approved and merged.
+func TestRunMRLabelNegativeGuardFailsClosed(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.mergePolicy = mergePolicyLabelGuard
+	f.rulesetBinding = rulesetBindingLabelGuard
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 24\n"
+	f.labels = []string{"security-hold"}
+
+	var out bytes.Buffer
+	code := runRun(runArgs("--arm"), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "\"decision\":\"BLOCK\"") {
+		t.Errorf("a security-hold MR must not APPROVE; want BLOCK:\n%s", out.String())
+	}
+	if f.approvals != 0 || f.merges != 0 {
+		t.Errorf("security-hold BLOCK must not approve/merge: approvals=%d merges=%d", f.approvals, f.merges)
+	}
+
+	// Without the hold label the guard's obligation proves → APPROVE: the rule is
+	// not simply always-BLOCK.
+	f2 := newFakeGitLab(t)
+	f2.mergePolicy = mergePolicyLabelGuard
+	f2.rulesetBinding = rulesetBindingLabelGuard
+	f2.baseFile = "partitions: 12\n"
+	f2.headFile = "partitions: 24\n"
+
+	var out2 bytes.Buffer
+	code = runRun(runArgs("--arm"), env("tok"), fixedClock(), &out2, &out2, f2.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s", code, out2.String())
+	}
+	if !strings.Contains(out2.String(), "\"decision\":\"APPROVE\"") {
+		t.Errorf("without the hold label the guard proves → APPROVE:\n%s", out2.String())
+	}
+	if f2.approvals != 1 || f2.merges != 1 {
+		t.Errorf("clean APPROVE must write: approvals=%d merges=%d", f2.approvals, f2.merges)
 	}
 }
 

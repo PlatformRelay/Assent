@@ -152,6 +152,11 @@ Requirements:
 - **REQ-E4-S02-04** *(SECURITY)* — PAT never appears in URLs, bodies, or test failure messages. Test:
   existing `gitlab_test.go` redaction tests + snapshot tests; Verify:
   `go test ./internal/forge/gitlab/... -run TestSnapshot`; Level: L1
+- **REQ-E4-S02-05** — `GetMR` and Snapshot's `mrWithAuthor` both decode the MR's `labels` (GitLab's
+  string array) into `forge.MRInfo.Labels`, and `Snapshot` surfaces them as `forge.MRHeads.Labels`;
+  an MR with no `labels` field decodes to a nil/empty list, never an error. Test:
+  `internal/forge/gitlab/gitlab_test.go`, `internal/forge/gitlab/snapshot_test.go`; Verify:
+  `go test ./internal/forge/gitlab/... -run 'TestGetMRLabels|TestSnapshotMRLabels'`; Level: L1
 
 ---
 
@@ -311,6 +316,14 @@ Requirements:
 - **REQ-E4-S06-07** — `--checkout` set + Snapshot returns extra paths not in checkout → classifier
   uses checkout paths only (Snapshot extras ignored; no union). Test: same; Verify:
   `go test ./cmd/assent/... -run TestRunCheckoutPrecedenceOverSnapshot`; Level: L1
+- **REQ-E4-S06-08** *(ENGINE · fail-safe)* — `mrFrom` binds the MR's forge labels into the engine
+  `mr.labels` on the live run path: a labelled MR reaches the engine with labels populated (a rule
+  whose obligation is proven only by a label APPROVEs with it and REVIEWs without it), and a
+  NEGATIVE label guard fails CLOSED — an MR carrying the guarded label never APPROVEs (before this
+  requirement the empty label list made every negative guard vacuously true, so a `security-hold`
+  MR could approve and merge). Test: `cmd/assent/run_test.go`; Verify:
+  `go test ./cmd/assent/... -run 'TestRunMRLabelsReachEngine|TestRunMRLabelNegativeGuardFailsClosed'`;
+  Level: L1
 
 ---
 

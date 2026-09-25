@@ -47,4 +47,9 @@ type MRInfo struct {
 	// ForkMR is true when the source project differs from the target project
 	// (fork workflow).
 	ForkMR bool
+	// Labels are the MR's forge labels (GitLab's string array). They bind the
+	// engine's `mr.labels` predicate scope, so a negative label guard
+	// (`!('security-hold' in mr.labels)`) fails CLOSED. An MR with no labels
+	// decodes to a nil/empty list, never an error.
+	Labels []string
 }

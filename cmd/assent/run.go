@@ -577,12 +577,16 @@ func resolveRunApproval(client forgePort, cfg runConfig, info forge.MRInfo, merg
 }
 
 // mrFrom builds the engine's aggregate.MR from the forge MR metadata plus the
-// MR author (Snapshot heads) for require-review self-approval exclusion.
+// MR author (Snapshot heads) for require-review self-approval exclusion. Labels
+// are carried from the forge read (GetMR) so the engine's `mr.labels` predicate
+// scope is populated on the live run path — a negative label guard must not fail
+// open against an empty list.
 func mrFrom(info forge.MRInfo, author string) aggregate.MR {
 	return aggregate.MR{
 		Author:       author,
 		SourceBranch: info.SourceBranch,
 		TargetBranch: info.TargetBranch,
+		Labels:       info.Labels,
 	}
 }
 

@@ -28,6 +28,7 @@ func TestSnapshotFake(t *testing.T) {
 	f.MRAuthor = author
 	f.SourceBranch = srcBranch
 	f.TargetBranch = tgtBranch
+	f.Labels = []string{"security-hold"}
 	f.ChangedFiles = []string{"topics/prod/orders.yaml", "internal/handler.go", ".assent/policy.yaml"}
 	f.Capabilities = forge.CapabilityFlags{
 		Tier:                        forge.TierPremium,
@@ -60,8 +61,9 @@ func TestSnapshotFake(t *testing.T) {
 		TargetBranch:      tgtBranch,
 		MergeResultDigest: mergeDig,
 		Author:            author,
+		Labels:            []string{"security-hold"},
 	}
-	if snap.Heads != wantHeads {
+	if !reflect.DeepEqual(snap.Heads, wantHeads) {
 		t.Errorf("Heads = %+v, want %+v", snap.Heads, wantHeads)
 	}
 

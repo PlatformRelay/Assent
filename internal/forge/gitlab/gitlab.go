@@ -416,11 +416,12 @@ func (c *Client) GetMR(project, mr string) (MRInfo, error) {
 		return MRInfo{}, fmt.Errorf("gitlab: get MR %s!%s: unexpected status %d", project, mr, status)
 	}
 	var mrResp struct {
-		IID          int    `json:"iid"`
-		ProjectID    int    `json:"project_id"`
-		SHA          string `json:"sha"`
-		SourceBranch string `json:"source_branch"`
-		TargetBranch string `json:"target_branch"`
+		IID          int      `json:"iid"`
+		ProjectID    int      `json:"project_id"`
+		SHA          string   `json:"sha"`
+		SourceBranch string   `json:"source_branch"`
+		TargetBranch string   `json:"target_branch"`
+		Labels       []string `json:"labels"`
 	}
 	if err := json.Unmarshal(raw, &mrResp); err != nil {
 		return MRInfo{}, fmt.Errorf("gitlab: decode MR %s!%s: %w", project, mr, err)
@@ -438,6 +439,7 @@ func (c *Client) GetMR(project, mr string) (MRInfo, error) {
 		TargetBranch: mrResp.TargetBranch,
 		SourceSHA:    mrResp.SHA,
 		TargetSHA:    targetSHA,
+		Labels:       mrResp.Labels,
 	}, nil
 }
 

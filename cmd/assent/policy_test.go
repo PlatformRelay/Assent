@@ -116,13 +116,16 @@ func TestSubjectOf(t *testing.T) {
 	}
 }
 
-// mrFrom threads branch names and MR author from forge Snapshot heads (E4-S06).
+// mrFrom threads branch names, MR author and labels from the forge read (E4-S06).
 func TestMRFrom(t *testing.T) {
-	mr := mrFrom(forge.MRInfo{SourceBranch: "feature", TargetBranch: "main"}, "alice")
+	mr := mrFrom(forge.MRInfo{SourceBranch: "feature", TargetBranch: "main", Labels: []string{"security-hold"}}, "alice")
 	if mr.SourceBranch != "feature" || mr.TargetBranch != "main" {
 		t.Errorf("mrFrom = %+v, want source=feature target=main", mr)
 	}
 	if mr.Author != "alice" {
 		t.Errorf("author = %q, want alice from Snapshot heads", mr.Author)
+	}
+	if len(mr.Labels) != 1 || mr.Labels[0] != "security-hold" {
+		t.Errorf("labels = %#v, want [security-hold] threaded from the forge read", mr.Labels)
 	}
 }
