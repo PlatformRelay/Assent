@@ -206,7 +206,10 @@ assent compare --suite compare-suite/
 Use it the way you would use a backtest for *policy edits*. For first-adoption evidence
 on live MRs, set the pack's rollout `phase: observe` (ADR-0018) — rules evaluate and land
 in `findings.observed`, structurally excluded from the decision — and read the emitted
-`DecisionRecord`s rather than expecting a scan report.
+`DecisionRecord`s rather than expecting a scan report. Declare the binding's `require:`
+obligations first: an empty `require:` is refused on the run path, so a binding with none
+never reaches this evidence-gathering step — see
+[How to keep assent advisory](cli.md#how-to-keep-assent-advisory).
 
 ## Step 5 — wire CI (GitLab first)
 
