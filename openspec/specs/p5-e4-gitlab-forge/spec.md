@@ -156,7 +156,7 @@ Requirements:
   string array) into `forge.MRInfo.Labels`, and `Snapshot` surfaces them as `forge.MRHeads.Labels`;
   an MR with no `labels` field decodes to a nil/empty list, never an error. Test:
   `internal/forge/gitlab/gitlab_test.go`, `internal/forge/gitlab/snapshot_test.go`; Verify:
-  `go test ./internal/forge/gitlab/... -run 'TestGetMRLabels|TestSnapshotMRLabels'`; Level: L1
+  `go test ./internal/forge/gitlab/... -run 'TestGetMRLabels|TestSnapshotMRHeads'`; Level: L1
 
 ---
 
