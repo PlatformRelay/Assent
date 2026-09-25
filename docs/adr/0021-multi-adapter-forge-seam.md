@@ -111,8 +111,9 @@ consisting of four committed pieces:
    **The two accessors are not redundant and neither replaces the other** — item 5 decides
    which is legal where. `FileAtRef` survives because *policy* is ref-addressed by contract:
    ADR-0015 §1 requires the MergePolicy, RulesetBinding, Config and pack to load from the
-   **target ref by name**, which `cmd/assent/run.go:208`, `:216`, `:235` and `:254` do today
-   and must keep doing. **That list is exhaustive for `run.go` and NOT for
+   **target ref** (the pinned `info.TargetSHA` since REV1-S01 / D-183), which
+   `cmd/assent/run.go:208`, `:216`, `:235` and `:254` do today and must keep doing.
+   **That list is exhaustive for `run.go` and NOT for
    `cmd/assent`**: two further ref-addressed decision-input reads live in
    `cmd/assent/provider_host.go` — the provider host declaration at `:82` and the
    **resource-owner registry** at `:275`. Verify against the tree before relying on either

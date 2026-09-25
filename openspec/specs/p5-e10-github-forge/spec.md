@@ -287,7 +287,8 @@ runs it.
   **only** for the ref-addressed *policy* loads ADR-0015 §1 mandates (`cmd/assent/run.go:208`,
   `:216`, `:235`, `:254` — MergePolicy, RulesetBinding, **Config** and pack — **plus
   `cmd/assent/provider_host.go:82` (provider host declaration) and `:275` (resource-owner
-  registry)**, all from the target ref by name. That is **six** call sites, not four: the
+  registry)**, all from the target ref (the pinned `info.TargetSHA` for the four `run.go`
+  loads since REV1-S01 / D-183). That is **six** call sites, not four: the
   `run.go` list alone is not exhaustive for `cmd/assent`. `provider_host.go:275` is the single
   most dangerous one to migrate — the registry decides **who may approve**, and preferring the
   checkout there was the D-130 vouching escalation);
@@ -337,7 +338,7 @@ runs it.
   ADR-0008 §4 — the local head tree is the presence authority), and S02 does not change it;
   (ii) the **policy and decision-input** loads (`run.go:208`, `:216`, `:235`, `:254` and
   `provider_host.go:82`, `:275` — all six) still use
-  `FileAtRef(project, path, targetRef)` and are **not** migrated — a test asserts policy is
+  `FileAtRef` with the target ref and are **not** migrated — a test asserts policy is
   read from the target ref of the target project even for a fork MR, so a well-meaning
   "consistency" refactor onto an MR-relative accessor (which would let a fork's head reach the
   policy load) fails the suite rather than silently crossing ADR-0015 §1's trust boundary.

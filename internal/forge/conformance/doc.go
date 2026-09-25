@@ -10,7 +10,10 @@
 // proving executable contract for:
 //
 //   - ADR-0015 §2 SHA-guard semantics (E4-S07): target/source movement after
-//     evaluation fails closed with ErrSHAMoved.
+//     evaluation fails closed with ErrSHAMoved. A head moved AWAY and then
+//     RESTORED to the pin merges once (REV1-S01) — the CAS cannot distinguish a
+//     restore from a never-moved head, which is why the run path reads the judged
+//     bytes at the pinned SHA.
 //   - ADR-0019 P3-E5 publication-protocol replay (E4-S09): rerun idempotence,
 //     crash-then-rerun gap-fill without duplication, deterministic duplicate
 //     repair, and contributor marker spoofing ignored by the author-identity
