@@ -53,8 +53,9 @@ Shipping order: `run`/`--dry-run`/`explain` in v1; `serve` in v1.x once the CI p
 > zero risk."* **There is no zero-risk adoption path via a mode switch.** The only way to run
 > `assent` without approve/merge writes is to leave one of the forge-probed arming
 > preconditions unmet; `docs/usage/cli.md` §*How to keep assent advisory* states this, and
-> explains why a pack's `spec.phase` must not be used as a substitute (with no `require:`
-> obligations declared, an `observe` or `off` ceiling turns a BLOCK into an approve+merge).
+> explains why a pack's `spec.phase` must not be used as a substitute (a binding with no
+> `require:` obligations declared is refused on the run path, failing closed before any forge
+> write, so an `observe` or `off` ceiling can no longer turn a BLOCK into an approve+merge).
 >
 > This gap is *why* the CLI reference previously recommended `phase: observe` as the advisory
 > lever: the sanctioned mechanism was never built, so the docs invented one. Same open options
