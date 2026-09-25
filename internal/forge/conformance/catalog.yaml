@@ -24,6 +24,19 @@ cases:
     forge: gitlab
     adapters: [fake, gitlab]
 
+  # --- REV1-S01 / U-04 item 1: read the judged content at the pinned SHA ---
+  # The CAS merges once a moved head is restored to the pin, so the CAS alone
+  # cannot catch a move-and-restore; the read-pin is what protects the bytes.
+  - id: sha-guard-source-moved-and-restored
+    adr: ADR-0015 §2
+    level: L1
+    req: REQ-REV1-S01-04
+    test: TestConformanceSourceMovedAndRestored
+    package: internal/forge/conformance
+    forge: gitlab
+    adapters: [fake, gitlab]
+    note: moved-away refuses before MergeCAS; restored to the pin merges once — the guard's limit, not a defect
+
   # --- E4-S09 P3-E5 reconciliation replay (ADR-0019) ---
   - id: p3e5-rerun-idempotence
     adr: ADR-0019
@@ -70,6 +83,17 @@ cases:
     package: cmd/assent
     forge: gitlab
     adapters: [gitlab]
+
+  # --- REV1-S01 / U-04 item 1: the run path reads judged bytes at the pin ---
+  - id: run-judges-pinned-sha
+    adr: ADR-0015 §2
+    level: L1
+    req: REQ-REV1-S01-03
+    test: TestRunJudgesPinnedSHAWhenBranchMoves
+    package: cmd/assent
+    forge: gitlab
+    adapters: [gitlab]
+    note: source branch points at benign bytes while the pinned SHA carries a violating shrink; the decision follows the pin
 
   # --- AUD-S01 changed-file enumeration completeness (ADR-0020, D-119) ---
   # REQUIRED, not optional: in checkout-less runs the snapshot changed-file list

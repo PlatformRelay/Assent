@@ -200,17 +200,22 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	// 2. Load the frozen MergePolicy + RulesetBinding from the TARGET ref
 	//    (ADR-0015 §1) — NEVER the source branch — under strict decode (E2-S01).
 	//    Fail CLOSED on any load/validate error: no forge writes.
-	mpBytes, err := client.FileAtRef(cfg.project, cfg.policy, info.TargetBranch)
+	//
+	//    REV1-S01 / U-04 item 1: the ref is the pinned TARGET COMMIT SHA, not the
+	//    mutable target branch name. The merge is SHA-guarded, so a branch-name
+	//    read would let a force-push between this read and the CAS make the judged
+	//    bytes differ from the pinned bytes (ADR-0015 §2's invariant, made true).
+	mpBytes, err := client.FileAtRef(cfg.project, cfg.policy, info.TargetSHA)
 	if err != nil {
-		return fmt.Errorf("load merge-policy from target ref %q: %w", info.TargetBranch, err)
+		return fmt.Errorf("load merge-policy from target ref %q: %w", info.TargetSHA, err)
 	}
 	mp, err := policy.LoadMergePolicy(mpBytes)
 	if err != nil {
 		return fmt.Errorf("merge-policy: %w", err)
 	}
-	bindBytes, err := client.FileAtRef(cfg.project, cfg.binding, info.TargetBranch)
+	bindBytes, err := client.FileAtRef(cfg.project, cfg.binding, info.TargetSHA)
 	if err != nil {
-		return fmt.Errorf("load ruleset-binding from target ref %q: %w", info.TargetBranch, err)
+		return fmt.Errorf("load ruleset-binding from target ref %q: %w", info.TargetSHA, err)
 	}
 	rb, err := policy.LoadRulesetBinding(bindBytes)
 	if err != nil {
@@ -227,9 +232,9 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	//     Config is retained for E5-S05 fact resolution below.
 	var conf *policy.Config
 	if cfg.config != "" {
-		confBytes, cerr := client.FileAtRef(cfg.project, cfg.config, info.TargetBranch)
+		confBytes, cerr := client.FileAtRef(cfg.project, cfg.config, info.TargetSHA)
 		if cerr != nil {
-			return fmt.Errorf("load config from target ref %q: %w", info.TargetBranch, cerr)
+			return fmt.Errorf("load config from target ref %q: %w", info.TargetSHA, cerr)
 		}
 		loaded, cerr := policy.LoadConfig(confBytes)
 		if cerr != nil {
@@ -246,9 +251,9 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	//     enforce (no cap).
 	ceiling := policy.PhaseEnforce
 	if cfg.pack != "" {
-		packBytes, perr := client.FileAtRef(cfg.project, cfg.pack, info.TargetBranch)
+		packBytes, perr := client.FileAtRef(cfg.project, cfg.pack, info.TargetSHA)
 		if perr != nil {
-			return fmt.Errorf("load pack from target ref %q: %w", info.TargetBranch, perr)
+			return fmt.Errorf("load pack from target ref %q: %w", info.TargetSHA, perr)
 		}
 		pk, perr := policy.LoadPack(packBytes)
 		if perr != nil {
@@ -267,11 +272,17 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	if governed == cfg.subject {
 		return fmt.Errorf("--subject %q must be a file:<path> entryRef", cfg.subject)
 	}
-	base, err := fileAtRefOrAbsent(client, cfg.project, governed, info.TargetBranch)
+	// REV1-S01 / U-04 item 1: read the governed base/head at the PINNED COMMIT
+	// SHAs, not the mutable branch names. The head read is the exploit's target:
+	// a branch-name read judges whatever the branch pointed at mid-run, while the
+	// merge CAS pins a commit, so a force-push back to the pinned SHA would merge
+	// un-evaluated bytes. Reading at the pin makes "final head == pin ⇒ final
+	// head == what was judged" true.
+	base, err := fileAtRefOrAbsent(client, cfg.project, governed, info.TargetSHA)
 	if err != nil {
 		return fmt.Errorf("load governed base %q: %w", governed, err)
 	}
-	head, err := fileAtRefOrAbsent(client, cfg.project, governed, info.SourceBranch)
+	head, err := fileAtRefOrAbsent(client, cfg.project, governed, info.SourceSHA)
 	if err != nil {
 		return fmt.Errorf("load governed head %q: %w", governed, err)
 	}

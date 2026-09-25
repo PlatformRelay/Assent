@@ -67,8 +67,10 @@ func TestRunPolicyFromTargetRefOnly(t *testing.T) {
 		t.Fatalf("record must NOT carry source-branch policy digest %q", smuggledSha)
 	}
 	for _, load := range f.policyLoads {
-		if load.ref != f.target {
-			t.Errorf("policy load from ref %q, want target ref %q only (path %q)", load.ref, f.target, load.path)
+		// REV1-S01: the load must resolve the pinned TARGET SHA, not the mutable
+		// branch name (which the fake now refuses anyway).
+		if load.ref != f.targetTip {
+			t.Errorf("policy load from ref %q, want pinned target SHA %q only (path %q)", load.ref, f.targetTip, load.path)
 		}
 	}
 	if len(f.policyLoads) < 2 {

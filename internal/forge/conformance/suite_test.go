@@ -57,6 +57,13 @@ func TestConformanceSourceMovedRejected(t *testing.T) {
 	runCaseOnAllBackends(t, "sha-guard-source-moved")
 }
 
+// TestConformanceSourceMovedAndRestored is REQ-REV1-S01-04: the CAS merges once a
+// moved head is restored to the pin, which is why the read-pin (not the CAS) is
+// what protects the judged bytes.
+func TestConformanceSourceMovedAndRestored(t *testing.T) {
+	runCaseOnAllBackends(t, "sha-guard-source-moved-and-restored")
+}
+
 // TestConformanceRerunIdempotence is REQ-E4-S09-01.
 func TestConformanceRerunIdempotence(t *testing.T) {
 	runCaseOnAllBackends(t, "p3e5-rerun-idempotence")

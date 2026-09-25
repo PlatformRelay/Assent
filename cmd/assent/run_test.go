@@ -30,8 +30,13 @@ type fakeGitLab struct {
 	rulesetBinding       string            // RulesetBinding served from the TARGET ref.
 	config               string            // optional Config served from the TARGET ref.
 	providerDecls        map[string]string // optional host declarations (.assent/providers/<name>.json)
-	baseFile, headFile   string            // governed-file content at target/source ref.
-	governedPath         string
+	baseFile, headFile   string            // governed-file content at the pinned target/source SHA.
+	// sourceHeadFile, when non-empty, models the MOVED branch tip: bytes served
+	// for the mutable source branch name that differ from the pinned source SHA.
+	// REV1-S01's move-and-restore case sets it so a run that regresses to the
+	// branch name would judge these (benign) bytes instead of the pinned ones.
+	sourceHeadFile string
+	governedPath   string
 
 	// recorded writes
 	discussionsPosted int
@@ -411,42 +416,56 @@ func (f *fakeGitLab) serveFile(w http.ResponseWriter, r *http.Request, p string)
 		f.serveFromTarget(w, ref, f.config)
 		return
 	}
-	// The governed file: base from target ref, head from source branch.
+	// The governed file: base from the pinned TARGET SHA, head from the pinned
+	// SOURCE SHA (REV1-S01). A branch-name ref is refused — the polarity flip
+	// that makes a regression to info.TargetBranch/info.SourceBranch red. The
+	// source BRANCH is served only when sourceHeadFile is set, to model a moved
+	// tip for the move-and-restore case.
 	switch ref {
-	case f.target:
+	case f.targetTip:
 		_, _ = w.Write([]byte(f.baseFile))
-	case f.sourceBranch:
+	case f.sourceSHA:
 		_, _ = w.Write([]byte(f.headFile))
+	case f.sourceBranch:
+		if f.sourceHeadFile != "" {
+			_, _ = w.Write([]byte(f.sourceHeadFile))
+			return
+		}
+		http.Error(w, "governed head MUST be read at the pinned source SHA, got branch "+ref, http.StatusBadRequest)
 	default:
 		http.Error(w, "unexpected ref "+ref, http.StatusBadRequest)
 	}
 }
 
-// serveFromTarget enforces the ADR-0015 §1 target-ref trust boundary: a policy
-// document is loaded ONLY from the target ref, never the MR source branch.
+// serveFromTarget enforces the ADR-0015 §1 target-ref trust boundary. The
+// `--config` read is pinned to the TARGET SHA (REV1-S01); the provider
+// declarations are read by resolveRunFacts, which this lane deliberately does
+// not touch (U-11 / D-130 own the fact-source trust boundary), so the target
+// branch name is accepted there too. Anything else is refused.
 func (f *fakeGitLab) serveFromTarget(w http.ResponseWriter, ref, content string) {
-	if ref != f.target {
+	if ref != f.targetTip && ref != f.target {
 		http.Error(w, "policy documents MUST load from the target ref, got "+ref, http.StatusBadRequest)
 		return
 	}
 	_, _ = w.Write([]byte(content))
 }
 
-// servePolicyDocument serves merge-policy / ruleset-binding at ref. The target
-// ref carries the trusted bytes; the source ref may carry adversarial bytes
-// (E4-S08) so tests can prove orchestrate never loads from the MR source branch.
+// servePolicyDocument serves merge-policy / ruleset-binding at ref. The pinned
+// target SHA carries the trusted bytes; the source branch may carry adversarial
+// bytes (E4-S08) so tests can prove orchestrate never loads from the MR source
+// branch. The mutable target BRANCH name is refused (REV1-S01 polarity flip).
 func (f *fakeGitLab) servePolicyDocument(w http.ResponseWriter, ref, targetContent, sourceContent string) {
 	switch ref {
-	case f.target:
+	case f.targetTip:
 		_, _ = w.Write([]byte(targetContent))
 	case f.sourceBranch:
 		if sourceContent != "" {
 			_, _ = w.Write([]byte(sourceContent))
 			return
 		}
-		http.Error(w, "policy documents MUST load from the target ref, got "+ref, http.StatusBadRequest)
+		http.Error(w, "policy documents MUST load from the pinned target SHA, got "+ref, http.StatusBadRequest)
 	default:
-		http.Error(w, "policy documents MUST load from the target ref, got "+ref, http.StatusBadRequest)
+		http.Error(w, "policy documents MUST load from the pinned target SHA, got "+ref, http.StatusBadRequest)
 	}
 }
 
@@ -954,5 +973,30 @@ func TestRunEmitToFile(t *testing.T) {
 	// stdout carried only the summary (not the record) when --emit is a file.
 	if strings.Contains(out.String(), "\"kind\":\"DecisionRecord\"") {
 		t.Errorf("record should NOT be on stdout when --emit is a file:\n%s", out.String())
+	}
+}
+
+// REV1-S01 (U-04 item 1 / QFN-01): the MR source branch has MOVED away from the
+// pinned SHA to benign bytes. assent must judge the PINNED SHA's bytes, so a
+// policy-violating shrink at the pin yields REVIEW — never the branch tip's
+// benign grow, which would APPROVE and merge content that was never evaluated.
+// Before the fix the governed-head read resolved info.SourceBranch, so reverting
+// run.go:274 to the branch name reddens this test.
+func TestRunJudgesPinnedSHAWhenBranchMoves(t *testing.T) {
+	f := newFakeGitLab(t)
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 3\n"        // pinned source SHA: a shrink -> REVIEW
+	f.sourceHeadFile = "partitions: 24\n" // moved branch tip: a grow -> would APPROVE
+
+	var out bytes.Buffer
+	code := runRun(runArgs("--arm"), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), `"decision":"REVIEW"`) {
+		t.Fatalf("assent must judge the pinned SHA's violating bytes (REVIEW), not the moved branch tip's benign bytes:\n%s", out.String())
+	}
+	if f.approvals != 0 || f.merges != 0 {
+		t.Errorf("a REVIEW of the pinned bytes must not approve/merge: approvals=%d merges=%d", f.approvals, f.merges)
 	}
 }

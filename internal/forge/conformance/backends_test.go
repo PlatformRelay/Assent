@@ -48,6 +48,8 @@ func (b fakeBackend) SeedNote(id, author string, m forge.Marker, body string) er
 
 func (b fakeBackend) MoveTargetHead(sha string) { b.f.CurrentTargetSha = sha }
 
+func (b fakeBackend) MoveSourceHead(sha string) { b.f.CurrentSourceSha = sha }
+
 func (b fakeBackend) Pins() forge.DesiredMerge {
 	return forge.DesiredMerge{
 		SourceSha:         b.f.CurrentSourceSha,
@@ -140,6 +142,11 @@ func (b gitlabBackend) SeedNote(id, author string, m forge.Marker, body string) 
 }
 
 func (b gitlabBackend) MoveTargetHead(sha string) { b.h.targetSHA = sha }
+
+// MoveSourceHead moves the MR source head immediately. The harness's merge route
+// checks `?sha=` against h.sourceSHA, so a restored head merges and a moved-away
+// head is refused — the same CAS the production adapter performs.
+func (b gitlabBackend) MoveSourceHead(sha string) { b.h.sourceSHA = sha }
 
 // Pins reports the pins an evaluation would record against THIS backend. The
 // digest is synthesised by the adapter (`gitlab.SyntheticDigest`) because GitLab
