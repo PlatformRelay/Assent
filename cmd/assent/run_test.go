@@ -413,7 +413,11 @@ func (f *fakeGitLab) serveFile(w http.ResponseWriter, r *http.Request, p string)
 		http.Error(w, "unknown provider declaration "+p, http.StatusNotFound)
 		return
 	case strings.Contains(p, "config"):
-		f.serveFromTarget(w, ref, f.config)
+		if ref != f.targetTip {
+			http.Error(w, "the config MUST load from the pinned target SHA, got "+ref, http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(f.config))
 		return
 	}
 	// The governed file: base from the pinned TARGET SHA, head from the pinned
@@ -437,11 +441,11 @@ func (f *fakeGitLab) serveFile(w http.ResponseWriter, r *http.Request, p string)
 	}
 }
 
-// serveFromTarget enforces the ADR-0015 §1 target-ref trust boundary. The
-// `--config` read is pinned to the TARGET SHA (REV1-S01); the provider
-// declarations are read by resolveRunFacts, which this lane deliberately does
-// not touch (U-11 / D-130 own the fact-source trust boundary), so the target
-// branch name is accepted there too. Anything else is refused.
+// serveFromTarget enforces the ADR-0015 §1 target-ref trust boundary for the
+// host-owned provider declarations. They are read by resolveRunFacts, which
+// this lane deliberately does not touch (U-11 / D-130 own the fact-source trust
+// boundary), so the target branch name is accepted there too. Anything else is
+// refused.
 func (f *fakeGitLab) serveFromTarget(w http.ResponseWriter, ref, content string) {
 	if ref != f.targetTip && ref != f.target {
 		http.Error(w, "policy documents MUST load from the target ref, got "+ref, http.StatusBadRequest)
