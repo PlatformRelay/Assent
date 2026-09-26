@@ -220,6 +220,11 @@ const (
 	// event earns (EFE-S02, Judgment call (a) / D-063): a delete no evaluated
 	// fileEvents rule covers must never silently APPROVE.
 	ruleUnmatchedDelete = "aggregate.unmatchedDelete"
+	// ruleUnmatchedEdit labels the fail-safe REVIEW a value-level change earns when
+	// NO enforce-effective prove rule selects it, under a binding that requires an
+	// obligation some rule proves (RVW-S02 / C-1): an edit outside every rule's
+	// match scope is not positively vouched, so it must never silently APPROVE.
+	ruleUnmatchedEdit = "aggregate.unmatchedEdit"
 )
 
 // ReservedPolicyClass is the built-in meta-class (ADR-0008/ADR-0015 §1) that an

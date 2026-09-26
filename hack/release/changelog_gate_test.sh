@@ -573,7 +573,7 @@ sgit() {
     -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
     git -C "$SANDBOX" \
     -c user.name='changelog gate' -c user.email='gate@example.invalid' \
-    -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+    -c commit.gpgsign=false -c tag.gpgsign=false -c core.hooksPath=/dev/null \
     -c init.defaultBranch=main -c advice.detachedHead=false "$@"
 }
 env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
@@ -1001,7 +1001,7 @@ ssgit() {
     -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
     git -C "$SUBJ_SANDBOX" \
     -c user.name='commit subject gate' -c user.email='gate@example.invalid' \
-    -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+    -c commit.gpgsign=false -c tag.gpgsign=false -c core.hooksPath=/dev/null \
     -c init.defaultBranch=main -c advice.detachedHead=false "$@"
 }
 env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
@@ -1151,7 +1151,7 @@ dgit() {
     -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
     git -C "$DSB" \
     -c user.name='changelog gate' -c user.email='gate@example.invalid' \
-    -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+    -c commit.gpgsign=false -c tag.gpgsign=false -c core.hooksPath=/dev/null \
     -c advice.detachedHead=false "$@"
 }
 head_sha="$(git -C "$ROOT" rev-parse HEAD)"
@@ -1400,7 +1400,7 @@ if [[ -z "${ASSENT_CHANGELOG_GATE_NESTED:-}" ]]; then
       -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
       git -C "$TSB" \
       -c user.name='changelog gate' -c user.email='gate@example.invalid' \
-      -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+      -c commit.gpgsign=false -c tag.gpgsign=false -c core.hooksPath=/dev/null \
       -c advice.detachedHead=false "$@"
   }
   env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
@@ -1438,7 +1438,7 @@ if [[ -z "${ASSENT_CHANGELOG_GATE_NESTED:-}" ]]; then
     env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY \
       -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_COMMON_DIR \
       git -c user.name='changelog gate' -c user.email='gate@example.invalid' \
-      -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"
+      -c commit.gpgsign=false -c tag.gpgsign=false -c core.hooksPath=/dev/null "$@"
   }
   mkdir -p "$OSRC/sub"
   echo kept >"$OSRC/kept" && echo unstaged >"$OSRC/unstaged-rm" && echo staged >"$OSRC/sub/staged-rm"
