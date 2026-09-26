@@ -725,13 +725,13 @@ A six-leg review (adversarial + differential, all at the same HEAD) found a sche
 `RulesetBinding` with an empty/absent `require:` decides APPROVE with zero findings — the
 obligation layer is vacuous — while `GUIDELINES.md` §Safety-1 and the repo's own `record.go`
 seam note promise the opposite. RVW-S01 closes that contradiction: the CLI refuses to arm on an
-empty `require`, `assent lint` hard-errors it, and D-183 supersedes the schema/D-021 "vacuously
+empty `require`, `assent lint` hard-errors it, and D-184 supersedes the schema/D-021 "vacuously
 covered" wording. Sibling review rows are decomposed as they are claimed; the unmatched-edit
 fail-open is a separate row gated on a held captain decision.
 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
-| RVW-S01 | ⚠️ empty `require:` never arms APPROVE: run-path guard + lint `binding-require-empty` + polarity test + D-183 reconciliation | **[autonomous · engine-adjacent]** | none | **do first** — closes a reproduced APPROVE-not-proven fail-open on the shipped run path |
+| RVW-S01 | ⚠️ empty `require:` never arms APPROVE: run-path guard + lint `binding-require-empty` + polarity test + D-184 reconciliation | **[autonomous · engine-adjacent]** | none | **do first** — closes a reproduced APPROVE-not-proven fail-open on the shipped run path |
 
 ## Phase 5 — WG `writes: false` runtime gate (D-145)
 

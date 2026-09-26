@@ -48,7 +48,7 @@ const (
 	CodeObligationCoverage = "obligation-coverage"
 	// CodeBindingRequireEmpty: a Binding declares no required obligations (require
 	// is empty or absent) — the obligation layer is vacuous and can APPROVE
-	// without a positive vouch (GUIDELINES §Safety-1; D-183).
+	// without a positive vouch (GUIDELINES §Safety-1; D-184).
 	CodeBindingRequireEmpty = "binding-require-empty"
 	// CodeSchemaInvalid: a doc the strict loader rejects (the tolerant-ingestion
 	// bridge — the strict loader's first-error abort captured as one diagnostic).

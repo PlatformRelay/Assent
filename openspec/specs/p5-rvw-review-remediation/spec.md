@@ -22,7 +22,7 @@ list, so an empty list checks nothing). `cmd/assent/run.go`'s `selectBinding` ch
 binding *count* only. The result is a gate that stays clean on a document the schema accepts
 and lint passes, while silently converting to a rubber stamp.
 
-**Decision (this epic, D-183):** the invariant wins. An empty `require` is a policy-authoring
+**Decision (this epic, D-184):** the invariant wins. An empty `require` is a policy-authoring
 defect, and the CLI refuses to arm on it (fail closed, no forge write). The schema description
 and D-021's "vacuously covered" clause are reconciled to the invariant by superseding decision
 row; the schema's `minItems: 1` is deferred to its next change window, because the frozen
@@ -70,7 +70,7 @@ Acceptance criteria:
   gate by name.
 
 **Definition of done:** run-path guard landed; `binding-require-empty` in the lint pipeline,
-the hard-error table, and the E3-S08 fixture corpus; D-183 records the reconciliation and the
+the hard-error table, and the E3-S08 fixture corpus; D-184 records the reconciliation and the
 deferred `minItems: 1`; `task check` green.
 
 **Not in scope:** as the epic's *Not in scope* above.
@@ -87,9 +87,9 @@ Requirements:
 - **REQ-RVW-S01-03** *(fixture corpus)* — the `good`/`bad` fixture pair is in the E3-S08
   corpus. Test: `internal/lint/exitgate_test.go` + `examples/lint-fixtures/binding-require-empty`;
   Verify: `go test ./internal/lint -run TestEveryHardErrorFixtureCaught -count=1`; Level: L0
-- **REQ-RVW-S01-04** *(reconciliation · doc)* — D-183 supersedes the D-021 "vacuously covered"
+- **REQ-RVW-S01-04** *(reconciliation · doc)* — D-184 supersedes the D-021 "vacuously covered"
   clause and records the deferred schema `minItems: 1`; `docs/planning/lint-hard-errors.md`
   lists the new hard error; `docs/usage/cli.md` no longer presents empty `require` as a live
   APPROVE path on the run path. Test: those files; Verify:
-  `rg 'binding-require-empty' docs/planning/lint-hard-errors.md && rg 'D-183' docs/decisions/decisions.md`;
+  `rg 'binding-require-empty' docs/planning/lint-hard-errors.md && rg 'D-184' docs/decisions/decisions.md`;
   Level: doc

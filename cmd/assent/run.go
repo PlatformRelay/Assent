@@ -522,7 +522,7 @@ func selectBinding(rb *policy.RulesetBinding) (*policy.Binding, error) {
 //     an obligation that does not apply and could APPROVE, so an opaque/empty diff
 //     short-circuits to the fail-safe REVIEW here, matching the skeleton's
 //     failSafe(), never a silent APPROVE.
-//   - empty require (RVW-S01 / D-183): a binding that declares no required
+//   - empty require (RVW-S01 / D-184): a binding that declares no required
 //     obligations makes the obligation layer vacuous, so a decidable subject is
 //     refused fail-closed rather than APPROVEd on no positive vouch.
 //
@@ -540,7 +540,7 @@ func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergeP
 	case cs.Opaque || len(cs.Changes) == 0:
 		res = undecidableReview(subject)
 	default:
-		// RVW-S01 (D-183): an empty/absent require[] declares no required
+		// RVW-S01 (D-184): an empty/absent require[] declares no required
 		// obligations, so the obligation layer is vacuous — the run would APPROVE a
 		// governed change no rule positively vouches. Fail CLOSED before any forge
 		// write (the seam note at internal/core/decision/record.go assigns this duty
@@ -549,7 +549,7 @@ func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergeP
 		// `.assent/**` subject BLOCKs above, and an opaque/empty changeset REVIEWs
 		// above, so neither depends on require[].
 		if len(bind.Require) == 0 {
-			return aggregate.Result{}, fmt.Errorf("ruleset-binding binding (class=%q, environment=%q) declares no required obligations (require is empty) — refusing to arm APPROVE; add at least one obligation to require[] (GUIDELINES §Safety-1, D-183)", bind.Class, bind.Environment)
+			return aggregate.Result{}, fmt.Errorf("ruleset-binding binding (class=%q, environment=%q) declares no required obligations (require is empty) — refusing to arm APPROVE; add at least one obligation to require[] (GUIDELINES §Safety-1, D-184)", bind.Class, bind.Environment)
 		}
 		in := buildEvaluationInput(cs, mrFrom(info, mrAuthor), bind.Require)
 		if len(facts) > 0 {

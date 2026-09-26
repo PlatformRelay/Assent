@@ -330,7 +330,7 @@ func checkObligationCoverage(m *model, rep *Report) {
 // is vacuous — the run can APPROVE a governed change no rule positively vouches.
 // The frozen v1alpha1 schema still describes this shape as "vacuously covered"
 // and carries no minItems; the CLI run path refuses to arm on it
-// (cmd/assent/run.go) and this is the authoring-surface half. D-183 supersedes
+// (cmd/assent/run.go) and this is the authoring-surface half. D-184 supersedes
 // the schema/D-021 wording; the minItems: 1 schema change is deferred to the next
 // change window (the frozen schemas are under a ref-relative freeze guard, D-132).
 func checkBindingRequireEmpty(m *model, rep *Report) {
@@ -351,7 +351,7 @@ func checkBindingRequireEmpty(m *model, rep *Report) {
 		rep.addError(
 			CodeBindingRequireEmpty,
 			Location{File: bb.file, Name: bindingName(bb.binding)},
-			fmt.Sprintf("binding (class=%q, environment=%q) declares no required obligations (require is empty) — an empty require makes the obligation layer vacuous and can APPROVE without a positive vouch; add at least one obligation to require[] (GUIDELINES §Safety-1, D-183)",
+			fmt.Sprintf("binding (class=%q, environment=%q) declares no required obligations (require is empty) — an empty require makes the obligation layer vacuous and can APPROVE without a positive vouch; add at least one obligation to require[] (GUIDELINES §Safety-1, D-184)",
 				bb.binding.Class, bb.binding.Environment),
 		)
 	}
