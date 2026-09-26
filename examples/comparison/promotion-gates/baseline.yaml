@@ -45,3 +45,23 @@ spec:
       onFailure:
         effect: comment
         code: value-bumped
+    # RVW-S02: the baseline must GOVERN a /retentionMs edit for it to be a valid
+    # APPROVE side. Before the unmatched-edit escalation it approved /retentionMs
+    # only because no rule matched it — the fail-open this corpus case accidentally
+    # depended on. This permissive rule proves a required obligation cleanly true,
+    # so the baseline genuinely permits retention changes; the candidate's
+    # retention-ack challenge is then a real stricter-intervention-added delta.
+    - name: retention-permissive
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/retentionMs"]
+          kinds: [modify]
+      prove:
+        obligation: non-destructive
+        when:
+          cel: "true"
+          message: "baseline permits retention changes"
+      onFailure:
+        effect: block
+        code: retention.shrunk

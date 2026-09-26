@@ -726,12 +726,15 @@ A six-leg review (adversarial + differential, all at the same HEAD) found a sche
 obligation layer is vacuous — while `GUIDELINES.md` §Safety-1 and the repo's own `record.go`
 seam note promise the opposite. RVW-S01 closes that contradiction: the CLI refuses to arm on an
 empty `require`, `assent lint` hard-errors it, and D-184 supersedes the schema/D-021 "vacuously
-covered" wording. Sibling review rows are decomposed as they are claimed; the unmatched-edit
-fail-open is a separate row gated on a held captain decision.
+covered" wording. The adversarial leg's C-1 is the sibling fail-open: a rule that names a
+required obligation but whose `match` selects none of the governed changes still marks it
+covered, so an unmatched edit APPROVEs with zero findings. RVW-S02 closes it with an additive
+escalation mirroring D-063/D-064.
 
 | ID | Story | Execution | Depends on | Gate contribution |
 | --- | --- | --- | --- | --- |
 | RVW-S01 | ⚠️ empty `require:` never arms APPROVE: run-path guard + lint `binding-require-empty` + polarity test + D-184 reconciliation | **[autonomous · engine-adjacent]** | none | **do first** — closes a reproduced APPROVE-not-proven fail-open on the shipped run path |
+| RVW-S02 | ⚠️ unmatched edit never arms APPROVE: additive REVIEW escalation mirroring D-063/D-064 + regression test + corpus correction + D-185 | **[autonomous · engine-adjacent]** | none | closes the adversarial review's C-1 fail-open (`data/assent-adv-dsk/report.md`) |
 
 ## Phase 5 — WG `writes: false` runtime gate (D-145)
 

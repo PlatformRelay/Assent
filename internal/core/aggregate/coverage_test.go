@@ -359,8 +359,22 @@ func TestCoverValuesMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Cover: %v", err)
 	}
-	if len(got.Findings) != 1 || got.Findings[0].Code != "retention-shrunk" {
-		t.Fatalf("want one retention-shrunk block finding, got %+v", got.Findings)
+	// The Values domain selects /retentionMs (shrinking -> BLOCK) but NOT /other,
+	// so /other is governed by no enforce prove rule and earns the unmatched-edit
+	// escalation (RVW-S02 / C-1) in addition to the block. Assert both findings
+	// rather than a bare count: the point of this test is which pointer the domain
+	// selected, and the escalation is a separate, expected outcome for the other.
+	var blocked, escalated bool
+	for _, f := range got.Findings {
+		switch f.Code {
+		case "retention-shrunk":
+			blocked = f.Rule == "retention-monotonic" && f.Subject == "s:1"
+		case "change.unmatchedEdit":
+			escalated = f.Rule == ruleUnmatchedEdit && f.Effect == EffectRequireReview && f.Subject == "s:1"
+		}
+	}
+	if len(got.Findings) != 2 || !blocked || !escalated {
+		t.Fatalf("want the retention-shrunk block on the matched pointer plus the unmatched-edit escalation on /other, got %+v", got.Findings)
 	}
 	if got.Decision != DecisionBlock {
 		t.Errorf("decision = %q, want BLOCK", got.Decision)
@@ -429,11 +443,21 @@ func TestCoverValuesPathsFileGlob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Cover: %v", err)
 	}
-	if len(got.Findings) != 1 {
-		t.Fatalf("want exactly one finding (staging file excluded by paths glob), got %+v", got.Findings)
+	// The prod file is selected (shrinking -> BLOCK). The staging file is excluded
+	// by the paths glob, so it is governed by no enforce prove rule and earns the
+	// unmatched-edit escalation (RVW-S02 / C-1) — the paths glob's exclusion is
+	// exactly why it is unvouched, not a licence to APPROVE it.
+	var blocked, escalated bool
+	for _, f := range got.Findings {
+		switch f.Code {
+		case "retention-shrunk":
+			blocked = f.Subject == "s:prod" && f.Rule == "prod-retention-monotonic"
+		case "change.unmatchedEdit":
+			escalated = f.Subject == "s:stg" && f.Rule == ruleUnmatchedEdit && f.Effect == EffectRequireReview
+		}
 	}
-	if got.Findings[0].Subject != "s:prod" || got.Findings[0].Code != "retention-shrunk" {
-		t.Errorf("finding must be the prod subject only, got %+v", got.Findings[0])
+	if len(got.Findings) != 2 || !blocked || !escalated {
+		t.Fatalf("want the prod block plus the unmatched-edit escalation on the excluded staging file, got %+v", got.Findings)
 	}
 }
 

@@ -265,6 +265,62 @@ func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, a
 		})
 	}
 
+	// Unmatched-EDIT fail-safe escalation (RVW-S02 / report finding C-1). A
+	// value-level change (path!="") that NO enforce-effective prove rule selects,
+	// under a binding that requires an obligation some rule proves, is not
+	// positively vouched: the rule that names the required obligation marks it
+	// covered even when its `match` selects none of the governed changes (the
+	// covered[] bug at :150-152), so without this guard the change APPROVEs with an
+	// empty finding set. GUIDELINES §Safety-1 ("an empty, broken, or non-matching
+	// policy set never auto-merges anything; every change must be positively
+	// vouched") and D-142's REQ-DEM-S10-02 both intend REVIEW. This MIRRORS the
+	// D-063/D-064 unmatched-whole-file-DELETE escalation above and is ADDITIVE: it
+	// only ever RAISES the decision toward REVIEW via worse(), never relaxes it.
+	//
+	// Scope — value-level edits only. Whole-file (path=="") lifecycle events are
+	// the fileEvents domain: a delete is owned by the D-064 guard above, and an add
+	// is non-destructive (D-063), so neither escalates here. This keeps the D-016
+	// golden's whole-file rename event (path=="") untouched.
+	//
+	// Gate — a required obligation must be "covered" by SOME enforce rule
+	// (covered[obl] is true). An empty/absent require is D-184's seam (the run path
+	// refuses it; the engine's vacuous-APPROVE reading is deliberately unchanged
+	// here), and a require with no proving rule already trips the uncovered guard
+	// above. Without this gate a policy with no obligation layer would escalate
+	// every value change — a behaviour change outside C-1's scope.
+	//
+	// "Governed" — some enforce-effective prove rule selects the change
+	// (editGoverned), exactly as the delete guard's fileDeleteGoverned does.
+	// Observe-phase (and pack-ceiling-observe) rules do NOT govern — their findings
+	// are decision-excluded, so treating them as governing would suppress escalation
+	// into APPROVE (the same D-063 fail-open the delete guard documents). One finding
+	// is emitted per governed SUBJECT that has at least one unvouched change
+	// (deduped, since a subject can carry many value changes and duplicate identical
+	// findings would be noise).
+	if requiredObligationCovered(bind, covered) {
+		escalated := map[string]bool{}
+		for _, ch := range in.ChangeSet.Changes {
+			if ch.Path == "" {
+				continue // whole-file lifecycle event: the fileEvents domain, not an edit
+			}
+			if escalated[ch.Subject] {
+				continue
+			}
+			if editGoverned(pol, ch, ceiling) {
+				continue // an enforce prove rule selects it -> already governed
+			}
+			escalated[ch.Subject] = true
+			decision = worse(decision, DecisionReview)
+			findings = append(findings, Finding{
+				Rule:    ruleUnmatchedEdit,
+				Effect:  EffectRequireReview,
+				Subject: ch.Subject,
+				Points:  0,
+				Code:    "change.unmatchedEdit",
+			})
+		}
+	}
+
 	// Aggregation order #4 (ADR-0007, the LAST check): with block (#1), unresolved
 	// challenge (#2), and uncovered/unproven obligations (#3) already reduced, a
 	// points sum over the binding threshold escalates an otherwise-APPROVE decision
@@ -580,6 +636,49 @@ func fileDeleteGoverned(pol *policy.MergePolicy, ch EvalChange, ceiling policy.P
 	for i := range pol.Spec.Rules {
 		r := pol.Spec.Rules[i]
 		if r.Prove == nil || r.Match.FileEvents == nil {
+			continue
+		}
+		// Enforce-only — same gate as covered[] for obligation satisfaction.
+		if effectivePhase(r.Phase, ceiling) != policy.PhaseEnforce {
+			continue
+		}
+		if m, err := matchChanges(r.Match, []EvalChange{ch}); err == nil && len(m) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// requiredObligationCovered reports whether at least one obligation the binding
+// REQUIRES is "covered" — i.e. some enforce-phase rule names it in prove.obligation
+// (the covered[] map). It is the gate for the unmatched-EDIT escalation: with no
+// required obligation proven-by-a-rule there is no obligation layer to vouch for,
+// so the escalation stays silent (an empty/absent require is D-184's run-path
+// seam; an uncovered require already trips the uncovered guard). Mirror of the
+// fileDeleteGoverned enforce-only gate, at the binding level.
+func requiredObligationCovered(bind *policy.Binding, covered map[string]bool) bool {
+	for _, obl := range bind.Require {
+		if covered[obl] {
+			return true
+		}
+	}
+	return false
+}
+
+// editGoverned reports whether some ENFORCE-effective prove rule selects the
+// value-level change ch — i.e. the edit is decision-governing. Mirrors
+// fileDeleteGoverned exactly: ONLY effective PhaseEnforce may suppress the
+// escalation (an observe rule's findings are structurally excluded from the
+// decision, so treating observe as governing would suppress escalation → APPROVE,
+// a D-063 fail-open). Like the delete guard it is obligation-agnostic: any
+// enforce-phase prove rule that selects the change governs it (a non-required
+// signal rule matching the change is still a real evaluation of it, and the points
+// model depends on such a rule being able to leave the decision at APPROVE). Off /
+// unknown / prove-nil all count as NOT governing.
+func editGoverned(pol *policy.MergePolicy, ch EvalChange, ceiling policy.Phase) bool {
+	for i := range pol.Spec.Rules {
+		r := pol.Spec.Rules[i]
+		if r.Prove == nil {
 			continue
 		}
 		// Enforce-only — same gate as covered[] for obligation satisfaction.
