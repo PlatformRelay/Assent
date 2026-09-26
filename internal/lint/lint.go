@@ -46,6 +46,10 @@ const SeverityError Severity = "error"
 const (
 	// CodeObligationCoverage: a Binding require[] obligation no bound rule proves.
 	CodeObligationCoverage = "obligation-coverage"
+	// CodeBindingRequireEmpty: a Binding declares no required obligations (require
+	// is empty or absent) — the obligation layer is vacuous and can APPROVE
+	// without a positive vouch (GUIDELINES §Safety-1; D-184).
+	CodeBindingRequireEmpty = "binding-require-empty"
 	// CodeSchemaInvalid: a doc the strict loader rejects (the tolerant-ingestion
 	// bridge — the strict loader's first-error abort captured as one diagnostic).
 	CodeSchemaInvalid = "schema-invalid"
@@ -145,6 +149,7 @@ func Lint(sources []Source) *Report {
 	rep := &Report{}
 	model := ingest(sources, rep)
 	checkObligationCoverage(model, rep)
+	checkBindingRequireEmpty(model, rep)
 	checkFactsReferences(model, rep)
 	checkStructural(model, rep)
 	checkPredicateScope(model, rep)

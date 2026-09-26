@@ -718,6 +718,21 @@ S02 cannot start until the operator creates the bestpractices.dev project (INBOX
 | SEC-SC-S01 | Native Go fuzz targets on YAML/JSON/HCL differ (+ CI smoke) | **[autonomous]** | none | **do first** — Scorecard Fuzzing (#3); untrusted-byte crash/fail-open fence |
 | SEC-SC-S02 | OpenSSF Best Practices passing badge + honest evidence page | **[operator-gated]** | operator creates the bestpractices.dev project | Scorecard CII-Best-Practices (#6); no fake README badge |
 
+## Phase 5 — RVW six-review remediation (2026-09-25)
+
+Full INVEST stories in [p5-rvw-review-remediation/spec.md](p5-rvw-review-remediation/spec.md).
+A six-leg review (adversarial + differential, all at the same HEAD) found a schema-valid
+`RulesetBinding` with an empty/absent `require:` decides APPROVE with zero findings — the
+obligation layer is vacuous — while `GUIDELINES.md` §Safety-1 and the repo's own `record.go`
+seam note promise the opposite. RVW-S01 closes that contradiction: the CLI refuses to arm on an
+empty `require`, `assent lint` hard-errors it, and D-184 supersedes the schema/D-021 "vacuously
+covered" wording. Sibling review rows are decomposed as they are claimed; the unmatched-edit
+fail-open is a separate row gated on a held captain decision.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| RVW-S01 | ⚠️ empty `require:` never arms APPROVE: run-path guard + lint `binding-require-empty` + polarity test + D-184 reconciliation | **[autonomous · engine-adjacent]** | none | **do first** — closes a reproduced APPROVE-not-proven fail-open on the shipped run path |
+
 ## Phase 5 — WG `writes: false` runtime gate (D-145)
 
 No spec yet — decompose spec-first (`openspec/` change proposal) before implementation, per

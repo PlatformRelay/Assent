@@ -150,16 +150,19 @@ that were withholding approval. Measured on an enforcing rule that produces a BL
 | `require: [signal]` | `enforce` | BLOCK |
 | `require: [signal]` | `observe` | REVIEW |
 | `require: [signal]` | `off` | REVIEW |
-| *(no `require:`)* | `enforce` | BLOCK |
-| *(no `require:`)* | `observe` | **APPROVE** — approves and merges |
-| *(no `require:`)* | `off` | **APPROVE** — approves and merges |
+| *(no `require:`)* | any | **refused** — fails closed before any forge write |
 
 The saving grace in the top half is the binding's `require:` list: an uncovered required
 obligation is what degrades the run to REVIEW, because only an `enforce`-phase rule can mark
-one covered. `require:` is **optional** in the RulesetBinding schema — absent or empty means
-"no required obligations, vacuously covered" — so a binding that has not declared one yet gets
-the bottom half. That is the first-pack-rollout case, which is exactly when someone reaches for
-`observe`.
+one covered. `require:` is **optional** in the RulesetBinding schema, but a binding that omits
+it declares no required obligations, so the obligation layer is vacuous — the shape the schema
+description once called "vacuously covered". That is **no longer a silent APPROVE**: `assent
+run` refuses to arm on an empty `require:` (a hard error, exit `1`, zero forge writes), and
+`assent lint` reports it as the `binding-require-empty` hard error. The bottom row is therefore
+a broken rollout, not a safe one — the refusal is fail-closed, but it is not a working advisory
+mode. A binding that has not declared a `require:` yet is exactly the first-pack-rollout case,
+which is when someone reaches for `observe`: declare the obligations before rolling the pack
+out.
 
 `spec.phase` is also **inert unless you pass `--pack`**: without the flag the ceiling is
 `enforce` and the manifest is never read. Editing the manifest alone changes nothing, so an

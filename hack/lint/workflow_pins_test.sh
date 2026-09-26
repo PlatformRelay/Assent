@@ -837,7 +837,7 @@ sonar_if_guard_ok() { # <normalised if: value>
   case "$v" in
     "$SONAR_IF_NONPR_ARM"*) : ;;
     *)
-      echo "  the SonarCloud scan step's if: does not OPEN with the unconditional non-PR arm \"$SONAR_IF_NONPR_ARM…\" — a clause outside the pull_request scope can skip the push-to-main run, which is the analysis of the merged code (D-178): '$v'" >&2
+      echo "  the SonarCloud scan step's if: does not OPEN with the unconditional non-PR arm \"${SONAR_IF_NONPR_ARM}…\" — a clause outside the pull_request scope can skip the push-to-main run, which is the analysis of the merged code (D-178): '$v'" >&2
       rc=1
       ;;
   esac

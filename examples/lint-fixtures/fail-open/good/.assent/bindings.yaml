@@ -5,3 +5,4 @@ bindings:
     environment: prod
     packs: [p]
     risk: { threshold: 10 }
+    require: [reviewed]

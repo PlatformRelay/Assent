@@ -50,6 +50,7 @@ type hardErrorFixture struct {
 // pins. Adding a hard error to the lint pipeline means adding a fixture pair here.
 var hardErrorCorpus = []hardErrorFixture{
 	{code: "obligation-coverage", wantBad: []string{"obligation-coverage"}},
+	{code: "binding-require-empty", wantBad: []string{"binding-require-empty"}},
 	{code: "facts-reference-syntax", wantBad: []string{"facts-reference-syntax"}},
 	{code: "facts-reference-shape", wantBad: []string{"facts-reference-shape"}},
 	{code: "reserved-class", wantBad: []string{"reserved-class"}},

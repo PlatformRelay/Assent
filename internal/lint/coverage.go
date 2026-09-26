@@ -25,6 +25,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/PlatformRelay/assent/internal/core/classify"
 	"github.com/PlatformRelay/assent/internal/core/policy"
 )
 
@@ -321,6 +322,38 @@ func checkObligationCoverage(m *model, rep *Report) {
 					bb.binding.Class, bb.binding.Environment, req, bb.binding.Packs),
 			)
 		}
+	}
+}
+
+// checkBindingRequireEmpty is the RVW-S01 hard error: a binding whose require[]
+// is empty (or absent) declares no required obligations, so the obligation layer
+// is vacuous — the run can APPROVE a governed change no rule positively vouches.
+// The frozen v1alpha1 schema still describes this shape as "vacuously covered"
+// and carries no minItems; the CLI run path refuses to arm on it
+// (cmd/assent/run.go) and this is the authoring-surface half. D-184 supersedes
+// the schema/D-021 wording; the minItems: 1 schema change is deferred to the next
+// change window (the frozen schemas are under a ref-relative freeze guard, D-132).
+func checkBindingRequireEmpty(m *model, rep *Report) {
+	for _, bb := range m.bindings {
+		// The reserved assent-policy meta-class is block-by-default (ADR-0015 §1)
+		// and its safety comes from GUARD 1 (any `.assent/**` edit BLOCKs), not
+		// from obligation coverage. It also CANNOT carry a non-empty require: any
+		// `prove` rule in a reserved-bound pack routes the policy class to a
+		// vouch/APPROVE-arming disposition, which the reserved-class check forbids.
+		// So the shape is exempt here; the run path still refuses an empty require
+		// whenever the SUBJECT is not the reserved class (decide's default arm).
+		if bb.binding.Class == classify.ClassAssentPolicy {
+			continue
+		}
+		if len(bb.binding.Require) > 0 {
+			continue
+		}
+		rep.addError(
+			CodeBindingRequireEmpty,
+			Location{File: bb.file, Name: bindingName(bb.binding)},
+			fmt.Sprintf("binding (class=%q, environment=%q) declares no required obligations (require is empty) — an empty require makes the obligation layer vacuous and can APPROVE without a positive vouch; add at least one obligation to require[] (GUIDELINES §Safety-1, D-184)",
+				bb.binding.Class, bb.binding.Environment),
+		)
 	}
 }
 
