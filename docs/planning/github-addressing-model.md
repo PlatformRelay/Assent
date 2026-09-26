@@ -47,11 +47,13 @@ split *is* the trust boundary of GUIDELINES Safety 3 / ADR-0015 §1.
 
 ### The concrete failure this prevents
 
-`code`: `cmd/assent/run.go:270` reads the governed base at `info.TargetBranch` and `:274`
-reads the governed head at `info.SourceBranch`, both through `fileAtRefOrAbsent`
-(`run.go:465`, call at `:466`), which maps `forge.ErrNotFound` to `nil` bytes. `forge.MRInfo`
+`code`: `cmd/assent/run.go:281` reads the governed base at `info.TargetSHA` and `:285`
+reads the governed head at `info.SourceSHA` (both pinned by REV1-S01 / D-183; the refs were
+branch names when this model was written), both through `fileAtRefOrAbsent`
+(`run.go:476`, calls at `:281`/`:285`), which maps `forge.ErrNotFound` to `nil` bytes. `forge.MRInfo`
 (`internal/forge/port.go:40`) carries `SourceBranch` but **no source-repository identifier**.
-On GitHub a fork PR's head branch does not exist in the base repository, so that read 404s →
+On GitHub a fork PR's head branch lives in the fork, not the base repository, so a ref
+inside the base project does not address it, and that read 404s →
 `nil` → `change.OneSidedLifecycle(base, nil)` → `(KindDelete, true)` → **a fabricated
 whole-file DELETE the contributor never made**: a spurious BLOCK, or an APPROVE reached on
 invented change semantics.
@@ -63,12 +65,12 @@ worth running — two of its line anchors have drifted. As of this change's HEAD
 
 | Call site | Reads | Ref | Disposition |
 | --- | --- | --- | --- |
-| `run.go:270` | governed subject, base side | `info.TargetBranch` | **migrates → `FileAtBase(mr, path)`** |
-| `run.go:274` | governed subject, head side | `info.SourceBranch` | **migrates → `FileAtHead(mr, path)`** |
-| `run.go:203` | MergePolicy | `info.TargetBranch` | stays `FileAtRef` |
-| `run.go:211` | RulesetBinding | `info.TargetBranch` | stays `FileAtRef` |
-| `run.go:230` | `.assent/config.yaml` (provider-host declarations) | `info.TargetBranch` | stays `FileAtRef` |
-| `run.go:249` | policy pack | `info.TargetBranch` | stays `FileAtRef` |
+| `run.go:281` | governed subject, base side | `info.TargetSHA` | **migrates → `FileAtBase(mr, path)`** |
+| `run.go:285` | governed subject, head side | `info.SourceSHA` | **migrates → `FileAtHead(mr, path)`** |
+| `run.go:208` | MergePolicy | `info.TargetSHA` | stays `FileAtRef` |
+| `run.go:216` | RulesetBinding | `info.TargetSHA` | stays `FileAtRef` |
+| `run.go:235` | `.assent/config.yaml` (provider-host declarations) | `info.TargetSHA` | stays `FileAtRef` |
+| `run.go:254` | policy pack | `info.TargetSHA` | stays `FileAtRef` |
 | `provider_host.go:82` | provider host declaration | `targetRef` | stays `FileAtRef` |
 | `provider_host.go:292` | **resource-owner registry** | `targetRef` | stays `FileAtRef` — **D-130** |
 
@@ -87,14 +89,14 @@ leaves the stale anchor exactly where an implementer will trip on it:
 So ADR-0021's genuine drifts are **two**, not three, and the third belongs to the epic spec.
 `run.go:64 forgePort` (spec.md:256) is **correct** and needs no change.
 
-`run.go:230` and `provider_host.go:292` deserve the specific mention ADR-0021 gives them:
+`run.go:235` and `provider_host.go:292` deserve the specific mention ADR-0021 gives them:
 the first carries provider-host declarations, so migrating it would let a fork's head
 redefine its own fact semantics; the second **decides who may approve**, and moving it onto
 an MR-relative accessor re-opens D-130 verbatim. Migrating any of the six is a trust-boundary
 regression, not a cleanup.
 
 Out of scope for the migration, noted so S02 does not trip over it: when `--checkout` is set,
-`run.go:282-287` overrides both sides from the local tree (EFE-S03 / ADR-0008 §4). That path
+`run.go:293-296` overrides both sides from the local tree (EFE-S03 / ADR-0008 §4). That path
 never touches the forge and is unaffected.
 
 ### How each adapter reaches the head (adapter-internal freedom)

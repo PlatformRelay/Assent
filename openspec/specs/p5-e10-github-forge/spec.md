@@ -22,7 +22,7 @@ transport/auth policy) plus the unimportable suite.
 two of them P0, and they are why S00 exists.** All are *addressing or representation*
 failures — a class the P1-E3-S03 dossier structurally could not surface, because it studied
 GitHub's **endpoints**, not how the port **names** things: fork-head addressing (the port
-reads head content by branch name in one project, so every GitHub fork PR would mint a
+reads head content by a ref inside one project, so every GitHub fork PR would mint a
 fabricated whole-file DELETE); HTTP-status → sentinel collapse (GitHub 404s permission
 denials, so *forbidden* would read as *absent*); and the record surface (`pins` is
 `additionalProperties:false` with a **single-string** `capabilityGap` required *iff*
@@ -161,7 +161,7 @@ runs it.
   contradict ADR-0021 items 5–8 amend the ADR in the same change.
 
 - **REQ-E10-S00-01** — **How does the port name the head content of a fork PR?** Given
-  `run.go:270,274` reads base/head by branch name in one project and `MRInfo` carries no
+  `run.go:281,285` reads base/head by a ref in one project and `MRInfo` carries no
   source-repository identifier, when the model is written, then it fixes the addressing shape
   (ADR-0021 item 5 proposes `FileAtBase(mr, path)` / `FileAtHead(mr, path)`), and states the
   concrete failure it prevents: a fork PR 404s → `fileAtRefOrAbsent` → `nil` →
@@ -284,10 +284,11 @@ runs it.
   `FileAtBase(mr, path string) ([]byte, error)` / `FileAtHead(mr, path string) ([]byte, error)`,
   and `cmd/assent` references that named type only. **Both accessors are required and they are
   not interchangeable** — REQ-E10-S02-05 binds which is legal where. `FileAtRef` is retained
-  **only** for the ref-addressed *policy* loads ADR-0015 §1 mandates (`cmd/assent/run.go:203`,
-  `:211`, `:230`, `:249` — MergePolicy, RulesetBinding, **Config** and pack — **plus
+  **only** for the ref-addressed *policy* loads ADR-0015 §1 mandates (`cmd/assent/run.go:208`,
+  `:216`, `:235`, `:254` — MergePolicy, RulesetBinding, **Config** and pack — **plus
   `cmd/assent/provider_host.go:82` (provider host declaration) and `:275` (resource-owner
-  registry)**, all from the target ref by name. That is **six** call sites, not four: the
+  registry)**, all from the target ref (the pinned `info.TargetSHA` for the four `run.go`
+  loads since REV1-S01 / D-183). That is **six** call sites, not four: the
   `run.go` list alone is not exhaustive for `cmd/assent`. `provider_host.go:275` is the single
   most dangerous one to migrate — the registry decides **who may approve**, and preferring the
   checkout there was the D-130 vouching escalation);
@@ -326,18 +327,18 @@ runs it.
   `refs/pull/N/head` into `MRInfo.SourceBranch` is rejected: it corrupts a documented field and
   leaks into rendering.
   **The boundary is enforced in both directions, and both are asserted:**
-  (i) the governed-subject reads (`cmd/assent/run.go:270`, `:274`, via `fileAtRefOrAbsent`)
+  (i) the governed-subject reads (`cmd/assent/run.go:281`, `:285`, via `fileAtRefOrAbsent`)
   call `FileAtBase`/`FileAtHead` and **no** `FileAtRef` call remains on the governed-subject
   path — asserted by a source-level guard, because a green `TestForkMRNoFabricatedDelete`
   against a fake that happens to serve the right bytes does not prove the call was rewritten.
   **Read this as scoped to the forge-sourced path, not as "all governed-subject sourcing is now
-  MR-relative":** under `--checkout`, `run.go:283` overrides base/head from the local tree via
+  MR-relative":** under `--checkout`, `run.go:293` overrides base/head from the local tree via
   `dirCheckout.FileContents(governed)`, which carries no `FileAtRef` call and is therefore
   invisible to the source-level guard. That is intended existing behaviour (EFE-S03 /
   ADR-0008 §4 — the local head tree is the presence authority), and S02 does not change it;
-  (ii) the **policy and decision-input** loads (`run.go:203`, `:211`, `:230`, `:249` and
+  (ii) the **policy and decision-input** loads (`run.go:208`, `:216`, `:235`, `:254` and
   `provider_host.go:82`, `:275` — all six) still use
-  `FileAtRef(project, path, targetRef)` and are **not** migrated — a test asserts policy is
+  `FileAtRef` with the target ref and are **not** migrated — a test asserts policy is
   read from the target ref of the target project even for a fork MR, so a well-meaning
   "consistency" refactor onto an MR-relative accessor (which would let a fork's head reach the
   policy load) fails the suite rather than silently crossing ADR-0015 §1's trust boundary.

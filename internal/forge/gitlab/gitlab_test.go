@@ -122,13 +122,18 @@ func TestGetMRNoLabels(t *testing.T) {
 	}
 }
 
+// pinnedRef is a commit SHA-shaped ref. REV1-S01 flips this test from pinning
+// the vulnerable shape (`ref == "main"`, a mutable branch name) to asserting the
+// SHA the caller pinned: a regression that resolves a branch name must red here.
+const pinnedRef = "9a816d4b1c2e3f405162738495a6b7c8d9e0f1a2"
+
 func TestFileAtRef(t *testing.T) {
 	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		wantToken(t, r)
 		// GitLab encodes the path segment; the governed path has a slash. Match on
 		// the ESCAPED path (Go decodes %2F back to / in r.URL.Path).
 		if r.URL.EscapedPath() == "/api/v4/projects/42/repository/files/topics%2Forders.yaml/raw" {
-			if r.URL.Query().Get("ref") != "main" {
+			if r.URL.Query().Get("ref") != pinnedRef {
 				http.Error(w, "bad ref", http.StatusBadRequest)
 				return
 			}
@@ -138,7 +143,7 @@ func TestFileAtRef(t *testing.T) {
 		http.Error(w, "not found", http.StatusNotFound)
 	})
 
-	got, err := c.FileAtRef("42", "topics/orders.yaml", "main")
+	got, err := c.FileAtRef("42", "topics/orders.yaml", pinnedRef)
 	if err != nil {
 		t.Fatalf("FileAtRef: %v", err)
 	}

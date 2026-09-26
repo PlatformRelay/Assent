@@ -573,9 +573,9 @@ Spec: [p5-e10-github-forge/spec.md](p5-e10-github-forge/spec.md) · ADR: **0021*
 Dossier: [forge-dossier-github.md](../../docs/planning/forge-dossier-github.md).
 **Ordering is normative — S00 before any code, and the seam (S01–S05) before the first GitHub
 API call.** An adversarial review of the first draft (2026-08-10) found **two P0 representation
-defects** by reading the port against the code: the port addresses head content by branch name
+defects** by reading the port against the code: the port addresses head content by a ref
 in one project, so **every GitHub fork PR would mint a fabricated whole-file DELETE**
-(`run.go:274` → `fileAtRefOrAbsent` → `OneSidedLifecycle`); and `$defs.pins` is
+(`run.go:285` → `fileAtRefOrAbsent` → `OneSidedLifecycle`); and `$defs.pins` is
 `additionalProperties:false` with a **single-string** `capabilityGap` required iff
 `mergeResultDigest` is null, so an eleven-capability report **has nowhere valid to be
 recorded**. Both are decided in ADR-0021 (items 5–8) and gated by S00. S00/S02/S04 are
@@ -880,6 +880,22 @@ gate surface and the lane had already taken two fix rounds.
 | **REDMAIN-N2** | `changelog_gate_test.sh` §8's `### Other` detector required an ASCII shortcode, so it was fail-open for exactly the literal-emoji shape that causes the mis-filing it exists to catch | ✅ **DONE (D-168)** | no (agent lane) | Detector now matches a fileable type behind a shortcode, behind a literal emoji (any spacing, or none), behind several mixed prefix tokens, or behind no prefix at all; §8b pins the regression on a 12-line probe with a line-by-line expected verdict, showing the pre-fix pattern miss every literal-emoji spelling. Re-filing the rendered line out of `### Other` needs a `cliff.toml` parser entry and is **not** in this lane's fence — tracked as REDMAIN-N3 |
 | **REDMAIN-N3** | `cliff.toml` has no parser for a literal-emoji subject, so `dfdae69`'s entry still renders under `### Other` on the published Release page | **OPEN** | no (agent lane) | One `commit_parsers` entry keyed on the conventional type after a non-ASCII prefix, above the `.*` catch-all (tag it `# REDMAIN-N3`, **not** `# REL-14` — §8a mutates on that tag). **The whole hand-off is one line:** when the entry lands, §8 reds and prints the remedy — delete `dfdae69…` from `OTHER_EXEMPT_SHAS` in `hack/release/changelog_gate_test.sh` §8, **and nothing else**. Do NOT touch `LEGACY_ALLOW_SHAS` in `commit_subject_gate.sh`: that list is keyed on the commit SUBJECT, which re-filing does not change, and removing it there reds the commit-subject gate on `dfdae69`. The two lists are deliberately separate for this reason (D-168 (d)); the sequence was simulated end-to-end before this row was written, and ends green |
 | **REDMAIN-N4** | §8's three REDMAIN-N2-02 properties — the `OTHER_EXEMPT_SHAS ⊆ LEGACY_ALLOW_SHAS` subset invariant, the empty-exemption-list path, and the retire message — have **no standing control**. On the real tree the subset grep always passes, the empty-list branch is never taken and the retire message is never emitted, so running `changelog_gate_test.sh` exercises none of them | **OPEN** | no (agent lane) | They were proved by one-off scratch-clone **simulation** in the D-168 lane (N3 parser added to `cliff.toml`, red observed, printed remedy followed, both gates green, plus the control that the other remedy still reds) — evidence produced once, not a probe that re-runs. Fix is a **§8c** that drives all three over a fabricated `### Other` block and a temp copy of the exemption list, the way §8b drives the detector over a probe: assert (i) a SHA absent from `--legacy-shas` reds the subset check, (ii) an empty list takes the every-line-checked branch and the detector still fires on a planted mis-filed line, (iii) an exempt entry missing from the block emits the retire message naming `OTHER_EXEMPT_SHAS` and NOT `LEGACY_ALLOW_SHAS`. **Own lane, own review** — a new gate surface, and D-168's lane had already had two fix rounds. Sized S–M, unclaimed. **Three P3s to fold in while there** (all fail-closed, none urgent, all found by D-168's second reviewer): (a) §9d's mutant gate runs in FOREIGN mode (`SELF=0`, `ROOT=/`), so the exemption self-checks are skipped — the mutation still proves what its OK line claims, so this is comment precision, not a hole; (b) `grep -v -x -F -f` removes ALL identical lines while `n_exempt` counts exemptions, so two commits sharing an exempt subject would red with the misleading "filter is not matching whole lines" message — fail-closed, and subjects are unique today; (c) `OTHER_MAPPABLE_RE` also flags non-emoji non-ASCII prefixes (`- Ünicode chore(x): …`, `- 日本語 test: …`), unreachable because `commit_subject_gate.sh` rejects non-ASCII-leading subjects at commit time, and fail-closed. The converse gap — an ASCII non-shortcode prefix such as `- WIP ci(docs): …` staying unmatched — **predates D-168** and is consistent with its "prefix alternatives stay narrow on purpose" rationale; leave it unless a case appears |
+
+## Phase 5 — REV1 six-review remediation (2026-09-25), lane B1
+
+Full spec in [p5-rev1-pinned-sha/spec.md](p5-rev1-pinned-sha/spec.md). REV1 is the **named
+first fix slice** of the 2026-09-25 six-leg review register (`data/assent-unify/report.md` §6):
+read the judged content at the pinned SHA. The register's lanes B2–B15 are **separate specs as
+they are claimed**; this epic claims only U-04 item 1.
+
+| ID | Story | Execution | Depends on | Gate contribution |
+| --- | --- | --- | --- | --- |
+| REV1-S01 | U-04 item 1: read the judged content at the pinned SHA (six call sites in `cmd/assent/run.go`) | **[autonomous · engine-grade]** | none | closes the last hole in ADR-0015 §2's headline invariant; pre-empts the E10 per-forge clone |
+
+**Follow-on (named, not claimed here):** U-04 items 2–4 — the SHA-bound `/repository/compare`
+enumeration re-fold (shares its mechanism with the D-139 trio, register lane B5), the
+`CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` belt, and the additive `headContentSha` record pin (lane
+B9) — plus the `--checkout` tree↔SHA binding (U-08/QFN-04, lane B5). **D-183** records the lane.
 
 ## Phases 3–5
 

@@ -28,6 +28,7 @@ const (
 var l1CatalogTests = []string{
 	"TestConformanceTargetAdvancedRejected",
 	"TestConformanceSourceMovedRejected",
+	"TestConformanceSourceMovedAndRestored",
 	"TestConformanceRerunIdempotence",
 	"TestConformanceDuplicateRepair",
 	"TestConformanceSpoofedMarkerIgnored",

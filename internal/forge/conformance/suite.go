@@ -40,6 +40,7 @@ func Cases() []Case {
 	return []Case{
 		{ID: "sha-guard-target-advanced", Run: caseSHAGuardTargetAdvanced},
 		{ID: "sha-guard-source-moved", Run: caseSHAGuardSourceMoved},
+		{ID: "sha-guard-source-moved-and-restored", Run: caseSHAGuardSourceMovedAndRestored},
 		{ID: "p3e5-rerun-idempotence", Run: caseRerunIdempotence},
 		{ID: "p3e5-duplicate-repair", Run: caseDuplicateRepair},
 		{ID: "p3e5-spoofed-marker-ignored", Run: caseSpoofedMarkerIgnored},
@@ -186,6 +187,54 @@ func caseSHAGuardSourceMoved(t TB, f Factory) {
 			t.Fatalf("run %d: MergeCAS rejection may leave one dangling approval, got %d", run, got)
 		}
 	}
+}
+
+// caseSHAGuardSourceMovedAndRestored is REV1-S01 / U-04 item 1: the MR source
+// head moves AWAY from the pin and is then restored TO it between evaluation and
+// the merge CAS. The CAS compares the CURRENT head to the pin, so a restored head
+// passes and the merge proceeds — the guard cannot distinguish "moved away and
+// restored" from "never moved". That is not a defect in the CAS; it is precisely
+// why the judged BYTES must be read at the pinned SHA, which is the run path's
+// REV1-S01 change (`cmd/assent/run.go`). This case documents the guard's limit at
+// the port level so a future adapter author (E10) does not mistake the CAS for a
+// bytes-equal-to-pin guarantee.
+//
+// Two phases against one backend, so the case is non-vacuous under the sabotage
+// gate: an inert fixture ignores MoveSourceHead, phase 1 never refuses, and the
+// case reddens.
+func caseSHAGuardSourceMovedAndRestored(t TB, f Factory) {
+	t.Helper()
+	b := f(t, shaGuardConfig())
+	pins := b.Fixture.Pins()
+
+	// Each phase is a subtest so the sabotage gate reaches BOTH: a failure in
+	// phase 1 aborts only its own subtest, so phase 2 still runs and its
+	// assertions are exercised against the sabotaged backend too.
+
+	// Phase 1: head moved AWAY. The pre-check must fail closed BEFORE any CAS.
+	t.Run("moved-away", func(t TB) {
+		b.Fixture.MoveSourceHead(movedSource)
+		if _, err := forge.Reconcile(b.Port, testClock(), approveState(pins), armedPre(pins)); !errors.Is(err, forge.ErrSHAMoved) {
+			t.Fatalf("moved-away: want ErrSHAMoved, got %v", err)
+		}
+		if got := b.Observer.MergesPerformed(); got != 0 {
+			t.Fatalf("moved-away: zero merges expected, got %d", got)
+		}
+		if got := b.Observer.MergeAttempts(); got != 0 {
+			t.Fatalf("moved-away: pre-check must fail closed before MergeCAS, got %d attempt(s)", got)
+		}
+	})
+
+	// Phase 2: head RESTORED to the pin. The CAS now sees current == pin and
+	// merges at the evaluated SHA — the bytes the run path judged at the pin.
+	t.Run("restored", func(t TB) {
+		b.Fixture.MoveSourceHead(pins.SourceSha)
+		_, err := forge.Reconcile(b.Port, testClock(), approveState(pins), armedPre(pins))
+		merges, attempts := b.Observer.MergesPerformed(), b.Observer.MergeAttempts()
+		if err != nil || merges != 1 || attempts != 1 {
+			t.Fatalf("restored: want one merge at the pin (err=%v merges=%d attempts=%d)", err, merges, attempts)
+		}
+	})
 }
 
 // reconcileForObservation drives one SHA-guarded reconcile and discards the

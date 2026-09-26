@@ -45,6 +45,7 @@ func (f inertFixture) SeedNote(id, author string, m forge.Marker, body string) e
 }
 func (f inertFixture) Pins() forge.DesiredMerge      { return f.real.Pins() }
 func (inertFixture) MoveTargetHead(string)           {}
+func (inertFixture) MoveSourceHead(string)           {}
 func (inertFixture) DriftSourceHeadAfterRead(string) {}
 
 // sabotage wraps ANY factory, so the gate runs against every backend rather than

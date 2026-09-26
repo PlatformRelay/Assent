@@ -122,6 +122,13 @@ type Fixture interface {
 	// Reconcile takes its pre-check read, so that the pre-check is what refuses.
 	MoveTargetHead(sha string)
 
+	// MoveSourceHead moves the MR source head to `sha` IMMEDIATELY. Distinct from
+	// DriftSourceHeadAfterRead, which fires inside the window: the
+	// move-and-restore case (REV1-S01) moves the head away BEFORE the pre-check
+	// read, then restores it to the pin before the next Reconcile, so both the
+	// pre-check refusal and the subsequent CAS pass are observed.
+	MoveSourceHead(sha string)
+
 	// Pins reports the merge pins matching the backend's CURRENT state — what an
 	// evaluation would have recorded if it ran right now. Cases take their pins
 	// from here rather than hardcoding them, because the pin VALUES are
