@@ -9,15 +9,15 @@ import (
 	"github.com/PlatformRelay/assent/internal/change"
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/core/classify"
+	"github.com/PlatformRelay/assent/internal/core/policy"
 )
 
-// satisfiablePolicyBinding returns a change on `.assent/config.yml` plus a
-// binding whose single obligation IS PROVEN by a rule whose `when` cleanly
-// evaluates to TRUE over that change. Evaluated with class "" it therefore
-// APPROVES — this is the "would-be-satisfied predicate" the meta-class must
-// dominate. The single-change set scalar-binds old/new so the predicate reads a
-// real value, not the fail-safe REVIEW path.
-func satisfiablePolicyBinding() (change.ChangeSet, aggregate.Binding) {
+// satisfiablePolicyInput returns a change on `.assent/config.yml` plus a policy
+// and binding whose single obligation IS PROVEN by a rule whose `when` cleanly
+// evaluates to TRUE over that change. Evaluated through aggregate.Decide with
+// class "" it therefore APPROVES — this is the "would-be-satisfied predicate" the
+// meta-class must dominate.
+func satisfiablePolicyInput() (change.ChangeSet, aggregate.EvaluationInput, *policy.MergePolicy, *policy.Binding) {
 	cs := change.ChangeSet{
 		Changes: []change.Change{{
 			File: ".assent/config.yml",
@@ -27,19 +27,33 @@ func satisfiablePolicyBinding() (change.ChangeSet, aggregate.Binding) {
 			New:  "true",
 		}},
 	}
-	b := aggregate.Binding{
+	in := aggregate.EvaluationInput{
+		ChangeSet: aggregate.ChangeSet{Changes: []aggregate.EvalChange{{
+			Subject: "file:.assent/config.yml",
+			File:    ".assent/config.yml",
+			Path:    "/enabled",
+			Kind:    "modify",
+			Old:     "false",
+			New:     "true",
+		}}},
+		Facts:   map[string]map[string]aggregate.Fact{},
 		Require: []string{"policy-ok"},
-		Subject: "file:.assent/config.yml",
-		Rules: []aggregate.Rule{{
-			Name:       "policy-enabled",
-			Obligation: "policy-ok",
-			// Cleanly TRUE over the change above (new == "true"). If the
-			// meta-class did not dominate, this would APPROVE.
-			When:      `new == "true"`,
-			OnFailure: aggregate.OnFailure{Effect: aggregate.EffectBlock, Code: "policy.disabled"},
-		}},
 	}
-	return cs, b
+	mp := &policy.MergePolicy{
+		Spec: policy.MergePolicySpec{
+			Rules: []policy.Rule{{
+				Name:  "policy-enabled",
+				Phase: policy.PhaseEnforce,
+				Match: policy.Match{Files: &policy.FilesMatch{Paths: []string{"**"}}},
+				// Cleanly TRUE over the change above (new == "true"). If the
+				// meta-class did not dominate, this would APPROVE.
+				Prove:     &policy.Prove{Obligation: "policy-ok", When: policy.AssertTree{Leaf: &policy.Leaf{CEL: `new == "true"`}}},
+				OnFailure: &policy.OnFailure{Effect: policy.EffectBlock, Code: "policy.disabled"},
+			}},
+		},
+	}
+	bind := &policy.Binding{Require: []string{"policy-ok"}}
+	return cs, in, mp, bind
 }
 
 // TestAssentPolicyBlockGolden is the mandatory "MR edits its own policy → BLOCK,
@@ -50,42 +64,48 @@ func satisfiablePolicyBinding() (change.ChangeSet, aggregate.Binding) {
 // would be near-tautological, so we first assert the predicate WOULD have
 // satisfied (APPROVE with class "").
 func TestAssentPolicyBlockGolden(t *testing.T) {
-	cs, b := satisfiablePolicyBinding()
+	cs, in, mp, bind := satisfiablePolicyInput()
 
 	// Control: with NO class, the satisfiable predicate arms APPROVE. This
 	// proves the golden below is not asserting a decision the rules would have
 	// reached anyway.
-	control, err := aggregate.Aggregate(b, cs, "")
+	control, err := aggregate.Decide(aggregate.DecideRequest{
+		Subject: "file:.assent/config.yml", Policy: mp, Binding: bind, Input: &in,
+	})
 	if err != nil {
-		t.Fatalf("control aggregate error: %v", err)
+		t.Fatalf("control decide error: %v", err)
 	}
 	if control.Decision != aggregate.DecisionApprove {
 		t.Fatalf("control: expected the satisfiable predicate to APPROVE with no class, got %s (findings %#v)",
 			control.Decision, control.Findings)
 	}
 
-	// The real path: classify the `.assent/**` change, then aggregate with the
-	// resulting class. classify → assent-policy → aggregator short-circuits BLOCK
+	// The real path: classify the `.assent/**` change, then decide with the
+	// resulting class. classify → assent-policy → Decide short-circuits BLOCK
 	// BEFORE the (would-be-true) predicate runs.
 	class := classify.Classify(cs)
 	if class != classify.ClassAssentPolicy {
 		t.Fatalf("classify(.assent/**) = %q, want %q", class, classify.ClassAssentPolicy)
 	}
-	got, err := aggregate.Aggregate(b, cs, class)
+	got, err := aggregate.Decide(aggregate.DecideRequest{
+		Subject: "file:.assent/config.yml", SubjectClass: class, Policy: mp, Binding: bind, Input: &in,
+	})
 	if err != nil {
-		t.Fatalf("policy aggregate error: %v", err)
+		t.Fatalf("policy decide error: %v", err)
 	}
 	if got.Decision != aggregate.DecisionBlock {
 		t.Fatalf("assent-policy MR: expected BLOCK (meta-class dominates the satisfiable predicate), got %s (findings %#v)",
 			got.Decision, got.Findings)
 	}
 
-	// Double-run: the whole classify→aggregate flow, executed twice, is
+	// Double-run: the whole classify→decide flow, executed twice, is
 	// byte-identical (decision + sorted findings), ADR-0013/ADR-0017 §9.
 	class2 := classify.Classify(cs)
-	got2, err := aggregate.Aggregate(b, cs, class2)
+	got2, err := aggregate.Decide(aggregate.DecideRequest{
+		Subject: "file:.assent/config.yml", SubjectClass: class2, Policy: mp, Binding: bind, Input: &in,
+	})
 	if err != nil {
-		t.Fatalf("second-run aggregate error: %v", err)
+		t.Fatalf("second-run decide error: %v", err)
 	}
 	if !reflect.DeepEqual(got, got2) {
 		t.Fatalf("double-run not identical:\n first: %#v\nsecond: %#v", got, got2)
@@ -106,10 +126,21 @@ func TestAssentPolicyDominatesMixedChangeSet(t *testing.T) {
 	if class := classify.Classify(cs); class != classify.ClassAssentPolicy {
 		t.Fatalf("mixed set with a `.assent/**` change: class = %q, want %q", class, classify.ClassAssentPolicy)
 	}
-	b := aggregate.Binding{Require: []string{"x"}, Subject: "file:topics/orders.yml"}
-	got, err := aggregate.Aggregate(b, cs, classify.Classify(cs))
+	in := aggregate.EvaluationInput{
+		ChangeSet: aggregate.ChangeSet{Changes: []aggregate.EvalChange{
+			{Subject: "topics/orders.yml", File: "topics/orders.yml", Path: "/partitions", Kind: "modify", Old: "3", New: "6"},
+			{Subject: ".assent/packs/topic.yml", File: ".assent/packs/topic.yml", Path: "/threshold", Kind: "modify", Old: "10", New: "1"},
+		}},
+		Facts:   map[string]map[string]aggregate.Fact{},
+		Require: []string{"x"},
+	}
+	mp := &policy.MergePolicy{}
+	bind := &policy.Binding{Require: []string{"x"}}
+	got, err := aggregate.Decide(aggregate.DecideRequest{
+		Subject: "file:topics/orders.yml", SubjectClass: classify.Classify(cs), Policy: mp, Binding: bind, Input: &in,
+	})
 	if err != nil {
-		t.Fatalf("aggregate error: %v", err)
+		t.Fatalf("decide error: %v", err)
 	}
 	if got.Decision != aggregate.DecisionBlock {
 		t.Fatalf("mixed policy MR: expected BLOCK, got %s", got.Decision)

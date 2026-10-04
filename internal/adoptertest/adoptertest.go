@@ -213,12 +213,21 @@ func Evaluate(c Case) (aggregate.Result, error) {
 	}
 	if !decidable {
 		// Mirror the CLI run path's undecidable guard (run.go's decide): an opaque OR
-		// EMPTY changeset is fail-safe REVIEW, never a silent APPROVE.
+		// EMPTY changeset is fail-safe REVIEW, never a silent APPROVE. This stays a
+		// BARE REVIEW with no findings — the frozen adopter-test fixture shape
+		// (ADR-0014; examples/packs/infra-vars/.assent/tests/vars/tf-opaque/expect.yaml
+		// documents it), unlike the finding-bearing form the run path emits.
 		return aggregate.Result{Decision: aggregate.DecisionReview}, nil
 	}
-	res, err := aggregate.CoverWithApproval(c.Policy, c.Bind, &in, c.Approval)
+	res, err := aggregate.Decide(aggregate.DecideRequest{
+		Subject:  c.Name,
+		Policy:   c.Policy,
+		Binding:  c.Bind,
+		Input:    &in,
+		Approval: c.Approval,
+	})
 	if err != nil {
-		return aggregate.Result{}, fmt.Errorf("cover %q: %w", c.Name, err)
+		return aggregate.Result{}, fmt.Errorf("decide %q: %w", c.Name, err)
 	}
 	return res, nil
 }

@@ -187,9 +187,20 @@ func Compare(in *aggregate.EvaluationInput, baseline, candidate Profile) (Compar
 	}, nil
 }
 
-// evaluate runs one profile's activation through the reused engine entry.
+// evaluate runs one profile's activation through the single guarded engine entry
+// (aggregate.Decide), so the empty-require trust-boundary guard applies to every
+// comparison. EvaluationInput carries no subject class or opacity (the frozen
+// bundle shape), so compare reaches the empty-changeset and empty-require guards.
 func evaluate(in *aggregate.EvaluationInput, p Profile) (aggregate.Result, error) {
-	return aggregate.CoverWithProfile(p.Policy, p.Bind, in, p.Approval, p.Ceiling, p.Precedence, p.Profiles)
+	return aggregate.Decide(aggregate.DecideRequest{
+		Policy:     p.Policy,
+		Binding:    p.Bind,
+		Input:      in,
+		Approval:   p.Approval,
+		Ceiling:    p.Ceiling,
+		Precedence: p.Precedence,
+		Profiles:   p.Profiles,
+	})
 }
 
 // gateVerdict applies the ONE seed gate (bounded-auto-merge-widening): a

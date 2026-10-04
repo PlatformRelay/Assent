@@ -47,13 +47,7 @@
 package aggregate
 
 import (
-	"fmt"
 	"sort"
-
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common/types"
-
-	"github.com/PlatformRelay/assent/internal/change"
 )
 
 // Effect is a rule's onFailure effect (ADR-0017 §2, the DecisionRecord finding
@@ -74,42 +68,6 @@ const (
 	// EffectRequireReview needs forge-proven eligible approval (ADR-0017 §3).
 	EffectRequireReview Effect = "require-review"
 )
-
-// OnFailure is a rule's failure declaration (ADR-0017 §2): the effect applied
-// and the stable finding code echoed into the DecisionRecord/PresentationModel.
-type OnFailure struct {
-	Effect Effect
-	Code   string
-}
-
-// Rule is one assert/CEL rule that proves exactly one obligation (ADR-0017 §2).
-// This is the MINIMAL rule type the walking skeleton needs — multi-obligation
-// composition, points/scoring, and require-review authorization are E2.
-type Rule struct {
-	// Name identifies the rule (finding.rule); part of the canonical sort key.
-	Name string
-	// Obligation is the single obligation this rule proves (prove.obligation).
-	Obligation string
-	// When is the CEL assert expression; it may reference old, new, and changes
-	// (see bindActivation). It MUST evaluate to a boolean; a non-bool result
-	// fails safe to REVIEW.
-	When string
-	// OnFailure is applied when When is cleanly false.
-	OnFailure OnFailure
-}
-
-// Binding is the minimal ADR-0017 §2 binding: one require list plus the rules
-// that prove those obligations. AND-only composition (every required obligation
-// must be proven to arm); this slice carries exactly one required obligation.
-type Binding struct {
-	// Require is the list of obligation names that must each be proven for APPROVE.
-	Require []string
-	// Rules are the assert rules; each proves one obligation.
-	Rules []Rule
-	// Subject is the governed-subject entryRef this binding evaluates over
-	// (finding.subject). In the walking skeleton it is the single file subject.
-	Subject string
-}
 
 // Decision is the reduced outcome (ADR-0017 §2). BLOCK dominates REVIEW
 // dominates APPROVE (denies are a union, §2).
@@ -232,109 +190,6 @@ const (
 // DOMINATES to BLOCK independent of any predicate — an MR cannot vouch itself.
 const ReservedPolicyClass = "assent-policy"
 
-// Aggregate evaluates the binding's single-obligation rules over the S02
-// ChangeSet and reduces to a decision, fail-safe throughout.
-//
-// S07-01 SEAM: subjectClass is the per-subject class signal a later serialized
-// edit (internal/core/classify, another lane) computes. When it equals
-// ReservedPolicyClass the aggregator SHORT-CIRCUITS to BLOCK *before any
-// predicate evaluation* — the reserved-class meta-block dominates even a
-// satisfied assert (ADR-0008 amendment). This lane does NOT build the classifier;
-// it only leaves this dominating hook so S07-01 wires in cleanly. Pass "" when
-// no class is known.
-func Aggregate(b Binding, cs change.ChangeSet, subjectClass string) (Result, error) {
-	// 1. Reserved-class meta-block dominates before any predicate (S07-01 seam).
-	if subjectClass == ReservedPolicyClass {
-		return Result{
-			Decision: DecisionBlock,
-			Findings: []Finding{{
-				Rule:    ReservedPolicyClass,
-				Effect:  EffectBlock,
-				Subject: b.Subject,
-				Points:  0,
-				Code:    "assent-policy.self-edit",
-			}},
-		}, nil
-	}
-
-	// 2. An opaque ChangeSet is undecidable -> REVIEW (never a silent APPROVE).
-	// 3. An empty change list would violate the schema minItems:1 downstream and
-	//    means the differ saw no change to prove an obligation over -> REVIEW.
-	if cs.Opaque || len(cs.Changes) == 0 {
-		return failSafe(b), nil
-	}
-
-	env, err := newCELEnv()
-	if err != nil {
-		// An environment that cannot be built is a program bug, not an input;
-		// still fail safe rather than proceed.
-		return failSafe(b), err
-	}
-	activation := bindActivation(cs)
-
-	// Index rules by the obligation they prove, so coverage is computed as
-	// "the required obligation is proven by a cleanly-true rule", not
-	// "no rule returned false" (fail-open avoidance).
-	rulesByObligation := map[string][]Rule{}
-	for _, r := range b.Rules {
-		rulesByObligation[r.Obligation] = append(rulesByObligation[r.Obligation], r)
-	}
-
-	decision := DecisionApprove
-	var findings []Finding
-
-	for _, obligation := range b.Require {
-		rules := rulesByObligation[obligation]
-		if len(rules) == 0 {
-			// A required obligation with NO proving rule can never be proven ->
-			// REVIEW (coverage gap, never APPROVE).
-			decision = worse(decision, DecisionReview)
-			findings = append(findings, Finding{
-				Rule:       ruleUncovered,
-				Obligation: obligation,
-				Effect:     EffectRequireReview,
-				Subject:    b.Subject,
-				Points:     0,
-				Code:       "obligation.uncovered",
-			})
-			continue
-		}
-		for _, r := range rules {
-			satisfied, evalErr := evalRule(env, activation, r.When)
-			switch {
-			case evalErr != nil:
-				// Predicate compile/eval/coercion error or non-bool result ->
-				// REVIEW (tri-state fail-safe, ADR-0017 §6, REQ-S03-02).
-				decision = worse(decision, DecisionReview)
-				findings = append(findings, Finding{
-					Rule:       r.Name,
-					Obligation: r.Obligation,
-					Effect:     EffectRequireReview,
-					Subject:    b.Subject,
-					Points:     0,
-					Code:       "predicate.error",
-				})
-			case satisfied:
-				// Obligation proven by this rule; contributes no finding.
-			default:
-				// Cleanly false -> the rule's onFailure effect (never APPROVE).
-				decision = worse(decision, effectDecision(r.OnFailure.Effect))
-				findings = append(findings, Finding{
-					Rule:       r.Name,
-					Obligation: r.Obligation,
-					Effect:     r.OnFailure.Effect,
-					Subject:    b.Subject,
-					Points:     0,
-					Code:       r.OnFailure.Code,
-				})
-			}
-		}
-	}
-
-	sortFindings(findings)
-	return Result{Decision: decision, Findings: findings}, nil
-}
-
 // effectDecision maps an unsatisfied onFailure effect to a decision: block ->
 // BLOCK, everything else -> REVIEW. Confirmed against ADR-0017 §2 (every
 // obligation must be satisfied to arm; denies are a union) and §3 (require-review
@@ -345,21 +200,6 @@ func effectDecision(e Effect) Decision {
 		return DecisionBlock
 	}
 	return DecisionReview
-}
-
-// failSafe builds the REVIEW result for an undecidable ChangeSet (opaque or
-// empty), attaching one finding so the outcome is auditable.
-func failSafe(b Binding) Result {
-	return Result{
-		Decision: DecisionReview,
-		Findings: []Finding{{
-			Rule:    ruleUndecidable,
-			Effect:  EffectRequireReview,
-			Subject: b.Subject,
-			Points:  0,
-			Code:    "changeset.undecidable",
-		}},
-	}
 }
 
 // sortFindings orders findings by a TOTAL key (subject, rule, obligation, code,
@@ -382,100 +222,4 @@ func sortFindings(fs []Finding) {
 		}
 		return a.Effect < b.Effect
 	})
-}
-
-// newCELEnv builds the CEL environment. old/new are bound as strings (the
-// differ's canonical forms); changes is the list of per-entry maps. Numeric
-// comparison is the responsibility of the `when` expression via int()/double().
-func newCELEnv() (*cel.Env, error) {
-	return cel.NewEnv(
-		cel.Variable("old", cel.StringType),
-		cel.Variable("new", cel.StringType),
-		cel.Variable("changes", cel.ListType(cel.MapType(cel.StringType, cel.StringType))),
-	)
-}
-
-// bindActivation builds the CEL activation from the ChangeSet.
-//
-// changes is ALWAYS bound to the full list of entries (each a {subject, file,
-// path, kind, old, new} string map) — an entry's PRESENCE is the change signal
-// (constraint d), so a rule reads `changes` to reason over what changed.
-//
-// old/new are the convenience scalar bindings for the single-entry case (the
-// walking-skeleton shape). They are bound ONLY when there is exactly one entry.
-// With 0 or >1 entries the old/new keys are OMITTED from the activation
-// ENTIRELY (not bound to a "" default): they stay DECLARED in newCELEnv so
-// Compile still succeeds, but a predicate that references them then hits an Eval
-// error `no such attribute(s): old` -> the evalRule error path -> REVIEW, for
-// EVERY predicate type. Binding "" would fail-OPEN for a non-numeric predicate:
-// a real 2-field diff with `when: "old == new"` would evaluate `"" == ""` ->
-// true -> APPROVE on an unproven obligation that inspected none of the real
-// changes. Omission makes the fail-safe UNCONDITIONAL on predicate type
-// (GUIDELINES §2). A rule that needs multi-entry reasoning must iterate `changes`
-// (always bound), not the scalar convenience bindings.
-func bindActivation(cs change.ChangeSet) map[string]any {
-	changesList := make([]map[string]string, len(cs.Changes))
-	for i, c := range cs.Changes {
-		changesList[i] = map[string]string{
-			"subject": "file:" + c.File,
-			"file":    c.File,
-			"path":    c.Path,
-			"kind":    string(c.Kind),
-			"old":     c.Old,
-			"new":     c.New,
-		}
-	}
-	act := map[string]any{"changes": changesList}
-	// Bind scalar old/new ONLY for the single-entry case; otherwise leave them
-	// unbound so any reference errors -> REVIEW (fail-safe on every predicate type).
-	if len(cs.Changes) == 1 {
-		act["old"] = cs.Changes[0].Old
-		act["new"] = cs.Changes[0].New
-	}
-	return act
-}
-
-// evalRule compiles and evaluates one `when` expression. It returns (satisfied,
-// nil) ONLY when the predicate compiled, evaluated without error, produced a
-// boolean, and ordered nothing lexically. Every other outcome — a compile error
-// (undecidable `when`), an eval error (incl. numeric-coercion failure, surfaced
-// via the error slot OR a types.Err value), a non-boolean result, or an ordering
-// operator over a text operand — returns a non-nil error so the caller fails safe
-// to REVIEW. It NEVER returns (true, nil) for a malformed rule.
-//
-// The D-131 textOrderGuard is applied here too, not only in evalLeaf. This
-// walking-skeleton env declares old/new as StringType and binds the differ's RAW
-// canonical strings, so EVERY bare relational here is a lexical compare — the
-// path mandated int()/double() by convention alone, with nothing enforcing it.
-// Guarding both evaluators is deliberate: one evaluation seam left unguarded is
-// how this class of fail-open comes back (the same drift argument that pulled the
-// canonical decoder into internal/evaldecode, D-055c).
-func evalRule(env *cel.Env, activation map[string]any, when string) (bool, error) {
-	ast, iss := env.Compile(when)
-	if iss != nil && iss.Err() != nil {
-		return false, fmt.Errorf("compile when %q: %w", when, iss.Err())
-	}
-	guard := newTextOrderGuard(ast)
-	prg, err := env.Program(ast, cel.CostLimit(celCostBudget), cel.CustomDecorator(guard.decorate))
-	if err != nil {
-		return false, fmt.Errorf("program when %q: %w", when, err)
-	}
-	out, _, evalErr := prg.Eval(activation)
-	if evalErr != nil {
-		return false, fmt.Errorf("eval when %q: %w", when, evalErr)
-	}
-	// A types.Err result carries the error in the value slot (cel-go can surface
-	// a coercion failure either way — verified empirically); reject both.
-	if out == nil || types.IsError(out) {
-		return false, fmt.Errorf("eval when %q produced an error value", when)
-	}
-	if err := guard.err(); err != nil {
-		return false, fmt.Errorf("eval when %q: %w", when, err)
-	}
-	b, ok := out.Value().(bool)
-	if !ok {
-		// A non-boolean `when` is malformed; it must NOT be read as true/false.
-		return false, fmt.Errorf("when %q result is %s, not bool", when, out.Type().TypeName())
-	}
-	return b, nil
 }

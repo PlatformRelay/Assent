@@ -511,55 +511,31 @@ func selectBinding(rb *policy.RulesetBinding) (*policy.Binding, error) {
 	return &rb.Bindings[0], nil
 }
 
-// decide reduces the run to an aggregate.Result, with the two dominating fail-safe
-// guards reasserted AROUND the E2-S04 coverage loop (which has no such hooks):
-//
-//   - GUARD 1 (reserved-class self-edit): an MR touching `.assent/**` dominates to
-//     BLOCK before any predicate — it cannot vouch for itself (ADR-0015 §1, D-042).
-//     This hook lives ONLY in the walking-skeleton Aggregate; Cover has none, so
-//     the re-seat reasserts it here.
-//   - undecidable changeset (opaque or empty): Cover treats "no matched change" as
-//     an obligation that does not apply and could APPROVE, so an opaque/empty diff
-//     short-circuits to the fail-safe REVIEW here, matching the skeleton's
-//     failSafe(), never a silent APPROVE.
-//   - empty require (RVW-S01 / D-184): a binding that declares no required
-//     obligations makes the obligation layer vacuous, so a decidable subject is
-//     refused fail-closed rather than APPROVEd on no positive vouch.
-//
-// Otherwise the frozen engine decides over the decoded EvaluationInput with
-// forge-resolved ApprovalEvidence (E4-S06) and the pack phase ceiling. Every
-// finding is then given a non-empty subject (N1).
+// decide builds the run's EvaluationInput and delegates the fail-safe trust
+// boundary to the single guarded engine entry, aggregate.Decide (XREV-S01 / D2):
+// reserved-class BLOCK, opaque/empty REVIEW, and the empty-require refusal all
+// live there, so every engine consumer shares one boundary. Every finding is then
+// given a non-empty subject (N1).
 //
 // facts is the E5-S05 host-resolved envelope (provider → name → Fact). Nil/empty
 // keeps the pre-S05 fail-safe empty map from buildEvaluationInput.
 func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergePolicy, bind *policy.Binding, ceiling policy.Phase, info forge.MRInfo, facts map[string]map[string]aggregate.Fact, appr *aggregate.ApprovalContext, mrAuthor string) (aggregate.Result, error) {
-	var res aggregate.Result
-	switch {
-	case subjectClass == classify.ClassAssentPolicy:
-		res = reservedClassBlock(subject)
-	case cs.Opaque || len(cs.Changes) == 0:
-		res = undecidableReview(subject)
-	default:
-		// RVW-S01 (D-184): an empty/absent require[] declares no required
-		// obligations, so the obligation layer is vacuous — the run would APPROVE a
-		// governed change no rule positively vouches. Fail CLOSED before any forge
-		// write (the seam note at internal/core/decision/record.go assigns this duty
-		// to the CLI wiring; GUIDELINES §Safety-1: every change must be positively
-		// vouched). Reached only for a non-reserved, decidable subject: a reserved
-		// `.assent/**` subject BLOCKs above, and an opaque/empty changeset REVIEWs
-		// above, so neither depends on require[].
-		if len(bind.Require) == 0 {
-			return aggregate.Result{}, fmt.Errorf("ruleset-binding binding (class=%q, environment=%q) declares no required obligations (require is empty) — refusing to arm APPROVE; add at least one obligation to require[] (GUIDELINES §Safety-1, D-184)", bind.Class, bind.Environment)
-		}
-		in := buildEvaluationInput(cs, mrFrom(info, mrAuthor), bind.Require)
-		if len(facts) > 0 {
-			in.Facts = facts
-		}
-		r, err := aggregate.CoverWithPhaseCeiling(mp, bind, &in, appr, ceiling)
-		if err != nil {
-			return aggregate.Result{}, err
-		}
-		res = r
+	in := buildEvaluationInput(cs, mrFrom(info, mrAuthor), bind.Require)
+	if len(facts) > 0 {
+		in.Facts = facts
+	}
+	res, err := aggregate.Decide(aggregate.DecideRequest{
+		Subject:      subject,
+		SubjectClass: subjectClass,
+		Opaque:       cs.Opaque,
+		Policy:       mp,
+		Binding:      bind,
+		Input:        &in,
+		Approval:     appr,
+		Ceiling:      ceiling,
+	})
+	if err != nil {
+		return aggregate.Result{}, err
 	}
 	return sanitizeSubjects(res, subject), nil
 }
@@ -627,38 +603,6 @@ func reservedSelfEditBlock(res aggregate.Result) bool {
 		}
 	}
 	return false
-}
-
-// reservedClassBlock is the reserved-class self-edit BLOCK result, reconstructing
-// exactly what aggregate.Aggregate's reserved-class short-circuit emits (a smuggled
-// `.assent/**` edit can never vouch for itself, ADR-0015 §1).
-func reservedClassBlock(subject string) aggregate.Result {
-	return aggregate.Result{
-		Decision: aggregate.DecisionBlock,
-		Findings: []aggregate.Finding{{
-			Rule:    aggregate.ReservedPolicyClass,
-			Effect:  aggregate.EffectBlock,
-			Subject: subject,
-			Points:  0,
-			Code:    "assent-policy.self-edit",
-		}},
-	}
-}
-
-// undecidableReview is the fail-safe REVIEW result for an opaque/empty changeset,
-// reconstructing the skeleton aggregate.failSafe() finding so the outcome is
-// auditable (never a silent APPROVE).
-func undecidableReview(subject string) aggregate.Result {
-	return aggregate.Result{
-		Decision: aggregate.DecisionReview,
-		Findings: []aggregate.Finding{{
-			Rule:    "aggregate.changeset",
-			Effect:  aggregate.EffectRequireReview,
-			Subject: subject,
-			Points:  0,
-			Code:    "changeset.undecidable",
-		}},
-	}
 }
 
 // sanitizeSubjects gives every finding a non-empty subject (N1). The E2-S04
