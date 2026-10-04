@@ -7,7 +7,6 @@ import (
 
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
 	"github.com/PlatformRelay/assent/internal/core/policy"
-	"github.com/PlatformRelay/assent/internal/glob"
 )
 
 // coverage.go is the PURE `assent test --coverage` both-polarity computation
@@ -265,7 +264,7 @@ func provingSilent(rules []policy.Rule, changes []aggregate.EvalChange, res aggr
 		if !enforceObl[r.Name] {
 			continue
 		}
-		matched, merr := ruleMatchesAny(r.Match, changes)
+		matched, merr := aggregate.MatchesAny(r.Match, changes)
 		if merr != nil {
 			return nil, fmt.Errorf("rule %q: %w", r.Name, merr)
 		}
@@ -283,117 +282,4 @@ func provingSilent(rules []policy.Rule, changes []aggregate.EvalChange, res aggr
 	}
 	sort.Strings(out)
 	return out, nil
-}
-
-// kindModify is the change.Kind string the values domain implies (matches
-// aggregate.kindModify — declared locally to avoid importing internal/change here).
-const kindModify = "modify"
-
-// ruleMatchesAny reports whether the rule's match domain selects >=1 change. It
-// MIRRORS aggregate.matchChanges (internal/core/aggregate/coverage.go) — the SAME
-// files/values/valueChanges glob semantics, the same implied kind:modify for the
-// values domain, the same fileEvents whole-file (path=="") selection, and the same
-// both-way domain disjointness on ch.Path — so the harness's "did this rule apply"
-// agrees byte-for-byte with what the engine actually evaluated. An absent domain
-// is an ERROR (fail-closed), exactly as the engine's matchChanges errors: reaching
-// it means a policy defect the loader should have rejected, never a fail-open
-// "matched nothing".
-func ruleMatchesAny(m policy.Match, changes []aggregate.EvalChange) (bool, error) {
-	switch {
-	case m.FileEvents != nil:
-		fe := m.FileEvents
-		for i := range changes {
-			ch := changes[i]
-			// Whole-file discriminator: fileEvents selects ONLY a whole-file event
-			// (path==""), never a value-level change (disjointness direction 1).
-			if ch.Path != "" {
-				continue
-			}
-			if !containsStr(fe.Kinds, ch.Kind) {
-				continue
-			}
-			if matchesAnyGlob(fe.Paths, ch.File) {
-				return true, nil
-			}
-		}
-		return false, nil
-	case m.Files != nil:
-		for i := range changes {
-			// Value-level domain: never selects a whole-file event (path==""), so a
-			// file glob cannot poach a fileEvents change (disjointness direction 2).
-			if changes[i].Path == "" {
-				continue
-			}
-			if matchesAnyGlob(m.Files.Paths, changes[i].File) {
-				return true, nil
-			}
-		}
-		return false, nil
-	case m.ValueChanges != nil:
-		vc := m.ValueChanges
-		for i := range changes {
-			ch := changes[i]
-			if ch.Path == "" { // value-level only (disjointness direction 2)
-				continue
-			}
-			if !matchesAnyGlob(vc.Pointers, ch.Path) {
-				continue
-			}
-			if len(vc.Kinds) > 0 && !containsStr(vc.Kinds, ch.Kind) {
-				continue
-			}
-			if len(vc.Paths) > 0 && !matchesAnyGlob(vc.Paths, ch.File) {
-				continue
-			}
-			return true, nil
-		}
-		return false, nil
-	case m.Values != nil:
-		v := m.Values
-		// At least one selector must be present, else the domain matches nothing
-		// (fail-closed, never a wildcard) — matches aggregate.matchChanges.
-		if len(v.Pointers) == 0 && len(v.Paths) == 0 {
-			return false, fmt.Errorf("match.values declares neither pointers nor paths")
-		}
-		for i := range changes {
-			ch := changes[i]
-			if ch.Path == "" { // value-level only (disjointness direction 2)
-				continue
-			}
-			if ch.Kind != kindModify {
-				continue
-			}
-			if len(v.Pointers) > 0 && !matchesAnyGlob(v.Pointers, ch.Path) {
-				continue
-			}
-			if len(v.Paths) > 0 && !matchesAnyGlob(v.Paths, ch.File) {
-				continue
-			}
-			return true, nil
-		}
-		return false, nil
-	default:
-		return false, fmt.Errorf("rule match declares no supported domain (files, values, valueChanges, or fileEvents)")
-	}
-}
-
-// matchesAnyGlob reports whether s matches any of the glob patterns (mirrors
-// aggregate.matchesAnyGlob, over the same internal/glob engine).
-func matchesAnyGlob(patterns []string, s string) bool {
-	for _, p := range patterns {
-		if glob.Match(p, s) {
-			return true
-		}
-	}
-	return false
-}
-
-// containsStr reports exact-string set membership.
-func containsStr(set []string, v string) bool {
-	for _, s := range set {
-		if s == v {
-			return true
-		}
-	}
-	return false
 }
