@@ -52,8 +52,9 @@ type DecideRequest struct {
 // from the classifier and the differ's opaque flag, adoptertest short-circuits its
 // undecidable path before Decide, and compare's frozen bundle can represent
 // neither — but a future caller that lies about opacity is not structurally
-// stopped by this entry. The empty-require and empty-changeset guards ARE derived
-// from the input and cannot be bypassed.
+// stopped by this entry. The empty-require and empty-changeset guards are checked
+// against the supplied binding/input rather than merely asserted, and cannot be
+// bypassed.
 //
 // Otherwise it runs the profile-aware coverage loop (empty precedence/profiles is
 // the safe no-write-authority default), so one entry serves the run path, the
