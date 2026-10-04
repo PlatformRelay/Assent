@@ -118,8 +118,12 @@ Requirements:
   `aggregate.Cover`, so the export cannot decouple from `matchChanges`. (A two-implementation
   parity oracle is deliberately NOT used: the clone is deleted, so there is no second
   implementation to diverge from; the per-domain table is the semantic oracle.)
+  A static guard (`TestHarnessUsesSharedMatcher`) additionally fails if
+  `adoptertest/coverage.go` stops calling `aggregate.MatchesAny` or reintroduces a
+  local match predicate, closing the re-clone regression path.
   - Test: `internal/adoptertest/match_parity_test.go` (per-domain expectation table + engine
-    agreement); `internal/core/aggregate/matches_any_test.go` (engine-package copy)
+    agreement); `internal/core/aggregate/matches_any_test.go` (engine-package copy);
+    `internal/adoptertest/no_clone_test.go` (structural guard)
   - Verify: `go test ./internal/adoptertest/... ./internal/core/aggregate/...`
   - Level: L1
 
@@ -224,6 +228,6 @@ Requirements:
   - Level: L1
 - **REQ-XREV-S04-03** — Given `cmd/assent/provider_host.go`, when the binary's imports are
   read, then it does not import `testing/fstest`, and the resource-owner map still loads.
-  - Test: `cmd/assent/provider_host_test.go` (existing loader tests stay green)
+  - Test: `cmd/assent/onefilefs_test.go` (AST import scan of every non-test file in the package)
   - Verify: `go test ./cmd/assent/... && go vet ./cmd/assent/...`
   - Level: L1

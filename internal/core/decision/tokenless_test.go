@@ -24,7 +24,8 @@ import (
 //     internal/forge (or any write-token-carrying forge package). A synthetic
 //     snippet that DOES import forge is flagged (control).
 //  2. FIELD SCAN — the public decision-function INPUT types (aggregate.DecideRequest,
-//     aggregate.Result, aggregate.EvaluationInput, change.ChangeSet, decision.Pins)
+//     aggregate.DecideRequest (which reaches aggregate.EvaluationInput),
+//     change.ChangeSet, aggregate.Result, decision.Pins)
 //     carry no credential/token/secret field, recursively. A synthetic struct
 //     that DOES carry a nested Token field is flagged (control).
 //

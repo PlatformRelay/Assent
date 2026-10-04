@@ -3,27 +3,44 @@ package main
 import (
 	"go/parser"
 	"go/token"
+	"os"
 	"strconv"
+	"strings"
 	"testing"
 )
 
-// TestProviderHostDoesNotImportTestingFstest pins REQ-XREV-S04-03 (D18): the
-// shipped provider host must not import testing/fstest, which would link a test
-// package into the release binary. The run_checkout_containment_test.go test file
-// may still import it (test-only, never linked); this scans the non-test source.
-func TestProviderHostDoesNotImportTestingFstest(t *testing.T) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "provider_host.go", nil, parser.ImportsOnly)
+// TestCmdAssentDoesNotImportTestingFstest pins REQ-XREV-S04-03 (D18): no non-test
+// source file in the shipped `assent` binary may import testing/fstest, which would
+// link a test package into the release binary. Test files may import it (never
+// linked); they are skipped.
+func TestCmdAssentDoesNotImportTestingFstest(t *testing.T) {
+	entries, err := os.ReadDir(".")
 	if err != nil {
-		t.Fatalf("parse provider_host.go: %v", err)
+		t.Fatalf("read package dir: %v", err)
 	}
-	for _, imp := range f.Imports {
-		p, err := strconv.Unquote(imp.Path.Value)
+	fset := token.NewFileSet()
+	scanned := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, parser.ImportsOnly)
 		if err != nil {
-			t.Fatalf("unquote import %s: %v", imp.Path.Value, err)
+			t.Fatalf("parse %s: %v", name, err)
 		}
-		if p == "testing/fstest" {
-			t.Fatal("provider_host.go imports testing/fstest — the release binary must not link it (D18; use oneFileFS)")
+		scanned++
+		for _, imp := range f.Imports {
+			p, err := strconv.Unquote(imp.Path.Value)
+			if err != nil {
+				t.Fatalf("unquote import %s in %s: %v", imp.Path.Value, name, err)
+			}
+			if p == "testing/fstest" {
+				t.Fatalf("%s imports testing/fstest — the release binary must not link it (D18; use oneFileFS)", name)
+			}
 		}
+	}
+	if scanned == 0 {
+		t.Fatal("no non-test .go files scanned — the fstest-import pin would be vacuous")
 	}
 }

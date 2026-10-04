@@ -101,7 +101,7 @@ func subcommands() []subcommand {
 			// `assent test <repo>` (E6-S01): discover the repo's `.assent/tests/**`
 			// directory cases, diff each case's base/↔head/ with the production differ,
 			// stub its facts.yaml into the resolved-fact envelope, and evaluate the pack
-			// via aggregate.Cover — asserting the produced Decision equals the case's
+			// via aggregate.Decide — asserting the produced Decision equals the case's
 			// expect.yaml. The directory walk + file reads (the only I/O) live in runTest;
 			// the case loader/assembler/assertion is the pure internal/adoptertest library.
 			// Exit 0 when every case matched, non-zero on any mismatch or load error, so a

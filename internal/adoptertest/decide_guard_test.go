@@ -1,6 +1,7 @@
 package adoptertest
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/PlatformRelay/assent/internal/core/policy"
@@ -23,5 +24,7 @@ func TestEvaluateEmptyRequireFailsClosed(t *testing.T) {
 	}
 	if _, err := Evaluate(c); err == nil {
 		t.Fatal("Evaluate with an empty require[] must error (D2), not vacuously APPROVE")
+	} else if !strings.Contains(err.Error(), "require is empty") {
+		t.Fatalf("expected the empty-require guard to fire, got: %v", err)
 	}
 }

@@ -194,11 +194,10 @@ func (g *textOrderGuard) record(op, value string) {
 
 // err reports the refusal when the evaluation ordered text.
 //
-// Where this sentence goes today: NOWHERE an adopter can read it. Both consumers
-// of the returned error use it for its non-nil-ness only — coverSubject maps it
+// Where this sentence goes today: NOWHERE an adopter can read it. The consumer
+// of the returned error uses it for its non-nil-ness only — coverSubject maps it
 // to a `predicate.error` require-review Finding whose Message is the AUTHORED
-// leaf message (walkAssertTree returns the two separately), and the legacy rule
-// caller in aggregate.go builds its Finding with no Message at all. So this is an
+// leaf message (walkAssertTree returns the two separately). So this is an
 // engine-internal diagnostic that no rendered finding, comment or `assent test`
 // output prints. It is nonetheless written in plain adopter language, and names
 // the concrete fix, so that it is fit to surface unchanged if an engine debug or
