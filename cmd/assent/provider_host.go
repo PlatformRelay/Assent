@@ -290,8 +290,7 @@ func loadResourceOwnerRegistry(
 	_ = ctx
 	raw, err := client.FileAtRef(project, regPath, targetRef)
 	if err == nil {
-		fsys := oneFileFS{name: path.Base(regPath), data: raw}
-		return builtin.LoadResourceOwnerMap(fsys, path.Base(regPath))
+		return builtin.LoadResourceOwnerMapBytes(path.Base(regPath), raw)
 	}
 	if !errors.Is(err, forge.ErrNotFound) {
 		// A broken forge is not an absent file. Fail here rather than reading a

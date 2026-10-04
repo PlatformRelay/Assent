@@ -36,7 +36,7 @@ func TestCmdAssentDoesNotImportTestingFstest(t *testing.T) {
 				t.Fatalf("unquote import %s in %s: %v", imp.Path.Value, name, err)
 			}
 			if p == "testing/fstest" {
-				t.Fatalf("%s imports testing/fstest — the release binary must not link it (D18; use oneFileFS)", name)
+				t.Fatalf("%s imports testing/fstest — the release binary must not link it (D18; use builtin.LoadResourceOwnerMapBytes)", name)
 			}
 		}
 	}
