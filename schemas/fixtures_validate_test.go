@@ -2,6 +2,7 @@ package schemas
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,11 +37,21 @@ var contractSchemasByKind = map[string]*jsonschema.Schema{
 	"ApprovalEvidence": ApprovalEvidenceSchema,
 	// Comparison kinds (P3-E4-S03) — registered so future examples/contracts
 	// fixtures validate against the closed taxonomy / suite schemas.
-	"ComparisonRecord":       ComparisonRecordSchema,
-	"PolicyComparisonSuite":  ComparisonSuiteSchema,
+	"ComparisonRecord":      ComparisonRecordSchema,
+	"PolicyComparisonSuite": ComparisonSuiteSchema,
 }
 
 const contractAPIVersion = "assent.dev/v1alpha1"
+
+// fixtureTB is the minimal testing surface validateContractsTree needs, so the
+// fail-closed test below can drive it with a recorder that does not Goexit on
+// Fatalf. *testing.T satisfies it.
+type fixtureTB interface {
+	Helper()
+	Fatalf(format string, args ...any)
+	Errorf(format string, args ...any)
+	Logf(format string, args ...any)
+}
 
 // TestExampleContractsFixturesValidate is the CI-facing fixture-validation
 // step REQ-P3-E1-S06-03 describes (schemas.yml's job runs this via
@@ -60,16 +71,22 @@ const contractAPIVersion = "assent.dev/v1alpha1"
 // of this lane's owned paths to fix. Migrating those examples is a separate,
 // follow-up concern — see agent-context/INBOX.md.
 func TestExampleContractsFixturesValidate(t *testing.T) {
-	root := filepath.Join("..", "examples", "contracts")
+	validateContractsTree(t, filepath.Join("..", "examples", "contracts"))
+}
+
+// validateContractsTree walks root and validates every apiVersion/kind-bearing
+// fixture against its schema. It FAILS CLOSED (D16, XREV-S04-01): an absent,
+// empty, or doc-less tree is a hard failure, never a skip — a gate that skips
+// greens silently when the fixture directory is renamed or emptied, which is the
+// repo's own "test that cannot fail" class (D-124/D-167).
+func validateContractsTree(t fixtureTB, root string) {
+	t.Helper()
 	entries, err := os.ReadDir(root)
-	if os.IsNotExist(err) {
-		t.Skip("examples/contracts/ does not exist yet (lands with P3-E1-S07) — gate armed, not applicable")
-	}
 	if err != nil {
-		t.Fatalf("read %s: %v", root, err)
+		t.Fatalf("read fixture tree %s: %v — the tree must exist and be readable; a missing/renamed tree is a hard failure, not a skip (D16)", root, err)
 	}
 	if len(entries) == 0 {
-		t.Skip("examples/contracts/ is empty — gate armed, not applicable")
+		t.Fatalf("fixture tree %s is empty — the gate would be vacuous (D16)", root)
 	}
 
 	checked := 0
@@ -123,9 +140,56 @@ func TestExampleContractsFixturesValidate(t *testing.T) {
 		t.Fatalf("walk %s: %v", root, err)
 	}
 	if checked == 0 {
-		t.Skip("no apiVersion/kind-bearing fixtures found under examples/contracts/ — gate armed, not applicable")
+		t.Fatalf("no apiVersion/kind-bearing fixtures found under %s — the gate would be vacuous (D16)", root)
 	}
 	t.Logf("validated %d fixture(s) under %s", checked, root)
+}
+
+// fatalRecorder implements fixtureTB, recording Fatalf calls instead of
+// Goexit-ing, so the fail-closed cases below can assert the gate fails without
+// aborting the test binary.
+type fatalRecorder struct {
+	fatals []string
+	errs   []string
+}
+
+func (r *fatalRecorder) Helper()                   {}
+func (r *fatalRecorder) Fatalf(f string, a ...any) { r.fatals = append(r.fatals, fmt.Sprintf(f, a...)) }
+func (r *fatalRecorder) Errorf(f string, a ...any) { r.errs = append(r.errs, fmt.Sprintf(f, a...)) }
+func (r *fatalRecorder) Logf(string, ...any)       {}
+
+// TestValidateContractsTreeFailsClosed is the non-vacuity control for D16: each
+// degenerate tree (absent, empty, no apiVersion/kind doc) must produce a Fatal,
+// not a skip. Reverting the helper's Fatalfs back to t.Skip reddens this test.
+func TestValidateContractsTreeFailsClosed(t *testing.T) {
+	t.Run("absent tree fails", func(t *testing.T) {
+		rec := &fatalRecorder{}
+		validateContractsTree(rec, filepath.Join(t.TempDir(), "does-not-exist"))
+		if len(rec.fatals) == 0 {
+			t.Fatal("a missing fixture tree must Fatal (D16), but the gate passed")
+		}
+	})
+
+	t.Run("empty tree fails", func(t *testing.T) {
+		root := t.TempDir()
+		rec := &fatalRecorder{}
+		validateContractsTree(rec, root)
+		if len(rec.fatals) == 0 {
+			t.Fatal("an empty fixture tree must Fatal (D16), but the gate passed")
+		}
+	})
+
+	t.Run("doc-less tree fails", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("no apiVersion here\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		rec := &fatalRecorder{}
+		validateContractsTree(rec, root)
+		if len(rec.fatals) == 0 {
+			t.Fatal("a tree with no apiVersion/kind fixture must Fatal (D16), but the gate passed")
+		}
+	})
 }
 
 // decodeContractDoc parses raw JSON/YAML into the any-tree shape
