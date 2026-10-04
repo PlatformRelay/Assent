@@ -614,6 +614,21 @@ func matchChanges(m policy.Match, changes []EvalChange) ([]EvalChange, error) {
 	}
 }
 
+// MatchesAny reports whether the rule's match domain selects at least one change,
+// using the SAME predicate the coverage loop evaluates (matchChanges). It is the
+// single exported matcher shared with the adopter harness's `--coverage`
+// proving-silent detector (D3): the harness no longer carries a hand-maintained
+// clone, so "did this rule apply" cannot drift from what the engine evaluated. An
+// absent/unsupported domain is an error (fail-closed), exactly as matchChanges
+// errors — never a silent "matched nothing" that could mis-credit coverage.
+func MatchesAny(m policy.Match, changes []EvalChange) (bool, error) {
+	matched, err := matchChanges(m, changes)
+	if err != nil {
+		return false, err
+	}
+	return len(matched) > 0, nil
+}
+
 // kindModify is the change.Kind string the Values domain implies. Declared
 // locally to avoid importing internal/change here for a single literal.
 const kindModify = "modify"

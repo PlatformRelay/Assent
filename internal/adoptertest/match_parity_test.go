@@ -7,22 +7,31 @@ import (
 	"github.com/PlatformRelay/assent/internal/core/policy"
 )
 
-// coverage_internal_test.go is a WHITE-BOX table test of ruleMatchesAny — the
-// hand-copied mirror of engine aggregate.matchChanges that is the load-bearing
-// proving-silent detector (D-059). It is PURE (no internal/core evaluation; it
-// exercises the mirror's OWN behaviour) and guards every domain arm AND every
-// fail-closed error branch, so a regression flipping fail-closed → silent
-// matched-nothing (a false "covered", the exact failure --coverage exists to
-// prevent) goes RED instead of shipping green.
+// match_parity_test.go is the D3 (XREV-S02) parity gate for the SHARED matcher.
+// The adopter harness's `--coverage` proving-silent detector used to carry a
+// hand-maintained clone of the engine's matcher (ruleMatchesAny); it now calls
+// aggregate.MatchesAny, which wraps the engine's own matchChanges. These tests
+// guard BOTH halves of that guarantee:
+//
+//   - TestMatchesAnyDomains / TestMatchesAnyFileEventsDisjoint exercise every match
+//     domain arm AND every fail-closed error branch through the shared predicate, so
+//     a regression flipping fail-closed -> silent matched-nothing (a false
+//     "covered", the exact failure --coverage exists to prevent) goes RED. These
+//     are the mutation control: inverting any domain in MatchesAny reddens them.
+//   - TestMatchesAnyParityWithEngine observes the engine's OWN selection through
+//     aggregate.Cover and asserts the shared predicate agrees, so a future change
+//     that decoupled MatchesAny from matchChanges would redden here.
+//
+// Pure: no internal/core evaluation beyond the parity observation.
 
-// TestRuleMatchesAnyDomains covers the value-level match domains (files, values,
+// TestMatchesAnyDomains covers the value-level match domains (files, values,
 // valueChanges) — with both a matching and a non-matching change where applicable
 // — and the TWO fail-closed error branches (values with no selector → error,
 // no-domain → error), each asserting an ERROR (never a silent false), per D-059's
 // "a match-derivation defect errors the gate". The fileEvents domain (no longer a
 // fail-closed error since EFE-S01) has its own selection + disjointness coverage
-// in TestRuleMatchesAnyFileEventsDisjoint / TestRuleMatchesAnyMirrorsEngineFileEvents.
-func TestRuleMatchesAnyDomains(t *testing.T) {
+// in TestMatchesAnyFileEventsDisjoint / TestMatchesAnyParityWithEngine.
+func TestMatchesAnyDomains(t *testing.T) {
 	// changes reused across cases: a modify of /partitions in config.json, and an add
 	// of /name in other.json.
 	modifyPartitions := aggregate.EvalChange{Subject: "config.json", File: "config.json", Path: "/partitions", Kind: "modify"}
@@ -113,7 +122,7 @@ func TestRuleMatchesAnyDomains(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ruleMatchesAny(tc.match, tc.changes)
+			got, err := aggregate.MatchesAny(tc.match, tc.changes)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected a fail-closed error, got (match=%v, nil error)", got)
@@ -131,7 +140,7 @@ func TestRuleMatchesAnyDomains(t *testing.T) {
 }
 
 // fileEventsMirrorCase is one shared (match, changes, wantMatch) row driving both
-// the mirror-only disjointness test and the engine-agreement test below.
+// the domain-disjointness test and the engine-agreement test below.
 type fileEventsMirrorCase struct {
 	name      string
 	match     policy.Match
@@ -171,36 +180,36 @@ func fileEventsMirrorCases() []fileEventsMirrorCase {
 	}
 }
 
-// TestRuleMatchesAnyFileEventsDisjoint — REQ-EFE-S01-03 (mirror side). The E6
-// mirror implements the identical fileEvents + path=="" selection and both-way
-// disjointness the engine matcher does.
-func TestRuleMatchesAnyFileEventsDisjoint(t *testing.T) {
+// TestMatchesAnyFileEventsDisjoint — REQ-EFE-S01-03. The shared matcher implements
+// the identical fileEvents + path=="" selection and both-way disjointness the
+// engine matcher does.
+func TestMatchesAnyFileEventsDisjoint(t *testing.T) {
 	for _, tc := range fileEventsMirrorCases() {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ruleMatchesAny(tc.match, tc.changes)
+			got, err := aggregate.MatchesAny(tc.match, tc.changes)
 			if err != nil {
-				t.Fatalf("ruleMatchesAny: %v", err)
+				t.Fatalf("aggregate.MatchesAny: %v", err)
 			}
 			if got != tc.wantMatch {
-				t.Fatalf("mirror match = %v, want %v", got, tc.wantMatch)
+				t.Fatalf("match = %v, want %v", got, tc.wantMatch)
 			}
 		})
 	}
 }
 
-// TestRuleMatchesAnyMirrorsEngineFileEvents — REQ-EFE-S01-04. The load-bearing E6
-// mirror (ruleMatchesAny) agrees with the real engine matcher on every fileEvents
-// + disjointness case. The engine's selection is observed through aggregate.Cover:
-// a matched change under a when:false / onFailure:block enforce rule yields a
-// non-APPROVE decision; an unmatched rule leaves the (covered) obligation
-// non-firing -> APPROVE. Any drift between mirror and engine (a false "covered",
-// the exact failure --coverage exists to prevent) fails here.
-func TestRuleMatchesAnyMirrorsEngineFileEvents(t *testing.T) {
+// TestMatchesAnyParityWithEngine — REQ-EFE-S01-04 / REQ-XREV-S02-01. The shared
+// predicate agrees with the real engine matcher on every fileEvents + disjointness
+// case. The engine's selection is observed through aggregate.Cover: a matched
+// change under a when:false / onFailure:block enforce rule yields a non-APPROVE
+// decision; an unmatched rule leaves the (covered) obligation non-firing ->
+// APPROVE. Any drift between the shared predicate and the engine (a false
+// "covered", the exact failure --coverage exists to prevent) fails here.
+func TestMatchesAnyParityWithEngine(t *testing.T) {
 	for _, tc := range fileEventsMirrorCases() {
 		t.Run(tc.name, func(t *testing.T) {
-			mirror, err := ruleMatchesAny(tc.match, tc.changes)
+			shared, err := aggregate.MatchesAny(tc.match, tc.changes)
 			if err != nil {
-				t.Fatalf("ruleMatchesAny: %v", err)
+				t.Fatalf("aggregate.MatchesAny: %v", err)
 			}
 
 			pol := &policy.MergePolicy{
@@ -233,11 +242,11 @@ func TestRuleMatchesAnyMirrorsEngineFileEvents(t *testing.T) {
 					break
 				}
 			}
-			if engine != mirror {
-				t.Fatalf("engine matched=%v but mirror matched=%v (decision=%q)", engine, mirror, res.Decision)
+			if engine != shared {
+				t.Fatalf("engine matched=%v but shared predicate matched=%v (decision=%q)", engine, shared, res.Decision)
 			}
-			if mirror != tc.wantMatch {
-				t.Fatalf("mirror match = %v, want %v", mirror, tc.wantMatch)
+			if shared != tc.wantMatch {
+				t.Fatalf("shared match = %v, want %v", shared, tc.wantMatch)
 			}
 		})
 	}
