@@ -281,7 +281,7 @@ func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, a
 	// under a binding that requires an obligation some rule proves, is not
 	// positively vouched: the rule that names the required obligation marks it
 	// covered even when its `match` selects none of the governed changes (the
-	// covered[] bug at :150-152), so without this guard the change APPROVEs with an
+	// covered[] marking above, set before matchChanges runs), so without this guard the change APPROVEs with an
 	// empty finding set. GUIDELINES §Safety-1 ("an empty, broken, or non-matching
 	// policy set never auto-merges anything; every change must be positively
 	// vouched") and D-142's REQ-DEM-S10-02 both intend REVIEW. This MIRRORS the
@@ -294,9 +294,9 @@ func cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, a
 	// golden's whole-file rename event (path=="") untouched.
 	//
 	// Gate — a required obligation must be "covered" by SOME enforce rule
-	// (covered[obl] is true). An empty/absent require is D-184's seam (the run path
-	// refuses it; the engine's vacuous-APPROVE reading is deliberately unchanged
-	// here), and a require with no proving rule already trips the uncovered guard
+	// (covered[obl] is true). An empty/absent require is D-184's seam (Decide
+	// refuses it for every caller; this bare loop's vacuous-APPROVE reading is
+	// deliberately unchanged here), and a require with no proving rule already trips the uncovered guard
 	// above. Without this gate a policy with no obligation layer would escalate
 	// every value change — a behaviour change outside C-1's scope.
 	//
