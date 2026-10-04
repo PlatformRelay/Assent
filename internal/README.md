@@ -46,4 +46,5 @@ lists what actually exists today (`go list ./internal/...`).
 `internal/core/aggregate`, `internal/core/decision`, `internal/core/classify`, and
 `internal/change` must not import forge, provider, `cmd/`, or anything that performs I/O.
 Compare and catalogue stay pure (filesystem reads happen in `cmd/assent` before calling in).
-Enforcement: manual review today; depguard/purity lint is tracked separately (AUD-01).
+Enforcement: the depguard `pure-tree` rules in `.golangci.yml` (firing-proof by
+`hack/lint/depguard_test.sh`) plus `internal/core/purity_test.go`.

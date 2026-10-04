@@ -32,7 +32,7 @@ C4Context
 | Marker | Meaning |
 | --- | --- |
 | no marker | **Shipped** — implemented today; the parenthetical names the real package or binary |
-| `PLANNED (E<n>)` | **Planned** — designed seam, **no code**. Deferred under [D-012](../decisions/decisions.md); unlocks when a named consumer commits. `E<n>` is the deferred epic in the meta-plan |
+| `PLANNED (E<n>)` | **Planned** — designed seam, **no code**. Deferred under [D-012](../decisions/decisions.md) (or unlocked by a later decision — E10 [D-140](../decisions/decisions.md), E11 [D-141](../decisions/decisions.md)); unlocks when a named consumer commits. `E<n>` is the deferred epic in the meta-plan |
 
 Planned elements on this page: the **GitHub forge adapter** and the **GitHub Actions forge
 trigger** (both E10). Everything else named above exists — see the

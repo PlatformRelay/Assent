@@ -28,7 +28,7 @@ untested, invisible to the people governed by it, and dies with its author.
    policy directory (e.g. `.assent/`) to the repo.
 2. **Describe**: write rules in a **Kyverno-style declarative YAML** envelope with CEL
    assertions, against a canonical model of the change — not against raw diff text. (A
-   `rego` rule-body backend is a *planned* tier — E11, [D-012](decisions/decisions.md).)
+   `rego` rule-body backend is a *planned* tier — E11, [D-141](decisions/decisions.md).)
 3. **Trust**: assent evaluates every MR/PR deterministically and acts like a reviewer:
    resolvable review threads for findings, comments explaining the decision, approve/deny, and
    auto-merge when the decision is APPROVE and the platform's own gates (CI green, discussions
@@ -102,8 +102,9 @@ These generalize the rules a real production merge gate needs; concrete samples 
 Real-forge behaviour (threads, approvals, merge) can only be proven against a real forge.
 The repo ships:
 
-- a **kind cluster setup** (`hack/kind/`) that can host a GitLab instance for e2e tests, and/or
-  a **GitLab testcontainer** profile for CI (trade-off tracked in ADR-0006);
+- a **kind cluster scaffold** (`hack/kind/` — authorized, not yet implemented) intended to host
+  a GitLab instance for e2e tests, and/or a **GitLab testcontainer** profile for CI (trade-off
+  tracked in ADR-0006);
 - **generated sample repos** (topic-style YAML, catalog-style JSON, tfvars) seeded into that
   GitLab, used both as e2e fixtures and as user-facing documentation examples;
 - GitHub e2e via a dedicated test org once the GitHub adapter lands.
