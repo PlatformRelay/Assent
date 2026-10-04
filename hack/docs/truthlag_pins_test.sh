@@ -381,6 +381,96 @@ else
   pass "EX-S09: $WT Step 1 names all $real_rule_count real topic-registry rule files"
 fi
 
+# --- XREV-S03-01: README maturity rows agree with the meta-plan --------------------
+# The meta-plan's Phase-5 table is the declared single source of epic status, yet the
+# README rows had drifted (Rego listed Locked; E10 attributed to D-012 while D-140 had
+# unlocked it). Pin both rows so the drift cannot silently return (D4).
+if grep '^| Rego backend |' README.md | grep -q '\*\*Planned\*\*' && grep '^| Rego backend |' README.md | grep -q 'D-141'; then
+  pass "XREV-S03-01: README Rego row is Planned and cites D-141"
+else
+  fail "XREV-S03-01: README Rego row must be **Planned** with the D-141 qualifier (E11 unlocked D-141)"
+fi
+if grep '^| GitHub adapter |' README.md | grep -q 'D-140' && ! grep '^| GitHub adapter |' README.md | grep -q 'D-012'; then
+  pass "XREV-S03-01: README GitHub row cites D-140, not D-012"
+else
+  fail "XREV-S03-01: README GitHub row must cite D-140 (E10 unlocked D-140), not D-012"
+fi
+
+# --- XREV-S03-02: E10/E11 status surfaces must not attribute the epic to D-012 -----
+# Scoped to the user-facing STATUS surfaces (README maturity table, vision, C4) rather
+# than the whole tree: historical mentions in ADRs/openspec specs legitimately record
+# that an epic *was* locked under D-012. A status line that pairs E10/E11 with D-012 and
+# does NOT also name the later unlock (D-140/D-141) is the drift D4 is about.
+pair_bad=0
+for f in README.md docs/vision.md docs/architecture/c4-container.md docs/architecture/c4-context.md; do
+  while IFS= read -r hit; do
+    [[ -z "$hit" ]] && continue
+    if printf '%s' "$hit" | grep -qE 'D-14[01]'; then
+      continue
+    fi
+    echo "      $f: $hit" >&2
+    pair_bad=$((pair_bad + 1))
+  done < <(grep -nE 'E1[01].*D-012|D-012.*E1[01]' "$f")
+done
+if [[ "$pair_bad" -ne 0 ]]; then
+  fail "XREV-S03-02: $pair_bad E10/E11 status line(s) attribute the epic to D-012 (unlocked by D-140/D-141)"
+else
+  pass "XREV-S03-02: no E10/E11 status surface attributes the epic to D-012"
+fi
+# Positive control: the detector must flag a synthetic pairing (D-124/D-167).
+pair_control="$(mktemp)"
+printf 'E11 is locked under D-012\n' > "$pair_control"
+if grep -qE 'E1[01].*D-012|D-012.*E1[01]' "$pair_control"; then
+  pass "XREV-S03-02: pairing detector reddens a synthetic E11+D-012 line (control)"
+else
+  fail "XREV-S03-02: pairing detector failed its own synthetic control"
+fi
+rm -f "$pair_control"
+
+# --- XREV-S03-03: vision hedges hack/kind, no working-setup claim ------------------
+if grep -q 'kind cluster setup' docs/vision.md; then
+  fail "XREV-S03-03: docs/vision.md still claims a 'kind cluster setup' that can host GitLab (hack/kind/ is authorized, not implemented)"
+elif grep -q 'hack/kind/' docs/vision.md; then
+  pass "XREV-S03-03: docs/vision.md references hack/kind/ without claiming a working setup"
+else
+  fail "XREV-S03-03: docs/vision.md no longer references hack/kind/ — the pin went vacuous"
+fi
+
+# --- XREV-S03-04: purity enforcement + core/hash importer are truthful -------------
+if grep -q 'Enforcement: manual review today' internal/README.md; then
+  fail "XREV-S03-04: internal/README.md still says purity is enforced by manual review (depguard + purity_test ship)"
+elif grep -q 'depguard' internal/README.md && grep -q 'purity_test.go' internal/README.md; then
+  pass "XREV-S03-04: internal/README.md points at the shipped purity gates"
+else
+  fail "XREV-S03-04: internal/README.md does not name both purity gates"
+fi
+if grep -q 'imported only by `internal/change` tests' docs/architecture/c4-container.md; then
+  fail "XREV-S03-04: c4-container.md still says internal/core/hash has no production importer (compare imports it)"
+elif grep 'internal/core/hash' docs/architecture/c4-container.md | grep -q 'internal/compare'; then
+  pass "XREV-S03-04: c4-container.md records internal/compare as a core/hash importer"
+else
+  fail "XREV-S03-04: c4-container.md core/hash row does not name internal/compare"
+fi
+
+# --- XREV-S03-05: stale provenance comments ---------------------------------------
+if grep -q 'Org placement to confirm' go.mod; then
+  fail "XREV-S03-05: go.mod still carries the D-003 'org placement to confirm' comment"
+else
+  pass "XREV-S03-05: go.mod carries no stale D-003 placement comment"
+fi
+if grep -q 'implementation gated until the Phase-4 adoption gate' examples/policies/rego/bounded_change.rego; then
+  fail "XREV-S03-05: bounded_change.rego still claims the Phase-4 gate (D-042 closed it; D-141 unlocked E11)"
+else
+  pass "XREV-S03-05: bounded_change.rego carries no stale Phase-4 gate claim"
+fi
+
+# --- XREV-S03-06: --config help and cli.md agree on fact resolution ----------------
+if grep -q 'drives provider fact resolution' cmd/assent/run.go && grep -q 'fact resolution' docs/usage/cli.md; then
+  pass "XREV-S03-06: --config help and cli.md both state fact resolution"
+else
+  fail "XREV-S03-06: --config help and cli.md must both state that Config drives fact resolution"
+fi
+
 if [[ "$fails" -ne 0 ]]; then
   echo "FAILED: $fails truth-lag pin(s) reopened" >&2
   exit 1

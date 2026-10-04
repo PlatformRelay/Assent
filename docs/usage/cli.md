@@ -83,7 +83,7 @@ and is never a flag; without it the command exits `2` before contacting the forg
 | `-gitlab-endpoint` | `https://gitlab.com` | GitLab instance base URL |
 | `-policy` | `.assent/merge-policy.yaml` | MergePolicy path, loaded from the target ref |
 | `-binding` | `.assent/ruleset-binding.yaml` | RulesetBinding path, loaded from the target ref |
-| `-config` | — | optional Config path; when set, provider posture is validated |
+| `-config` | — | Config path (loaded from the target ref) — drives provider **fact resolution**; when set, provider posture is also validated |
 | `-pack` | — | optional Pack path; its `spec.phase` caps every rule's phase |
 | `-checkout` | — | local checkout dir (`base/` + `head/` subtrees) used to enumerate the MR's full changed-file set. The tree must contain **no symlinks** — see *Symlinks in the checkout tree* below. When unset, the forge snapshot is the sole enumerator — see *Checkout-less runs and enumeration completeness* below |
 | `-emit` | stdout | path to write the `DecisionRecord` JSON |

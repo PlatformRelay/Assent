@@ -102,7 +102,7 @@ flowchart LR
 | Style | Meaning |
 | --- | --- |
 | Solid border | **Shipped** — the label names a real Go package or the real binary; present in `go list ./internal/... ./cmd/...` |
-| Dashed border, `PLANNED — E<n>` / `PLANNED — ADR-0004` | **Planned** — a designed seam with **no implementation**. Deferred under [D-012](../decisions/decisions.md); unlocks only when a named consumer commits. See the feature-maturity table in the repository README |
+| Dashed border, `PLANNED — E<n>` / `PLANNED — ADR-0004` | **Planned** — a designed seam with **no implementation**. Deferred under [D-012](../decisions/decisions.md) (or unlocked by a later decision — E10 [D-140](../decisions/decisions.md), E11 [D-141](../decisions/decisions.md)); unlocks only when a named consumer commits. See the feature-maturity table in the repository README |
 | Solid arrow | Decision-path flow; the pair is backed by a real import between those two packages |
 | Dashed arrow | The port a planned seam *would* plug into — no code today |
 
@@ -119,7 +119,7 @@ they carry no solid arrow above. This section dates faster than the diagram; re-
 | Package | Reality |
 | --- | --- |
 | `internal/core` | Test-only guard package (`purity_test.go`); asserts the core does not import I/O |
-| `internal/core/hash` | Canonical JSON digests (ADR-0017). **At this commit** imported only by `internal/change` tests — not yet on the decision path; AUD-S16 wires `internal/compare` to it |
+| `internal/core/hash` | Canonical JSON digests (ADR-0017). Imported by `internal/compare` (AUD-S16, landed) and `internal/change` tests |
 | `internal/schemadrift` | Drift gate; imported only by the tests of `cmd/assent`, `internal/render` and `internal/forge/conformance` |
 | `internal/forge/fake` | In-memory forge fake; test support only |
 | `internal/forge/conformance` | Port conformance suite; runs as tests, imported by none |

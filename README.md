@@ -93,7 +93,7 @@ two commands above from `examples/packs/service-catalog` (that is the fixture
 Developers: gates live in the [`Taskfile`](Taskfile.yml):
 
 ```bash
-task check   # fmt + vet + lint + test
+task check   # the full gate: fmt, vet, lint, test, coverage, build, dogfood, docs, release pins
 ```
 
 ## Feature maturity
@@ -107,8 +107,8 @@ Honest tiers post-E8 (D-104). **Core** = shipped and covered by conformance test
 | GitLab forge | **Core** | Snapshot, resolve, reconcile, merge CAS |
 | Provider builtins | **Core** | GitLab groups, ownership file, static facts |
 | Renderer | **Core** | Finding threads, summaries, presentation lint |
-| GitHub adapter | **Planned** | E10 — designed seam ([D-012](docs/decisions/decisions.md)) |
-| Rego backend | **Locked** | E11 — CEL/assert path is Core today |
+| GitHub adapter | **Planned** | E10 — designed seam, implementation unlocked ([D-140](docs/decisions/decisions.md)) |
+| Rego backend | **Planned** | E11 — CEL/assert path is Core today; implementation unlocked ([D-141](docs/decisions/decisions.md)) |
 | `serve` (HTTP API) | **Designed** | E12 — CLI-only in v1 |
 | Remote packs | **Locked** | E13 — local `.assent/` only |
 

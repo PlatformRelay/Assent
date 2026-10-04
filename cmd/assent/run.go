@@ -132,7 +132,7 @@ func parseRunFlags(args []string, stderr io.Writer) (runConfig, error) {
 	fs.StringVar(&cfg.policy, "policy", ".assent/merge-policy.yaml", "MergePolicy path (loaded from the TARGET ref)")
 	fs.StringVar(&cfg.binding, "binding", ".assent/ruleset-binding.yaml", "RulesetBinding path (loaded from the TARGET ref)")
 	fs.StringVar(&cfg.subject, "subject", "", "governed-subject entryRef (file:<path>) — the file diffed for evaluation (required)")
-	fs.StringVar(&cfg.config, "config", "", "optional Config path (loaded from the TARGET ref) — when set, provider posture is validated (ADR-0017 §6)")
+	fs.StringVar(&cfg.config, "config", "", "Config path (loaded from the TARGET ref) — drives provider fact resolution; when set, provider posture is also validated (ADR-0017 §6)")
 	fs.StringVar(&cfg.pack, "pack", "", "optional Pack path (loaded from the TARGET ref) — when set, its spec.phase caps every rule's phase (ADR-0018 §1)")
 	fs.StringVar(&cfg.botAuthor, "bot-author", "", "bot username for the author-identity filter (required)")
 	// NOTE: no backquotes in this usage string — the flag package reads `...` as the

@@ -150,9 +150,12 @@ Requirements:
   - Test: `hack/docs/truthlag_pins_test.sh` (README-vs-meta-plan pin + control)
   - Verify: `bash hack/docs/truthlag_pins_test.sh`
   - Level: L1
-- **REQ-XREV-S03-02** — Given any file outside `docs/decisions/`, when it pairs `E10` or
-  `E11` with `D-012`, then the truth-lag gate fails; a synthetic temp-file pairing reddens the
-  detector (positive control, D-124/D-167).
+- **REQ-XREV-S03-02** — Given a user-facing status surface (`README.md`,
+  `docs/vision.md`, `docs/architecture/c4-container.md`, `docs/architecture/c4-context.md`),
+  when it pairs `E10` or `E11` with `D-012` without also naming the later unlock
+  (`D-140`/`D-141`), then the truth-lag gate fails; a synthetic temp-file pairing reddens the
+  detector (positive control, D-124/D-167). Historical mentions in ADRs/openspec specs that
+  record the epic *was* locked under `D-012` are out of scope by design.
   - Test: `hack/docs/truthlag_pins_test.sh` (pairing detector + temp-file control)
   - Verify: `bash hack/docs/truthlag_pins_test.sh`
   - Level: L1
