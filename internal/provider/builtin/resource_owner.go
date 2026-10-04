@@ -120,6 +120,14 @@ func LoadResourceOwnerMap(fsys fs.FS, file string) (ResourceOwnerClient, error) 
 	return &mapResourceOwner{owners: owners}, nil
 }
 
+// LoadResourceOwnerMapBytes is LoadResourceOwnerMap over registry bytes already
+// read from a trusted source (the forge, at the target ref). name is the file's
+// base name and appears only in error messages. The bytes are served from an
+// in-memory one-file filesystem, never from a contributor-controlled checkout.
+func LoadResourceOwnerMapBytes(name string, raw []byte) (ResourceOwnerClient, error) {
+	return LoadResourceOwnerMap(oneFileFS{name: name, data: raw}, name)
+}
+
 // ResolveResourceOwner resolves referenced-resource ownership into a host Result
 // via ResolveFacts (schema + classifier). Unknown resource → unavailable (never
 // resolved with "" — REQ-E5-S08-02).

@@ -1,4 +1,4 @@
-package main
+package builtin
 
 import (
 	"io"
@@ -7,10 +7,11 @@ import (
 )
 
 // oneFileFS is a minimal read-only fs.FS exposing a single in-memory regular file
-// at name. It replaces testing/fstest.MapFS on the shipped run path (D18): the
-// provider host wraps bytes fetched from the forge in a one-file filesystem so
-// builtin.LoadResourceOwnerMap can apply its symlink-safe classification, and
-// testing/fstest has no business being linked into the release binary.
+// at name. It replaces testing/fstest.MapFS on the shipped run path (D18):
+// LoadResourceOwnerMapBytes wraps registry bytes fetched from the forge in a
+// one-file filesystem so LoadResourceOwnerMap can apply its symlink-safe
+// classification, and testing/fstest has no business being linked into the
+// release binary.
 //
 // It implements fs.StatFS and fs.ReadFileFS so fs.Stat / fs.ReadFile / fs.Lstat
 // resolve without opening the file, matching the shape the loader's

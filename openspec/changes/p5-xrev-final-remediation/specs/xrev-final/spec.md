@@ -228,6 +228,6 @@ Requirements:
   - Level: L1
 - **REQ-XREV-S04-03** — Given `cmd/assent/provider_host.go`, when the binary's imports are
   read, then it does not import `testing/fstest`, and the resource-owner map still loads.
-  - Test: `cmd/assent/onefilefs_test.go` (AST import scan of every non-test file in the package)
+  - Test: `cmd/assent/no_fstest_test.go` (AST import scan of every non-test file in the package)
   - Verify: `go test ./cmd/assent/... && go vet ./cmd/assent/...`
   - Level: L1
