@@ -190,9 +190,15 @@ func RunCaseCoverage(c Case, enforceObl map[string]bool) (Outcome, CaseWitness, 
 
 	var res aggregate.Result
 	if decidable {
-		res, err = aggregate.CoverWithApproval(c.Policy, c.Bind, &in, c.Approval)
+		res, err = aggregate.Decide(aggregate.DecideRequest{
+			Subject:  c.Name,
+			Policy:   c.Policy,
+			Binding:  c.Bind,
+			Input:    &in,
+			Approval: c.Approval,
+		})
 		if err != nil {
-			return Outcome{}, CaseWitness{}, fmt.Errorf("case %q: cover: %w", c.Name, err)
+			return Outcome{}, CaseWitness{}, fmt.Errorf("case %q: decide: %w", c.Name, err)
 		}
 	} else {
 		res = aggregate.Result{Decision: aggregate.DecisionReview}

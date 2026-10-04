@@ -349,44 +349,6 @@ func TestUnrepresentableNumericFailsSafe(t *testing.T) {
 	}
 }
 
-// TestLegacyAggregatePathAlsoRefusesTextOrdering covers the OTHER evaluation
-// seam. The walking-skeleton Aggregate/evalRule path declares old/new as CEL
-// StringType and binds the differ's RAW canonical strings, so a bare `new >= old`
-// there is ALWAYS lexical — it relied on authors writing int()/double(), with
-// nothing enforcing it. One unguarded evaluator is how this fail-open returns, so
-// the guard is applied to both. Coerced compares on that path still evaluate.
-func TestLegacyAggregatePathAlsoRefusesTextOrdering(t *testing.T) {
-	env, err := newCELEnv()
-	if err != nil {
-		t.Fatalf("newCELEnv: %v", err)
-	}
-	act := map[string]any{"old": "12", "new": "6", "changes": []map[string]string{}}
-
-	// The bytes rows belong on THIS seam too: one unguarded evaluator is how the
-	// class returns, and that argument applies per-form as much as per-seam.
-	for _, expr := range []string{"new >= old", "new < old", "old > new", "bytes(new) >= bytes(old)", `b"6" >= b"12"`} {
-		if got, err := evalRule(env, act, expr); err == nil {
-			t.Errorf("evalRule(%q) = (%v, nil) — the walking-skeleton path ordered raw canonical text", expr, got)
-		}
-	}
-	// Both polarities: the coerced forms this path always mandated still work.
-	for expr, want := range map[string]bool{
-		"int(new) >= int(old)": false,
-		"int(new) < int(old)":  true,
-		`new == "6"`:           true,
-		"old == new":           false,
-	} {
-		got, err := evalRule(env, act, expr)
-		if err != nil {
-			t.Errorf("evalRule(%q) errored: %v", expr, err)
-			continue
-		}
-		if got != want {
-			t.Errorf("evalRule(%q) = %v, want %v", expr, got, want)
-		}
-	}
-}
-
 // TestUnrepresentableNumericInterpolatesItsRefusal pins what an adopter actually
 // READS when a leaf whose operand toCEL refused to bind also interpolates that
 // operand into its message. `{{ old }}` / `{{ new }}` resolve straight out of the

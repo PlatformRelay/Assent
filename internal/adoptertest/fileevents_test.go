@@ -144,10 +144,18 @@ func TestAmbiguousLifecycleStaysOpaque(t *testing.T) {
 // governs evaluates to REVIEW (never APPROVE). Pinned so the fail-safe default
 // cannot silently regress to APPROVE.
 func TestUnmatchedFileDeleteFailsSafeReview(t *testing.T) {
-	// A pack with NO fileEvents rule: the minted delete is ungoverned. require is
-	// empty so, absent the escalation, the delete would earn a vacuous APPROVE.
-	pol := &policy.MergePolicy{}
-	bind := &policy.Binding{Environment: "prod"}
+	// A pack with NO fileEvents rule: the minted delete is ungoverned. The binding
+	// requires an obligation a value-level rule proves, so the empty-require guard
+	// (D2) does not fire; absent the unmatched-delete escalation the delete would
+	// earn a vacuous APPROVE.
+	pol := &policy.MergePolicy{Spec: policy.MergePolicySpec{Rules: []policy.Rule{{
+		Name:      "r",
+		Phase:     policy.PhaseEnforce,
+		Match:     policy.Match{Files: &policy.FilesMatch{Paths: []string{"topics/**"}}},
+		Prove:     &policy.Prove{Obligation: "o", When: policy.AssertTree{Leaf: &policy.Leaf{CEL: "true"}}},
+		OnFailure: &policy.OnFailure{Effect: policy.EffectBlock, Code: "c"},
+	}}}}
+	bind := &policy.Binding{Environment: "prod", Require: []string{"o"}}
 	c := Case{Name: "ungoverned-delete", Policy: pol, Bind: bind, File: "topics/orders.yaml", Base: []byte("enabled: true\n"), Head: nil}
 
 	res, err := Evaluate(c)

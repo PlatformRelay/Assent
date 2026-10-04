@@ -66,10 +66,16 @@ func TestSanitizeSubjects(t *testing.T) {
 	}
 }
 
-// The reserved-class self-edit result reconstructs the aggregate.Aggregate block
-// exactly (GUARD 1): BLOCK with the assent-policy.self-edit finding on the subject.
+// The reserved-class self-edit result (GUARD 1, now on aggregate.Decide): BLOCK
+// with the assent-policy.self-edit finding on the subject.
 func TestReservedClassBlock(t *testing.T) {
-	res := reservedClassBlock("file:topics/orders.yaml")
+	res, err := aggregate.Decide(aggregate.DecideRequest{
+		Subject:      "file:topics/orders.yaml",
+		SubjectClass: aggregate.ReservedPolicyClass,
+	})
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
 	if res.Decision != aggregate.DecisionBlock {
 		t.Fatalf("decision = %q, want BLOCK", res.Decision)
 	}
@@ -86,10 +92,18 @@ func TestReservedClassBlock(t *testing.T) {
 }
 
 func TestReservedSelfEditBlock(t *testing.T) {
-	if !reservedSelfEditBlock(reservedClassBlock("file:x.yaml")) {
+	block, err := aggregate.Decide(aggregate.DecideRequest{Subject: "file:x.yaml", SubjectClass: aggregate.ReservedPolicyClass})
+	if err != nil {
+		t.Fatalf("Decide(reserved): %v", err)
+	}
+	if !reservedSelfEditBlock(block) {
 		t.Fatal("assent-policy.self-edit BLOCK must be detected for reconcile skip")
 	}
-	if reservedSelfEditBlock(undecidableReview("file:x.yaml")) {
+	review, err := aggregate.Decide(aggregate.DecideRequest{Subject: "file:x.yaml", Opaque: true, Input: &aggregate.EvaluationInput{}})
+	if err != nil {
+		t.Fatalf("Decide(undecidable): %v", err)
+	}
+	if reservedSelfEditBlock(review) {
 		t.Fatal("REVIEW must not trigger reconcile skip")
 	}
 }
@@ -97,7 +111,10 @@ func TestReservedSelfEditBlock(t *testing.T) {
 // The undecidable (opaque/empty) result fails safe to REVIEW with an auditable
 // finding — never a silent APPROVE.
 func TestUndecidableReview(t *testing.T) {
-	res := undecidableReview("file:topics/orders.yaml")
+	res, err := aggregate.Decide(aggregate.DecideRequest{Subject: "file:topics/orders.yaml", Opaque: true, Input: &aggregate.EvaluationInput{}})
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
 	if res.Decision != aggregate.DecisionReview {
 		t.Fatalf("decision = %q, want REVIEW", res.Decision)
 	}

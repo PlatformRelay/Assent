@@ -23,7 +23,7 @@ import (
 //  1. IMPORT SCAN — the pure decision/aggregate packages do not import
 //     internal/forge (or any write-token-carrying forge package). A synthetic
 //     snippet that DOES import forge is flagged (control).
-//  2. FIELD SCAN — the public decision-function INPUT types (aggregate.Binding,
+//  2. FIELD SCAN — the public decision-function INPUT types (aggregate.DecideRequest,
 //     aggregate.Result, change.ChangeSet reached via Binding, decision.Pins)
 //     carry no credential/token/secret field, recursively. A synthetic struct
 //     that DOES carry a nested Token field is flagged (control).
@@ -75,8 +75,12 @@ func scanImports(fset *token.FileSet, name string, src []byte) ([]string, error)
 
 // tokenFieldNameSubstrings are field-name fragments that name a write
 // credential. A public input field whose name contains any of these would be a
-// threaded-in token — the exact adversarial vector.
-var tokenFieldNameSubstrings = []string{"token", "credential", "secret", "auth", "password", "apikey", "bearer"}
+// threaded-in token — the exact adversarial vector. NOTE: the bare fragment
+// "auth" is deliberately NOT in the list: it over-matches non-credential
+// metadata (`MR.Author`, `ApprovalEvidence.ApprovedBy[].IsAuthor`), which the
+// live guarded input aggregate.DecideRequest legitimately carries. "authorization"
+// still catches an Authorization header credential.
+var tokenFieldNameSubstrings = []string{"token", "credential", "secret", "authorization", "password", "apikey", "bearer"}
 
 // suspiciousFieldName reports whether a struct field name looks like a write
 // credential.
@@ -139,12 +143,11 @@ func TestEvaluationIsProviderless(t *testing.T) {
 			name string
 			typ  reflect.Type
 		}{
-			// aggregate.Aggregate's public inputs are (Binding, change.ChangeSet,
-			// string): Binding embeds Rule/OnFailure, and ChangeSet embeds Change —
-			// BOTH are scanned so a token threaded onto Change (not just Binding)
-			// is caught. aggregate.Result is Build's input; decision.Pins is Build's
-			// other input.
-			{"aggregate.Binding", reflect.TypeOf(aggregate.Binding{})},
+			// aggregate.Decide's public input is DecideRequest (the single guarded
+			// engine entry); change.ChangeSet is scanned so a token threaded onto
+			// Change (not just the request) is caught. aggregate.Result is Build's
+			// input; decision.Pins is Build's other input.
+			{"aggregate.DecideRequest", reflect.TypeOf(aggregate.DecideRequest{})},
 			{"change.ChangeSet", reflect.TypeOf(change.ChangeSet{})},
 			{"aggregate.Result", reflect.TypeOf(aggregate.Result{})},
 			{"decision.Pins", reflect.TypeOf(decision.Pins{})},
