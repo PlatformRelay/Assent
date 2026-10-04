@@ -324,7 +324,7 @@ type checkoutFold struct {
 // value-diff could APPROVE while another file vanishes wholesale (E1-S08-03).
 //
 // The per-file change LISTS are intentionally NOT concatenated into the
-// aggregator's predicate input: bindActivation binds scalar old/new only for a
+// aggregator's predicate input: the legacy skeleton bound scalar old/new only for a
 // single change, so a multi-file union would leave predicates unbound and, worse,
 // could let an unrelated file's scalars leak into the governed subject's
 // predicate. The governed subject's own single-file ChangeSet stays the rule-eval

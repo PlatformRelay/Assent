@@ -24,7 +24,7 @@ import (
 //     internal/forge (or any write-token-carrying forge package). A synthetic
 //     snippet that DOES import forge is flagged (control).
 //  2. FIELD SCAN — the public decision-function INPUT types (aggregate.DecideRequest,
-//     aggregate.Result, change.ChangeSet reached via Binding, decision.Pins)
+//     aggregate.Result, aggregate.EvaluationInput, change.ChangeSet, decision.Pins)
 //     carry no credential/token/secret field, recursively. A synthetic struct
 //     that DOES carry a nested Token field is flagged (control).
 //
@@ -75,17 +75,24 @@ func scanImports(fset *token.FileSet, name string, src []byte) ([]string, error)
 
 // tokenFieldNameSubstrings are field-name fragments that name a write
 // credential. A public input field whose name contains any of these would be a
-// threaded-in token — the exact adversarial vector. NOTE: the bare fragment
-// "auth" is deliberately NOT in the list: it over-matches non-credential
-// metadata (`MR.Author`, `ApprovalEvidence.ApprovedBy[].IsAuthor`), which the
-// live guarded input aggregate.DecideRequest legitimately carries. "authorization"
-// still catches an Authorization header credential.
-var tokenFieldNameSubstrings = []string{"token", "credential", "secret", "authorization", "password", "apikey", "bearer"}
+// threaded-in token — the exact adversarial vector. "creds" catches the common
+// abbreviation that "credential" misses.
+var tokenFieldNameSubstrings = []string{"token", "credential", "secret", "auth", "password", "apikey", "bearer", "creds"}
+
+// benignFieldNames are non-credential metadata fields the live guarded input
+// (aggregate.DecideRequest) legitimately carries, whose names collide with the
+// "auth" fragment. They are exempted by EXACT lowercased name rather than by
+// dropping the fragment, so a real credential field (`Auth`, `AuthHeader`,
+// `Authz`, `Creds`) is still caught.
+var benignFieldNames = map[string]bool{"author": true, "isauthor": true}
 
 // suspiciousFieldName reports whether a struct field name looks like a write
 // credential.
 func suspiciousFieldName(name string) bool {
 	low := strings.ToLower(name)
+	if benignFieldNames[low] {
+		return false
+	}
 	for _, frag := range tokenFieldNameSubstrings {
 		if strings.Contains(low, frag) {
 			return true
@@ -192,6 +199,27 @@ func TestTokenlessScansAreNonTautological(t *testing.T) {
 		scanTypeForCredential(reflect.TypeOf(poisonedPins{}), "poisonedPins", map[reflect.Type]bool{}, &found)
 		if len(found) == 0 {
 			t.Fatal("field scan failed to flag a nested MergeToken — the boundary check is a tautology")
+		}
+	})
+
+	t.Run("field scan still flags auth/creds fields but not author metadata", func(t *testing.T) {
+		// The "auth" fragment must still catch a real credential field, while the
+		// exact non-credential metadata names are exempt (the fix for the
+		// MR.Author / IsAuthor false positive).
+		type mixed struct {
+			AuthHeader string // credential — must be caught
+			Creds      string // credential — must be caught
+			Author     string // metadata — must NOT be caught
+			IsAuthor   bool   // metadata — must NOT be caught
+		}
+		var found []string
+		scanTypeForCredential(reflect.TypeOf(mixed{}), "mixed", map[reflect.Type]bool{}, &found)
+		joined := strings.Join(found, ",")
+		if !strings.Contains(joined, "AuthHeader") || !strings.Contains(joined, "Creds") {
+			t.Fatalf("field scan missed a credential field: found %v", found)
+		}
+		if strings.Contains(joined, "Author") || strings.Contains(joined, "IsAuthor") {
+			t.Fatalf("field scan flagged non-credential author metadata: found %v", found)
 		}
 	})
 }

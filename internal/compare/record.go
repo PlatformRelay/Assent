@@ -59,7 +59,7 @@ type deltaUniqueKey struct {
 // BuildComparisonRecord assembles a ComparisonRecord for one suite case from the
 // two evaluated Results. bundleSubjects supplies governed-subject entryRefs from
 // the ReplayBundle changeSet when obligation.uncovered findings omit subject
-// (CoverWithProfile). It fail-closes on unclassifiable deltas and on duplicate
+// (aggregate.Decide). It fail-closes on unclassifiable deltas and on duplicate
 // (kind, rule, subject) keys. Pure and deterministic.
 func BuildComparisonRecord(caseID, baselineProfile, candidateProfile string, baseline, candidate aggregate.Result, bundleSubjects []string) (ComparisonRecord, error) {
 	if caseID == "" {

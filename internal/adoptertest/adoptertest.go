@@ -4,7 +4,7 @@
 // base/↔head/ file pair) plus the loaded pack, it strict-decodes the expectation
 // against the frozen schema, lifts the authored facts into the resolved-fact
 // envelope the engine binds, diffs base↔head with the PRODUCTION differ, and
-// evaluates the pack via aggregate.Cover — asserting the produced Decision equals
+// evaluates the pack via aggregate.Decide — asserting the produced Decision equals
 // the pinned one.
 //
 // It sits UNDER internal/ (not internal/core), so — exactly like the extracted
@@ -196,7 +196,7 @@ type Outcome struct {
 // Evaluate assembles the EvaluationInput from the case's base/↔head/ diff, attaches
 // the stubbed resolved facts, reconstructs the per-EntryRef entry tree (S02) so an
 // entry-scoped predicate binds the whole entry object, threads the case MR and the
-// stubbed ApprovalContext, and evaluates the WHOLE pack via aggregate.CoverWithApproval.
+// stubbed ApprovalContext, and evaluates the WHOLE pack via aggregate.Decide.
 // An opaque (undecidable) diff maps to the fail-safe REVIEW decision — never a silent
 // APPROVE (GUIDELINES §2), mirroring the CLI run path. Pure and deterministic.
 //
@@ -205,7 +205,7 @@ type Outcome struct {
 // list/map file is decidable AND each change is tagged with a stable EntryRef; a
 // pack with no entries takes the S01 document-mode change.Diff verbatim (so every
 // S01 case stays byte-identical). With no entries, no MR, and a nil Approval, this
-// is exactly the S01 Cover path.
+// is exactly the S01 decision path.
 func Evaluate(c Case) (aggregate.Result, error) {
 	in, decidable, err := assemble(c)
 	if err != nil {

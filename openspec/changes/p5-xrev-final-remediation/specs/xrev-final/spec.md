@@ -109,14 +109,18 @@ Requirements:
   - Test: `internal/adoptertest/match_parity_test.go`
   - Verify: `go test ./internal/adoptertest/...`
   - Level: L1
-- **REQ-XREV-S02-02** — Given a diverging predicate (one match domain inverted) is used by
-  the harness instead of the shared export, when the parity test runs, then it fails. The
-  parity test exercises the divergence by comparing the shared export against an **inlined**
-  independent predicate over the same corpus, so the mutation is executable after the clone
-  is deleted.
-  - Test: `internal/adoptertest/match_parity_test.go` (inlined reference predicate + a
-    deliberate-mismatch control case)
-  - Verify: `go test ./internal/adoptertest/...`
+- **REQ-XREV-S02-02** — Given the shared predicate's semantics are changed (a match domain
+  inverted), when the harness test suite runs, then it fails. The mutation control is the
+  per-domain expectation table (`TestMatchesAnyDomains`), which independently encodes the
+  expected match result for every domain and both fail-closed error branches — inverting a
+  domain in `MatchesAny`/`matchChanges` reddens it. `TestMatchesAnyParityWithEngine` separately
+  proves the shared export's selection agrees with what the engine actually evaluated through
+  `aggregate.Cover`, so the export cannot decouple from `matchChanges`. (A two-implementation
+  parity oracle is deliberately NOT used: the clone is deleted, so there is no second
+  implementation to diverge from; the per-domain table is the semantic oracle.)
+  - Test: `internal/adoptertest/match_parity_test.go` (per-domain expectation table + engine
+    agreement); `internal/core/aggregate/matches_any_test.go` (engine-package copy)
+  - Verify: `go test ./internal/adoptertest/... ./internal/core/aggregate/...`
   - Level: L1
 
 ---
