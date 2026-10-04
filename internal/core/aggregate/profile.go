@@ -111,6 +111,9 @@ func (r Result) WithProfile(rp ResolvedProfile, resolved bool) Result {
 // resolution never alters the decision or the finding set — it only surfaces
 // whether this run may write. A caller with no profiles passes an empty precedence
 // table (⇒ no covering profile ⇒ no write authority, the safe default).
+//
+// DEPRECATED for new production callers (XREV-S01 / D2): like Cover it bypasses
+// the three Decide guards. Decide routes through this function.
 func CoverWithProfile(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, appr *ApprovalContext, ceiling policy.Phase, precedence []policy.ProfileRef, profiles []*policy.Profile) (Result, error) {
 	rp, resolved, err := ResolveProfile(precedence, profiles, bind.Environment, bind.Class)
 	if err != nil {

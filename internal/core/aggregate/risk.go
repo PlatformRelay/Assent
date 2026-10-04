@@ -8,7 +8,7 @@ package aggregate
 
 // firingEffectDecision maps a FIRING finding's effect to its decision
 // contribution inside the coverage loop. It differs from effectDecision (the
-// walking-skeleton Aggregate mapping) in exactly ONE case: `comment` is
+// walking-skeleton effect mapping) in exactly ONE case: `comment` is
 // DECISION-NEUTRAL. Per ADR-0007's effect table a comment "Blocks merge? no" — it
 // is the SOFT signal channel: a comment firing accrues its author-declared points
 // and is escalated to REVIEW ONLY when the summed points exceed the binding

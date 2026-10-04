@@ -69,10 +69,12 @@ with `assent-policy` → BLOCK); `internal/core/decision/tokenless_test.go` scan
 
 Export `aggregate.MatchesAny(m policy.Match, changes []EvalChange) (bool, error)` (a thin
 wrapper over the existing `matchChanges`) and delete `adoptertest.ruleMatchesAny` +
-`matchesAnyGlob` + `containsStr`. The parity test drives the four domains (files, values,
-valueChanges, fileEvents) through both the export and an inlined reference predicate over a
-shared corpus, plus a deliberate-mismatch control so the assertion is non-vacuous after the
-clone is gone.
+`matchesAnyGlob` + `containsStr`. The tests drive the four domains (files, values,
+valueChanges, fileEvents) through the export against an independently-encoded per-domain
+expectation table (the semantic oracle and mutation control), plus an engine-agreement test
+that observes `aggregate.Cover`'s actual selection. A two-implementation parity oracle is not
+used because the clone is gone — there is nothing left to diverge from; the domain table
+reddens if the shared predicate's semantics change.
 
 ## S04 — hygiene
 

@@ -1,7 +1,7 @@
 // Package compare is the PURE promotion-comparison engine behind `assent compare`
 // (P5-E6-S09 seed, PCS epic extensions). Given ONE immutable ReplayBundle (its
 // pre-built EvaluationInput) and a baseline vs a candidate profile, it evaluates
-// both through the reused decision engine (aggregate.CoverWithProfile), classifies
+// both through the reused decision engine (aggregate.Decide), classifies
 // the resulting decision delta as one member of the frozen closed taxonomy, applies
 // ONE promotion gate (the seed applies bounded-auto-merge-widening only; the full
 // suite runner adds the remaining gates), and reports a pass/fail verdict a CLI shell
@@ -88,9 +88,9 @@ const (
 var ErrUnclassifiable = errors.New("compare: decision delta matches none of the classified kinds (fail-closed)")
 
 // Profile is one side of the comparison: the policy activation a named
-// PolicyProfile stands for, plus everything aggregate.CoverWithProfile needs.
+// PolicyProfile stands for, plus everything aggregate.Decide needs.
 //
-// NOTE (reuse boundary): CoverWithProfile resolves only WRITE AUTHORITY from the
+// NOTE (reuse boundary): Decide (via CoverWithProfile) resolves only WRITE AUTHORITY from the
 // precedence/profiles table — it does NOT switch the evaluated policy by profile.
 // So the decision delta flows from the Policy/Bind/Ceiling each profile activates,
 // which the caller supplies explicitly. Wiring profile->pack activation so the

@@ -1,7 +1,7 @@
 package aggregate
 
 // coverage.go is the E2-S04 multi-obligation AND coverage loop over the frozen
-// policy model. It grows the walking-skeleton's single-obligation Aggregate into
+// policy model. It grows the walking-skeleton's single-obligation aggregator into
 // full ADR-0017 §2 coverage: a binding's require[] is satisfied only when, for
 // EACH required obligation AND EACH governed subject the changeSet touches, an
 // enforce-phase `prove.{obligation, when}` rule matched that subject and its
@@ -36,6 +36,11 @@ import (
 // merge policy, binding, and evaluation input, with NO injected approval evidence
 // — every require-review obligation stays unsatisfied (the D-016 golden path).
 // It is the stable 3-arg entry preserved byte-identical for existing callers.
+//
+// DEPRECATED for new production callers (XREV-S01 / D2): Cover bypasses the three
+// fail-safe guards (reserved-class, opaque/empty, empty-require) that Decide
+// enforces. It is kept because ~80 tests use it; a new engine consumer should call
+// Decide. Deleting it is a separate mechanical lane.
 func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (Result, error) {
 	return cover(pol, bind, in, nil, policy.PhaseEnforce)
 }
@@ -46,6 +51,9 @@ func Cover(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput) (
 // obligation can be SATISFIED by valid, eligible, sha-matching, non-expired,
 // non-self/bot approval (ADR-0017 §3). A nil appr is exactly Cover. Evidence is
 // injected as a second input, never a field on the frozen EvaluationInput.
+//
+// DEPRECATED for new production callers (XREV-S01 / D2): like Cover it bypasses
+// the three Decide guards. Prefer Decide.
 func CoverWithApproval(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, appr *ApprovalContext) (Result, error) {
 	return cover(pol, bind, in, appr, policy.PhaseEnforce)
 }
@@ -64,6 +72,9 @@ func CoverWithApproval(pol *policy.MergePolicy, bind *policy.Binding, in *Evalua
 // and Cover works over MergePolicy. A caller that has loaded a Pack passes its
 // spec.phase here; a caller with no pack passes enforce (or uses Cover). An empty
 // ceiling is normalized to enforce (no cap) so a caller slip never caps everything off.
+//
+// DEPRECATED for new production callers (XREV-S01 / D2): like Cover it bypasses
+// the three Decide guards. Prefer Decide.
 func CoverWithPhaseCeiling(pol *policy.MergePolicy, bind *policy.Binding, in *EvaluationInput, appr *ApprovalContext, ceiling policy.Phase) (Result, error) {
 	return cover(pol, bind, in, appr, ceiling)
 }

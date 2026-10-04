@@ -6,8 +6,8 @@ Vertical slices, dependency-ordered. Each task: add the failing test first, then
 
 ## T001 — S02: share the match predicate (D3)
 1. Add `internal/adoptertest/match_parity_test.go`: drive files/values/valueChanges/fileEvents
-   through the shared export and an inlined reference predicate over one corpus; add a
-   deliberate-mismatch control case.
+   through the shared export against an independently-encoded per-domain expectation table,
+   plus an engine-agreement test observing `aggregate.Cover`'s selection.
 2. Export `aggregate.MatchesAny` wrapping `matchChanges`; delete `adoptertest.ruleMatchesAny`
    + `matchesAnyGlob` + `containsStr`; call the export.
 3. Verify: `go test ./internal/adoptertest/... ./internal/core/aggregate/...`

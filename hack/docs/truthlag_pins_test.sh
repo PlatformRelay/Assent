@@ -395,6 +395,11 @@ if grep '^| GitHub adapter |' README.md | grep -q 'D-140' && ! grep '^| GitHub a
 else
   fail "XREV-S03-01: README GitHub row must cite D-140 (E10 unlocked D-140), not D-012"
 fi
+if grep -q 'task check   # the full gate' README.md; then
+  pass "XREV-S03-01: README task-check comment names the real gate"
+else
+  fail "XREV-S03-01: README task-check comment still understates the gate (D4)"
+fi
 
 # --- XREV-S03-02: E10/E11 status surfaces must not attribute the epic to D-012 -----
 # Scoped to the user-facing STATUS surfaces (README maturity table, vision, C4) rather
@@ -403,6 +408,10 @@ fi
 # does NOT also name the later unlock (D-140/D-141) is the drift D4 is about.
 pair_bad=0
 for f in README.md docs/vision.md docs/architecture/c4-container.md docs/architecture/c4-context.md; do
+  if [[ ! -f "$f" ]]; then
+    fail "XREV-S03-02: status surface $f is missing — the pairing pin would be vacuous"
+    continue
+  fi
   while IFS= read -r hit; do
     [[ -z "$hit" ]] && continue
     if printf '%s' "$hit" | grep -qE 'D-14[01]'; then
@@ -465,10 +474,13 @@ else
 fi
 
 # --- XREV-S03-06: --config help and cli.md agree on fact resolution ----------------
-if grep -q 'drives provider fact resolution' cmd/assent/run.go && grep -q 'fact resolution' docs/usage/cli.md; then
-  pass "XREV-S03-06: --config help and cli.md both state fact resolution"
+# Pin the exact corrected sentences in both files, so a drift that keeps the phrase
+# in one but changes the claim in the other reddens.
+if grep -q 'Config path (loaded from the TARGET ref) — drives provider fact resolution; when set, provider posture is also validated' cmd/assent/run.go \
+   && grep -q 'Config path (loaded from the target ref) — drives provider \*\*fact resolution\*\*; when set, provider posture is also validated' docs/usage/cli.md; then
+  pass "XREV-S03-06: --config help and cli.md both state fact resolution (exact)"
 else
-  fail "XREV-S03-06: --config help and cli.md must both state that Config drives fact resolution"
+  fail "XREV-S03-06: --config help and cli.md must both carry the corrected fact-resolution wording"
 fi
 
 if [[ "$fails" -ne 0 ]]; then
