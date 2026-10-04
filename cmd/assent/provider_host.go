@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"testing/fstest"
 	"time"
 
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
@@ -291,9 +290,7 @@ func loadResourceOwnerRegistry(
 	_ = ctx
 	raw, err := client.FileAtRef(project, regPath, targetRef)
 	if err == nil {
-		fsys := fstest.MapFS{
-			path.Base(regPath): &fstest.MapFile{Data: raw},
-		}
+		fsys := oneFileFS{name: path.Base(regPath), data: raw}
 		return builtin.LoadResourceOwnerMap(fsys, path.Base(regPath))
 	}
 	if !errors.Is(err, forge.ErrNotFound) {

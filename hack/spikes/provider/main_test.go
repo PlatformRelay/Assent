@@ -52,7 +52,10 @@ func TestMain(m *testing.M) {
 		return bin
 	}
 	toyExecBin = build("toyexec", "./toyexec")
-	maliciousExecBin = build("maliciousexec", "./maliciousexec")
+	// maliciousexec carries a `//go:build ignore` constraint (D17) so it is not
+	// `go install`-able under the public module path; name its file explicitly so
+	// the build ignores that constraint (the documented go-run-gen.go idiom).
+	maliciousExecBin = build("maliciousexec", "./maliciousexec/main.go")
 
 	os.Exit(m.Run())
 }
