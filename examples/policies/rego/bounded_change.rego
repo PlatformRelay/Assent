@@ -1,4 +1,4 @@
-# planned: E11 — implementation unlocked (D-141); do not wire into assent test or the schema-validation CI job before its lane lands
+# locked: D-012 — P3-E3-S04 quarantine marker (hack/check-migration-invariants.sh). E11 implementation unlocked (D-141); do not wire into assent test or the schema-validation CI job before its lane lands
 # Rego as the escape-hatch predicate backend inside the YAML envelope (ADR-0002 v2): the
 # envelope owns match/effect/points; the module only computes violations over PolicyInput.
 # Shown standalone here for readability; the same archetype in pure envelope syntax lives
