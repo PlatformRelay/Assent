@@ -48,6 +48,14 @@ func TestDecideEmptyRequireRefusesVacuity(t *testing.T) {
 	if err == nil {
 		t.Fatal("Decide with an empty require[] returned nil error — a vacuous APPROVE was armed")
 	}
+	// A nil binding has no require[] either: same refusal, and no nil dereference.
+	if _, err := aggregate.Decide(aggregate.DecideRequest{
+		Subject: "file:topics/orders.yaml",
+		Policy:  mp,
+		Input:   oneChange(),
+	}); err == nil {
+		t.Fatal("Decide with a nil binding returned nil error — a vacuous APPROVE was armed")
+	}
 }
 
 // TestDecideOpaqueOrEmptyReviews — REQ-XREV-S01-02: an opaque or empty changeset
