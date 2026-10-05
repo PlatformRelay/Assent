@@ -1,27 +1,35 @@
 # P5-DEP — Dependency PR automation (bot PRs merge themselves, narrowly)
 
-**Epic ID / REQ prefix:** `DEP` / `REQ-DEP-Snn-nn`. Cross-cutting hygiene epic.
+**Epic ID / REQ prefix:** `DEP` / `REQ-DEP-Snn-nn`. Cross-cutting hygiene epic. Gate wiring: see
+the [gate-wiring rule](../README.md) (D1).
 
-**Problem.** Dependabot (`.github/dependabot.yml`: gomod, github-actions, pip, npm; weekly;
-no `cooldown`) opens PRs that wait for a human. Auto-merge would clear the mechanical ones,
-but the dependency PR is the supply-chain path an attacker wants, so scope is tight. Repo
-facts that shape it:
-1. Merges are **rebase-merge only** (workspace policy: linear history, never squash, never
-   merge commit). attune auto-merges with **squash**; assent must not copy that.
-2. A merge done with the default `GITHUB_TOKEN` does not trigger other workflows, so a
-   bot-merged commit would get no push-to-main `verify` (needed by
-   `hack/release/verify-tag-gate.sh`) — hence a GitHub App token.
-3. D-177/D-178: the SonarCloud step is **skipped** on `dependabot[bot]` runs because
-   Dependabot-triggered `pull_request` runs get **no repo Actions secrets**. The same
-   mechanism governs this epic's secrets (S03).
+**Problem.** Dependabot (`.github/dependabot.yml`: gomod, github-actions, pip, npm; weekly; no
+`cooldown`) opens PRs that wait for a human. Auto-merge would clear the mechanical ones, but the
+dependency PR is the supply-chain path an attacker wants. Repo facts:
+1. Merges are **rebase-merge only** (linear history, never squash/merge commit). attune
+   auto-merges with **squash**; assent must not copy that.
+2. A merge by the default `GITHUB_TOKEN` does not trigger other workflows; the merged commit
+   needs a push `verify` (`hack/release/verify-tag-gate.sh`), so merges use a GitHub App token.
+3. **Required checks do not cover everything.** `docs.yaml`, `schemas.yml`, `actionlint.yaml`
+   and the `release.yaml` snapshot are path-filtered and `release-exitgate` is push-only
+   (`verify.yaml:213-214`). A pip minor that breaks `mkdocs --strict` would pass `verify`,
+   auto-merge, redden main and block releases through `verify-tag-gate.sh`. Auto-merge is
+   therefore only as safe as what is *checked*, not what is *required*.
+4. D-177/D-178: Sonar is skipped on `dependabot[bot]` runs (no repo secrets), so green on a
+   Dependabot PR excludes Sonar; Sonar for the merged commit comes from the push run.
 
-**Coupling.** This epic keys on `github.actor == 'dependabot[bot]'` and
-`dependabot/fetch-metadata`; it is **not** bot-agnostic. If TCC-S05 picks Renovate (A or B),
-S02's classifier is reworked for Renovate's identity/labels in that change.
+**Coupling.** Keys on Dependabot identity; if TCC-S05 picks Renovate (A/B) the classifier is
+reworked in that change. Not bot-agnostic.
 
-**Not in scope:** the choice of bot (TCC-S05); major bumps (always human); Go `go`/`toolchain`
-directive bumps; third-party contributor PRs; branch-protection changes other than the
-`[operator]` items below.
+**Not in scope:** the bot choice (TCC-S05); major bumps; Go `go`-directive bumps (TCC-S06);
+third-party PRs; any `pull_request_target` variant (none, at all).
+
+**Self-dogfooding note (honest).** assent is itself a merge gate, so why not use its policy for
+its own bot PRs? Not yet: (a) its change adapters cover JSON/YAML/HCL, and a `go.mod`/`go.sum`/
+workflow diff is **opaque -> REVIEW** by design (ADR-0003); (b) assent loading policy from the
+ref it protects and deciding its own regression is a bootstrap-trust loop that ADR-0015's
+target-ref rule is meant to avoid. Candidate follow-up: a lockfile adapter plus a
+"bot patch bump with green facts" policy, run by a *released* assent, not the one under change.
 
 ---
 
@@ -29,130 +37,125 @@ directive bumps; third-party contributor PRs; branch-protection changes other th
 
 **Depends on:** none.
 
-- Given `.github/dependabot.yml`, when read, then each ecosystem has `cooldown:
-  default-days: 7`. Dependabot holds a version-update PR until the release is >= 7 days old
-  (security updates bypass cooldown by design). **This is the only age control** — S02 adds
-  no PR-age check (it would double the delay to 14 days, and `fetch-metadata` exposes no
-  release date).
+- Each `updates:` entry has `cooldown: default-days: 7`. Dependabot holds a version-update PR
+  until the release is >= 7 days old (security updates bypass it by design). This is the **only**
+  age control: no PR-age check elsewhere (it would double the delay, and `fetch-metadata`
+  exposes no release date).
 - The `codeql-action` group is preserved.
 
 Requirements:
 
-- **REQ-DEP-S01-01** — every `updates:` entry has cooldown >= 7. Test:
-  `hack/lint/dependabot_cfg_test.sh` (create); Verify:
-  `bash hack/lint/dependabot_cfg_test.sh`; Level: L0
-- **REQ-DEP-S01-02** *(adversarial)* — a new ecosystem without cooldown, or cooldown 0, is
-  red. Test: same; Verify: `bash hack/lint/dependabot_cfg_test.sh --self-test`; Level: L0
+- **REQ-DEP-S01-01** — every entry has cooldown >= 7. Test: `hack/lint/dependabot_cfg_test.sh`
+  (create); Verify: `bash hack/lint/dependabot_cfg_test.sh`; Level: L0
+- **REQ-DEP-S01-02** *(adversarial)* — a new ecosystem without cooldown, or 0, is red. Test:
+  same; Verify: `bash hack/lint/dependabot_cfg_test.sh --self-test`; Level: L0
 
 ---
 
-## DEP-S02 — Auto-merge workflow `gh pr merge --auto --rebase`, scoped `[autonomous · needs S03]`
+## DEP-S02 — Scheduled merger, rebase only, all-checks-green `[blocked-by DEP-S03 + CIH-S03 + CIH-S00]`
 
-**Depends on:** DEP-S01, DEP-S03 (App token + secrets), DEP-S04 (required-check contract).
+**Design.** A **scheduled** (+ `workflow_dispatch`) workflow `dependabot-merge.yaml` — never a
+`pull_request`/`pull_request_target`/`workflow_run` trigger, so it runs no PR code and handles no
+PR-controlled context. It lists open Dependabot PRs via `gh api` and, per PR, merges only when
+**all** hold (D13):
+1. **Identity:** `pull_request.user.login == dependabot[bot]` **and** head repo == this repo
+   (**and** the triggering actor is the scheduled run itself) — never `github.actor` alone.
+2. **Classification:** `fetch-metadata`-style update type is patch/minor (or an `github-actions`
+   update that can be release-aged); **never** major, `go`-directive, grouped-with-major,
+   unknown, or digest/pinDigest updates with no release timestamp (cannot be cooldown-aged —
+   excluded, not exempted).
+3. **Scope exclusions:** nothing that executes inside a job holding a privileged/bypass token or
+   in a release/publish workflow: a PR touching `release.yaml`, the merger workflow, or any
+   workflow with `id-token: write`/`contents: write`/`pages: write`, and any ecosystem whose
+   packages run in such a job, is `needs-human`. The implementer audits per ecosystem
+   (gomod/pip/npm/actions) and records the result in the DEP-S04 doc.
+4. **Checks (the BLOCKER fix):** **every check run on the head SHA has finished and is green**
+   (including path-filtered ones that ran: docs, schemas, actionlint; nothing pending, nothing
+   missing for a path the PR touched), **and the latest push-triggered `verify` on `main` is
+   green** (so a PR cannot stack on a red main).
+5. Method: `gh pr merge --rebase` (optionally `--auto` as a second belt); **never**
+   `--squash`/`--merge`. Uses the App token so a push `verify` follows.
+- Otherwise the PR gets `needs-human` and no merge call.
 
-- Given a PR with `github.actor == 'dependabot[bot]'` **and** `fetch-metadata` reporting
-  `version-update:semver-patch` or `semver-minor`, or an `github-actions` digest/patch/minor
-  update, when evaluated, then the workflow runs `gh pr merge --auto --rebase <pr>` with the
-  App token. GitHub merges only after the required checks pass.
-- Given `semver-major`, a Go `go`/`toolchain` directive change, a group containing any
-  major, or an unclassified update type, then auto-merge is **not** enabled and the PR is
-  labelled `needs-human`.
-- Given a merged bot PR, then a push-to-main `verify` run triggers (App token).
-- **Adversarial** — a fork PR, or a human-authored PR on a `dependabot/…` branch name, gets no
-  auto-merge (actor and metadata must both hold). The workflow, if on `pull_request_target`,
-  checks out nothing from the PR head (zizmor-clean, CIH-S02).
-- **Forbidden outcome 1** — auto-merge of a major or of any update not positively classified.
-- **Forbidden outcome 2** — squash or merge-commit method anywhere in the workflow.
-- **Forbidden outcome 3 (Sonar)** — see S04: green on a Dependabot PR excludes Sonar
-  (D-178); Sonar for the merged commit comes from the push-to-main run.
+- **Forbidden outcomes:** merging a major or unclassified update; any squash/merge-commit method;
+  merging with a pending/failed/absent check run on the head SHA; merging while main's latest
+  push `verify` is red; treating a Sonar skip as green when Sonar is required (DEP-S04); any
+  privileged-trigger variant.
 
 Requirements:
 
-- **REQ-DEP-S02-01** — classifier script table-tested with fixtures (patch, minor, major,
-  digest, unknown, grouped-with-major, fork, renamed branch). Test:
-  `hack/ci/dependabot_automerge_test.sh` (create); Verify:
-  `bash hack/ci/dependabot_automerge_test.sh`; Level: L0
-- **REQ-DEP-S02-02** *(adversarial)* — major, unknown, fork and renamed-branch fixtures are
-  refused. Test: same; Verify: `bash hack/ci/dependabot_automerge_test.sh --self-test`; Level: L0
-- **REQ-DEP-S02-03** *(forbidden outcome)* — workflow contains `--rebase` and neither
-  `--squash` nor `--merge`, and no PR-head checkout under `pull_request_target`. Test:
-  `hack/lint/workflow_pins_test.sh` (new inline controls); Verify:
+- **REQ-DEP-S02-01** — classifier + gate script table-tested with fixtures: patch, minor, major,
+  digest-without-timestamp, unknown, grouped-with-major, fork, human PR on a `dependabot/…`
+  branch, touches release.yaml, check run pending, check run red, main red. Test:
+  `hack/ci/dependabot_merge_test.sh` (create); Verify:
+  `bash hack/ci/dependabot_merge_test.sh`; Level: L0
+- **REQ-DEP-S02-02** *(adversarial)* — every refusal fixture above yields no merge call. Test:
+  same; Verify: `bash hack/ci/dependabot_merge_test.sh --self-test`; Level: L0
+- **REQ-DEP-S02-03** *(forbidden outcome)* — the workflow has only `schedule`/`workflow_dispatch`
+  triggers, uses `--rebase`, contains no `--squash`/`--merge`/`pull_request_target`/`workflow_run`,
+  and checks out nothing. Test: `hack/lint/workflow_pins_test.sh`; Verify:
   `bash hack/lint/workflow_pins_test.sh`; Level: L0
+- **REQ-DEP-S02-04** — first live run merges one patch bump by rebase with a push `verify` and
+  leaves one major untouched. Test: live run; Verify:
+  `gh pr list -R PlatformRelay/assent --label needs-human`; Level: L3 (**post-merge**, D14; named
+  follow-up evidence PR)
 
-**Counterpoint.** Auto-merging patch/minor is a trust decision about every upstream
-maintainer; cooldown, required checks, dependency-review (CIH-S05) and major-exclusion bound
-it. A malicious patch that passes tests still merges: residual risk stated. Squash would
-tidy bot PRs, but assent's rebase-merge policy wins.
-
-**Not in scope:** auto-approving; auto-merging release PRs.
-
----
-
-## DEP-S03 — GitHub App token and secrets `[operator]`
-
-**Depends on:** none (blocks S02).
-
-- The operator creates a GitHub App (Contents: write, Pull requests: write, Metadata: read;
-  installed on this repo only) and stores `APP_ID` and the private key.
-- **Secret scope (review finding 4):** a workflow triggered by `dependabot[bot]` sees only
-  **Dependabot secrets**, not repo Actions secrets (same mechanism as D-178). So either
-  (a) store them as **Dependabot secrets** and run on `pull_request`, or (b) run the merge
-  step from a `pull_request_target`/`workflow_run` workflow that checks out nothing from the
-  PR head and uses Actions secrets. Decision recorded in the `D-nnn` row; default (a).
-- **Silent-failure fence:** if the secret is empty on a run whose actor is
-  `dependabot[bot]`, the auto-merge job **fails (red)** with "auto-merge disabled: App secret missing" — a warning is easy to miss, and it must not silently pass, because that would hide a feature that never runs. The job is **not** a required check, so the red is visible but blocks nothing. On a non-Dependabot actor an empty secret is a
-  quiet no-op.
-- Repo settings `[operator]`: **Allow auto-merge** on; **Allow rebase merging** the only merge
-  method.
-- **Adversarial** — the key is referenced only by the token step and never by a step that
-  can run PR-head code.
-
-Requirements:
-
-- **REQ-DEP-S03-01** — `D-nnn` row records App ID (not key), secret scope choice, settings.
-  Test: `docs/decisions/decisions.md`; Verify: `rg 'DEP-S03' docs/decisions/decisions.md`; Level: doc
-- **REQ-DEP-S03-02** *(adversarial)* — empty-secret + Dependabot actor fails the job
-  and makes no merge call; key referenced in the token step only. Test:
-  `hack/ci/dependabot_automerge_test.sh`; Verify:
-  `bash hack/ci/dependabot_automerge_test.sh --self-test`; Level: L0
+**Counterpoint.** Auto-merging patch/minor is a trust decision about every upstream maintainer;
+cooldown, all-checks-green, dependency-review, and the major/privileged exclusions bound it; a
+malicious patch that passes tests still merges — residual risk stated. Polling (hourly) is slower
+than event-driven but needs no privileged trigger.
 
 ---
 
-## DEP-S04 — Required-check contract and the Sonar coupling `[operator precondition]`
+## DEP-S03 — GitHub App token, secrets, settings `[operator]`
 
-**Depends on:** CIH-S04 (only if a `ci-gate` check is added).
+**Depends on:** none (blocks S02). Operator prerequisites, explicit and in this order:
+1. **Required checks first (D1):** every new guard from the other epics is a required check or in
+   a required aggregator's `needs`; CIH-S03 (dependency-review) is required.
+2. Create a GitHub App (Contents: write, Pull requests: write, Metadata: read; this repo only);
+   store `APP_ID` and the private key as **Actions secrets** (the merger is a scheduled workflow,
+   so repo Actions secrets are visible; Dependabot secrets are not needed and there is **no**
+   `pull_request_target` option).
+3. Settings: **Allow auto-merge** on; **Allow rebase merging** the only merge method.
+4. Record the App ID (not the key), the secret scope and settings in a `D-nnn` row.
 
-The set of **required status checks is live branch-protection configuration, unreachable from
-in-tree files** (D-177; backlog item **AUD-SONAR-REQUIRED**). So this story makes no offline
-guard claim.
-
-- Precondition `[operator]`, linked to AUD-SONAR-REQUIRED: before S02 is enabled, the operator
-  confirms the required checks include `verify` (and CodeQL). **If Sonar is ever made
-  required** (AUD-SONAR-REQUIRED), bot auto-merge must be disabled until a token-bearing
-  analysis exists for bot PRs, because a skipped Sonar step on a Dependabot PR would otherwise
-  be read as green (D-178).
-- Detection: a **scheduled** job (e.g. in `nightly.yaml`) probes the branch-protection API
-  (`gh api repos/{repo}/branches/main/protection`, needs only a **GitHub App with `Administration: read`**, not an admin-scope token → `[operator]`
-  to provision; the credential is kept out of any job that runs PR code) and reds if a Sonar check name is required while the auto-merge workflow
-  exists. Until provisioned, the coupling is a documented operator precondition only.
-- A contributor doc states the contract and the D-178 caveat.
+- Empty secret on a scheduled run: the (non-required) merger job **fails red** with
+  "auto-merge disabled: App secret missing" — visible, blocks nothing, never a silent pass.
+- **Adversarial** — the key is referenced only by the token step; no step runs PR-head code.
 
 Requirements:
 
-- **REQ-DEP-S04-01** — doc states the contract and D-178 caveat. Test:
+- **REQ-DEP-S03-01** — `D-nnn` row records the above. Test: `docs/decisions/decisions.md`;
+  Verify: `rg 'DEP-S03' docs/decisions/decisions.md`; Level: doc
+- **REQ-DEP-S03-02** *(adversarial)* — empty secret fails the job with no merge call; key used
+  only in the token step. Test: `hack/ci/dependabot_merge_test.sh`; Verify:
+  `bash hack/ci/dependabot_merge_test.sh --self-test`; Level: L0
+
+---
+
+## DEP-S04 — Contract doc and Sonar precondition `[autonomous · operator precondition]`
+
+The set of required checks is live branch-protection config, **unreachable from in-tree files**
+(D-177; backlog **AUD-SONAR-REQUIRED**), so no in-tree guard is claimed and no live probe is
+built (cut).
+
+- A contributor doc `docs/contributing/dependency-automation.md` states the merger contract,
+  the per-ecosystem privilege audit result, and the D-178 caveat (green on a bot PR excludes
+  Sonar).
+- **Operator precondition**, linked to AUD-SONAR-REQUIRED: if Sonar is ever made a required
+  check, disable the merger until a token-bearing analysis exists for bot PRs.
+
+Requirements:
+
+- **REQ-DEP-S04-01** — doc states the contract, audit and D-178 caveat. Test:
   `docs/contributing/dependency-automation.md` (create); Verify:
-  `rg 'D-178' docs/contributing/dependency-automation.md`; Level: doc
-- **REQ-DEP-S04-02** *(forbidden outcome · live probe)* — the probe script reds on a
-  fixture protection payload that requires Sonar while auto-merge is enabled. Test:
-  `hack/ci/protection_probe_test.sh` (create; fixture-driven, offline); Verify:
-  `bash hack/ci/protection_probe_test.sh`; Level: L0 (the live API call itself is
-  `[operator]`-provisioned and not claimed as an offline guard)
+  `rg -c 'D-178|AUD-SONAR-REQUIRED' docs/contributing/dependency-automation.md`; Level: doc
 
 ---
 
 ## Exit
 
-One Dependabot patch PR auto-merged by rebase after green checks with a push `verify` on the
-merged commit; one major PR left untouched with `needs-human`; fixtures prove both.
-New scripts hook into an existing `check:` stage (no `CHECK_STAGES` change, but a `STAGE_BODY_PINS` entry per hooked command, `exitgate_test.sh:207`) unless one
-becomes a new stage.
+One Dependabot patch PR merged by rebase with a push `verify` on the merged commit; one major
+untouched with `needs-human` (both **post-merge** rows, D14). Wiring per the
+[gate-wiring rule](../README.md): every script/mode is a pinned `verify` step and a `task check`
+stage with `STAGE_BODY_PINS` entries.
