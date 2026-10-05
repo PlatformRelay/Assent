@@ -194,7 +194,7 @@ Requirements:
 
 S01–S03 and S05 green. New `hack/lint/*` scripts (`zizmor_gate_test.sh`, later
 `ci_gate_test.sh`) hook into an **existing** `task check` stage (the one running
-`workflow_pins_test.sh`), so `CHECK_STAGES` in `hack/audit/exitgate_test.sh` is unchanged;
+`workflow_pins_test.sh`), so `CHECK_STAGES` in `hack/audit/exitgate_test.sh` is unchanged — but each needs a new `STAGE_BODY_PINS` entry (`hack/audit/exitgate_test.sh:207`) per new command, because that array pins only the named script bodies (today `workflow_pins_test.sh`) and a command dropped from the stage would otherwise pass every gate. `zizmor_gate_test.sh` needs `uvx` and the pinned zizmor wheel; inside offline `task check` it must run with a pre-installed zizmor or **skip loudly** (red unless `ZIZMOR_SKIP_OFFLINE=1` is set, never a silent pass), and the full run is the `verify` job step;
 only a script that becomes a **new `check:` stage** needs a deliberate pin
 (`exitgate_test.sh:539-554`). `release-exitgate` is a **job** in `verify.yaml`, not a
 workflow.

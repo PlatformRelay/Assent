@@ -71,19 +71,19 @@ job cannot `needs:` a job in another workflow. So the reporter is a separate
 `.github/workflows/ci-failure-issue.yaml` triggered by **`workflow_run`** for the `verify`
 and `nightly` workflows (`types: [completed]`). `workflow_run` runs with a privileged
 context, so:
-- it runs only for `github.event.workflow_run.head_branch == default branch` and
-  `event` in (`schedule`, `workflow_dispatch`, `push` on main), never for PR/fork events;
+- it runs only for `workflow_run.head_branch == default branch`, **`workflow_run.head_repository.full_name == github.repository`** (a fork PR from a branch named `main` passes a head_branch filter; this and the event filter are what stop it) and `event` in (`schedule`, `workflow_dispatch`, `push`), never for PR/fork events;
+- `concurrency: {group: ci-failure-issue-<workflow name>, cancel-in-progress: false}` serialises reporters per workflow;
 - it checks out **nothing** from the triggering run and reads only the run's
   conclusion/jobs via `gh api` with `issues: write`, `actions: read` only;
 - it is zizmor-reviewed (CIH-S02) with no suppression.
 
-State machine over the previous run's outcome for the same workflow (last completed run on
-the default branch before this one):
-- success -> failure: open **one** issue (label `ci-nightly-failure`, title keyed on workflow
-  name) with run URL, failed job/step, SHA.
-- failure -> failure: **comment** on the existing open issue; no second issue.
-- failure -> success: comment "recovered" and close.
-- success -> success: **no write call** (reads are allowed).
+State machine decided from **open-issue state plus `run_number` comparison**, not from "the previous run's outcome" (which races): the reporter reads the open issue for the workflow (the issue body records the `run_number` it last reflected) and ignores any event whose `run_number` is lower than that.
+- failure, no open issue: open **one** issue (label `ci-failure`, covers nightly and `verify` push/schedule failures; title keyed on workflow
+  name) with run URL, failed job/step, SHA, run_number.
+- failure, open issue, higher run_number: **comment** on it; no second issue.
+- success, open issue, higher run_number: comment "recovered" and close.
+- success, no open issue: **no write call** (reads are allowed).
+- stale event (run_number <= the issue's recorded one): no write call, so an older failure completing late cannot reopen after a newer success closed it.
 - The body builder is a script under test (prior art above); no logic inline in YAML.
 - **Adversarial** — untrusted strings (step names, branch names, commit subjects) are
   escaped: `@mentions`, backticks, and markdown links neutralised.
@@ -95,12 +95,12 @@ Requirements:
   `hack/ci/failure_issue_body_test.sh` (create); Verify:
   `bash hack/ci/failure_issue_body_test.sh`; Level: L0
 - **REQ-NIT-S02-02** — transition table (the four above) with a stubbed `gh`, asserting
-  which calls occur. Test: same; Verify:
+  which calls occur, **plus a race fixture**: two near-simultaneous failures yield one issue, and an out-of-order older failure after a newer success makes no write. Test: same; Verify:
   `bash hack/ci/failure_issue_body_test.sh --transitions`; Level: L0
 - **REQ-NIT-S02-03** *(adversarial)* — injection fixtures neutralised. Test: same; Verify:
   `bash hack/ci/failure_issue_body_test.sh --self-test`; Level: L0
 - **REQ-NIT-S02-04** *(adversarial)* — the workflow is `workflow_run`-gated to the default
-  branch and non-PR events, checks out nothing, has minimal permissions. Test:
+  branch, asserts `head_repository.full_name == github.repository`, filters non-PR events, declares the per-workflow concurrency group with `cancel-in-progress: false`, checks out nothing, has minimal permissions. Test:
   `hack/lint/nightly_wiring_test.sh`; Verify:
   `bash hack/lint/nightly_wiring_test.sh --self-test`; Level: L0
 
@@ -113,5 +113,5 @@ known privilege-escalation surface, hence the no-checkout rule and the explicit 
 
 Nightly (after its dependencies) runs the real suite with zero skips; a deliberately broken
 scheduled `release-exitgate` or nightly run opens exactly one issue and a fix closes it. The
-new `hack/lint`/`hack/ci` scripts hook into an existing `check:` stage (no `CHECK_STAGES`
+new `hack/lint`/`hack/ci` scripts hook into an existing `check:` stage, each with a new `STAGE_BODY_PINS` entry (`hack/audit/exitgate_test.sh:207`) per new command, because that array pins only the named script bodies (today `workflow_pins_test.sh`) and a command dropped from the stage would otherwise pass every gate (no `CHECK_STAGES`
 change) unless one becomes a new stage, which then needs a deliberate pin.
