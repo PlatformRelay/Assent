@@ -720,18 +720,37 @@ S02 cannot start until the operator creates the bestpractices.dev project (INBOX
 
 ## Phase 5 — OSS quality-signal epics (2026-10-05 comparison; SPECIFIED, NOT STARTED)
 
-Cross-cutting hygiene epics (same class as SEC-SC / AUD) from a comparison against the OSS
-reference project attune (github.com/attune-io/attune). Each spec lists its own
-Depends on, forbidden outcomes and counterpoints. `[operator]` stories need App/secret/repo-setting access.
+Cross-cutting hygiene epics from a comparison against the OSS reference project attune
+(github.com/attune-io/attune). Every new guard follows the **gate-wiring rule** in
+[README.md](README.md). Landing order (one story = one issue = one PR) is in the table.
 
-| ID | Epic | Spec | Execution | Gate contribution |
-| --- | --- | --- | --- | --- |
-| CIH | CI hardening: concurrency, zizmor, harden-runner (audit), dependency-review; `ci-gate` deferred until a path-filtered job exists | [spec](p5-cih-ci-hardening/spec.md) | S01-S03, S05 autonomous; S04 deferred, settings step **[operator]** | self-guarding pins; keeps push-to-main `verify` (verify-tag-gate) |
-| NIT | Schedule the E7-S07/P4-E1-S10 e2e with a no-silent-skip guard + deduplicated failure issue via `workflow_run` (covers the `release-exitgate` job; motivation: main red at `1c4e71e`, AUD-S18) | [spec](p5-nit-nightly-integration/spec.md) | autonomous; GitLab CE runner may need operator | L3 truth; no silent skip |
-| TDS | Fuzz CI runner + flake classifier (needs SEC-SC-S01), report-only mutation, report-only benchmarks | [spec](p5-tds-test-depth/spec.md) | autonomous | measurement, not gates |
-| TCC | `go-version-file`, pin baseline, committed `mise.toml` + drift test; open Qs: `task verify`, dependency bot A/B/C | [spec](p5-tcc-toolchain-consistency/spec.md) | S01-S03 autonomous; S04/S05 **[operator decision]** | supersedes D-158 keep-`stable` clause (new D-nnn) |
-| DEP | Bot PR auto-merge via `gh pr merge --auto --rebase`, patch/minor/digest only, 7-day cooldown, App token | [spec](p5-dep-dependency-automation/spec.md) | S01/S02 autonomous; S03 App + Dependabot secrets **[operator]**; S04 required-check precondition (links AUD-SONAR-REQUIRED) **[operator]** | forbidden: major auto-merge, squash, Sonar-skip-as-green |
-| CMY | CONTRIBUTING, issue forms, agent pointers, evidence/recurring-defect rules (labeler optional, default drop) | [spec](p5-cmy-community-agent-contract/spec.md) | autonomous | docs/hygiene sensors |
+| Order | Story | Epic spec | Status |
+| --- | --- | --- | --- |
+| 1 | CIH-S00 restore green main (AUD-S18 determinism reports 0 runs) | [CIH](p5-cih-ci-hardening/spec.md) | ready |
+| 2 | CIH-S01 `concurrency` (PR-number key) | CIH | ready |
+| 3 | CIH-S02 zizmor gate + fix `release.yaml` cache-poisoning | CIH | ready |
+| 4 | CIH-S03 dependency-review (+ operator: make required) | CIH | ready / operator for required check |
+| 5 | NIT-S02 CI-failure reporter (`workflow_run`) | [NIT](p5-nit-nightly-integration/spec.md) | ready after CIH-S02 |
+| 6 | TCC-S01 go.mod bump + `go-version-file` + tool check (one PR) | [TCC](p5-tcc-toolchain-consistency/spec.md) | ready after CIH-S00 |
+| 7 | TCC-S02 pin baseline (`GOVULNCHECK_VERSION`, floors) | TCC | after TCC-S01 |
+| 8 | TCC-S03 `mise.toml` + drift test | TCC | after TCC-S02 |
+| 9 | TCC-S04 entry points (`check` = full local gate; no `verify` subset) | TCC | ready |
+| 10 | TCC-S06 Go patch-lag sensor | TCC | blocked by NIT-S02 |
+| 11 | CMY-S01 CONTRIBUTING + issue forms + agent pointers | [CMY](p5-cmy-community-agent-contract/spec.md) | ready |
+| 12 | CMY-S02 evidence rules in GUIDELINES | CMY | ready |
+| 13 | DEP-S01 Dependabot `cooldown` | [DEP](p5-dep-dependency-automation/spec.md) | ready |
+| 14 | DEP-S03 App token / secrets / settings | DEP | **operator** (after required-check gates) |
+| 15 | DEP-S04 contract doc + Sonar precondition | DEP | ready / operator precondition |
+| 16 | DEP-S02 scheduled all-checks-green rebase merger | DEP | blocked by DEP-S03, CIH-S03, CIH-S00 |
+| 17 | TDS-S01 fuzz runner + flake classifier | [TDS](p5-tds-test-depth/spec.md) | blocked by SEC-SC-S01 |
+| 18 | TDS-S03 benchmarks (`workflow_dispatch`) | TDS | ready |
+| 19 | NIT-S01 scheduled real e2e + no-silent-skip | NIT | blocked by E7-S07/P4-E1-S10, NIT-S02, operator infra |
+| 20 | TCC-S05 dependency bot A/B/C | TCC | **operator decision** |
+| 21 | TDS-S02 report-only mutation | TDS | deferred until NIT-S02 shipped |
+| — | CIH-S04 `ci-gate` aggregate | CIH | deferred (trigger in spec) |
+| — | harden-runner | CIH | deferred (needs block-mode egress allowlist plan) |
+
+Cut: PR labeler/size labels, live branch-protection probe, `task verify` fast subset.
 
 ## Phase 5 — RVW six-review remediation (2026-09-25)
 

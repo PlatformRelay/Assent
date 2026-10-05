@@ -1,200 +1,159 @@
-# P5-CIH — CI hardening (runner egress, workflow static analysis, PR dependency review, aggregate gate)
+# P5-CIH — CI hardening (green main, concurrency, workflow static analysis, dependency review)
 
 **Epic ID / REQ prefix:** `CIH` / `REQ-CIH-Snn-nn`. Cross-cutting hygiene epic (same class as
-`AUD` / `SEC-SC`). Does **not** consume E12–E14.
+`AUD` / `SEC-SC`). Does **not** consume E12–E14. Gate wiring: see the
+[gate-wiring rule](../README.md) (D1) — every new guard and mode runs in the required `verify`
+job and in `task check`.
 
-**Problem.** Verified 2026-10-05 at `1c4e71e`: `.github/workflows/verify.yaml` has two jobs
-(`verify` L38, `release-exitgate` L213) and **no `concurrency:`** (`scorecard`, `docs`,
-`actionlint`, `vulncheck`, `codeql`, `release` all have one); there is no runner egress
-control, no workflow security linter beyond `actionlint` and the pin tests in
-`hack/lint/workflow_pins_test.sh`, and no `dependency-review-action` on PRs. External prior
-art: attune (`github.com/attune-io/attune`) `.github/workflows/ci.yaml`, including its
-`ci-gate` job.
+**Problem.** Verified 2026-10-05: `verify.yaml` has two jobs (`verify` L38, `release-exitgate`
+L213, push/schedule only) and **no `concurrency:`**; there is no workflow security linter beyond
+`actionlint` and the pin tests in `hack/lint/workflow_pins_test.sh`; no `dependency-review-action`
+on PRs; and **main is red at `1c4e71e`**: step "AUD audit exit gate (AUD-S18)" reports
+`TestDeterminismDoubleRun passed 0 time(s) under -count=2` — a guard only push builds run, so no
+PR could have caught it. Prior art: attune (`github.com/attune-io/attune`) `ci.yaml`.
 
-**Self-guarding convention, stated precisely.** `workflow_pins_test.sh` has **no argument
-handling**: its mutation controls (D-177 counts 15) run inline on **every plain
-invocation**, so the way to extend it is to add controls to that file and verify with
-`bash hack/lint/workflow_pins_test.sh` (which must run all controls and exit 0). A
-`--self-test` flag exists **only** on scripts this epic creates, and each such script's
-REQs spell out the full command.
+**Pin-test convention.** `workflow_pins_test.sh` has **no argument handling**; its mutation
+controls run inline on every plain invocation (already dozens — re-count at implementation and
+assert the count only grows, never a literal). Extend it by adding controls; verify with
+`bash hack/lint/workflow_pins_test.sh`. `--self-test` exists only on scripts an epic creates.
 
-**Counterpoint (recorded, decided here).** attune drops CI on push to `main` because it
-squash-merges. assent **keeps** push-to-main `verify`: `hack/release/verify-tag-gate.sh`
-(REQ-AUD-S03-01) requires a green `verify.yaml` run on the **tag SHA**, and merges are
-rebase-merge (workspace policy), so the tagged commit is a push-to-main commit. Dropping the
-push trigger would make every release fail its own gate: forbidden outcome (REQ-CIH-S05-03).
-Concurrency must never cancel `main`/tag runs.
+**Counterpoint (decided).** attune drops CI on push to `main` (squash-merge). assent **keeps**
+push-to-main `verify`: `hack/release/verify-tag-gate.sh` (REQ-AUD-S03-01) needs a green
+`verify.yaml` run on the tag SHA and merges are rebase-merge. Forbidden outcome (REQ-CIH-S03-03).
 
-**Not in scope:** SHA-pin policy (exists); CodeQL/Scorecard changes; `harden-runner` in
-`block` mode; changing which checks are required in repo settings except as an `[operator]`
-step in S04.
+**Not in scope:** SHA-pin policy (exists); CodeQL/Scorecard changes; branch-protection edits other
+than the `[operator]` steps named below.
+
+**Deferred (not built here).** `step-security/harden-runner`: audit mode gates nothing, adds a
+privileged third-party agent to token-holding jobs, and nobody reads the telemetry. Revive only
+with a written **block-mode egress allowlist plan**. All harden-runner REQs were removed.
 
 ---
 
-## CIH-S01 — `concurrency:` cancel-in-progress for PR refs on `verify` `[autonomous]`
+## CIH-S00 — Restore green main: AUD-S18 determinism guard reports 0 runs `[autonomous]`
 
-**Depends on:** none. Do first.
+**Depends on:** none. **First: every later epic's exit needs a green push `verify` on main.**
 
-- Given a PR with a newer push, when `verify` triggers again, then the in-flight run for the
-  same PR ref is cancelled.
-- Given a push to `main`, a tag or a scheduled run, when runs overlap, then none is
-  cancelled (`cancel-in-progress` only for `pull_request`).
-- **Adversarial** — given an edit making `cancel-in-progress` unconditional, when the pin
-  test runs, then it is red (a cancelled `main` run leaves the tag SHA without a green
-  `verify`).
+- Given main at `1c4e71e`, when the `release-exitgate` job runs the AUD audit exit gate, then
+  `TestDeterminismDoubleRun` executes under `-count=2` and the gate is green. Root cause is
+  **diagnosed first** (why 0 runs: filter/package/build-tag/`-run` regex drift) and recorded in
+  the commit body; do not weaken the gate (loosening needs its own justification line).
+- Given a PR, when `verify` runs, then the determinism double-run evidence check also runs on the
+  PR path (argument-pinned step), so the class "guard only push builds run" cannot recur.
+- **Adversarial** — a change that makes `TestDeterminismDoubleRun` match zero tests is red on the PR.
 
 Requirements:
 
-- **REQ-CIH-S01-01** — `verify.yaml` declares top-level `concurrency` keyed on
-  workflow + `github.head_ref || github.run_id`, `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`.
-  Test: `hack/lint/workflow_pins_test.sh`; Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
-- **REQ-CIH-S01-02** *(adversarial)* — a new inline control in that file (unconditional
-  cancel / missing block) must be red on the mutated copy and the plain run stays green.
-  Test: `hack/lint/workflow_pins_test.sh`; Verify: `bash hack/lint/workflow_pins_test.sh`
-  (output must list the new control; control count rises from 15); Level: L0
-
-**Not in scope:** `release.yaml` concurrency (exists).
+- **REQ-CIH-S00-01** — the double-run test executes twice. Test:
+  `hack/audit/exitgate_test.sh`; Verify:
+  `go test -count=2 -run '^TestDeterminismDoubleRun$' -v ./... | rg -c '^--- PASS: TestDeterminismDoubleRun'`
+  prints `2`; Level: L0
+- **REQ-CIH-S00-02** *(adversarial)* — a PR-path step fails on "passed 0 time(s)". Test:
+  `hack/audit/exitgate_test.sh` + `hack/lint/workflow_pins_test.sh`; Verify:
+  `bash hack/audit/exitgate_test.sh && bash hack/lint/workflow_pins_test.sh`; Level: L0
+- **REQ-CIH-S00-03** — push `verify` on main is green on the fix commit. Test: GitHub run;
+  Verify: `gh run list -R PlatformRelay/assent -w verify -b main -L1 --json conclusion`; Level: L3 (**post-merge**, D14)
 
 ---
 
-## CIH-S02 — `zizmor --offline` gate with a justified suppression file `[autonomous]`
+## CIH-S01 — `concurrency:` on `verify` `[autonomous]`
 
 **Depends on:** none.
 
-- Given the workflows, when `zizmor --offline .github/workflows` runs in CI, then findings
-  fail the job. zizmor is a Python/Rust tool, **not a Go module**: install via
-  `uvx zizmor==X.Y.Z` (or `pipx` with `--require-hashes`); the version is single-sourced in
-  the workflow `env:` block like `TASK_VERSION`.
-- Given an accepted finding, when suppressed, then it lives only in committed
-  `.github/zizmor.yml`, each entry carrying a `# why:` line (gate-weakening rule: loosening a
-  check needs its own justification).
-- **Adversarial** — a suppression with no `# why:`, or a blanket rule/workflow ignore, is red.
-- **Adversarial** — the zizmor step removed, `continue-on-error`, or given an `if:` is red.
-- **Adversarial fixture** — the seeded bad workflow under `hack/lint/testdata/` pins a
-  **third-party** action by mutable ref (`uses: some-org/some-action@v1`) — zizmor's default
-  unpinned-uses policy allows ref pins for `actions/*`, so an `actions/*` fixture would not
-  fire.
+- Given a PR with a newer push, then the in-flight run for the same PR is cancelled; given a
+  push to `main`, a tag, a schedule or `workflow_dispatch`, then nothing is cancelled.
+- Key (D5): `group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}`
+  (not `head_ref`: fork branches named alike would collide); `cancel-in-progress:
+  ${{ github.event_name == 'pull_request' }}`.
+- **Adversarial** — unconditional `cancel-in-progress: true` or a `head_ref` key is red (a
+  cancelled `main` run leaves the tag SHA without green `verify`).
 
 Requirements:
 
-- **REQ-CIH-S02-01** — zizmor offline runs in `verify.yaml`, version pinned, no
-  `continue-on-error`/`if:`. Test: `hack/lint/zizmor_gate_test.sh` (create); Verify:
+- **REQ-CIH-S01-01** — block present with the D5 key and condition. Test:
+  `hack/lint/workflow_pins_test.sh`; Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
+- **REQ-CIH-S01-02** *(adversarial)* — new inline controls for unconditional cancel and
+  `head_ref` key are red on the mutated copy; plain run stays green and lists them. Test: same;
+  Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
+
+---
+
+## CIH-S02 — `zizmor --offline` gate; existing findings fixed `[autonomous]`
+
+**Depends on:** none.
+
+- Given the workflows, when `zizmor --offline --min-severity <pinned> .github/workflows` runs
+  (one exact pinned version >= 1.30.1, single-sourced in the workflow `env:` block; installed
+  via `uvx zizmor==X` or pipx `--require-hashes`, **not** `go install`), then findings fail.
+- Today offline zizmor reports **2 high `cache-poisoning`** in `release.yaml` (setup-go cache in
+  the tag-triggered publish path) and 1 informational `superfluous-actions`. These are
+  **fixed**, not suppressed (`cache: false` on those `setup-go` steps; drop the superfluous
+  action). Any suppression in `.github/zizmor.yml` carries a `# why:` line; no blanket ignores.
+- **No skip switch** (`ZIZMOR_SKIP*`/equivalent) may appear in any workflow (guarded).
+- Later changes that add workflows (e.g. NIT-S02's `workflow_run` reporter -> `dangerous-triggers`)
+  must pass this gate in their own tasks.
+- Fixture seeds a **third-party** mutable-ref action (`actions/*` ref pins are allowed by default).
+- Local: `task check` requires `uvx` like it already requires `uv` + Python 3.12 (`Taskfile.yml`
+  comment ~L156); no silent skip.
+
+Requirements:
+
+- **REQ-CIH-S02-01** — gate step in `verify.yaml`, pinned version >= floor, `--min-severity` set,
+  no `if:`/`continue-on-error`. Test: `hack/lint/zizmor_gate_test.sh` (create); Verify:
   `bash hack/lint/zizmor_gate_test.sh`; Level: L0
-- **REQ-CIH-S02-02** — every `.github/zizmor.yml` ignore has an adjacent `# why:`; zero
-  blanket ignores. Test: `hack/lint/zizmor_gate_test.sh`; Verify:
+- **REQ-CIH-S02-02** — `release.yaml` cache-poisoning findings fixed with zero suppressions for
+  them. Test: same; Verify: `bash hack/lint/zizmor_gate_test.sh --self-test`; Level: L0
+- **REQ-CIH-S02-03** *(adversarial)* — third-party mutable-ref fixture flagged; suppression
+  without `# why:` red; any skip env in a workflow red. Test: same; Verify:
   `bash hack/lint/zizmor_gate_test.sh --self-test`; Level: L0
-- **REQ-CIH-S02-03** *(adversarial)* — the third-party mutable-ref fixture is flagged. Test:
-  `hack/lint/zizmor_gate_test.sh`; Verify: `bash hack/lint/zizmor_gate_test.sh --self-test`; Level: L0
 
-**Counterpoint.** `actionlint` + pin tests overlap on pinning; zizmor adds template
-injection, excessive permissions and `pull_request_target`/`workflow_run` audits. Accept the
-overlap.
-
-**Not in scope:** online audits; fixing findings beyond what turns the gate green (one
-commit each).
+**Counterpoint.** Overlaps `actionlint` + pin tests on pinning; zizmor adds template injection,
+permissions and `pull_request_target`/`workflow_run` audits.
 
 ---
 
-## CIH-S03 — `step-security/harden-runner` in egress audit mode `[autonomous]`
-
-**Depends on:** CIH-S02.
-
-- Given each job in `verify.yaml` (both jobs) and `vulncheck.yaml`, when it starts, then
-  `harden-runner` is the first step with `egress-policy: audit`, SHA-pinned.
-- **Forbidden outcome** — `egress-policy: block` without an allowlist derived from >= one
-  week of audit data.
-
-Requirements:
-
-- **REQ-CIH-S03-01** — every job in the named workflows starts with pinned harden-runner at
-  `audit`. Test: `hack/lint/workflow_pins_test.sh`; Verify:
-  `bash hack/lint/workflow_pins_test.sh`; Level: L0
-- **REQ-CIH-S03-02** *(adversarial)* — inline controls: step removed from a job, or `block`
-  without an allowlist file, are red on the mutated copy. Test: same file; Verify:
-  `bash hack/lint/workflow_pins_test.sh`; Level: L0
-
-**Counterpoint.** Audit only logs; the audit-to-block follow-up is an INBOX item, not a promise.
-
----
-
-## CIH-S04 — `ci-gate` aggregate job `[deferred · autonomous when triggered]`
-
-**Reality check (review finding 7).** The earlier premise — "a path-filtered job cannot be
-required" — is **not grounded today**: `verify.yaml` has two jobs, no path filters, and the
-always-run `verify` job already works as a required check. Required checks on `main` also
-include CodeQL (a separate workflow); **`ci-gate` cannot aggregate other workflows and does
-not replace CodeQL, which stays required.** So S04 is scoped narrowly:
-
-**Trigger (do S04 only when true):** a new PR-only or path-filtered job is added (the first
-candidate is S05's dependency-review job), so a required check could be absent/skipped.
-Until then S04 stays deferred; do not add a job whose only purpose is to exist.
-
-**Depends on:** CIH-S05 (or any new filtered job). Settings step is `[operator]`.
-
-- Given `verify.yaml` with a `ci-gate` job `needs:` all other jobs and `if: always()`, when
-  it evaluates, then it is **red iff** `contains(needs.*.result, 'failure') ||
-  contains(needs.*.result, 'cancelled')`; `skipped` and `success` are green.
-- **`if: always()` pitfall** — a job with `if: always()` runs even when the workflow is
-  cancelled, and `failure()` is false for a cancelled run; grading must use the
-  `contains(needs.*.result, …)` form above, never `failure()`.
-- **Adversarial** — a job added without being listed in `ci-gate.needs` is red.
-- **Adversarial** — `failure`/`cancelled` is never masked by skipped-as-pass.
-- `[operator]` — add `ci-gate` as a required check **beside** `verify` and CodeQL; do not
-  remove either.
-
-Requirements:
-
-- **REQ-CIH-S04-01** — `ci-gate` has `if: always()` and `needs` covering all other
-  `verify.yaml` jobs. Test: `hack/lint/ci_gate_test.sh` (create); Verify:
-  `bash hack/lint/ci_gate_test.sh`; Level: L0
-- **REQ-CIH-S04-02** *(adversarial)* — the grading expression/script is table-tested incl.
-  `cancelled`, and the file contains no `failure()` grading. Test:
-  `hack/lint/ci_gate_test.sh`; Verify: `bash hack/lint/ci_gate_test.sh --self-test`; Level: L0
-- **REQ-CIH-S04-03** — operator step recorded in a `D-nnn` row. Test:
-  `docs/decisions/decisions.md`; Verify: `rg 'ci-gate' docs/decisions/decisions.md`; Level: doc
-
-**Counterpoint.** Skipped-as-pass at the job level does not re-prove step-level skips
-(Sonar on Dependabot PRs, D-177/D-178); those stay governed by their own pins.
-
----
-
-## CIH-S05 — `dependency-review-action` on PRs; push-to-main fence `[autonomous]`
+## CIH-S03 — `dependency-review-action` on PRs; push-trigger fence `[autonomous · operator for required check]`
 
 **Depends on:** none.
 
 - Given a PR that adds/bumps a dependency, when the `pull_request`-only job runs, then
-  `actions/dependency-review-action` (SHA-pinned) fails on new vulnerabilities at or above
-  the configured severity. The action's **default `fail-on-severity` is `low`**; choosing
-  `high` is itself a **loosening that needs its own `# why:` line** (operator's
-  gate-weakening rule). Default decision: leave the default (`low`) unless the first
-  trial run shows noise, then loosen with the justification.
-- Licence handling: Go modules with an unknown/unrecognised licence would false-red an
-  allow-list; use a **deny-list** (copyleft incompatible with Apache-2.0) and
-  `allow-dependencies-licenses` entries per module, each with a `# why:`; unknown licence
-  is reported, not failed.
-- Given a Dependabot PR, then the job works without secrets.
+  `actions/dependency-review-action` (SHA-pinned) fails at the action's **default
+  `fail-on-severity` (low)**; loosening is allowed only after a measured noisy trial and with its
+  own `# why:` line.
+- Licences: `allow-licenses` (Apache-2.0-compatible set) plus per-module
+  `allow-dependencies-licenses` each with a reason — **not** the deprecated `deny-licenses`
+  (action issue #938). Unknown licences are reported, not failed.
+- Works on Dependabot PRs without secrets. `[operator]`: make it a **required** check.
 - **Forbidden outcome** — `verify.yaml` losing `push.branches: [main]` or the weekly schedule.
 
 Requirements:
 
-- **REQ-CIH-S05-01** — job exists on `pull_request` only, pinned, no `continue-on-error`.
-  Test: `hack/lint/workflow_pins_test.sh`; Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
-- **REQ-CIH-S05-02** *(adversarial)* — a `fail-on-severity` other than the default without an
-  adjacent `# why:`, or the step dropped, is red (inline control). Test: same file; Verify:
+- **REQ-CIH-S03-01** — PR-only job, pinned, no `continue-on-error`, `allow-licenses` present,
+  no `deny-licenses`. Test: `hack/lint/workflow_pins_test.sh`; Verify:
   `bash hack/lint/workflow_pins_test.sh`; Level: L0
-- **REQ-CIH-S05-03** *(forbidden outcome)* — `on:` keeps `push.branches: [main]` and
-  `schedule`, with a comment citing `verify-tag-gate.sh`. Test: same file; Verify:
+- **REQ-CIH-S03-02** *(adversarial)* — a severity override without `# why:` or the step dropped
+  is red (inline control). Test: same; Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
+- **REQ-CIH-S03-03** *(forbidden outcome)* — `on:` keeps `push.branches: [main]` and `schedule`
+  with a comment citing `verify-tag-gate.sh`. Test: same; Verify:
   `bash hack/lint/workflow_pins_test.sh`; Level: L0
 
-**Not in scope:** SBOM; Dependabot config (see DEP).
+---
+
+## CIH-S04 — `ci-gate` aggregate job `[deferred]`
+
+Path-filtered workflows already exist (`docs.yaml`, `schemas.yml`, `actionlint.yaml`,
+`release.yaml` use `paths:`), but `ci-gate` **cannot aggregate other workflows**, and
+CodeQL stays a separate required check. Bot auto-merge safety is handled directly in DEP-S02
+(all check runs on the head SHA + green main), so this story stays deferred. **Trigger:** a new
+PR-only job inside `verify.yaml` that needs aggregating. If built: `if: always()`, graded on
+`contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')` (never
+`failure()`), every sibling job in `needs`, `skipped` = pass, required beside `verify` and CodeQL.
+Requirements are written then.
 
 ---
 
 ## Exit
 
-S01–S03 and S05 green. New `hack/lint/*` scripts (`zizmor_gate_test.sh`, later
-`ci_gate_test.sh`) hook into an **existing** `task check` stage (the one running
-`workflow_pins_test.sh`), so `CHECK_STAGES` in `hack/audit/exitgate_test.sh` is unchanged — but each needs a new `STAGE_BODY_PINS` entry (`hack/audit/exitgate_test.sh:207`) per new command, because that array pins only the named script bodies (today `workflow_pins_test.sh`) and a command dropped from the stage would otherwise pass every gate. `zizmor_gate_test.sh` needs `uvx` and the pinned zizmor wheel; inside offline `task check` it must run with a pre-installed zizmor or **skip loudly** (red unless `ZIZMOR_SKIP_OFFLINE=1` is set, never a silent pass), and the full run is the `verify` job step;
-only a script that becomes a **new `check:` stage** needs a deliberate pin
-(`exitgate_test.sh:539-554`). `release-exitgate` is a **job** in `verify.yaml`, not a
-workflow.
+S00–S03 green on a push `verify` at main; wiring per the [gate-wiring rule](../README.md): every
+new script/mode is a pinned `verify` step and a `task check` stage with `STAGE_BODY_PINS`
+entries. `release-exitgate` is a **job** in `verify.yaml`, not a workflow.
