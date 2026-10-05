@@ -100,9 +100,7 @@ tidy bot PRs, but assent's rebase-merge policy wins.
   step from a `pull_request_target`/`workflow_run` workflow that checks out nothing from the
   PR head and uses Actions secrets. Decision recorded in the `D-nnn` row; default (a).
 - **Silent-failure fence:** if the secret is empty on a run whose actor is
-  `dependabot[bot]`, the workflow emits a visible `::warning::`/job summary
-  ("auto-merge disabled: App secret missing") — it must **not** silently pass, because that
-  would hide a feature that never runs. On a non-Dependabot actor an empty secret is a
+  `dependabot[bot]`, the auto-merge job **fails (red)** with "auto-merge disabled: App secret missing" — a warning is easy to miss, and it must not silently pass, because that would hide a feature that never runs. The job is **not** a required check, so the red is visible but blocks nothing. On a non-Dependabot actor an empty secret is a
   quiet no-op.
 - Repo settings `[operator]`: **Allow auto-merge** on; **Allow rebase merging** the only merge
   method.
@@ -113,8 +111,8 @@ Requirements:
 
 - **REQ-DEP-S03-01** — `D-nnn` row records App ID (not key), secret scope choice, settings.
   Test: `docs/decisions/decisions.md`; Verify: `rg 'DEP-S03' docs/decisions/decisions.md`; Level: doc
-- **REQ-DEP-S03-02** *(adversarial)* — empty-secret + Dependabot actor produces the warning
-  and no merge call; key referenced in the token step only. Test:
+- **REQ-DEP-S03-02** *(adversarial)* — empty-secret + Dependabot actor fails the job
+  and makes no merge call; key referenced in the token step only. Test:
   `hack/ci/dependabot_automerge_test.sh`; Verify:
   `bash hack/ci/dependabot_automerge_test.sh --self-test`; Level: L0
 
@@ -134,8 +132,8 @@ guard claim.
   analysis exists for bot PRs, because a skipped Sonar step on a Dependabot PR would otherwise
   be read as green (D-178).
 - Detection: a **scheduled** job (e.g. in `nightly.yaml`) probes the branch-protection API
-  (`gh api repos/{repo}/branches/main/protection`, needs an admin-scope token → `[operator]`
-  to provision) and reds if a Sonar check name is required while the auto-merge workflow
+  (`gh api repos/{repo}/branches/main/protection`, needs only a **GitHub App with `Administration: read`**, not an admin-scope token → `[operator]`
+  to provision; the credential is kept out of any job that runs PR code) and reds if a Sonar check name is required while the auto-merge workflow
   exists. Until provisioned, the coupling is a documented operator precondition only.
 - A contributor doc states the contract and the D-178 caveat.
 
@@ -156,5 +154,5 @@ Requirements:
 
 One Dependabot patch PR auto-merged by rebase after green checks with a push `verify` on the
 merged commit; one major PR left untouched with `needs-human`; fixtures prove both.
-New scripts hook into an existing `check:` stage (no `CHECK_STAGES` change) unless one
+New scripts hook into an existing `check:` stage (no `CHECK_STAGES` change, but a `STAGE_BODY_PINS` entry per hooked command, `exitgate_test.sh:207`) unless one
 becomes a new stage.

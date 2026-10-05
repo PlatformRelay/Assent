@@ -120,4 +120,4 @@ Requirements:
 
 ## Exit
 
-S01 green after SEC-SC-S01; S02/S03 produce their reports at least once on `main`. New `hack/lint`/`hack/ci` scripts are hooked into an **existing** `task check` stage where one fits (no `CHECK_STAGES` change); a script becomes a new `check:` stage — and then needs a deliberate `CHECK_STAGES` pin in `hack/audit/exitgate_test.sh` — only if no existing stage fits.
+S01 green after SEC-SC-S01; S02/S03 produce their reports at least once on `main`. New `hack/lint`/`hack/ci` scripts are hooked into an **existing** `task check` stage where one fits (no `CHECK_STAGES` change, but a `STAGE_BODY_PINS` entry per hooked command, `exitgate_test.sh:207`); a script becomes a new `check:` stage — and then needs a deliberate `CHECK_STAGES` pin in `hack/audit/exitgate_test.sh` — only if no existing stage fits.

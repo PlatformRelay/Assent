@@ -132,4 +132,4 @@ Requirements:
 
 S01, S02, S04, S05 landed (S03 landed or recorded as dropped); `task check` green. The new
 `hack/lint/*` scripts hook into an existing `check:` stage; none adds a stage, so
-`CHECK_STAGES` is unchanged.
+`CHECK_STAGES` is unchanged, but each hooked command gets its own `STAGE_BODY_PINS` entry (`hack/audit/exitgate_test.sh:207`) so dropping it from the stage reds the exit gate.

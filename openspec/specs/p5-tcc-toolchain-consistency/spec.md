@@ -54,11 +54,13 @@ Requirements:
   `hack/lint/workflow_pins_test.sh`; Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
 - **REQ-TCC-S01-02** *(adversarial)* — failing-direction self-test for a reintroduced
   `stable`. Test: same; Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
-- **REQ-TCC-S01-04** *(adversarial · toolchain compatibility)* — a script runs every
-  `go run …@vX`/`go install …@vX` pin found in the workflows under the `go.mod` toolchain with
-  `GOTOOLCHAIN=local` and fails naming the tool if any needs a newer Go. Test:
+- **REQ-TCC-S01-04** *(toolchain compatibility)* — a script reads each `go run …@vX`/`go install …@vX` pin's module `go` directive via `go mod download -json` (cheaper and less flaky than building) and fails naming the tool if it exceeds the `go.mod` toolchain. Test:
   `hack/lint/pinned_tools_toolchain_test.sh` (create); Verify:
-  `bash hack/lint/pinned_tools_toolchain_test.sh`; Level: L0 (needs network; runs in `verify`, not offline `task check`)
+  `bash hack/lint/pinned_tools_toolchain_test.sh`; Level: L0 (needs network; a named `verify` job step, not offline `task check`)
+- **REQ-TCC-S01-05** *(adversarial · failing direction)* — a fixture module declaring `go 99.0` makes the script red naming it. Test: same script; Verify:
+  `bash hack/lint/pinned_tools_toolchain_test.sh --self-test`; Level: L0
+- **REQ-TCC-S01-06** *(disarm guard)* — `workflow_pins_test.sh` gains an inline control that the `verify.yaml` step invoking this script exists without `if:`/`continue-on-error`. Test: `hack/lint/workflow_pins_test.sh`; Verify:
+  `bash hack/lint/workflow_pins_test.sh`; Level: L0
 - **REQ-TCC-S01-03** — new `D-nnn` supersedes D-158's keep-`stable` clause and updates the
   `verify.yaml` coupling comment. Test: `docs/decisions/decisions.md`; Verify:
   `rg 'go-version-file' docs/decisions/decisions.md`; Level: doc
