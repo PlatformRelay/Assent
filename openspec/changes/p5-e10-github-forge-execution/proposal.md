@@ -13,10 +13,17 @@ assent has exactly one forge adapter. ADR-0021 (Option C) decides the seam befor
 API call: a named composite `forge.RunPort`, an importable conformance suite (landed by
 S01), a neutral capability model, port-level transport requirements, MR-relative governed
 addressing, per-adapter status→sentinel mappings, port-level identity, and a doctor-scoped
-capability report. S02–S01 of the epic are done; the seam remains half-built (`cmd/assent`
+capability report. S00–S01 of the epic are done; the seam remains half-built (`cmd/assent`
 still declares an anonymous `forgePort` literal and `refFilePort`, still calls
 `gitlab.SyntheticDigest`, capability vocabulary is still GitLab-private) and no GitHub
 adapter exists.
+
+**S01's DoD left one clause undischarged, inherited by this change:** the twelve
+conformance case IDs S00 minted (`github-addressing-model.md`, "Conformance cases" tables)
+were required in `catalog.yaml` by S01's DoD, but the landed S01 commit (99de1d7) added only
+the `adapters:` field to pre-existing rows. Task T0 discharges that obligation here, so the
+planned reviews' own gate (T13) can fail on the twelve rows' absence instead of going green
+around it.
 
 ## Scope (stories in execution order)
 

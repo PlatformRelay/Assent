@@ -3,10 +3,22 @@
 **REQ prefix:** `REQ-E10X-01`.
 **Vehicle:** this change executes stories S02–S17 of the authoritative epic spec
 (`openspec/specs/p5-e10-github-forge/spec.md`), whose REQs remain the acceptance bar for
-every task in [tasks.md](../tasks.md). This delta adds only what the epic spec deliberately
-left open or that execution must state: the S00 addressing-model obligation 2b (the content
-accessor's MR handle), the neutral factory requirement implied but not typed by the epic
-spec, and the LGTM governance flag. Nothing here amends ADR-0021 items 1–8.
+every task in [tasks.md](../tasks.md). **Amendments this change makes to the epic spec's
+text, on S00's delegated authority, are stated here rather than left implicit:**
+
+- The content accessors' composite `(project, mr)` handle **supersedes the two-argument
+  sketch in ADR-0021 items 1/5 and in the epic spec's REQ-E10-S02-01/-05** — resolved per
+  S00 §Forward obligations 2b, which delegated exactly this binding choice to S02. The epic
+  spec's REQ text is corrected in this change (same class as S00's anchor corrections);
+  ADR-0021 itself is not edited (S00 decided items 5–8 stand unamended; the sketch is
+  superseded, not contradicted).
+- The epic's stale anchors are corrected in the epic spec, not here: `Describe(project, mr)`
+  → `GetMR(project, mr)` and `provider_host.go:275` → `:292` (S00's drift table).
+
+This delta adds only what execution must state: the S00 addressing-model obligation 2b
+resolution, the neutral factory requirement implied but not typed by the epic
+spec, the port sentinel lift, and the LGTM governance flag. Nothing here contradicts
+ADR-0021 items 1–8.
 
 ---
 
@@ -40,6 +52,16 @@ which all address an MR as `(project, mr)`. The composite handle has none of tho
   construction (S00 Q1; ADR-0021 item 5).
   - Test: `cmd/assent/run_test.go`, `internal/forge/conformance/`
   - Verify: `go test ./internal/forge/conformance/ -run 'TestConformanceFork'`
+  - Level: L1
+- **REQ-E10X-01-03** — Given S00 Q4 fixes the per-adapter status→sentinel mapping and ADR-0021
+  item 6 requires a conformance case per sentinel, when `forge.ErrUnauthorized` is lifted to
+  the port (T1), then the forbidden≠absent discrimination is proven at the **port** on the
+  fake and GitLab factories at S02/S05 — `forbidden-never-renders-as-absent` +
+  `absent-file-still-renders-as-absent` + `metadata-only-token-is-not-absence` +
+  `ratelimit-403-is-transport-error` — and the GitHub factory joins at T6, not only at the
+  GitHub adapter story.
+  - Test: `internal/forge/conformance/` (sentinel cases)
+  - Verify: `go test ./internal/forge/conformance/ -run 'TestConformanceForbidden|TestConformanceAbsentFile|TestConformanceRateLimit|TestConformanceMetadataOnly'`
   - Level: L1
 
 ## E10X-S02 — The neutral adapter factory is a named deliverable `[autonomous]`

@@ -279,9 +279,14 @@ runs it.
   the scanner's positive control rather than deleting it.
 
 - **REQ-E10-S02-01** — Given ADR-0021 §1, when `forge.RunPort` is declared, then it composes
-  `forge.Forge`, `forge.Snapshotter`, `forge.Resolver`, `Describe(project, mr string)
-  (forge.MRInfo, error)`, `FileAtRef(project, path, ref string) ([]byte, error)` **and**
-  `FileAtBase(mr, path string) ([]byte, error)` / `FileAtHead(mr, path string) ([]byte, error)`,
+  `forge.Forge`, `forge.Snapshotter`, `forge.Resolver`, `GetMR(project, mr string)
+  (forge.MRInfo, error)` (the tree's method; ADR-0021's `Describe` sketch was the stale
+  anchor S00's drift table corrected), `FileAtRef(project, path, ref string) ([]byte, error)`
+  **and** `FileAtBase(project, mr, path string) ([]byte, error)` /
+  `FileAtHead(project, mr, path string) ([]byte, error)` — the composite `(project, mr)`
+  handle is the resolution of S00 §Forward obligations 2b (change
+  `p5-e10-github-forge-execution`, REQ-E10X-01-01; S00 delegated the binding choice to S02),
+  superseding ADR-0021 items 1/5's two-argument sketch —
   and `cmd/assent` references that named type only. **Both accessors are required and they are
   not interchangeable** — REQ-E10-S02-05 binds which is legal where. `FileAtRef` is retained
   **only** for the ref-addressed *policy* loads ADR-0015 §1 mandates (`cmd/assent/run.go:208`,
@@ -320,8 +325,9 @@ runs it.
   - Verify: `task lint`
   - Level: L1
 - **REQ-E10-S02-05** — Given ADR-0021 item 5, when `RunPort` is declared, then **the governed
-  subject** is addressed **relative to the merge request** (`FileAtBase(mr, path)` /
-  `FileAtHead(mr, path)`), not by `(project, branch-name)`, so an adapter owns how it reaches a
+  subject** is addressed **relative to the merge request** (`FileAtBase(project, mr, path)` /
+  `FileAtHead(project, mr, path)` — the composite handle of S00 obligation 2b), not by
+  `(project, branch-name)`, so an adapter owns how it reaches a
   fork's head. A conformance case proves a **fork MR with an unchanged governed file yields NO
   lifecycle event** on every adapter — the fabricated-DELETE defect. Smuggling
   `refs/pull/N/head` into `MRInfo.SourceBranch` is rejected: it corrupts a documented field and
@@ -337,7 +343,8 @@ runs it.
   invisible to the source-level guard. That is intended existing behaviour (EFE-S03 /
   ADR-0008 §4 — the local head tree is the presence authority), and S02 does not change it;
   (ii) the **policy and decision-input** loads (`run.go:208`, `:216`, `:235`, `:254` and
-  `provider_host.go:82`, `:275` — all six) still use
+  `provider_host.go:82`, `:292` — all six; the registry read is at `:292`, the S00-corrected
+  anchor for the D-130 who-may-approve registry) still use
   `FileAtRef` with the target ref and are **not** migrated — a test asserts policy is
   read from the target ref of the target project even for a fork MR, so a well-meaning
   "consistency" refactor onto an MR-relative accessor (which would let a fork's head reach the
