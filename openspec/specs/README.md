@@ -23,3 +23,8 @@ locally via `task check`, with each mode pinned in `STAGE_BODY_PINS`
 (`hack/audit/exitgate_test.sh:207`). Reaching CI only through `release-exitgate` (push-only,
 `verify.yaml:213-214`) is not enough: an unwired mode is the D-159 orphan class. Each epic's
 Exit section references this rule instead of restating it.
+
+**Post-merge evidence.** A REQ whose evidence cannot exist before the merge (a `workflow_run` or
+scheduled workflow that only fires from the default branch, a bot that reads its config from
+`main`, "N days green") is marked `post-merge` and links an open follow-up issue that owns it.
+The story is not done until that issue closes with the evidence.
