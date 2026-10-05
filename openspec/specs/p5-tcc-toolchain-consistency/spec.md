@@ -67,6 +67,49 @@ Requirements:
 
 ---
 
+## TCC-S06 — Bump `go.mod` to the Go 1.27.1 line `[autonomous]`
+
+**Depends on:** TCC-S01 (go-version-file switch) **and** REQ-TCC-S01-04/05/06 (the
+`GOTOOLCHAIN=local` tool check must exist first so it covers this bump). Order: S01 -> S06.
+
+**Rationale.** The baseline Go is 1.27.1 (latest patch of the current release line): the
+toolchain tests and govulncheck run on must equal what is shipped. Today `go.mod` says
+`go 1.26.0` / `toolchain go1.26.6`.
+
+- Given `go.mod`, when bumped, then `go` and `toolchain` move to the 1.27.1 line in one commit
+  (`go 1.27.x` per the module's real minimum, `toolchain go1.27.1`), `go mod tidy` is clean.
+- **D-158 interaction.** D-158's hazard (linter built with an older Go cannot typecheck a newer
+  stdlib) applies in full: `GOLANGCI_LINT_VERSION` v2.13.1's own `go.mod` says `go 1.26.0`, i.e.
+  supports <= 1.27 per D-158's heuristic, and D-158 observed 0 issues on 1.27.0; the
+  implementer re-verifies on 1.27.1 and bumps the linter in the same change if not. With S01
+  the coupling is deliberate (a `toolchain` edit) rather than a surprise `stable` roll.
+- Given every `actions/setup-go` step and every `go run`/`go install` tool, when CI runs, then
+  all resolve to `go.mod`'s toolchain (S01) and pass the S01-04 tool-compatibility check.
+- **Keeping `go` and `toolchain` together.** A bump of one without the other is red.
+  Dependabot's `gomod` ecosystem may update the `toolchain` line (confirm at implementation);
+  if it cannot move both consistently, the bot decision (TCC-S05) governs: under A or B a
+  Renovate regex/`gomod` manager groups `go` + `toolchain`; under C a manual bump
+  with the drift test below as the only sensor. Not decided here.
+
+Requirements:
+
+- **REQ-TCC-S06-01** — `go.mod` `toolchain` is `go1.27.1` (or the then-latest 1.27 patch) and
+  its `go` line is on the same minor. Test: `hack/lint/go_toolchain_pin_test.sh` (create);
+  Verify: `bash hack/lint/go_toolchain_pin_test.sh`; Level: L0
+- **REQ-TCC-S06-02** *(adversarial)* — a fixture `go.mod` with `toolchain` older than `go`, or
+  mismatched minors, is red. Test: same; Verify:
+  `bash hack/lint/go_toolchain_pin_test.sh --self-test`; Level: L0
+- **REQ-TCC-S06-03** — the Go version in all CI paths resolves to `go.mod`'s toolchain: zero
+  `go-version:` literals and every `setup-go` uses `go-version-file: go.mod`; `release-exitgate`
+  included. Test: `hack/lint/workflow_pins_test.sh`; Verify:
+  `bash hack/lint/workflow_pins_test.sh`; Level: L0
+- **REQ-TCC-S06-04** — `task check` and the `verify` job are green on 1.27.1 (lint, govulncheck,
+  determinism double-run). Test: `Taskfile.yml` `check`; Verify: `task check`; Level: L0
+
+**Not in scope:** moving to a newer release line; changing the minimum `go` below the module's need.
+
+---
+
 ## TCC-S02 — Pin baseline reconciled and single-sourced `[autonomous]`
 
 **Depends on:** none.
