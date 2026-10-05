@@ -718,6 +718,21 @@ S02 cannot start until the operator creates the bestpractices.dev project (INBOX
 | SEC-SC-S01 | Native Go fuzz targets on YAML/JSON/HCL differ (+ CI smoke) | **[autonomous]** | none | **do first** — Scorecard Fuzzing (#3); untrusted-byte crash/fail-open fence |
 | SEC-SC-S02 | OpenSSF Best Practices passing badge + honest evidence page | **[operator-gated]** | operator creates the bestpractices.dev project | Scorecard CII-Best-Practices (#6); no fake README badge |
 
+## Phase 5 — OSS quality-signal epics (2026-10-05 comparison; SPECIFIED, NOT STARTED)
+
+Cross-cutting hygiene epics (same class as SEC-SC / AUD) from a comparison against the OSS
+reference project attune (github.com/attune-io/attune). Each spec lists its own
+Depends on, forbidden outcomes and counterpoints. `[operator]` stories need App/secret/repo-setting access.
+
+| ID | Epic | Spec | Execution | Gate contribution |
+| --- | --- | --- | --- | --- |
+| CIH | CI hardening: concurrency, zizmor, harden-runner (audit), `ci-gate` aggregate, dependency-review | [spec](p5-cih-ci-hardening/spec.md) | S01-S03, S05 autonomous; S04 settings step **[operator]** | self-guarding pins; keeps push-to-main `verify` (verify-tag-gate) |
+| NIT | Nightly e2e that really runs + deduplicated failure issue (covers `release-exitgate`; motivation: main red at `1c4e71e`, AUD-S18) | [spec](p5-nit-nightly-integration/spec.md) | autonomous; GitLab CE runner may need operator | L3 truth; no silent skip |
+| TDS | Fuzz CI runner + flake classifier (needs SEC-SC-S01), report-only mutation, report-only benchmarks | [spec](p5-tds-test-depth/spec.md) | autonomous | measurement, not gates |
+| TCC | `go-version-file`, pin baseline, committed `mise.toml` + drift test; open Qs: `task verify`, dependency bot A/B/C | [spec](p5-tcc-toolchain-consistency/spec.md) | S01-S03 autonomous; S04/S05 **[operator decision]** | supersedes D-158 keep-`stable` clause (new D-nnn) |
+| DEP | Bot PR auto-merge via `gh pr merge --auto --rebase`, patch/minor/digest only, 7-day cooldown, App token | [spec](p5-dep-dependency-automation/spec.md) | S01/S02/S04 autonomous; S03 **[operator]** | forbidden: major auto-merge, squash, Sonar-skip-as-green |
+| CMY | CONTRIBUTING, issue forms, agent pointers, evidence/recurring-defect rules (labeler optional, default drop) | [spec](p5-cmy-community-agent-contract/spec.md) | autonomous | docs/hygiene sensors |
+
 ## Phase 5 — RVW six-review remediation (2026-09-25)
 
 Full INVEST stories in [p5-rvw-review-remediation/spec.md](p5-rvw-review-remediation/spec.md).
