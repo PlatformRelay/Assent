@@ -34,23 +34,30 @@ with a written **block-mode egress allowlist plan**. All harden-runner REQs were
 
 **Depends on:** none. **First: every later epic's exit needs a green push `verify` on main.**
 
-- Given main at `1c4e71e`, when the `release-exitgate` job runs the AUD audit exit gate, then
-  `TestDeterminismDoubleRun` executes under `-count=2` and the gate is green. Root cause is
-  **diagnosed first** (why 0 runs: filter/package/build-tag/`-run` regex drift) and recorded in
-  the commit body; do not weaken the gate (loosening needs its own justification line).
+- **Root cause (verified):** `TestDeterminismDoubleRun` no longer exists — refactor `5a01ba0`
+  ("single guarded engine entry Decide") deleted it; the name survives only in the `-run` regex at
+  `Taskfile.yml:253` and `verify.yaml:125`, so the gate runs 0 tests and AUD-S18 correctly reds.
+- **Decision:** **restore an equivalent double-run determinism test over `Decide`** (same name, so
+  the existing `-run` regex and gate stay unchanged). Removing the name from the gate would be a
+  loosening and is not allowed. Given main, when the gate runs, then the restored test executes
+  under `-count=2` and the gate is green.
 - Given a PR, when `verify` runs, then the determinism double-run evidence check also runs on the
   PR path (argument-pinned step), so the class "guard only push builds run" cannot recur.
-- **Adversarial** — a change that makes `TestDeterminismDoubleRun` match zero tests is red on the PR.
+- **Adversarial** — a change that makes `TestDeterminismDoubleRun` (or any `-run` name in the
+  determinism gate) match zero tests is red on the PR: a pinned `verify` step asserts every `-run`
+  name in `Taskfile.yml` / `verify.yaml` determinism gates resolves to >= 1 existing test
+  (`go test -list`), so a rename/delete reds on the PR, not on push.
 
 Requirements:
 
 - **REQ-CIH-S00-01** — the double-run test executes twice. Test:
   `hack/audit/exitgate_test.sh`; Verify:
   `go test -count=2 -run '^TestDeterminismDoubleRun$' -v ./... | rg -c '^--- PASS: TestDeterminismDoubleRun'`
-  prints `2`; Level: L0
-- **REQ-CIH-S00-02** *(adversarial)* — a PR-path step fails on "passed 0 time(s)". Test:
-  `hack/audit/exitgate_test.sh` + `hack/lint/workflow_pins_test.sh`; Verify:
-  `bash hack/audit/exitgate_test.sh && bash hack/lint/workflow_pins_test.sh`; Level: L0
+  prints `2` (it fails today: the test does not exist); Level: L0
+- **REQ-CIH-S00-02** *(adversarial)* — a `-run` name in the determinism gate that matches no
+  test is red on the PR, proven failing-direction on a fixture. Test:
+  `hack/lint/run_names_resolve_test.sh` (create); Verify:
+  `bash hack/lint/run_names_resolve_test.sh && bash hack/lint/run_names_resolve_test.sh --self-test`; Level: L0
 - **REQ-CIH-S00-03** — push `verify` on main is green on the fix commit. Test: GitHub run;
   Verify: `gh run list -R PlatformRelay/assent -w verify -b main -L1 --json conclusion`; Level: L3 (**post-merge**, D14)
 

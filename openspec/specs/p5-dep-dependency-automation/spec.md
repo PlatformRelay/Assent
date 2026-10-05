@@ -4,7 +4,7 @@
 the [gate-wiring rule](../README.md) (D1).
 
 **Problem.** Dependabot (`.github/dependabot.yml`: gomod, github-actions, pip, npm; weekly; no
-`cooldown`) opens PRs that wait for a human. Auto-merge would clear the mechanical ones, but the
+`cooldown`; auto-merge scope excludes `github-actions`, see DEP-S02) opens PRs that wait for a human. Auto-merge would clear the mechanical ones, but the
 dependency PR is the supply-chain path an attacker wants. Repo facts:
 1. Merges are **rebase-merge only** (linear history, never squash/merge commit). attune
    auto-merges with **squash**; assent must not copy that.
@@ -41,7 +41,8 @@ target-ref rule is meant to avoid. Candidate follow-up: a lockfile adapter plus 
   until the release is >= 7 days old (security updates bypass it by design). This is the **only**
   age control: no PR-age check elsewhere (it would double the delay, and `fetch-metadata`
   exposes no release date).
-- The `codeql-action` group is preserved.
+- The `codeql-action` group is preserved. `github-actions` still gets cooldown but is **not** in
+  the auto-merge scope (human-merged, DEP-S02).
 
 Requirements:
 
@@ -60,8 +61,10 @@ PR-controlled context. It lists open Dependabot PRs via `gh api` and, per PR, me
 **all** hold (D13):
 1. **Identity:** `pull_request.user.login == dependabot[bot]` **and** head repo == this repo
    (**and** the triggering actor is the scheduled run itself) — never `github.actor` alone.
-2. **Classification:** `fetch-metadata`-style update type is patch/minor (or an `github-actions`
-   update that can be release-aged); **never** major, `go`-directive, grouped-with-major,
+2. **Classification:** `fetch-metadata`-style update type is patch/minor in the `gomod`, `pip`
+   or `npm` ecosystems (subject to item 3); **never** the **`github-actions` ecosystem** (it edits
+   `.github/workflows/*`, which needs App `Workflows: write`; those PRs are human-merged),
+   **never** major, `go`-directive, grouped-with-major,
    unknown, or digest/pinDigest updates with no release timestamp (cannot be cooldown-aged —
    excluded, not exempted).
 3. **Scope exclusions:** nothing that executes inside a job holding a privileged/bypass token or
@@ -73,11 +76,16 @@ PR-controlled context. It lists open Dependabot PRs via `gh api` and, per PR, me
    (including path-filtered ones that ran: docs, schemas, actionlint; nothing pending, nothing
    missing for a path the PR touched), **and the latest push-triggered `verify` on `main` is
    green** (so a PR cannot stack on a red main).
-5. Method: `gh pr merge --rebase` (optionally `--auto` as a second belt); **never**
-   `--squash`/`--merge`. Uses the App token so a push `verify` follows.
+5. Method: `gh pr merge --rebase --match-head-commit <sha-checked-in-item-4>` (the head SHA
+   read in item 4, so a Dependabot rebase between check and merge makes the merge fail closed);
+   **never** `--auto` (it merges whatever head exists once *required* checks pass, reopening the
+   hole of finding 3) and **never** `--squash`/`--merge`. Uses the App token so a push `verify`
+   follows.
 - Otherwise the PR gets `needs-human` and no merge call.
 
-- **Forbidden outcomes:** merging a major or unclassified update; any squash/merge-commit method;
+- **Forbidden outcomes:** auto-merging any `github-actions` ecosystem PR or any PR touching
+  `.github/workflows/*` (and granting the App `Workflows: write`); merging a major or
+  unclassified update; `--auto`; merging without `--match-head-commit`; any squash/merge-commit method;
   merging with a pending/failed/absent check run on the head SHA; merging while main's latest
   push `verify` is red; treating a Sonar skip as green when Sonar is required (DEP-S04); any
   privileged-trigger variant.
@@ -85,14 +93,18 @@ PR-controlled context. It lists open Dependabot PRs via `gh api` and, per PR, me
 Requirements:
 
 - **REQ-DEP-S02-01** — classifier + gate script table-tested with fixtures: patch, minor, major,
-  digest-without-timestamp, unknown, grouped-with-major, fork, human PR on a `dependabot/…`
+  digest-without-timestamp, unknown, grouped-with-major, `github-actions` ecosystem, workflow-touching, head-SHA-changes-mid-merge, fork, human PR on a `dependabot/…`
   branch, touches release.yaml, check run pending, check run red, main red. Test:
   `hack/ci/dependabot_merge_test.sh` (create); Verify:
   `bash hack/ci/dependabot_merge_test.sh`; Level: L0
 - **REQ-DEP-S02-02** *(adversarial)* — every refusal fixture above yields no merge call. Test:
   same; Verify: `bash hack/ci/dependabot_merge_test.sh --self-test`; Level: L0
+- **REQ-DEP-S02-05** *(adversarial · race)* — a fixture where the head SHA changes between
+  check and merge yields a failed (not performed) merge; the script always passes
+  `--match-head-commit`, and a `github-actions` fixture is refused. Test: same script; Verify:
+  `bash hack/ci/dependabot_merge_test.sh --self-test`; Level: L0
 - **REQ-DEP-S02-03** *(forbidden outcome)* — the workflow has only `schedule`/`workflow_dispatch`
-  triggers, uses `--rebase`, contains no `--squash`/`--merge`/`pull_request_target`/`workflow_run`,
+  triggers, uses `--rebase --match-head-commit`, contains no `--auto`/`--squash`/`--merge`/`pull_request_target`/`workflow_run`,
   and checks out nothing. Test: `hack/lint/workflow_pins_test.sh`; Verify:
   `bash hack/lint/workflow_pins_test.sh`; Level: L0
 - **REQ-DEP-S02-04** — first live run merges one patch bump by rebase with a push `verify` and
@@ -112,7 +124,8 @@ than event-driven but needs no privileged trigger.
 **Depends on:** none (blocks S02). Operator prerequisites, explicit and in this order:
 1. **Required checks first (D1):** every new guard from the other epics is a required check or in
    a required aggregator's `needs`; CIH-S03 (dependency-review) is required.
-2. Create a GitHub App (Contents: write, Pull requests: write, Metadata: read; this repo only);
+2. Create a GitHub App (Contents: write, Pull requests: write, Metadata: read; this repo only;
+   **no `Workflows: write`** — `github-actions` PRs are human-merged, see DEP-S02);
    store `APP_ID` and the private key as **Actions secrets** (the merger is a scheduled workflow,
    so repo Actions secrets are visible; Dependabot secrets are not needed and there is **no**
    `pull_request_target` option).
