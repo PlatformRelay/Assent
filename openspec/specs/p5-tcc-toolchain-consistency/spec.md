@@ -7,12 +7,12 @@ across their repositories. Verified 2026-10-05 in this repo:
 
 | Item | Current | Target |
 | --- | --- | --- |
-| Go in workflows | `go-version: stable` x **6** (`verify.yaml` x2, `codeql.yaml`, `schemas.yml`, `vulncheck.yaml`) vs `go-version-file: go.mod` in `release.yaml` x2 | `go-version-file: go.mod` everywhere |
+| Go in workflows | `go-version: stable` x **5** (`verify.yaml:72,234`, `codeql.yaml:45`, `schemas.yml:57`, `vulncheck.yaml:30`) vs `go-version-file: go.mod` in `release.yaml` x2 | `go-version-file: go.mod` everywhere |
 | `go.mod` | `go 1.26.0`, `toolchain go1.26.6` | unchanged (the single Go source) |
 | Task | `v3.52.0` (`verify.yaml` `env`) | same |
 | golangci-lint | `v2.13.1` (`env`) | same |
 | gitleaks | `v8.30.1` (`go run …@v8.30.1`) | same |
-| git-cliff | `v2.13.1` (only an example in `hack/install-git-cliff.sh`; real pin in `release.yaml`/Taskfile — verify at implementation) | `v2.13.1` |
+| git-cliff | `v2.13.1` in **two unguarded literals**: `Taskfile.yml:5` `GIT_CLIFF_VERSION` and `release.yaml:138` (`orhun/git-cliff-action` `version:`); `workflow_pins_test.sh` does not tie them | `v2.13.1`, both literals tied by the test |
 | govulncheck | **already `v1.6.0`** (`verify.yaml`, `vulncheck.yaml`) | latest released (>= v1.6.0), pin chosen at implementation |
 | `mise.toml` | **absent from the tree** (referenced by `Taskfile.yml` comments as a local file) | committed, mirrors CI pins |
 | Task entry points | `task check` exists; no `task verify` | `check` = full gate = CI; `verify` = open question |
@@ -27,7 +27,7 @@ across their repositories. Verified 2026-10-05 in this repo:
 
 **Depends on:** none. **Read D-158 first.**
 
-**Counterpoint, honestly.** D-158 chose to KEEP `go-version: stable` because (a) golangci-lint
+**Counterpoint, honestly (D-158 option B risks).** D-158 chose to KEEP `go-version: stable` because (a) golangci-lint
 must be built with a Go >= the one whose stdlib it typechecks (a `stable` roll to 1.27
 broke every PR), and (b) `govulncheck` reports stdlib vulnerabilities of the *running*
 toolchain, so `stable` auto-picks up stdlib CVE fixes. `go-version-file: go.mod` **removes
@@ -38,7 +38,7 @@ bumped. The trade is: surprise reds from upstream rolls -> deliberate reds that 
 exact fix (bump `toolchain`). Mitigation: the Dependabot `gomod` ecosystem proposes
 `toolchain` bumps (verify at implementation; if not, TCC-S01-03 adds a drift note). D-158's
 coupling comment is rewritten, not deleted: the linter must still be >= the toolchain's
-minor, now checked when `toolchain` is bumped. Needs a new `D-nnn` row that supersedes the
+minor, now checked when `toolchain` is bumped. **Second risk, easy to miss:** `actions/setup-go` exports `GOTOOLCHAIN=local`, so with the pinned `toolchain go1.26.6` any `go run …@vX`/`go install …@vX` tool whose own `go.mod` needs a newer Go (govulncheck, gitleaks, Task, golangci-lint at `verify.yaml:100,104,131,249`) cannot auto-download one and fails. It is also **unverified** that setup-go honours the `toolchain` line; the implementer confirms on a branch, not by assumption. Needs a new `D-nnn` row that supersedes the
 "keep stable" half of D-158 (the golangci-lint bump half stands).
 
 - Given any workflow using `actions/setup-go`, when parsed, then it uses
@@ -53,7 +53,12 @@ Requirements:
 - **REQ-TCC-S01-01** — zero `go-version: stable` in `.github/workflows/*`. Test:
   `hack/lint/workflow_pins_test.sh`; Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
 - **REQ-TCC-S01-02** *(adversarial)* — failing-direction self-test for a reintroduced
-  `stable`. Test: same; Verify: `… --self-test`; Level: L0
+  `stable`. Test: same; Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
+- **REQ-TCC-S01-04** *(adversarial · toolchain compatibility)* — a script runs every
+  `go run …@vX`/`go install …@vX` pin found in the workflows under the `go.mod` toolchain with
+  `GOTOOLCHAIN=local` and fails naming the tool if any needs a newer Go. Test:
+  `hack/lint/pinned_tools_toolchain_test.sh` (create); Verify:
+  `bash hack/lint/pinned_tools_toolchain_test.sh`; Level: L0 (needs network; runs in `verify`, not offline `task check`)
 - **REQ-TCC-S01-03** — new `D-nnn` supersedes D-158's keep-`stable` clause and updates the
   `verify.yaml` coupling comment. Test: `docs/decisions/decisions.md`; Verify:
   `rg 'go-version-file' docs/decisions/decisions.md`; Level: doc
@@ -65,7 +70,7 @@ Requirements:
 **Depends on:** none.
 
 - Given the baseline table above, when the repo is read, then Task, golangci-lint, gitleaks
-  already match; git-cliff is `v2.13.1` wherever pinned; govulncheck is bumped to the latest
+  already match; git-cliff is `v2.13.1` in both `Taskfile.yml:5` and `release.yaml:138`, and the test asserts they agree; govulncheck is bumped to the latest
   released release (pin recorded) in **both** `verify.yaml` and `vulncheck.yaml` at once.
 - Given a version literal that exists in two files, when the pin test runs, then it reds
   unless both agree (existing pattern: `TASK_VERSION`, `GOLANGCI_LINT_VERSION`).
@@ -75,7 +80,7 @@ Requirements:
 - **REQ-TCC-S02-01** — each tool has one literal pin (or all copies agree) at the baseline
   values. Test: `hack/lint/workflow_pins_test.sh`; Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
 - **REQ-TCC-S02-02** *(adversarial)* — editing one of two govulncheck pins alone reds the test. Test:
-  same; Verify: `… --self-test`; Level: L0
+  same; Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
 
 ---
 
@@ -97,9 +102,10 @@ Requirements:
 - **REQ-TCC-S03-01** — `mise.toml` tracked, pins match workflows, no Go literal. Test:
   `hack/lint/mise_drift_test.sh` (create); Verify: `bash hack/lint/mise_drift_test.sh`; Level: L0
 - **REQ-TCC-S03-02** *(adversarial)* — bump a pin on one side only: red (failing-direction
-  self-test). Test: same; Verify: `… --self-test`; Level: L0
-- **REQ-TCC-S03-03** — wired into `task check` and `hack/audit/exitgate_test.sh`
-  `CHECK_STAGES` deliberately (the gate pins the stage count). Test:
+  self-test). Test: same; Verify: `bash hack/lint/mise_drift_test.sh --self-test`; Level: L0
+- **REQ-TCC-S03-03** — wired into an **existing** `task check` stage (the one running
+  `workflow_pins_test.sh`), so `CHECK_STAGES` is unchanged; a new `check:` stage would need a
+  deliberate pin (`exitgate_test.sh:539-554`). Test:
   `hack/audit/exitgate_test.sh`; Verify: `bash hack/audit/exitgate_test.sh`; Level: L0
 
 **Counterpoint.** A fourth place that names versions is a new drift surface — acceptable
@@ -127,7 +133,7 @@ Requirements (conditional on Q1=yes):
   Test: `hack/lint/task_entrypoints_test.sh` (create); Verify:
   `bash hack/lint/task_entrypoints_test.sh`; Level: L0
 - **REQ-TCC-S04-02** *(adversarial)* — a stage in `verify` that is absent from `check` reds. Test: same;
-  Verify: `… --self-test`; Level: L0
+  Verify: `bash hack/lint/task_entrypoints_test.sh --self-test`; Level: L0
 
 ---
 
@@ -142,12 +148,13 @@ Requirements (conditional on Q1=yes):
 "Dependabot-only; no Renovate config" (operator 2026-08-13) — **that guard changes under
 B or A**.
 
-- **A. Renovate (GitHub App token), Dependabot off.** One bot, regex managers move
-  Taskfile/workflow/mise pins together, grouped. Cost: App + secrets (operator), guard
-  rewritten, loses Dependabot security-update integration unless kept enabled.
+- **A. Renovate (hosted app), Dependabot off.** One bot, regex managers move
+  Taskfile/workflow/mise pins together, grouped. Cost: installing the hosted Renovate app
+  (operator; no secrets — a token/App is needed only for self-hosted runs or merges that
+  must trigger workflows, see DEP), guard rewritten, loses Dependabot security-update integration unless kept enabled.
 - **B. Dependabot + Renovate for regex managers only (attune's approach).** Dependabot keeps
   the ecosystems it is good at and GitHub security updates; Renovate only owns custom pins.
-  Cost: two bots, two PR streams, App needed; guard changes to "Renovate config may exist
+  Cost: two bots, two PR streams, one app install; guard changes to "Renovate config may exist
   only with `enabledManagers: [custom.regex]`".
 - **C. Dependabot only (current).** No change; tool pins stay manual, protected only by the
   S02/S03 drift tests, which turn a stale pin into a red CI rather than a silent one.

@@ -50,9 +50,9 @@ Requirements:
 Requirements:
 
 - **REQ-CMY-S02-01** — forms parse as YAML with required fields; old `.md` removed. Test:
-  `hack/lint/community_files_test.sh`; Verify: `… --issue-forms`; Level: L0
+  `hack/lint/community_files_test.sh`; Verify: `bash hack/lint/community_files_test.sh --issue-forms`; Level: L0
 - **REQ-CMY-S02-02** *(adversarial)* — security contact link is the private advisory URL;
-  no field label matches token/secret/password. Test: same; Verify: `… --self-test`; Level: L0
+  no field label matches token/secret/password. Test: same; Verify: `bash hack/lint/community_files_test.sh --self-test`; Level: L0
 
 ---
 
@@ -72,7 +72,7 @@ and `permissions: pull-requests: write` alone; SHA-pinned.
 Requirements (only if kept):
 
 - **REQ-CMY-S03-01** — labeler workflow pinned, minimal permissions, no head checkout.
-  Test: `hack/lint/workflow_pins_test.sh`; Verify: `… --self-test`; Level: L0
+  Test: `hack/lint/workflow_pins_test.sh`; Verify: `bash hack/lint/workflow_pins_test.sh`; Level: L0
 
 ---
 
@@ -92,7 +92,7 @@ Requirements:
   `hack/lint/agent_pointers_test.sh` (create); Verify:
   `bash hack/lint/agent_pointers_test.sh`; Level: L0
 - **REQ-CMY-S04-02** *(adversarial)* — a pointer with duplicated rule text reds. Test: same;
-  Verify: `… --self-test`; Level: L0
+  Verify: `bash hack/lint/agent_pointers_test.sh --self-test`; Level: L0
 
 ---
 
@@ -124,11 +124,12 @@ Requirements:
   `hack/lint/guidelines_rules_test.sh` (create); Verify:
   `bash hack/lint/guidelines_rules_test.sh`; Level: doc
 - **REQ-CMY-S05-02** *(adversarial)* — removing any token reds (self-test). Test: same;
-  Verify: `… --self-test`; Level: doc
+  Verify: `bash hack/lint/guidelines_rules_test.sh --self-test`; Level: doc
 
 ---
 
 ## Exit
 
-S01, S02, S04, S05 landed (S03 landed or recorded as dropped); `task check` green; scripts
-wired into `CHECK_STAGES` deliberately.
+S01, S02, S04, S05 landed (S03 landed or recorded as dropped); `task check` green. The new
+`hack/lint/*` scripts hook into an existing `check:` stage; none adds a stage, so
+`CHECK_STAGES` is unchanged.

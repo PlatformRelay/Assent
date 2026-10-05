@@ -54,7 +54,7 @@ by measured cost; the budget is a spec value, the trigger is not.
 
 ## TDS-S02 — Nightly report-only mutation testing on the pure core `[autonomous]`
 
-**Depends on:** NIT-S02 (nightly workflow exists; otherwise a `workflow_dispatch` stub).
+**Depends on:** NIT-S01 (nightly workflow exists; otherwise a `workflow_dispatch` stub).
 
 - Given the nightly workflow, when it runs, then a mutation tool (e.g. `gremlins`, version
   pinned) runs on `internal/core/...` (decision, aggregate, classify) and writes the
@@ -65,8 +65,15 @@ by measured cost; the budget is a spec value, the trigger is not.
   control** exists: a deliberately untested trivial mutant must be reported as lived
   (proves the harness can see survivors); if the control mutant is "killed" the report is
   invalid and the job is red.
-- Given rule 7 (determinism), when the tool runs, then it never edits tracked files (works
-  on a copy / `git stash`-free overlay) and no mutation tooling enters the decision path.
+- The control lives in a **fixture module under `hack/testdata/mutation-control/`** (own
+  `go.mod`, one trivial function with no test), never in `internal/core` (it would distort
+  the coverage floor and trip `internal/core/purity_test.go`); the nightly job runs the tool
+  on that module as well as on `internal/core/...`.
+- The tool and version are pinned at implementation (candidate: `gremlins`; the implementer
+  must first confirm that release supports Go 1.26 and record it — if not, pick another tool
+  or defer, do not pin an unverified one).
+- Given rule 7 (determinism), when the tool runs, then it works on a copy and never edits
+  tracked files, and no mutation tooling enters the decision path.
 
 Requirements:
 
@@ -76,7 +83,7 @@ Requirements:
 - **REQ-TDS-S02-02** *(control)* — control survivor must appear, else red. Test: same;
   Verify: `bash hack/ci/mutation_report_test.sh --self-test`; Level: L0
 - **REQ-TDS-S02-03** *(forbidden outcome)* — no threshold flag (`--threshold-*` /
-  `exit` on score) in the workflow. Test: `hack/lint/nightly_wiring_test.sh`; Verify:
+  `exit` on score) in the workflow. Test: `hack/lint/nightly_wiring_test.sh` (create, introduced by NIT-S01); Verify:
   `bash hack/lint/nightly_wiring_test.sh`; Level: L0
 
 **Not in scope:** acting on survivors (each becomes its own test-adding fix); mutating
@@ -102,16 +109,15 @@ Requirements:
 - **REQ-TDS-S03-01** — benchmarks exist and run. Test:
   `internal/core/decision/decision_bench_test.go`, `internal/core/aggregate/aggregate_bench_test.go`
   (create); Verify: `go test -run=^$ -bench=. -benchtime=1x ./internal/core/...`; Level: L0
-- **REQ-TDS-S03-02** — summary job is report-only, uses `-count>=10`. Test:
-  `hack/lint/nightly_wiring_test.sh`; Verify: `bash hack/lint/nightly_wiring_test.sh`; Level: L0
-- **REQ-TDS-S03-03** *(forbidden outcome)* — no `benchstat` exit-code or delta threshold
-  gate. Test: same; Verify: `… --self-test`; Level: L0
-
-**Counterpoint.** Shared-runner benchmark noise makes thresholds unreliable; hence report-only.
+- **REQ-TDS-S03-02** — the benchmark summary job (a `pull_request` job in `verify.yaml`,
+  report-only, `-count>=10`) is guarded in the workflow it lives in. Test:
+  `hack/lint/bench_job_test.sh` (create); Verify: `bash hack/lint/bench_job_test.sh`; Level: L0
+- **REQ-TDS-S03-03** *(forbidden outcome)* — no `benchstat` exit-code or delta threshold gate;
+  the guard has a failing-direction case. Test: `hack/lint/bench_job_test.sh`; Verify:
+  `bash hack/lint/bench_job_test.sh --self-test`; Level: L0
 
 ---
 
 ## Exit
 
-S01 green after SEC-SC-S01; S02/S03 produce their reports at least once on `main`. Wire
-the new `hack/lint`/`hack/ci` tests into `task check` and `CHECK_STAGES`.
+S01 green after SEC-SC-S01; S02/S03 produce their reports at least once on `main`. New `hack/lint`/`hack/ci` scripts are hooked into an **existing** `task check` stage where one fits (no `CHECK_STAGES` change); a script becomes a new `check:` stage — and then needs a deliberate `CHECK_STAGES` pin in `hack/audit/exitgate_test.sh` — only if no existing stage fits.
