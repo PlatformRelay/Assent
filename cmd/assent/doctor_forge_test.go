@@ -7,10 +7,9 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
-	"github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/forge/factory"
 )
 
 const (
@@ -68,8 +67,7 @@ func doctorReportFromForgeHandler(t *testing.T, h http.HandlerFunc) Precondition
 	t.Setenv("CI_MERGE_REQUEST_IID", forgeDoctorMR)
 	t.Setenv("CI_API_V4_URL", srv.URL+"/api/v4")
 
-	client := gitlab.New(srv.URL, forgeDoctorToken, "assent-bot",
-		gitlab.WithSleeper(func(time.Duration) {}))
+	client := factory.GitLab(srv.URL, forgeDoctorToken, "assent-bot", factory.NoSleep)
 	snap, err := client.Snapshot(forgeDoctorProject, forgeDoctorMR)
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
@@ -102,9 +100,8 @@ func captureRunDoctor(t *testing.T, h http.HandlerFunc) (code int, stdout, stder
 		t.Fatal(err)
 	}
 
-	code = runDoctor(os.Getenv, wOut, wErr, func(endpoint, token, botAuthor string) forge.Snapshotter {
-		return gitlab.New(endpoint, token, botAuthor,
-			gitlab.WithSleeper(func(time.Duration) {}))
+	code = runDoctor(os.Getenv, wOut, wErr, func(endpoint, token, botAuthor string) forge.RunPort {
+		return factory.GitLab(endpoint, token, botAuthor, factory.NoSleep)
 	})
 	_ = wOut.Close()
 	_ = wErr.Close()

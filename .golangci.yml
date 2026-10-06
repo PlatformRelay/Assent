@@ -44,6 +44,23 @@ linters:
               desc: "D-123: the pure decision tree must not import the CLI composition root (ADR-0011 core/ports boundary) — dependencies point inward only."
             - pkg: "net"
               desc: "D-123 / AGENTS.md rule 7: no network stack on the decision path — a decision must not depend on off-box state. Matches net and every net/* subpackage."
+        cmd-adapter-boundary:
+          # E10-S02 / ADR-0021 §1: cmd/assent depends on the named composite
+          # forge.RunPort ONLY — no concrete adapter package. Construction is
+          # routed through internal/forge/factory, the one package allowed to
+          # import both adapters. No symbol allowlist: the allowlist this rule
+          # replaces (New/WithSleeper/SyntheticDigest) is emptied by the E10-S02
+          # factory, and a symbol allowlist on an import boundary was only ever
+          # a transitional shape. Adversarial proof:
+          # hack/lint/depguard_test.sh polarity 4.
+          list-mode: lax
+          files:
+            - "**/cmd/assent/**"
+          deny:
+            - pkg: "github.com/PlatformRelay/assent/internal/forge/gitlab"
+              desc: "E10-S02 / ADR-0021 §1: cmd/assent must not import a concrete forge adapter — construct via internal/forge/factory."
+            - pkg: "github.com/PlatformRelay/assent/internal/forge/github"
+              desc: "E10-S02/ADR-0021 §1: cmd/assent must not import the GitHub adapter — construct via internal/forge/factory (denied ahead of E10-S06 landing the package)."
   exclusions:
     paths:
       - \.worktrees/

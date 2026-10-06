@@ -105,14 +105,15 @@ func (c *Client) mrWithAuthor(project, mr string) (mrMeta, error) {
 
 	return mrMeta{
 		info: MRInfo{
-			IID:          fmt.Sprintf("%d", mrResp.IID),
-			ProjectID:    fmt.Sprintf("%d", mrResp.ProjectID),
-			SourceBranch: mrResp.SourceBranch,
-			TargetBranch: mrResp.TargetBranch,
-			SourceSHA:    mrResp.SHA,
-			TargetSHA:    targetSHA,
-			ForkMR:       mrResp.SourceProjectID != 0 && mrResp.SourceProjectID != mrResp.ProjectID,
-			Labels:       mrResp.Labels,
+			IID:             fmt.Sprintf("%d", mrResp.IID),
+			ProjectID:       fmt.Sprintf("%d", mrResp.ProjectID),
+			SourceProjectID: fmt.Sprintf("%d", mrResp.SourceProjectID),
+			SourceBranch:    mrResp.SourceBranch,
+			TargetBranch:    mrResp.TargetBranch,
+			SourceSHA:       mrResp.SHA,
+			TargetSHA:       targetSHA,
+			ForkMR:          mrResp.SourceProjectID != 0 && mrResp.SourceProjectID != mrResp.ProjectID,
+			Labels:          mrResp.Labels,
 		},
 		author:       mrResp.Author.Username,
 		changesCount: mrResp.ChangesCount,

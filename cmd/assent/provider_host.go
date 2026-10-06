@@ -39,7 +39,7 @@ func resolveRunFacts(
 	ctx context.Context,
 	conf *policy.Config,
 	configPath string,
-	client forgePort,
+	client forge.RunPort,
 	project, targetRef string,
 	checkoutRoot string,
 	subject string,
@@ -196,7 +196,7 @@ func providerCallFor(
 	p policy.Provider,
 	hostCfg provider.Config,
 	q provider.FactQuery,
-	client forgePort,
+	client forge.RunPort,
 	project, targetRef string,
 	repoFS fs.FS,
 	anchor string,
@@ -258,10 +258,12 @@ func providerCallFor(
 	}
 }
 
-// refFilePort is the slice of the forge this function needs: one read at a ref.
-type refFilePort interface {
-	FileAtRef(project, path, ref string) ([]byte, error)
-}
+// The port here is `forge.RunPort` (E10-S02): the provider host's reads are
+// ref-addressed decision-input loads, which `forge.RunPort.FileAtRef` carries.
+// The retired hand-rolled `refFilePort` (a named interface declaring only
+// FileAtRef) is exactly the shape depguard's invariant guard now fails the
+// build on — "both port declarations retired" must include this one, or the
+// DoD reads satisfied while cmd/assent still depends on a private port.
 
 // loadResourceOwnerRegistry loads the resource→owner registry.
 //
@@ -282,7 +284,7 @@ type refFilePort interface {
 // error here, so no client is built and the owner fact never resolves.
 func loadResourceOwnerRegistry(
 	ctx context.Context,
-	client refFilePort,
+	client forge.RunPort,
 	project, targetRef string,
 	repoFS fs.FS,
 	regPath string,

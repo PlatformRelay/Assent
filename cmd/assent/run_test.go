@@ -14,7 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/forge"
+	"github.com/PlatformRelay/assent/internal/forge/factory"
 )
 
 // fakeGitLab is an in-process GitLab REST v4 mock for the `run` end-to-end tests.
@@ -167,6 +168,13 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/v4/user" && r.Method == http.MethodGet:
 		_, _ = w.Write([]byte(`{"id":999,"username":"` + f.botAuthor + `"}`))
 	case strings.HasPrefix(p, "/api/v4/projects/42/repository/files/") && strings.HasSuffix(p, "/raw"):
+		f.serveFile(w, r, p)
+	case strings.HasPrefix(p, "/api/v4/projects/99/repository/files/") && strings.HasSuffix(p, "/raw"):
+		// E10-S02 (ADR-0021 item 5): a fork MR's head content lives in the SOURCE
+		// repo (project 99), so FileAtHead reads there. The governed head is
+		// served for the pinned source SHA exactly as the target repo serves it —
+		// the fork's head branch is NOT addressable by name in project 42, which
+		// is the defect this route replaces.
 		f.serveFile(w, r, p)
 	case p == "/api/v4/projects/42/merge_requests/7/discussions" && r.Method == http.MethodGet:
 		f.serveDiscussions(w, r)
@@ -488,15 +496,15 @@ func (f *fakeGitLab) recordPolicyLoad(path, ref string) {
 	f.policyLoads = append(f.policyLoads, policyLoad{path: path, ref: ref})
 }
 
-// factory builds a real *gitlab.Client pointed at the fake server — the exact
-// production adapter, driven end-to-end over HTTP without a live network.
-func (f *fakeGitLab) factory() func(string, string, string) forgePort {
-	return func(_, token, botAuthor string) forgePort {
+// factory builds the production adapter (through the neutral factory — the
+// exact production construction) pointed at the fake server, driven end-to-end
+// over HTTP without a live network.
+func (f *fakeGitLab) factory() func(string, string, string) forge.RunPort {
+	return func(_, token, botAuthor string) forge.RunPort {
 		if botAuthor != "" {
 			f.botAuthor = botAuthor
 		}
-		return gitlab.New(f.srv.URL, token, botAuthor,
-			gitlab.WithSleeper(func(time.Duration) {}))
+		return factory.GitLab(f.srv.URL, token, botAuthor, factory.NoSleep)
 	}
 }
 

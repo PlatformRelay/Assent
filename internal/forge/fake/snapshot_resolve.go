@@ -1,6 +1,7 @@
 package fake
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
@@ -52,6 +53,27 @@ func (f *Forge) Snapshot(_, _ string) (forge.Snapshot, error) {
 		ChangedFilesGap:      f.ChangedFilesGap,
 		Capabilities:         f.Capabilities,
 		BotThreads:           threads,
+	}, nil
+}
+
+// GetMR returns the MR metadata the test fixture configured (E10-S02). ForkMR
+// and SourceProjectID are explicit knobs: a fixture that declares ForkMR=true
+// without a source repository id models the absent-means-trusted trap (the
+// accessor must fail closed, never degrade to non-fork).
+func (f *Forge) GetMR(_, _ string) (forge.MRInfo, error) {
+	if f.MRFork && (f.MRSourceProjectID == "" || f.MRSourceProjectID == "0") {
+		return forge.MRInfo{}, fmt.Errorf("fake: fork MR fixture has no source project id — head content cannot be addressed (fail-closed)")
+	}
+	return forge.MRInfo{
+		IID:             f.MRIID,
+		ProjectID:       f.MRProjectID,
+		SourceProjectID: f.MRSourceProjectID,
+		SourceBranch:    f.SourceBranch,
+		TargetBranch:    f.TargetBranch,
+		SourceSHA:       f.CurrentSourceSha,
+		TargetSHA:       f.CurrentTargetSha,
+		ForkMR:          f.MRFork,
+		Labels:          f.Labels,
 	}, nil
 }
 

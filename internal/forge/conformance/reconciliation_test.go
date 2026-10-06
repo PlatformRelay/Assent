@@ -52,6 +52,18 @@ type gitlabHarness struct {
 	approveCalls int
 	mergePUTs    int
 
+	// E10-S02: governed-file content + fork modelling, so the addressing cases
+	// (S00 Q1/Q4) run against GitLab. A side that was never seeded is absent;
+	// the Set flags keep a seeded EMPTY file (present, zero bytes) distinct
+	// from absence.
+	forkMR       bool
+	governedPath string
+	baseFile     []byte
+	baseSet      bool
+	headFile     []byte
+	headSet      bool
+	refusedPath  string
+
 	// afterMRRead fires once an MR read has been SERVED — the TOCTOU seam.
 	afterMRRead func(h *gitlabHarness)
 }
@@ -116,6 +128,10 @@ func (h *gitlabHarness) handle(w http.ResponseWriter, r *http.Request) {
 		h.createNote(w, r)
 	case r.Method == http.MethodPut && strings.HasPrefix(path, notesBase+"/"):
 		h.updateNote(w, r, path, notesBase)
+	case r.Method == http.MethodGet && path == mrBase+"/approve":
+		h.approve(w, r)
+	case r.Method == http.MethodPut && strings.HasPrefix(path, mrBase+"/merge"):
+		h.merge(w, r)
 	case r.Method == http.MethodGet && path == mrBase:
 		h.serveMR(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, branchBase):
@@ -124,8 +140,70 @@ func (h *gitlabHarness) handle(w http.ResponseWriter, r *http.Request) {
 		h.approve(w, r)
 	case r.Method == http.MethodPut && strings.HasPrefix(path, mrBase+"/merge"):
 		h.merge(w, r)
+	case r.Method == http.MethodGet && isFileRawOf(h, path):
+		h.serveFile(w, r, path)
 	default:
 		http.Error(w, "unexpected "+r.Method+" "+path, http.StatusInternalServerError)
+	}
+}
+
+// isFileRawOf reports whether the request is a governed-file raw read the
+// harness models: a content read inside the TARGET project, or — when the MR is
+// a fork — inside the SOURCE project the MR JSON declares (999). E10-S02: the
+// fork's head content lives in the source repo, so FileAtHead reads there.
+func isFileRawOf(h *gitlabHarness, path string) bool {
+	if !strings.HasSuffix(path, "/raw") {
+		return false
+	}
+	if strings.HasPrefix(path, fmt.Sprintf("/api/v4/projects/%s/repository/files/", url.PathEscape(h.project))) {
+		return true
+	}
+	return h.forkMR && strings.HasPrefix(path, "/api/v4/projects/999/repository/files/")
+}
+
+// serveFile serves governed-file content by ref: the pinned target SHA is the
+// base side, the pinned source SHA the head side, exactly the shape the adapter
+// reads. A side that was never seeded is ABSENT (404 → the adapter's
+// ErrNotFound); an unseeded side must not render as present-empty content, or
+// the absent-file positive control could not fail. A refused path answers 403 —
+// the forbidden≠absent seam the sentinel cases prove.
+func (h *gitlabHarness) serveFile(w http.ResponseWriter, r *http.Request, p string) {
+	ref := r.URL.Query().Get("ref")
+	if h.refusedPath != "" && strings.Contains(p, url.PathEscape(h.refusedPath)) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	switch h.serveFileContent(ref) {
+	case fileSideBase:
+		if !h.baseSet {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write(h.baseFile)
+	case fileSideHead:
+		if !h.headSet {
+			http.Error(w, "absent", http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write(h.headFile)
+	default:
+		http.Error(w, "unexpected ref "+ref, http.StatusNotFound)
+	}
+}
+
+// fileSideBase / fileSideHead mark which side (if any) a raw read resolves to,
+// given the ref the client asked for.
+const fileSideBase = "base"
+const fileSideHead = "head"
+
+func (h *gitlabHarness) serveFileContent(ref string) string {
+	switch ref {
+	case h.targetSHA:
+		return fileSideBase
+	case h.sourceSHA:
+		return fileSideHead
+	default:
+		return ""
 	}
 }
 

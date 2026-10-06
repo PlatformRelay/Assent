@@ -47,6 +47,8 @@ func (f inertFixture) Pins() forge.DesiredMerge      { return f.real.Pins() }
 func (inertFixture) MoveTargetHead(string)           {}
 func (inertFixture) MoveSourceHead(string)           {}
 func (inertFixture) DriftSourceHeadAfterRead(string) {}
+func (inertFixture) SeedFile(string, string, []byte) {}
+func (inertFixture) RefuseFileRead(string)           {}
 
 // sabotage wraps ANY factory, so the gate runs against every backend rather than
 // only the fake. That matters: the defect this file exists to catch — an

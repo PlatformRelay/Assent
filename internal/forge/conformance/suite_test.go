@@ -79,6 +79,37 @@ func TestConformanceSpoofedMarkerIgnored(t *testing.T) {
 	runCaseOnAllBackends(t, "p3e5-spoofed-marker-ignored")
 }
 
+// TestConformanceForkHeadUnchangedFileNoLifecycle is S00 Q1's case: a fork MR
+// whose governed file is unchanged yields NO lifecycle event — the
+// fabricated-DELETE defect the two-argument port would mint on every fork.
+func TestConformanceForkHeadUnchangedFileNoLifecycle(t *testing.T) {
+	runCaseOnAllBackends(t, "fork-head-unchanged-file-no-lifecycle")
+}
+
+// TestConformanceForkHeadGenuineDeleteDetected is the mandatory positive
+// control: a fork MR that really deletes the governed file still mints
+// KindDelete.
+func TestConformanceForkHeadGenuineDeleteDetected(t *testing.T) {
+	runCaseOnAllBackends(t, "fork-head-genuine-delete-detected")
+}
+
+// TestConformanceForbiddenNotAbsent is S00 Q4: a permission-refused read never
+// renders as absence.
+func TestConformanceForbiddenNotAbsent(t *testing.T) {
+	runCaseOnAllBackends(t, "forbidden-never-renders-as-absent")
+}
+
+// TestConformanceAbsentFileIsAbsent is the positive control for the case above.
+func TestConformanceAbsentFileIsAbsent(t *testing.T) {
+	runCaseOnAllBackends(t, "absent-file-still-renders-as-absent")
+}
+
+// TestConformanceOwnMarkersRecognisedIdentity is ADR-0021 item 7: the marker
+// filter matches the AUTHENTICATED identity, not "any bot".
+func TestConformanceOwnMarkersRecognisedIdentity(t *testing.T) {
+	runCaseOnAllBackends(t, "own-markers-recognised-identity")
+}
+
 // TestSHAGuardObservesMergeAttempts is REQ-E10-S01-04's named proof: the extracted
 // SHA-guard cases still observe a merge ATTEMPT COUNT and not merely a returned
 // error.

@@ -31,7 +31,7 @@ var errReconcileHardFail = errors.New("forge exploded mid-reconcile")
 // are inherited untouched, so orchestrate reaches Reconcile normally and only the
 // write blows up — the "record exists, forge actions may be partial" scenario.
 type hardFailingForge struct {
-	forgePort
+	forge.RunPort
 }
 
 func (h hardFailingForge) CreateThread(string, string, forge.Marker, string) (forge.Thread, error) {
@@ -52,10 +52,10 @@ func (h hardFailingForge) MergeCAS(string, string, forge.DesiredMerge) (string, 
 
 // hardFailingFactory yields the fake's real client wrapped so every reconcile
 // WRITE hard-fails.
-func hardFailingFactory(f *fakeGitLab) func(string, string, string) forgePort {
+func hardFailingFactory(f *fakeGitLab) func(string, string, string) forge.RunPort {
 	inner := f.factory()
-	return func(endpoint, token, botAuthor string) forgePort {
-		return hardFailingForge{forgePort: inner(endpoint, token, botAuthor)}
+	return func(endpoint, token, botAuthor string) forge.RunPort {
+		return hardFailingForge{RunPort: inner(endpoint, token, botAuthor)}
 	}
 }
 

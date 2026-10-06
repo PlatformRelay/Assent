@@ -64,6 +64,16 @@ type Client struct {
 	// client may be shared across goroutines.
 	warnMu   sync.Mutex
 	warnings map[string]struct{}
+
+	// mrPinnedProject/mrPinnedInfo cache the LAST MR read (E10-S02). The
+	// MR-relative governed-subject accessors (FileAtBase/FileAtHead) read at the
+	// SHAs this cache carries so judged bytes and record pins share one read
+	// chain; a stale pin would be worse than none, so a different (project, mr)
+	// evicts it. The port stays stateless — the composite (project, mr) handle
+	// keys the cache, per the execution decision in the change
+	// p5-e10-github-forge-execution (REQ-E10X-01-01).
+	mrPinnedProject string
+	mrPinnedInfo    *MRInfo
 }
 
 // warn records a non-fatal anomaly (AUD-S12 / REL-06). Duplicates collapse.
@@ -235,7 +245,15 @@ var ErrNotFound = forge.ErrNotFound
 // attempt with a token that GitLab forbids (an MR author may not approve their
 // own MR; the caller supplies a different token). It is surfaced clearly so the
 // caller does not mistake an authorization refusal for a transient error.
-var ErrUnauthorized = errors.New("gitlab: unauthorized (401/403)")
+//
+// E10-S02 (ADR-0021 item 6): the SENTINEL now lives on the forge port as
+// forge.ErrUnauthorized, so a caller can match a permission failure without
+// importing this adapter, and the S00 Q4 table's forbidden≠absent mapping is a
+// PORT concept. This is the adapter's transitional alias — it IS the port
+// sentinel, so errors.Is(err, forge.ErrUnauthorized) and
+// errors.Is(err, gitlab.ErrUnauthorized) are the same question. The adapter
+// wraps it with its own `gitlab: ` context at the call sites.
+var ErrUnauthorized = forge.ErrUnauthorized
 
 // MRInfo is the merge-request metadata `assent run` pins its evaluation to.
 //
@@ -416,12 +434,13 @@ func (c *Client) GetMR(project, mr string) (MRInfo, error) {
 		return MRInfo{}, fmt.Errorf("gitlab: get MR %s!%s: unexpected status %d", project, mr, status)
 	}
 	var mrResp struct {
-		IID          int      `json:"iid"`
-		ProjectID    int      `json:"project_id"`
-		SHA          string   `json:"sha"`
-		SourceBranch string   `json:"source_branch"`
-		TargetBranch string   `json:"target_branch"`
-		Labels       []string `json:"labels"`
+		IID             int      `json:"iid"`
+		ProjectID       int      `json:"project_id"`
+		SourceProjectID int      `json:"source_project_id"`
+		SHA             string   `json:"sha"`
+		SourceBranch    string   `json:"source_branch"`
+		TargetBranch    string   `json:"target_branch"`
+		Labels          []string `json:"labels"`
 	}
 	if err := json.Unmarshal(raw, &mrResp); err != nil {
 		return MRInfo{}, fmt.Errorf("gitlab: decode MR %s!%s: %w", project, mr, err)
@@ -433,13 +452,15 @@ func (c *Client) GetMR(project, mr string) (MRInfo, error) {
 	}
 
 	return MRInfo{
-		IID:          strconv.Itoa(mrResp.IID),
-		ProjectID:    strconv.Itoa(mrResp.ProjectID),
-		SourceBranch: mrResp.SourceBranch,
-		TargetBranch: mrResp.TargetBranch,
-		SourceSHA:    mrResp.SHA,
-		TargetSHA:    targetSHA,
-		Labels:       mrResp.Labels,
+		IID:             strconv.Itoa(mrResp.IID),
+		ProjectID:       strconv.Itoa(mrResp.ProjectID),
+		SourceProjectID: strconv.Itoa(mrResp.SourceProjectID),
+		SourceBranch:    mrResp.SourceBranch,
+		TargetBranch:    mrResp.TargetBranch,
+		SourceSHA:       mrResp.SHA,
+		TargetSHA:       targetSHA,
+		ForkMR:          mrResp.SourceProjectID != 0 && mrResp.SourceProjectID != mrResp.ProjectID,
+		Labels:          mrResp.Labels,
 	}, nil
 }
 
@@ -484,11 +505,81 @@ func (c *Client) FileAtRef(project, path, ref string) ([]byte, error) {
 	switch status {
 	case http.StatusOK:
 		return raw, nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, fmt.Errorf("gitlab: %w: file %q at ref %q (status %d)", forge.ErrUnauthorized, path, ref, status)
 	case http.StatusNotFound:
 		return nil, fmt.Errorf("gitlab: %w: file %q at ref %q", forge.ErrNotFound, path, ref)
 	default:
 		return nil, fmt.Errorf("gitlab: get file %q at ref %q: unexpected status %d", path, ref, status)
 	}
+}
+
+// FileAtBase reads the governed subject's content on the BASE side of the merge
+// request (E10-S02, ADR-0021 item 5). MR-relative: the base side of an MR is the
+// TARGET project's target commit by definition (the base of an MR is never
+// forked), so this reads the pinned target SHA of the target project — the same
+// commit GetMR reported, which is the evaluation pin (REV1-S01/D-183: judged
+// bytes must equal pinned bytes).
+//
+// The pinned SHA comes from the adapter's own MR read (see mrPin), so the record
+// and the read cannot disagree — re-resolving the target tip here would judge
+// bytes of a branch tip that moved since GetMR while the record pins the
+// original SHA (the move-and-restore shape REV1-S01 closed).
+func (c *Client) FileAtBase(project, mr, path string) ([]byte, error) {
+	info, err := c.mrPinned(project, mr)
+	if err != nil {
+		return nil, err
+	}
+	return c.FileAtRef(project, path, info.TargetSHA)
+}
+
+// FileAtHead reads the governed subject's content on the HEAD side of the merge
+// request. MR-relative (ADR-0021 item 5 / S00 Q1): the adapter owns how it
+// reaches the head.
+//
+// For GitLab the head commit is read at the PINNED source SHA (the same value
+// GetMR/Snapshot pinned into the record) inside the repository that holds it —
+// the source project for a fork, the target project otherwise. A
+// branch-name read is forbidden: it judges whatever the branch pointed at
+// mid-run (REV1-S01), and on a fork a branch-name read inside the TARGET
+// project 404s and mints a fabricated whole-file DELETE (S00 Q1).
+func (c *Client) FileAtHead(project, mr, path string) ([]byte, error) {
+	info, err := c.mrPinned(project, mr)
+	if err != nil {
+		return nil, err
+	}
+	if info.ForkMR {
+		if info.SourceProjectID == "" || info.SourceProjectID == "0" {
+			return nil, fmt.Errorf("gitlab: fork MR %s!%s has no source project id — head content cannot be addressed (fail-closed)", project, mr)
+		}
+		return c.FileAtRef(info.SourceProjectID, path, info.SourceSHA)
+	}
+	return c.FileAtRef(project, path, info.SourceSHA)
+}
+
+// mrPinned returns the pinned MR read for (project, mr), populating the cache
+// on first touch. The MR-relative accessors read content AT the SHAs this
+// method's returned MRInfo carries, so the judged bytes and the record's pins
+// come from the SAME read chain (REV1-S01: judged content at the pinned commit
+// SHA) and a mid-run branch move cannot decouple them — the commit the cache
+// holds is the pin, not a re-resolved tip.
+//
+// The cache is a single pinned MR: `assent run`/`assent doctor` drive ONE merge
+// request per process, and a fresh MR evicts the pin (a stale pin would be the
+// judged-bytes≠pinned-bytes defect in reverse). This is adapter-internal state
+// in service of the port contract — the PORT stays stateless; the composite
+// (project, mr) handle keys the cache.
+func (c *Client) mrPinned(project, mr string) (MRInfo, error) {
+	if c.mrPinnedProject == project+"/"+mr && c.mrPinnedInfo != nil {
+		return *c.mrPinnedInfo, nil
+	}
+	info, err := c.GetMR(project, mr)
+	if err != nil {
+		return MRInfo{}, err
+	}
+	c.mrPinnedProject = project + "/" + mr
+	c.mrPinnedInfo = &info
+	return info, nil
 }
 
 // discussion is the subset of a GitLab discussion the adapter reads.
@@ -888,3 +979,19 @@ func (c *Client) MergeCAS(project, mr string, m forge.DesiredMerge) (string, err
 
 // static assertion that *Client implements the forge.Forge port.
 var _ forge.Forge = (*Client)(nil)
+
+// Identity reports the authenticated identity marker filtering matches
+// (E10-S02, ADR-0021 item 7). A GitLab PAT authenticates as a USER: the
+// artifacts assent authors are authored by the user login the client was
+// constructed with, which is exactly the login ListBotThreads/ListBotNotes
+// filter on. An "exclude any bot" filter would blind assent to its own comments
+// — the identity the port exposes IS the filter identity, by construction here.
+func (c *Client) Identity() (forge.Identity, error) {
+	return forge.Identity{
+		Kind:  forge.IdentityUser,
+		Login: c.botAuthor,
+		ID:    c.botAuthor,
+	}, nil
+}
+
+var _ forge.RunPort = (*Client)(nil)

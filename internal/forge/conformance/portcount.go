@@ -18,7 +18,7 @@ import "github.com/PlatformRelay/assent/internal/forge"
 // method with two outcomes, and only the backend knows which occurred. Those two
 // stay adapter-reported.
 type countingPort struct {
-	forge.Forge
+	forge.RunPort
 
 	mergeAttempts   int
 	mergesPerformed int
@@ -27,15 +27,15 @@ type countingPort struct {
 	threadsResolved int
 }
 
-func newCountingPort(inner forge.Forge) *countingPort {
-	return &countingPort{Forge: inner}
+func newCountingPort(inner forge.RunPort) *countingPort {
+	return &countingPort{RunPort: inner}
 }
 
 func (c *countingPort) MergeCAS(project, mr string, m forge.DesiredMerge) (string, error) {
 	// Incremented BEFORE delegating: a refused CAS is still an attempt. Counting
 	// after a successful return would make the two indistinguishable.
 	c.mergeAttempts++
-	id, err := c.Forge.MergeCAS(project, mr, m)
+	id, err := c.RunPort.MergeCAS(project, mr, m)
 	if err == nil {
 		c.mergesPerformed++
 	}
@@ -43,7 +43,7 @@ func (c *countingPort) MergeCAS(project, mr string, m forge.DesiredMerge) (strin
 }
 
 func (c *countingPort) Approve(project, mr string) (string, error) {
-	id, err := c.Forge.Approve(project, mr)
+	id, err := c.RunPort.Approve(project, mr)
 	if err == nil {
 		c.approvals++
 	}
@@ -51,7 +51,7 @@ func (c *countingPort) Approve(project, mr string) (string, error) {
 }
 
 func (c *countingPort) CreateThread(project, mr string, marker forge.Marker, body string) (forge.Thread, error) {
-	th, err := c.Forge.CreateThread(project, mr, marker, body)
+	th, err := c.RunPort.CreateThread(project, mr, marker, body)
 	if err == nil {
 		c.threadsCreated++
 	}
@@ -59,7 +59,7 @@ func (c *countingPort) CreateThread(project, mr string, marker forge.Marker, bod
 }
 
 func (c *countingPort) ResolveThread(project, mr, id string) error {
-	err := c.Forge.ResolveThread(project, mr, id)
+	err := c.RunPort.ResolveThread(project, mr, id)
 	if err == nil {
 		c.threadsResolved++
 	}
@@ -67,4 +67,4 @@ func (c *countingPort) ResolveThread(project, mr, id string) error {
 }
 
 // static assertion that the decorator still satisfies the port it wraps.
-var _ forge.Forge = (*countingPort)(nil)
+var _ forge.RunPort = (*countingPort)(nil)

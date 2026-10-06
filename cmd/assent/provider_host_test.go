@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/PlatformRelay/assent/internal/core/policy"
+	"github.com/PlatformRelay/assent/internal/forge"
 )
 
 // AUD2-S02 / REL-03 — `providers/<name>.json` absence vs. an unanswering forge.
@@ -32,7 +33,7 @@ const quotaDeclPath = ".assent/providers/quota.json"
 // only the declaration read could not express a forge that is otherwise healthy,
 // which is precisely the live shape of a blip or a scope-limited token.
 type declErrPort struct {
-	forgePort
+	forge.RunPort
 	declPath string
 	err      error
 }
@@ -41,7 +42,7 @@ func (c declErrPort) FileAtRef(project, p, ref string) ([]byte, error) {
 	if p == c.declPath {
 		return nil, c.err
 	}
-	return c.forgePort.FileAtRef(project, p, ref)
+	return c.RunPort.FileAtRef(project, p, ref)
 }
 
 // TestProviderDeclarationAbsentSkipsProvider — REQ-AUD2-S02-01.
@@ -86,9 +87,9 @@ func TestProviderDeclarationForgeErrorAbortsResolveRunFacts(t *testing.T) {
 	f.config = configQuotaRepoFile()
 	f.providerDecls = map[string]string{"quota": quotaDeclarationJSON}
 	client := declErrPort{
-		forgePort: f.factory()("", "tok", "assent-bot"),
-		declPath:  quotaDeclPath,
-		err:       brokenForge(quotaDeclPath, "main", 503),
+		RunPort:  f.factory()("", "tok", "assent-bot"),
+		declPath: quotaDeclPath,
+		err:      brokenForge(quotaDeclPath, "main", 503),
 	}
 
 	conf, err := policy.LoadConfig([]byte(configQuotaRepoFile()))
@@ -140,9 +141,9 @@ func TestProviderDeclarationUnauthorizedAbortsResolveRunFacts(t *testing.T) {
 			f.config = configQuotaRepoFile()
 			f.providerDecls = map[string]string{"quota": quotaDeclarationJSON}
 			client := declErrPort{
-				forgePort: f.factory()("", "tok", "assent-bot"),
-				declPath:  quotaDeclPath,
-				err:       brokenForge(quotaDeclPath, "main", status),
+				RunPort:  f.factory()("", "tok", "assent-bot"),
+				declPath: quotaDeclPath,
+				err:      brokenForge(quotaDeclPath, "main", status),
 			}
 
 			conf, err := policy.LoadConfig([]byte(configQuotaRepoFile()))

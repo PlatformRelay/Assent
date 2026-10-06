@@ -43,7 +43,7 @@ func DoctorEnvOnly(desc PipelineDescription) PreconditionReport {
 // present it forge-probes via Snapshot; otherwise it runs the env-only diagnostic
 // path with an explicit INSECURE banner.
 func runDoctor(getenv func(string) string, stdout, stderr io.Writer,
-	snapshotFactory func(endpoint, token, botAuthor string) forge.Snapshotter) int {
+	snapshotFactory func(endpoint, token, botAuthor string) forge.RunPort) int {
 	token := getenv("GITLAB_TOKEN")
 	if token != "" {
 		project := getenv("CI_PROJECT_ID")

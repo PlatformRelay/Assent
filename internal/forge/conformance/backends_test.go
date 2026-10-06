@@ -50,6 +50,17 @@ func (b fakeBackend) MoveTargetHead(sha string) { b.f.CurrentTargetSha = sha }
 
 func (b fakeBackend) MoveSourceHead(sha string) { b.f.CurrentSourceSha = sha }
 
+func (b fakeBackend) SeedFile(path, side string, content []byte) {
+	b.f.SeedFileAtRef(path, side, content)
+}
+
+func (b fakeBackend) RefuseFileRead(path string) {
+	if b.f.RefusedReads == nil {
+		b.f.RefusedReads = map[string]error{}
+	}
+	b.f.RefusedReads[path] = forge.ErrUnauthorized
+}
+
 func (b fakeBackend) Pins() forge.DesiredMerge {
 	return forge.DesiredMerge{
 		SourceSha:         b.f.CurrentSourceSha,
@@ -153,6 +164,19 @@ func (b gitlabBackend) MoveSourceHead(sha string) { b.h.sourceSHA = sha }
 // exposes no merge-result digest — which is exactly why a case carrying a literal
 // digest could only ever run against the fake. Collapsing the synthetic digest
 // onto a real one is E10-S03.
+func (b gitlabBackend) SeedFile(_ string, side string, content []byte) {
+	switch side {
+	case FileSideBase:
+		b.h.baseFile = append([]byte(nil), content...)
+		b.h.baseSet = true
+	case FileSideHead:
+		b.h.headFile = append([]byte(nil), content...)
+		b.h.headSet = true
+	}
+}
+
+func (b gitlabBackend) RefuseFileRead(path string) { b.h.refusedPath = path }
+
 func (b gitlabBackend) Pins() forge.DesiredMerge {
 	return forge.DesiredMerge{
 		SourceSha:         b.h.sourceSHA,
@@ -175,6 +199,8 @@ func gitlabFactory(t TB, cfg Config) Backend {
 	h.botAuthor = cfg.BotAuthor
 	h.sourceSHA = cfg.CurrentSourceSHA
 	h.targetSHA = cfg.CurrentTargetSHA
+	h.forkMR = cfg.ForkMR
+	h.governedPath = cfg.GovernedPath
 	cp := newCountingPort(h.client(t))
 	b := gitlabBackend{h: h, cp: cp}
 	return Backend{Port: cp, Fixture: b, Observer: b}
@@ -188,12 +214,17 @@ func gitlabFactory(t TB, cfg Config) Backend {
 
 func (h *gitlabHarness) serveMR(w http.ResponseWriter, _ *http.Request) {
 	h.mrReads++
+	sourceProjectID := 42
+	if h.forkMR {
+		sourceProjectID = 999
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"iid":           1,
-		"project_id":    42,
-		"sha":           h.sourceSHA,
-		"source_branch": "feature",
-		"target_branch": "main",
+		"iid":               1,
+		"project_id":        42,
+		"source_project_id": sourceProjectID,
+		"sha":               h.sourceSHA,
+		"source_branch":     "feature",
+		"target_branch":     "main",
 	})
 	// Fire AFTER the response is written, so this read returns the PRE-move value
 	// and only the NEXT one sees the drift.

@@ -53,18 +53,38 @@ GO_DIRECTIVE="$(sed -nE 's/^go ([0-9]+\.[0-9]+(\.[0-9]+)?)$/\1/p' "$ROOT/go.mod"
 
 echo "== extract the D-123 guarded tree + deny list from .golangci.yml =="
 
-# Guarded directories: the depguard `files:` globs, which are the only
-# `- "**/<path>/**"` lines in the config.
+# Guarded directories and denied packages are extracted PER RULE: the config
+# carries TWO depguard rules since E10-S02 (pure-tree, the D-123 boundary; and
+# cmd-adapter-boundary, ADR-0021 §1), and a global extraction would assert every
+# guarded dir against every deny of the OTHER rule too. extract_rule_block
+# isolates one rule's block (from its `rule-name:` key to the next sibling key
+# at the same indent), then sed pulls the globs and pkg lines out of that block.
+extract_rule_block() {
+  awk -v rule="$1" '
+    /^        [A-Za-z][A-Za-z0-9_-]*:$/ { inblock = ($0 ~ "^[[:space:]]{8}" rule ":$"); next }
+    inblock { print }
+  ' "$CONFIG"
+}
+
 GUARDED=()
 while IFS= read -r line; do
   GUARDED+=("$line")
-done < <(sed -nE 's|^[[:space:]]*- "\*\*/(.+)/\*\*"[[:space:]]*$|\1|p' "$CONFIG")
+done < <(extract_rule_block "pure-tree" | sed -nE 's|^[[:space:]]*- "\*\*/(.+)/\*\*"[[:space:]]*$|\1|p')
 
-# Denied packages: the depguard `- pkg: "<path>"` lines.
 DENIED=()
 while IFS= read -r line; do
   DENIED+=("$line")
-done < <(sed -nE 's|^[[:space:]]*- pkg: "(.+)"[[:space:]]*$|\1|p' "$CONFIG")
+done < <(extract_rule_block pure-tree | sed -nE 's|^[[:space:]]*- pkg: "(.+)"[[:space:]]*$|\1|p')
+
+CMD_GUARDED=()
+while IFS= read -r line; do
+  CMD_GUARDED+=("$line")
+done < <(extract_rule_block cmd-adapter-boundary | sed -nE 's|^[[:space:]]*- "\*\*/(.+)/\*\*"[[:space:]]*$|\1|p')
+
+CMD_DENIED=()
+while IFS= read -r line; do
+  CMD_DENIED+=("$line")
+done < <(extract_rule_block cmd-adapter-boundary | sed -nE 's|^[[:space:]]*- pkg: "(.+)"[[:space:]]*$|\1|p')
 
 # --- positive controls on the extraction itself ------------------------------
 # Without these, a sed pattern that matches nothing would leave both arrays
@@ -73,6 +93,10 @@ done < <(sed -nE 's|^[[:space:]]*- pkg: "(.+)"[[:space:]]*$|\1|p' "$CONFIG")
   fail "extracted only ${#GUARDED[@]} guarded paths from $CONFIG — the files: glob pattern stopped matching"
 (( ${#DENIED[@]} >= 4 )) ||
   fail "extracted only ${#DENIED[@]} denied packages from $CONFIG — the deny pkg: pattern stopped matching"
+[[ ${#CMD_GUARDED[@]} == 1 && "${CMD_GUARDED[0]:-}" == "cmd/assent" ]] ||
+  fail "cmd-adapter-boundary extraction wrong: got ${CMD_GUARDED[*]:-<none>} — the E10-S02 files: glob stopped matching"
+(( ${#CMD_DENIED[@]} == 2 )) ||
+  fail "extracted only ${#CMD_DENIED[@]} adapter deny entries — the cmd-adapter-boundary deny list stopped matching"
 
 contains() {
   local needle="$1"; shift
@@ -96,9 +120,7 @@ for expected in "$MODULE/internal/forge" "$MODULE/internal/render" "$MODULE/cmd"
     fail "deny list extracted from $CONFIG is missing $expected (D-123)"
 done
 
-echo "OK: ${#GUARDED[@]} guarded paths, ${#DENIED[@]} denied packages extracted"
-printf '     guarded: %s\n' "${GUARDED[@]}"
-printf '     denied:  %s\n' "${DENIED[@]}"
+echo "OK: ${#GUARDED[@]} pure-tree guarded paths, ${#DENIED[@]} pure-tree denied packages, cmd/assent boundary (${CMD_DENIED[*]}) extracted"
 
 # probe_import maps a denied package to a concrete package to import. Local
 # packages and stdlib `net` are exercised via a SUBPACKAGE so the probe proves
@@ -265,6 +287,45 @@ fi
 echo "OK: clean probe tree green (harness is capable of reporting green)"
 
 echo
+echo "== polarity 4: cmd/assent must not import either adapter (E10-S02 / ADR-0021 §1) =="
+
+# The cmd-adapter-boundary rule gets its own polarity pair: a violating
+# cmd/assent probe importing both adapters must be reported NAMING the rule,
+# and the same tree without them must be clean.
+CMD_BAD="$WORK/cmdbad"
+mkdir -p "$CMD_BAD/cmd/assent"
+printf 'module %s\n\ngo %s\n' "$MODULE" "$GO_DIRECTIVE" >"$CMD_BAD/go.mod"
+cp "$CONFIG" "$CMD_BAD/.golangci.yml"
+for denied in "${CMD_DENIED[@]}"; do
+  imp="$(probe_import "$denied")"
+  mkdir -p "$CMD_BAD/${imp#"$MODULE"/}"
+  printf 'package depguardport\n' >"$CMD_BAD/${imp#"$MODULE"/}/depguardport.go"
+done
+{
+  echo '// Command probe is a throwaway cmd/assent boundary probe (E10-S02).'
+  echo 'package main'
+  echo
+  echo 'import ('
+  for denied in "${CMD_DENIED[@]}"; do
+    printf '\t_ "%s/depguardport"\n' "$denied"
+  done
+  echo ')'
+  echo
+  echo 'func main() {}'
+} >"$CMD_BAD/cmd/assent/probe.go"
+
+CMD_OUT="$WORK/cmdbad.out"
+if run_lint "$CMD_BAD" "$CMD_OUT"; then
+  cat "$CMD_OUT" >&2
+  fail "golangci-lint exited 0 on a cmd/assent tree importing both adapters — the cmd-adapter-boundary rule is not firing"
+fi
+for denied in "${CMD_DENIED[@]}"; do
+  grep -Fq "import '$denied/depguardport' is not allowed from list 'cmd-adapter-boundary'" "$CMD_OUT" ||
+    fail "depguard did not deny $denied in cmd/assent naming the cmd-adapter-boundary rule (E10-S02)"
+done
+echo "OK: cmd/assent adapter imports denied at both polarities (rule cmd-adapter-boundary named)"
+
+echo
 echo "== polarity 3: the real repository tree must be lint-clean =="
 golangci-lint run ./... >"$WORK/repo.out" 2>&1 || {
   cat "$WORK/repo.out" >&2
@@ -273,71 +334,69 @@ golangci-lint run ./... >"$WORK/repo.out" 2>&1 || {
 echo "OK: golangci-lint run ./... clean at HEAD"
 
 echo
-echo "== ARCH-02 (REQ-AUD-S15-01): cmd/assent names only CONSTRUCTION symbols from the gitlab adapter =="
+echo "== E10-S02 (REQ-E10-S02-02/04/07): cmd/assent names ZERO adapter symbols and declares no forge-method interface =="
 
-# The only gitlab.<Exported> symbols cmd/assent may name. `New`/`WithSleeper`
-# are construction; `SyntheticDigest` is the documented E10 residue (the merge
-# -digest SCHEME is adapter-owned — E10 collapses both call-sites onto
-# Snapshot.Heads.MergeResultDigest, see
-# docs/planning/design-notes/e10-forge-port-lift.md step 4). Anything else —
-# notably MRInfo and ErrNotFound, the two types AUD-S15 lifted onto the port —
-# is a regression. Tighten this list; never widen it without an ADR.
-ALLOWED_GITLAB_SYMBOLS=(New WithSleeper SyntheticDigest)
+# REQ-E10-S02-02: the construction allowlist this gate used to enforce
+# (New/WithSleeper/SyntheticDigest) is EMPTIED by the neutral factory —
+# cmd/assent references ZERO symbols from EITHER adapter, because it imports
+# neither (polarity 4 proves the import boundary; this section proves the
+# symbol-level shape depguard cannot express, replacing REQ-AUD-S15-01's
+# allowlist).
 
-# scan_gitlab_symbols <dir> prints "<relpath>:<line>:<symbol>" for every
-# gitlab.<Exported> reference in Go CODE under <dir>.
+# scan_adapter_symbols <dir> prints "<relpath>:<line>:<pkg>.<Symbol>" for every
+# gitlab./github. exported reference in Go CODE under <dir>.
 #
 # Whole-line comments are BLANKED first (blanked, not deleted, so the reported
-# line numbers stay true to the file): the tree carries prose references to
-# `*gitlab.Client` that are not call-sites. Only WHOLE-line comments go — never
-# a trailing `// …` — because stripping from the first `//` would also truncate
-# a line containing a `"http://…"` literal and could hide a real reference after
-# it. Erring toward scanning MORE text is the fail-closed direction. Block
-# comments are refused outright by the guard below.
-scan_gitlab_symbols() {
+# line numbers stay true to the file). Erring toward scanning MORE text is the
+# fail-closed direction. Block comments are refused outright by the guard below.
+scan_adapter_symbols() {
   local dir="$1" f rel
   while IFS= read -r f; do
     rel="${f#"$dir"/}"
-    # `|| true` on the grep: a file with none of the pattern is the NORMAL case
-    # and must not trip `set -o pipefail`.
     sed -E 's|^[[:space:]]*//.*||' "$f" |
-      { grep -nEo 'gitlab\.[A-Z][A-Za-z0-9_]*' || true; } |
+      { grep -nEo '(gitlab|github)\.[A-Z][A-Za-z0-9_]*' || true; } |
       while IFS=: read -r ln sym; do
-        printf '%s:%s:%s\n' "$rel" "$ln" "${sym#gitlab.}"
+        printf '%s:%s:%s\n' "$rel" "$ln" "$sym"
       done
   done < <(find "$dir" -name '*.go' | LC_ALL=C sort)
 }
 
-# gitlab_symbol_violations reads scan output on stdin, prints the not-allowed ones.
-gitlab_symbol_violations() {
-  local file ln sym
-  while IFS=: read -r file ln sym; do
-    contains "$sym" "${ALLOWED_GITLAB_SYMBOLS[@]}" || printf '%s:%s: gitlab.%s\n' "$file" "$ln" "$sym"
-  done
-}
-
-# aliased_gitlab_imports <dir> prints "<relpath>:<line>:<text>" for every ALIASED
-# import of the adapter (`gl "…/gitlab"`, `_ "…/gitlab"`, `. "…/gitlab"`).
-#
-# This closes the one way to make scan_gitlab_symbols sweep an empty set: under
-# an alias, every reference reads `gl.MRInfo`, the `gitlab\.` pattern matches
-# nothing, and the allowlist above would pass OPEN. Requiring the bare import
-# path is what makes the symbol scan complete rather than merely true.
-aliased_gitlab_imports() {
+# aliased_adapter_imports <dir> prints "<relpath>:<line>:<text>" for every ALIASED
+# import of either adapter (`gl "…/gitlab"`, `_ "…/gitlab"`, `. "…/gitlab"`).
+aliased_adapter_imports() {
   local dir="$1" f rel hit
   while IFS= read -r f; do
     rel="${f#"$dir"/}"
-    # Strip a leading `import` keyword first (sed preserves the line count, so
-    # grep -n still reports true line numbers). That reduces the single-line
-    # form `import gl "…"` to the grouped form `gl "…"`, so ONE rule covers
-    # both: after the strip, any token before the quoted path is an alias, and
-    # a plain `import "…"` has none.
     sed -E 's|^([[:space:]]*)import[[:space:]]+|\1|' "$f" |
-      { grep -nE '^[[:space:]]*[A-Za-z_.][A-Za-z0-9_]*[[:space:]]+"'"$MODULE"'/internal/forge/gitlab"' || true; } |
+      { grep -nE '^[[:space:]]*[A-Za-z_.][A-Za-z0-9_]*[[:space:]]+"'"$MODULE"'/internal/forge/(gitlab|github)"' || true; } |
       while IFS= read -r hit; do
         printf '%s:%s\n' "$rel" "$hit"
       done
   done < <(find "$dir" -name '*.go' | LC_ALL=C sort)
+}
+
+# forge_interface_methods <dir> prints "<relpath>:<interface>:<method>" for every method
+# of every interface declared in <dir> (REQ-E10-S02-07: no interface declared in
+# cmd/assent may carry a forge read or write method — forge.RunPort lives in
+# internal/forge and cmd/assent references the named type only). Portable awk
+# (no gawk-only match-with-array), because this gate runs on BSD and Linux awk.
+FORGE_PORT_METHODS='(Approve|MergeCAS|CreateThread|ResolveThread|ListBotThreads|ListBotNotes|UpsertComment|CurrentHeads|GetMR|FileAtRef|FileAtBase|FileAtHead|Snapshot|Resolve|Identity)'
+forge_interface_methods() {
+  local dir="$1" f
+  for f in "$dir"/*.go; do
+    awk -v file="$f" -v methods="$FORGE_PORT_METHODS" '
+      /^type [A-Za-z0-9_]+ interface[ {]*$/ {
+        # The interface name is the second field of "type NAME interface".
+        n = split($0, parts, /[ \t]+/); iface = parts[2]; iniface = 1; next
+      }
+      iniface && /^\}/ { iniface = 0; next }
+      iniface && $0 ~ /^[ \t]*[A-Z][A-Za-z0-9_]*\(/ {
+        method = $0
+        sub(/^[[:space:]]+/, "", method); sub(/\(.*/, "", method)
+        print FILENAME ":" iface ":" method
+      }
+    ' "$f"
+  done | grep -E ":(${FORGE_PORT_METHODS})$" || true
 }
 
 CMD_DIR="$ROOT/cmd/assent"
@@ -345,84 +404,112 @@ CMD_DIR="$ROOT/cmd/assent"
 
 # The comment-stripping above assumes line comments only.
 if grep -rn '^[[:space:]]*/\*' "$CMD_DIR" --include='*.go'; then
-  fail "cmd/assent now uses BLOCK comments — scan_gitlab_symbols only strips line comments; extend it before this gate can be trusted"
+  fail "cmd/assent now uses BLOCK comments — scan_adapter_symbols only strips line comments; extend it before this gate can be trusted"
 fi
-
-# --- positive control: the scanner must find the real, allowed call-sites -----
-# A scanner whose regex silently stopped matching would report zero violations
-# on any tree, violating or not.
-REAL_SCAN="$WORK/arch02-real.txt"
-scan_gitlab_symbols "$CMD_DIR" >"$REAL_SCAN"
-REAL_SCAN_N="$(wc -l <"$REAL_SCAN" | tr -d ' ')"
-(( REAL_SCAN_N >= 4 )) ||
-  fail "scan_gitlab_symbols found only $REAL_SCAN_N gitlab.<Exported> references in cmd/assent — the scanner stopped matching real code, so its silence would prove nothing"
-for expected in New SyntheticDigest; do
-  cut -d: -f3 "$REAL_SCAN" | grep -qx "$expected" ||
-    fail "scan_gitlab_symbols did not see the known gitlab.$expected call-site in cmd/assent — the scanner is broken"
-done
-echo "OK: scanner sees $REAL_SCAN_N real gitlab.<Exported> references in cmd/assent"
 
 # --- polarity A: a violating COPY of cmd/assent must be reported --------------
 # The copy lives in $WORK; the repository working tree is never written to.
-PROBE="$WORK/arch02"
+# REQ-E10-S02-04: this is the scanner's positive control, REPLACED never
+# deleted — the real tree legitimately contains zero adapter symbols now that
+# the factory constructs both, so a scanner whose silence could not be
+# distinguished from a broken scanner would prove nothing.
+PROBE="$WORK/e10"
 mkdir -p "$PROBE"
 cp "$CMD_DIR"/*.go "$PROBE/"
-cat >"$PROBE/arch02_probe.go" <<'PROBEEOF'
+cat >"$PROBE/e10_probe_gitlab.go" <<'PROBEEOF'
 package main
 
 import "github.com/PlatformRelay/assent/internal/forge/gitlab"
 
-func arch02Probe() (gitlab.MRInfo, error) { return gitlab.MRInfo{}, gitlab.ErrNotFound }
+func e10ProbeGitlab() (gitlab.MRInfo, error) { return gitlab.MRInfo{}, gitlab.ErrNotFound }
 PROBEEOF
 
-# A second probe file for the alias evasion: under `gl`, the symbol scanner is
-# blind by construction, so only the import-form check can catch this one.
-cat >"$PROBE/arch02_probe_alias.go" <<'PROBEEOF'
+cat >"$PROBE/e10_probe_github.go" <<'PROBEEOF'
+package main
+
+import "github.com/PlatformRelay/assent/internal/forge/github"
+
+func e10ProbeGitHub() error { return github.ErrNotFound }
+PROBEEOF
+
+# The alias evasion: under `gl`, the symbol scanner is blind by construction, so
+# only the import-form check can catch this one.
+cat >"$PROBE/e10_probe_alias.go" <<'PROBEEOF'
 package main
 
 import gl "github.com/PlatformRelay/assent/internal/forge/gitlab"
 
-func arch02ProbeAliased() gl.MRInfo { return gl.MRInfo{} }
+func e10ProbeAliased() gl.MRInfo { return gl.MRInfo{} }
 PROBEEOF
 
-PROBE_VIOL="$WORK/arch02-probe-violations.txt"
-scan_gitlab_symbols "$PROBE" | gitlab_symbol_violations >"$PROBE_VIOL"
-for expected in MRInfo ErrNotFound; do
-  grep -Fq "gitlab.$expected" "$PROBE_VIOL" ||
-    fail "the ARCH-02 scanner did NOT report gitlab.$expected in a deliberately violating tree — the gate cannot fire"
+PROBE_VIOL="$WORK/e10-probe-violations.txt"
+scan_adapter_symbols "$PROBE" >"$WORK/e10-probe-scan.txt"
+for expected in gitlab.MRInfo gitlab.ErrNotFound github.ErrNotFound; do
+  grep -Fq "$expected" "$WORK/e10-probe-scan.txt" ||
+    fail "the E10-S02 scanner did NOT report $expected in a deliberately violating tree — the gate cannot fire"
 done
-grep -Fq 'arch02_probe.go' "$PROBE_VIOL" ||
-  fail "the ARCH-02 scanner reported violations but never named the violating file"
-echo "OK: violating copy reported $(wc -l <"$PROBE_VIOL" | tr -d ' ') disallowed gitlab.<Exported> references"
+grep -Fq 'e10_probe_gitlab.go' "$WORK/e10-probe-scan.txt" ||
+  fail "the E10-S02 scanner reported violations but never named the violating file"
+echo "OK: violating copy reported by the adapter-symbol scanner"
 
-PROBE_ALIAS="$WORK/arch02-probe-alias.txt"
-aliased_gitlab_imports "$PROBE" >"$PROBE_ALIAS"
-grep -Fq 'arch02_probe_alias.go' "$PROBE_ALIAS" ||
-  fail "the ARCH-02 alias check did NOT report an aliased gitlab import in a deliberately violating tree — an alias would make the symbol scan sweep an empty set and pass open"
-# The unaliased probe must NOT be reported: otherwise the check flags every
-# import and its silence on the real tree would mean nothing.
-if grep -Fq 'arch02_probe.go:' "$PROBE_ALIAS"; then
+PROBE_ALIAS="$WORK/e10-probe-alias.txt"
+aliased_adapter_imports "$PROBE" >"$PROBE_ALIAS"
+grep -Fq 'e10_probe_alias.go' "$PROBE_ALIAS" ||
+  fail "the alias check did NOT report an aliased adapter import in a deliberately violating tree — an alias would make the symbol scan sweep an empty set and pass open"
+if grep -Fq 'e10_probe_gitlab.go:' "$PROBE_ALIAS"; then
   cat "$PROBE_ALIAS" >&2
-  fail "the ARCH-02 alias check reported an UNALIASED import — it cannot distinguish the two forms"
+  fail "the alias check reported an UNALIASED import — it cannot distinguish the two forms"
 fi
-echo "OK: violating copy's aliased gitlab import reported; its unaliased import not reported"
+echo "OK: violating copy's aliased adapter import reported; its unaliased import not reported"
+
+# --- REQ-E10-S02-07: the interface invariant, at both polarities --------------
+# A hand-rolled interface carrying forge read/write methods must be reported;
+# cmd/assent's legitimate non-forge seams (checkout.go's localCheckout) must NOT.
+IFACE_PROBE="$WORK/e10-iface"
+mkdir -p "$IFACE_PROBE"
+cp "$CMD_DIR"/*.go "$IFACE_PROBE/"
+cat >"$IFACE_PROBE/e10_iface_probe.go" <<'IFACEEOF'
+package main
+
+type privateForgePort interface {
+	FileAtRef(project, path, ref string) ([]byte, error)
+}
+
+var _ privateForgePort = privateForgePort(nil)
+IFACEEOF
+
+IFACE_VIOL="$WORK/e10-iface-violations.txt"
+forge_interface_methods "$IFACE_PROBE" >"$IFACE_VIOL"
+grep -Fq 'e10_iface_probe.go:privateForgePort' "$IFACE_VIOL" ||
+  fail "the interface-invariant guard did NOT report a hand-rolled forge-method interface in a violating copy (REQ-E10-S02-07)"
+
+IFACE_REAL="$WORK/e10-iface-real.txt"
+forge_interface_methods "$CMD_DIR" >"$IFACE_REAL"
+if [[ -s "$IFACE_REAL" ]]; then
+  cat "$IFACE_REAL" >&2
+  fail "cmd/assent declares an interface carrying forge read/write methods — only forge.RunPort (declared in internal/forge) may"
+fi
+echo "OK: interface invariant enforced at both polarities; local-tree seams stay green"
 
 # --- polarity B: the real cmd/assent must be clean ----------------------------
-REAL_VIOL="$WORK/arch02-real-violations.txt"
-gitlab_symbol_violations <"$REAL_SCAN" >"$REAL_VIOL"
-if [[ -s "$REAL_VIOL" ]]; then
-  cat "$REAL_VIOL" >&2
-  fail "cmd/assent names gitlab adapter symbols outside the construction allowlist (${ALLOWED_GITLAB_SYMBOLS[*]}) — ARCH-02: the orchestration read port must speak forge.* types"
+REAL_SCAN="$WORK/e10-real.txt"
+scan_adapter_symbols "$CMD_DIR" >"$REAL_SCAN"
+if [[ -s "$REAL_SCAN" ]]; then
+  cat "$REAL_SCAN" >&2
+  fail "cmd/assent names a concrete adapter symbol — E10-S02: the neutral factory is the only adapter importer; the port speaks forge.* types"
 fi
 
-REAL_ALIAS="$WORK/arch02-real-alias.txt"
-aliased_gitlab_imports "$CMD_DIR" >"$REAL_ALIAS"
+REAL_ALIAS="$WORK/e10-real-alias.txt"
+aliased_adapter_imports "$CMD_DIR" >"$REAL_ALIAS"
 if [[ -s "$REAL_ALIAS" ]]; then
   cat "$REAL_ALIAS" >&2
-  fail "cmd/assent imports the gitlab adapter under an ALIAS — the symbol allowlist above cannot see through it. Import the bare path."
+  fail "cmd/assent imports an adapter under an ALIAS — the symbol scan cannot see through it. Import nothing adapter-named at all."
 fi
-echo "OK: cmd/assent names only ${ALLOWED_GITLAB_SYMBOLS[*]} from the gitlab adapter, and imports it unaliased"
+echo "OK: cmd/assent names zero adapter symbols from either adapter"
 
 echo
 echo "PASS: D-123 depguard boundary rules proven at both polarities (REQ-AUD-S07-01)"
-echo "PASS: ARCH-02 cmd/assent adapter-symbol allowlist proven at both polarities (REQ-AUD-S15-01)"
+echo "PASS: E10-S02 adapter boundary + interface invariant proven at both polarities (REQ-E10-S02-02/04/07)"
+
+# The only gitlab.<Exported> symbols cmd/assent may name. `New`/`WithSleeper`
+# are construction; `SyntheticDigest` is the documented E10 residue (the merge

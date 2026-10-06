@@ -47,6 +47,15 @@ type MRInfo struct {
 	// ForkMR is true when the source project differs from the target project
 	// (fork workflow).
 	ForkMR bool
+	// SourceProjectID is the SOURCE project/repo id the MR's head branch lives
+	// in ("0" when the forge reports none). E10-S02 (ADR-0021 item 5): the port
+	// is MR-relative, so an adapter reaching a fork's head needs the source
+	// repository identifier — a fork's head SHA is a commit of the source repo,
+	// and reading it by a ref inside the target project is the fabricated-DELETE
+	// defect S00 Q1 closed. A fork MR with an absent/zero source repository id
+	// is an ERROR at the accessor, never a silent non-fork (the
+	// absent-means-trusted trap, audit SEC-05's class).
+	SourceProjectID string
 	// Labels are the MR's forge labels (GitLab's string array). They bind the
 	// engine's `mr.labels` predicate scope, so a negative label guard
 	// (`!('security-hold' in mr.labels)`) fails CLOSED. An MR with no labels
