@@ -56,6 +56,16 @@ const (
 	GapApprovalRulesUnavailable CapabilityGapReason = "approval-rules-api-unavailable"
 	// GapFreeTierRequireReview — Free tier cannot prove eligible approval (judgment call c).
 	GapFreeTierRequireReview CapabilityGapReason = "free-tier-require-review-unsatisfiable"
+
+	// GapEligibilityUnprovable — the forge exposes no computed eligible-approver
+	// set the adapter could prove set-equality with, so require-review evidence
+	// can never be minted (OQ-34: an adapter-computed CODEOWNERS/PR-review set
+	// proves who DID review, never who WAS eligible — GitHub exposes no API
+	// returning the per-PR eligible code owners, dossier §2 step (b), graded
+	// partial). The adapter may still fetch and evaluate the review chain
+	// (transport fail-closed), but it must return this gap instead of evidence
+	// until OQ-34 is answered.
+	GapEligibilityUnprovable CapabilityGapReason = "eligible-approver-set-unprovable"
 )
 
 // CapabilityGap records why require-review evidence cannot be proven on this tier.
