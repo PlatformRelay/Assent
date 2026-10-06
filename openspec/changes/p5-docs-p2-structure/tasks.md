@@ -36,6 +36,8 @@ go test ./cmd/assent -run TestNoStaleProductClaims
 
 ## T002 — S01: index.md front door
 
+- [x] — closed 2026-10-07, evidence: evidence/T002.md
+
 1. Rewrite `docs/index.md`: keep the hero block and H1; replace the existing two-sentence
    intro with the README's intro paragraph; add the status banner, Why, How-it-works
    (mermaid + statelessness paragraph) and Quick start (install, caveat, lint/test,
