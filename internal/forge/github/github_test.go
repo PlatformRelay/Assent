@@ -21,7 +21,7 @@ const (
 	baseRepo  = "octo-org/base-repo"
 	forkRepo  = "octo-contrib/fork-repo"
 	botUser   = "assent-bot"
-	patToken  = "ghp_test-token" // #nosec G101 -- fixture value, not a credential (D-002).
+	patToken  = "ghp_test-token"    // #nosec G101 -- fixture value, not a credential (D-002).
 	instToken = "ghs_install-token" // #nosec G101 -- fixture value, not a credential.
 
 	// sameRepoPR is the PR object for a same-repo PR (not a fork). It carries
