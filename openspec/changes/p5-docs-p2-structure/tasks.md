@@ -65,6 +65,8 @@ go test ./cmd/assent -run TestNoStaleProductClaims
 
 ## T003 — S02: Usage nav order
 
+- [x] — closed 2026-10-07, evidence: evidence/T003.md
+
 1. In `mkdocs.yml`, reorder Usage to Install, Walkthrough, CLI reference. Nothing else.
 2. Verify: the per-task gate set.
 3. Commit: `:memo: docs(nav): order Usage install → walkthrough → CLI reference`
