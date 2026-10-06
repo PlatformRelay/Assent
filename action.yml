@@ -55,7 +55,7 @@ runs:
       shell: bash
       env:
         ASSENT_VERSION: ${{ inputs.version }}
-        GH_TOKEN: ${{ inputs.github-token }}
+
       run: |
         set -euo pipefail
         # The pin pattern is deliberate: a released VERSION (never the latest
@@ -67,12 +67,18 @@ runs:
           exit 1
         fi
         # Resolve the release's platform asset + checksums.txt (goreleaser's
-        # artifacts), then verify the archive digest BEFORE extraction.
+        # artifacts), then verify the archive digest BEFORE extraction. The
+        # goreleaser naming convention is
+        # assent_<ver>_<goos>_<goarch>.tar.gz — the RUNNER values map to
+        # the GOOS/GOARCH names goreleaser publishes.
         asset_base="https://github.com/PlatformRelay/assent/releases/download/${ASSENT_VERSION}"
-        # The goreleaser naming convention: assent_<ver>_<os>_<arch>.tar.gz.
-        os="${RUNNER_OS,,}"
+        case "$RUNNER_OS" in
+          Linux)  os="linux" ;;
+          macOS)  os="darwin" ;;
+          *) echo "assent action: unsupported runner OS '$RUNNER_OS'" >&2; exit 1 ;;
+        esac
         case "$RUNNER_ARCH" in
-          X64)   arch="x86_64" ;;
+          X64)   arch="amd64" ;;
           ARM64) arch="arm64" ;;
           *) echo "assent action: unsupported runner arch '$RUNNER_ARCH'" >&2; exit 1 ;;
         esac
@@ -81,7 +87,10 @@ runs:
         work="$(mktemp -d)"
         curl -fSL --retry 3 --proto "=https" -o "$work/$asset" "$asset_base/$asset"
         curl -fSL --retry 3 --proto "=https" -o "$work/checksums.txt" "$asset_base/checksums.txt"
-        (cd "$work" && grep -F "$asset" checksums.txt | sha256sum --check --status -)
+        # Exact-name match (awk on the SECOND field): a substring grep would
+        # also match the asset's .spdx.json SBOM line and check a file we never
+        # downloaded. The archive digest is what must verify.
+        (cd "$work" && awk -v a="$asset" '$2 == a { print $1 "  " $2 }' checksums.txt | sha256sum --check --strict --status -)
         tar -xzf "$work/$asset" -C "$work" assent
         echo "$work" >> "$GITHUB_PATH"
     - name: Run the gate
@@ -93,11 +102,20 @@ runs:
         # C17) — the token never gains write authority the base branch does
         # not already grant.
         GITHUB_TOKEN: ${{ inputs.github-token }}
+        ASSENT_PROJECT: ${{ inputs.project != '' && inputs.project || github.repository }}
+        ASSENT_PR: ${{ inputs.pull-request }}
+        ASSENT_SUBJECT: ${{ inputs.subject }}
+        ASSENT_BOT_AUTHOR: ${{ inputs.bot-author }}
+        ASSENT_POLICY: ${{ inputs.policy }}
+        ASSENT_BINDING: ${{ inputs.binding }}
       run: |
+        # The inputs travel through env, never inline interpolation — a
+        # PR-controlled input value can never reach the script's command
+        # position (the standard injection shape).
         assent run --forge github \
-          --project "${{ inputs.project != '' && inputs.project || github.repository }}" \
-          --mr "${{ inputs.pull-request }}" \
-          --subject "file:${{ inputs.subject }}" \
-          --bot-author "${{ inputs.bot-author }}" \
-          --policy "${{ inputs.policy }}" \
-          --binding "${{ inputs.binding }}"
+          --project "$ASSENT_PROJECT" \
+          --mr "$ASSENT_PR" \
+          --subject "file:$ASSENT_SUBJECT" \
+          --bot-author "$ASSENT_BOT_AUTHOR" \
+          --policy "$ASSENT_POLICY" \
+          --binding "$ASSENT_BINDING"

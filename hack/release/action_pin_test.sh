@@ -35,6 +35,25 @@ else
 fi
 
 # Polarity B: the scanner is proven against a violating copy in $WORK.
+# The asset-name mapping: the action must translate the runner values into
+# goreleaser's GOOS/GOARCH names (x64→amd64, macos→darwin) — the un-mapped
+# shapes (x86_64, macos) 404 on the real release and were the final review's
+# MAJOR. Assert both the mapping's presence and the absence of the broken
+# names.
+if grep -Fq 'X64)   arch="amd64"' action.yml && grep -Fq 'macOS)  os="darwin"' action.yml; then
+  pass "action.yml maps the runner values to goreleaser's GOOS/GOARCH names"
+else
+  fail "action.yml must map RUNNER_ARCH/OS to amd64/darwin — the x86_64/macos shapes 404 on the real release (REQ-E10-S16-01)"
+fi
+if grep -Eq 'x86_64|macos' action.yml; then
+  fail "action.yml must not contain the un-mapped asset names x86_64/macos"
+fi
+if grep -Fq "awk -v a=" action.yml && grep -Fq 'sha256sum --check --strict' action.yml; then
+  pass "action.yml selects the checksum line by EXACT asset name (the .spdx.json substring shape refused)"
+else
+  fail "action.yml must checksum by exact asset name — a substring grep would check the never-downloaded .spdx.json SBOM"
+fi
+
 PROBE="$(mktemp -d)"
 trap 'rm -rf "$PROBE"' EXIT
 cp action.yml "$PROBE/action.yml"
