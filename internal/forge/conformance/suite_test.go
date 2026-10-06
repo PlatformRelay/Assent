@@ -27,10 +27,13 @@ type namedBackend struct {
 
 // backends is the set every case runs against. Adding an adapter here runs the
 // entire suite against it — that is the property E10-S01 exists to create.
+// GitHub joined at E10-S10 (REQ-E10-S10-01): every catalogued case in this
+// package now runs against all three built-in backends.
 func backends() []namedBackend {
 	return []namedBackend{
 		{"fake", fakeFactory},
 		{"gitlab", gitlabFactory},
+		{"github", githubFactory},
 	}
 }
 
@@ -89,6 +92,14 @@ func TestConformanceOwnMarkersRecognisedIdentity(t *testing.T) {
 // (the same backend with arming granted) merges — both live in one case body.
 func TestConformanceUnknownNeverArms(t *testing.T) {
 	runCaseOnAllBackends(t, "capability-unknown-never-arms")
+}
+
+// TestConformanceThreadResolveRoundTrip is S00 Q2 row 1's licensing case
+// (REQ-E10-S07-03): post a thread through the port, resolve it through the
+// port, and read isResolved back through the port's listing — the round trip
+// that licenses GitHub's resolvable-threads C constant (dossier C1/C2).
+func TestConformanceThreadResolveRoundTrip(t *testing.T) {
+	runCaseOnAllBackends(t, "threads-resolvable-graphql")
 }
 
 // TestConformanceCapabilityReportExhaustive is S00 Q2's exhaustiveness case

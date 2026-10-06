@@ -57,8 +57,77 @@ func caseCapabilityReportExhaustive(t TB, f Factory) {
 	}
 }
 
+// caseThreadsResolveRoundTrip is S00 Q2 row 1's licensing case
+// (REQ-E10-S07-03, catalog row threads-resolvable-graphql): a thread posted
+// through the port is resolved through the port, and the resolution READS BACK
+// through the port's listing — post (REST), resolve (GraphQL), read
+// isResolved. This licenses GitHub's resolvable-threads C constant the same
+// way the p3e5-* reconciliation cases license GitLab's.
+//
+// It runs against every backend (the fake and GitLab track resolution in
+// their listings; GitHub's resolution is GraphQL-only, dossier §4, so its
+// listing consults the reviewThreads query). Resolution state must read back
+// through the PORT's listing — an adapter whose listings cannot see
+// resolution would brick every preserve-resolution rerun.
+func caseThreadsResolveRoundTrip(t TB, f Factory) {
+	t.Helper()
+	b := f(t, capabilityConfig())
+
+	created, err := b.Port.CreateThread(proj, mrIID, rerunChallengeMarker(), "obligation not proven")
+	if err != nil {
+		t.Fatalf("CreateThread: %v", err)
+	}
+	if created.ID == "" {
+		t.Fatal("CreateThread must return the forge-assigned thread id")
+	}
+	if got := b.Observer.ThreadsCreated(); got != 1 {
+		t.Fatalf("the posted thread must be created exactly once, got %d", got)
+	}
+
+	// Before resolution: the listing reports the thread OPEN.
+	open, err := b.Port.ListBotThreads(proj, mrIID)
+	if err != nil {
+		t.Fatalf("ListBotThreads: %v", err)
+	}
+	if open := threadByID(open, created.ID); open == nil || open.Resolved {
+		t.Fatalf("a freshly posted thread must read back open through the port's listing, got %+v", open)
+	}
+
+	if err := b.Port.ResolveThread(proj, mrIID, created.ID); err != nil {
+		t.Fatalf("ResolveThread: %v", err)
+	}
+
+	// The resolution READS BACK through the port's listing — the forge agrees.
+	threads, err := b.Port.ListBotThreads(proj, mrIID)
+	if err != nil {
+		t.Fatalf("ListBotThreads after resolve: %v", err)
+	}
+	resolved := threadByID(threads, created.ID)
+	if resolved == nil || !resolved.Resolved {
+		t.Fatalf("the resolved thread must read back RESOLVED through the port's listing, got %+v", resolved)
+	}
+	if !b.Observer.IsResolved(created.ID) {
+		t.Fatal("the observer's resolution reading must agree with the port's (dossier C1: isResolved reads back)")
+	}
+	if got := b.Observer.ThreadsResolved(); got != 1 {
+		t.Fatalf("the resolve must be recorded exactly once, got %d", got)
+	}
+	// A thread-resolution round trip performs no merge-path writes.
+	if got := b.Observer.MergeAttempts() + b.Observer.MergesPerformed() + b.Observer.Approvals(); got != 0 {
+		t.Fatalf("a thread-resolution round trip performs zero forge merge/approve writes, got %d", got)
+	}
+}
+
+func threadByID(threads []forge.Thread, id string) *forge.Thread {
+	for i := range threads {
+		if threads[i].ID == id {
+			return &threads[i]
+		}
+	}
+	return nil
+}
+
 // caseCapabilityUnknownNeverArms is S00 Q2's arming case (epic REQ-E10-S04-02),
-// in two legs on the SAME backend:
 //
 //	leg 1 (the refusal): unknown at a consultation point refuses arming through
 //	    the PORT, and the refused reconcile performs zero forge writes;

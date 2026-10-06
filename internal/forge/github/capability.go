@@ -75,6 +75,13 @@ func (c *Client) probeCapabilities(project, mr string) (forge.CapabilityReport, 
 	case mergeRefReadable:
 		caps[forge.CapabilityMergeResultPinning] = forge.SupportedCapabilityEntry(
 			"probe: refs/pull/{n}/merge is readable — a real merge-result commit backs the digest axis (dossier C16)")
+	case mergeRefUnmergeable:
+		// REQ-E10-S11-03: the PR was not mergeable when the probe ran — the
+		// merge-queue-or-blocked shape. The digest axis is honestly
+		// unavailable, and completeForMerge refuses to arm on it.
+		caps[forge.CapabilityMergeResultPinning] = forge.AbsentCapabilityEntry(fmt.Sprintf(
+			"merge result unavailable: mergeable_state %q — the PR is not mergeable now (merge queue in use or blocked, dossier C14/C16), so the digest axis is unavailable and the merge is not armed",
+			c.lastMergeableState()))
 	case mergeRefUnreadable:
 		caps[forge.CapabilityMergeResultPinning] = forge.AbsentCapabilityEntry(
 			"merge ref unreadable: not mergeable or merge queue in use (dossier C16) — the digest axis is honestly unavailable and completeForMerge refuses to arm")

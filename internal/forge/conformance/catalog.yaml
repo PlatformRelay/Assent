@@ -13,7 +13,7 @@ cases:
     test: TestConformanceTargetAdvancedRejected
     package: internal/forge/conformance
     forge: gitlab
-    adapters: [fake, gitlab]
+    adapters: [fake, gitlab, github]
 
   - id: sha-guard-source-moved
     adr: ADR-0015 §2
@@ -22,7 +22,7 @@ cases:
     test: TestConformanceSourceMovedRejected
     package: internal/forge/conformance
     forge: gitlab
-    adapters: [fake, gitlab]
+    adapters: [fake, gitlab, github]
 
   # --- REV1-S01 / U-04 item 1: read the judged content at the pinned SHA ---
   # The CAS merges once a moved head is restored to the pin, so the CAS alone
@@ -34,7 +34,7 @@ cases:
     test: TestConformanceSourceMovedAndRestored
     package: internal/forge/conformance
     forge: gitlab
-    adapters: [fake, gitlab]
+    adapters: [fake, gitlab, github]
     note: moved-away refuses before MergeCAS; restored to the pin merges once — the guard's limit, not a defect
 
   # --- E4-S09 P3-E5 reconciliation replay (ADR-0019) ---
@@ -45,7 +45,7 @@ cases:
     test: TestConformanceRerunIdempotence
     package: internal/forge/conformance
     forge: gitlab
-    adapters: [fake, gitlab]
+    adapters: [fake, gitlab, github]
 
   - id: p3e5-duplicate-repair
     adr: ADR-0019
@@ -54,7 +54,7 @@ cases:
     test: TestConformanceDuplicateRepair
     package: internal/forge/conformance
     forge: gitlab
-    adapters: [fake, gitlab]
+    adapters: [fake, gitlab, github]
 
   - id: p3e5-spoofed-marker-ignored
     adr: ADR-0019
@@ -63,7 +63,7 @@ cases:
     test: TestConformanceSpoofedMarkerIgnored
     package: internal/forge/conformance
     forge: gitlab
-    adapters: [fake, gitlab]
+    adapters: [fake, gitlab, github]
 
   # --- E4-S08 assent-policy self-vouch (ADR-0015 §1) ---
   - id: assent-policy-self-edit-block
@@ -176,8 +176,8 @@ cases:
     test: TestConformanceForkHeadUnchangedFileNoLifecycle
     package: internal/forge/conformance
     forge: both
-    adapters: [fake, gitlab]
-    note: a fork MR with an unchanged governed file yields NO lifecycle event — the fabricated-DELETE defect; GitHub factory joins in E10-S06/S07
+    adapters: [fake, gitlab, github]
+    note: a fork MR with an unchanged governed file yields NO lifecycle event — the fabricated-DELETE defect; the GitHub harness serves the fork head identity in the PR JSON and the head content at the head SHA in the base repo (S00 Q1's addressing model)
 
   - id: fork-head-genuine-delete-detected
     adr: ADR-0021 item 5
@@ -186,7 +186,7 @@ cases:
     test: TestConformanceForkHeadGenuineDeleteDetected
     package: internal/forge/conformance
     forge: both
-    adapters: [fake, gitlab]
+    adapters: [fake, gitlab, github]
     note: positive control — a fork MR that really deletes the governed file still mints KindDelete
 
   - id: forbidden-never-renders-as-absent
@@ -196,8 +196,8 @@ cases:
     test: TestConformanceForbiddenNotAbsent
     package: internal/forge/conformance
     forge: both
-    adapters: [fake, gitlab]
-    note: a permission-refused read carries forge.ErrUnauthorized, never absence; GitHub factory joins at E10-S06 (S00 Q4)
+    adapters: [fake, gitlab, github]
+    note: a permission-refused read carries forge.ErrUnauthorized, never absence; the GitHub harness refuses the SPECIFIC content path with the probe staying 200 (S00 Q4)
 
   - id: absent-file-still-renders-as-absent
     adr: ADR-0021 item 6
@@ -206,7 +206,7 @@ cases:
     test: TestConformanceAbsentFileIsAbsent
     package: internal/forge/conformance
     forge: both
-    adapters: [fake, gitlab]
+    adapters: [fake, gitlab, github]
     note: positive control — a genuine 404 still yields forge.ErrNotFound (EFE-S03 preserved)
 
   - id: own-markers-recognised-identity
@@ -216,8 +216,8 @@ cases:
     test: TestConformanceOwnMarkersRecognisedIdentity
     package: internal/forge/conformance
     forge: both
-    adapters: [fake, gitlab]
-    note: PAT shape (identity is a User) on both factories; the App-installation shape joins when an App-auth adapter does (E10-S06+)
+    adapters: [fake, gitlab, github]
+    note: PAT shape (identity is a User) on all three factories; the App-installation shape joins when an App-auth adapter does (E10-S06+)
 
   # --- S00 Q4's remaining sentinels: deferred until their story's factory/transport cases land ---
   - id: ratelimit-403-is-transport-error
@@ -241,15 +241,16 @@ cases:
     note: deferred to E10-S07 — the fine-grained-PAT shape (repo read 200, every content read 404) is a GitHub token shape
 
   # --- S00 Q2/Q3 capability cases ---
+  # --- S00 Q2/Q3 capability cases ---
   - id: threads-resolvable-graphql
     adr: ADR-0021 §3
     level: L1
     req: REQ-E10-S07-03
     test: TestConformanceThreadResolveRoundTrip
     package: internal/forge/conformance
-    forge: github-deferred
+    forge: github
     adapters: [github]
-    note: licenses GitHub resolvable-threads C constant — post a thread, resolve via GraphQL, read isResolved (E10-S06/S07)
+    note: implemented as a Cases() row (E10-S10) — a thread posted through the port is resolved through the port and the resolution reads back through the port's listing (reviewThreads.isResolved / resolveReviewThread, dossier C1/C2); licenses GitHub's resolvable-threads C constant. Runs against every backend via RunSuite; the row's claim is the GitHub license
 
   - id: capability-unknown-never-arms
     adr: ADR-0021 §3
@@ -258,7 +259,7 @@ cases:
     test: TestConformanceUnknownNeverArms
     package: internal/forge/conformance
     forge: both
-    adapters: [fake, gitlab]
+    adapters: [fake, gitlab, github]
     note: unknown at a consultation point refuses arming, merges == 0 — and the mandatory positive control (arming granted ⇒ merges == 1) lives in the same case body
 
   - id: capability-report-exhaustive
@@ -269,7 +270,7 @@ cases:
     package: internal/forge/conformance
     forge: github-deferred
     adapters: [fake, gitlab, github]
-    note: executed by a direct entry test over both built-in factories (not RunSuite) — the report's shape is a PORT property the sabotage fixture cannot corrupt, so the can-fail gate has no purchase; dispositioned as executed-outside-RunSuite
+    note: executed by a direct entry test over all three built-in factories (not RunSuite) — the report's shape is a PORT property the sabotage fixture cannot corrupt, so the can-fail gate has no purchase; dispositioned as executed-outside-RunSuite
 
   - id: capability-supported-does-arm
     adr: ADR-0021 §3

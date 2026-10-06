@@ -40,10 +40,18 @@ func caseRerunIdempotence(t TB, f Factory) {
 
 	t.Run("rerun-idempotence", func(t TB) {
 		// Pre-state = rerun-idempotence.yaml run2.step2ExistingArtifacts (lines 58-66).
+		// The yaml records GitLab's forge-id space ("note/<n>"); the replay
+		// seeds the same artifacts in the THREAD-ID VOCABULARY the adapter
+		// under test produces ("comment/<n>" — the GitHub adapter derives the
+		// forge id from the numeric REST review-comment id), because a seeded
+		// thread id only round-trips where the adapter reports the forge's id
+		// verbatim (GitLab discussion ids are opaque; its harness seeds them
+		// verbatim). The invariants — zero new threads, in-place summary,
+		// reviewer resolution preserved — are id-shape independent.
 		b := f(t, replayConfig(proj, mrIID))
 		mustSeedNote(t, b, "note/9000", botID, rerunSummaryMarker(), "old summary")
-		mustSeedThread(t, b, "note/9001", botID, rerunChallengeMarker(), true) // reviewer-resolved
-		mustSeedThread(t, b, "note/9002", botID, rerunCommentMarker(), false)
+		mustSeedThread(t, b, "comment/9001", botID, rerunChallengeMarker(), true) // reviewer-resolved
+		mustSeedThread(t, b, "comment/9002", botID, rerunCommentMarker(), false)
 
 		created, err := replayRerunIdempotence(b.Port, b.Observer)
 		if err != nil {
@@ -56,8 +64,8 @@ func caseRerunIdempotence(t TB, f Factory) {
 		if got := b.Observer.BotThreadCount(); got != 2 {
 			t.Fatalf("rerun must leave exactly 2 bot threads, got %d", got)
 		}
-		if !b.Observer.IsResolved("note/9001") {
-			t.Fatal("rerun must preserve reviewer resolution of note/9001")
+		if !b.Observer.IsResolved("comment/9001") {
+			t.Fatal("rerun must preserve reviewer resolution of comment/9001")
 		}
 		// Was GitLab-only before extraction; now required of every backend.
 		if got := b.Observer.ThreadsCreated(); got != 0 {
@@ -81,7 +89,7 @@ func caseRerunIdempotence(t TB, f Factory) {
 		m := crashChallengeMarker()
 		b := f(t, replayConfig(m.Slot.Project, m.Slot.MR))
 		mustSeedNote(t, b, "note/7000", botID, crashSummaryMarker(), "crash summary")
-		mustSeedThread(t, b, "note/7001", botID, m, false)
+		mustSeedThread(t, b, "comment/7001", botID, m, false)
 
 		created, err := replayCrashThenRerun(b.Port)
 		if err != nil {
@@ -113,16 +121,16 @@ func caseDuplicateRepair(t TB, f Factory) {
 	t.Helper()
 
 	wantRepairs := []forge.Repair{
-		{RepairedForgeID: "note/8003", CanonicalForgeID: "note/8001", Action: "resolve"},
-		{RepairedForgeID: "note/8005", CanonicalForgeID: "note/8001", Action: "resolve"},
+		{RepairedForgeID: "comment/8003", CanonicalForgeID: "comment/8001", Action: "resolve"},
+		{RepairedForgeID: "comment/8005", CanonicalForgeID: "comment/8001", Action: "resolve"},
 	}
 
 	for _, tc := range []struct {
 		name string
 		seed []string
 	}{
-		{"fixture-pagination-order", []string{"note/8005", "note/8001", "note/8003"}},
-		{"reversed-scan-order", []string{"note/8003", "note/8001", "note/8005"}},
+		{"fixture-pagination-order", []string{"comment/8005", "comment/8001", "comment/8003"}},
+		{"reversed-scan-order", []string{"comment/8003", "comment/8001", "comment/8005"}},
 	} {
 		t.Run(tc.name, func(t TB) {
 			b := f(t, replayConfig("platform/orders-service", "612"))
@@ -135,9 +143,13 @@ func caseDuplicateRepair(t TB, f Factory) {
 				t.Fatal(err)
 			}
 
-			// expected.canonicalForgeId: note/8001 (duplicate-repair.yaml line 102).
-			if len(receipt.Operations) != 1 || receipt.Operations[0].TargetID != "note/8001" {
-				t.Fatalf("canonical must be note/8001, got %+v", receipt.Operations)
+			// expected.canonicalForgeId: the LOWEST forge id
+			// (duplicate-repair.yaml line 102 — the yaml records it in
+			// GitLab's id space as note/8001; the replay asserts the same
+			// lowest-numeric-selection property in the thread-id vocabulary
+			// the adapter under test produces).
+			if len(receipt.Operations) != 1 || receipt.Operations[0].TargetID != "comment/8001" {
+				t.Fatalf("canonical must be comment/8001, got %+v", receipt.Operations)
 			}
 			if len(receipt.Repairs) != len(wantRepairs) {
 				t.Fatalf("expected %d repairs, got %+v", len(wantRepairs), receipt.Repairs)
@@ -175,8 +187,8 @@ func caseSpoofedMarkerIgnored(t TB, f Factory) {
 
 	t.Run("contributor-marker-invisible-on-rerun", func(t TB) {
 		b := f(t, replayConfig(m.Slot.Project, m.Slot.MR))
-		mustSeedThread(t, b, "note/9002", botID, m, false)
-		mustSeedThread(t, b, "note/6660", "contributor-mallory", m, false)
+		mustSeedThread(t, b, "comment/9002", botID, m, false)
+		mustSeedThread(t, b, "comment/6660", "contributor-mallory", m, false)
 
 		before := b.Observer.ThreadCount()
 		receipt, err := forge.Reconcile(b.Port, testClock(), desiredThreadFor(m, rerunSummary()), forge.Preconditions{})
@@ -187,17 +199,21 @@ func caseSpoofedMarkerIgnored(t TB, f Factory) {
 		// still exists but is invisible to the bot filter" is a different claim from
 		// "no contributor thread exists", and only the unfiltered count can tell a
 		// backend that IGNORED the spoof from one that DELETED it.
+		// ThreadCount is deliberately the UNFILTERED count: "the contributor thread
+		// still exists but is invisible to the bot filter" is a different claim from
+		// "no contributor thread exists", and only the unfiltered count can tell a
+		// backend that IGNORED the spoof from one that DELETED it.
 		if after := b.Observer.ThreadCount(); after != before {
 			t.Fatalf("spoofed marker must not create threads on rerun: before=%d after=%d", before, after)
 		}
-		if got := threadOpTarget(receipt, "note/9002"); got != "note/9002" {
-			t.Fatalf("receipt must target bot thread note/9002, got %q (contributor would be note/6660)", got)
+		if got := threadOpTarget(receipt, "comment/9002"); got != "comment/9002" {
+			t.Fatalf("receipt must target bot thread comment/9002, got %q (contributor would be comment/6660)", got)
 		}
 	})
 
 	t.Run("contributor-only-creates-bot-thread", func(t TB) {
 		b := f(t, replayConfig(m.Slot.Project, m.Slot.MR))
-		mustSeedThread(t, b, "note/6660", "contributor-mallory", m, false)
+		mustSeedThread(t, b, "comment/6660", "contributor-mallory", m, false)
 
 		if _, err := forge.Reconcile(b.Port, testClock(), desiredThreadFor(m, nil), forge.Preconditions{}); err != nil {
 			t.Fatalf("Reconcile: %v", err)

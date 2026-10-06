@@ -30,10 +30,18 @@ import (
 // (mergeResultDigest), the state the merge-result-pinning capability entry
 // grades from. Empty means never probed on this run.
 const (
-	mergeRefUnprobed   = ""
-	mergeRefReadable   = "readable"
-	mergeRefUnreadable = "unreadable"
+	mergeRefUnprobed    = ""
+	mergeRefReadable    = "readable"
+	mergeRefUnreadable  = "unreadable"
+	mergeRefUnmergeable = "unmergeable"
 )
+
+// cleanMergeableState is the PR mergeable_state under which the merge ref
+// refs/pull/{n}/merge is readable and the digest axis is live (dossier C16).
+// Any other state — blocked, dirty, draft, queued — means the PR is not
+// mergeable now, which is exactly the merge-queue shape (dossier C14): the
+// merge ref is absent and the digest axis is honestly unavailable.
+const cleanMergeableState = "clean"
 
 // setMergeRefState records the merge-ref probe outcome for the capability
 // report (probeCapabilities grades merge-result-pinning from it; the state is
@@ -50,6 +58,25 @@ func (c *Client) mergeRefStateOf() string {
 	c.scopeMu.Lock()
 	defer c.scopeMu.Unlock()
 	return c.mergeRefState
+}
+
+// recordMergeableState records the PR's mergeable_state from the latest PR
+// read (freshPR). mergeResultDigest consults it so the digest axis and the
+// merge-result-pinning grading both derive from the SAME PR read. It carries
+// its own mutex: the PR read chain (mrPinned) holds scopeMu, so recording
+// under scopeMu would re-enter a held mutex.
+func (c *Client) recordMergeableState(state string) {
+	c.stateMu.Lock()
+	c.lastMergeState = state
+	c.stateMu.Unlock()
+}
+
+// lastMergeableState returns the mergeable_state of the latest PR read, ""
+// when this client has read no PR yet on this run.
+func (c *Client) lastMergeableState() string {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	return c.lastMergeState
 }
 
 // ghLabel is one label of a PR.
@@ -70,10 +97,12 @@ func labelNames(labels []ghLabel) []string {
 // BRANCH TIP (not the merge base); head.SHA is the PR head; head.Ref is the
 // PR's own head BRANCH NAME (S00 Q1 forbids smuggling refs/pull/N/head into
 // MRInfo.SourceBranch — it corrupts a documented field and leaks into
-// rendering, ADR-0021 item 5).
+// rendering, ADR-0021 item 5). NodeID is the PR's GraphQL node id, which
+// enablePullRequestAutoMerge addresses the pull request by (dossier C11).
 type ghPR struct {
 	Number int       `json:"number"`
 	SHA    string    `json:"sha"`
+	NodeID string    `json:"node_id"`
 	Labels []ghLabel `json:"labels"`
 	Base   struct {
 		Ref  string `json:"ref"`
@@ -138,7 +167,8 @@ func repoParts(project string) (string, error) {
 
 // freshPR performs the raw PR GET GetMR and the CAS re-reads share: one GET
 // that reports the head SHA (pr.sha), the PR's own head branch (head.ref), the
-// base branch tip (base.sha, NOT the merge-base) and the fork identities.
+// base branch tip (base.sha, NOT the merge-base), the fork identities, and the
+// PR's mergeable_state, which the adapter records for the merge-ref probe.
 func (c *Client) freshPR(repo, mr string) (ghPR, error) {
 	status, _, raw, err := c.do(http.MethodGet, "/repos/"+repo+"/pulls/"+mr, nil, "")
 	if err != nil {
@@ -151,6 +181,7 @@ func (c *Client) freshPR(repo, mr string) (ghPR, error) {
 	if err := json.Unmarshal(raw, &pr); err != nil {
 		return ghPR{}, fmt.Errorf("github: decode PR %s#%s: %w", repo, mr, err)
 	}
+	c.recordMergeableState(pr.MergeableState)
 	return pr, nil
 }
 
@@ -351,7 +382,19 @@ func (c *Client) FileAtRef(project, path, ref string) ([]byte, error) {
 // role gitlab.SyntheticDigest plays for GitLab); it is empty when the forge
 // exposes none.
 //
-//   - 200 → digest = the merge ref's object SHA (raw, no prefix).
+// REQ-E10-S11-03: the merge ref is consulted ONLY when the PR's recorded
+// mergeable_state is "clean" — the state under which the ref exists and the
+// merge result it mints is the one the forge will produce. Any other state
+// (blocked, dirty, draft, queued) is the merge-queue-or-not-mergeable shape:
+// the digest is empty (no pin is fabricated) and merge-result-pinning is
+// graded from that same outcome, so the capability state and the digest the
+// CAS pins come from ONE read chain.
+//
+//   - mergeable_state "clean" + 200 → digest = the merge ref's object SHA
+//     (raw, no prefix).
+//   - mergeable_state not "clean" → "" with a nil error, no ref probe; the
+//     unavailability is recorded so the capability report grades
+//     merge-result-pinning ABSENT with the merge-queue reason.
 //   - 404 → "" with a nil error, and the unavailability is recorded so the
 //     capability report grades merge-result-pinning ABSENT ("merge ref
 //     unreadable: not mergeable or merge queue in use"). A permission-denied
@@ -368,6 +411,15 @@ func (c *Client) mergeResultDigest(project, mr string) (string, error) {
 	repo, err := repoParts(project)
 	if err != nil {
 		return "", err
+	}
+	// REQ-E10-S11-03: a PR that is not mergeable NOW never gets a digest. The
+	// recorded state comes from the PR read the caller just made (freshPR in
+	// the same Snapshot/CurrentHeads chain), so the digest axis and the PR
+	// cannot disagree. No pin is fabricated for the merge-queue shape — the
+	// digest stays empty and arming is refused on the capability gap.
+	if state := c.lastMergeableState(); state != "" && state != cleanMergeableState {
+		c.setMergeRefState(mergeRefUnmergeable)
+		return "", nil
 	}
 	// The ref name carries slashes, so it travels as a URL-encoded path
 	// segment: refs%2Fpull%2F{n}%2Fmerge (dossier C16's route).

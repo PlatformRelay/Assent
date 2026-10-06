@@ -72,6 +72,37 @@ func unexpectedEndpoint(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
 }
 
+// serveThreadsQueryOpen answers the reviewThreads listing query the bot-thread
+// listing consults (dossier §4) with every named comment unresolved — the
+// handlers whose thread states are not the subject of the test. The query body
+// is already consumed by the caller.
+func serveThreadsQueryOpen(w http.ResponseWriter, query string, ids ...int) {
+	if !strings.Contains(query, "reviewThreads") {
+		http.Error(w, "unexpected graphql operation", http.StatusInternalServerError)
+		return
+	}
+	nodes := make([]string, 0, len(ids))
+	for _, id := range ids {
+		nodes = append(nodes, fmt.Sprintf(`{"id":"PRRC_node%d","isResolved":false,"comments":{"nodes":[{"databaseId":%d}]}}`, id, id))
+	}
+	_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"nodes":[`+strings.Join(nodes, ",")+`]}}}}}`)
+}
+
+// serveThreadsQueryWithStates answers the reviewThreads listing query with
+// EXPLICIT per-comment resolution states — the handlers that assert the
+// preserve-resolution reading itself.
+func serveThreadsQueryWithStates(w http.ResponseWriter, query string, states map[int64]bool) {
+	if !strings.Contains(query, "reviewThreads") {
+		http.Error(w, "unexpected graphql operation", http.StatusInternalServerError)
+		return
+	}
+	nodes := make([]string, 0, len(states))
+	for id, resolved := range states {
+		nodes = append(nodes, fmt.Sprintf(`{"id":"PRRC_node%d","isResolved":%t,"comments":{"nodes":[{"databaseId":%d}]}}`, id, resolved, id))
+	}
+	_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"nodes":[`+strings.Join(nodes, ",")+`]}}}}}`)
+}
+
 // TestMarkerOfParsesEnvelope proves the marker round-trip: the
 // render.MarkerSentinel JSON payload decodes back to the four frozen concepts,
 // a markerless body is (false, nil), and a malformed payload is an error.
@@ -117,6 +148,14 @@ func TestMarkerSpoofAndMalformed(t *testing.T) {
 				commentRow(604, botUser, "a bot comment with no marker"),                 // bot: no marker
 			)
 			_, _ = io.WriteString(w, body)
+		case r.Method == http.MethodPost && r.URL.Path == "/graphql":
+			var gqlReq struct {
+				Query string `json:"query"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&gqlReq); err != nil {
+				t.Fatalf("decode graphql request: %v", err)
+			}
+			serveThreadsQueryOpen(w, gqlReq.Query, 601, 602, 603, 604)
 		default:
 			unexpectedEndpoint(w, r)
 		}
@@ -398,7 +437,19 @@ func TestResolveThreadAlreadyResolved(t *testing.T) {
 				commentRow(401, botUser, envelopeBody(t, threadMarker(), "the finding")),
 			))
 		case r.Method == http.MethodPost && r.URL.Path == "/graphql":
-			_, _ = io.WriteString(w, `{"data":null,"errors":[{"message":"Thread is already resolved."}]}`)
+			var req struct {
+				Query     string         `json:"query"`
+				Variables map[string]any `json:"variables"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode graphql request: %v", err)
+			}
+			switch {
+			case strings.Contains(req.Query, "reviewThreads"):
+				serveThreadsQueryOpen(w, req.Query, 401)
+			default:
+				_, _ = io.WriteString(w, `{"data":null,"errors":[{"message":"Thread is already resolved."}]}`)
+			}
 		default:
 			unexpectedEndpoint(w, r)
 		}
@@ -422,6 +473,16 @@ func TestResolveThreadNotConfirmedFailsClosed(t *testing.T) {
 				commentRow(401, botUser, envelopeBody(t, threadMarker(), "the finding")),
 			))
 		case r.Method == http.MethodPost && r.URL.Path == "/graphql":
+			var req struct {
+				Query string `json:"query"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode graphql request: %v", err)
+			}
+			if strings.Contains(req.Query, "reviewThreads") {
+				serveThreadsQueryOpen(w, req.Query, 401)
+				return
+			}
 			_, _ = io.WriteString(w, `{"data":{"resolveReviewThread":{"thread":{"id":"x","isResolved":false}}}}`)
 		default:
 			unexpectedEndpoint(w, r)

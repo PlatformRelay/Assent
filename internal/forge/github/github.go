@@ -68,8 +68,17 @@ type Client struct {
 
 	// mergeRefState records the LAST merge-ref probe outcome for the pinned
 	// MR (snapshot.go's mergeResultDigest), which the merge-result-pinning
-	// capability entry grades from. Guarded with the same small-state mutex.
-	mergeRefState string
+	// capability entry grades from. lastMergeState records the mergeable_state
+	// of the latest PR read, which gates whether the merge-ref probe runs at
+	// all (REQ-E10-S11-03: a non-clean PR is not mergeable now — the merge
+	// queue shape — and the digest axis is honestly unavailable). mergeRefState
+	// is guarded with the same small-state mutex as the pin caches;
+	// lastMergeState carries its OWN mutex because it is recorded from the PR
+	// read chain, which mrPinned holds scopeMu through (a mutex may never be
+	// re-entered).
+	mergeRefState  string
+	stateMu        sync.Mutex
+	lastMergeState string
 
 	// nodeIDs remembers each review comment's GraphQL node id (REST `node_id`)
 	// keyed by its numeric REST id. Thread resolution is GraphQL-only on

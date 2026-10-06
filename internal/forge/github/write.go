@@ -202,14 +202,10 @@ func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 					ID:     fmt.Sprintf("comment/%d", row.ID),
 					Marker: marker,
 					Author: row.User.Login,
-					// GitHub's REST listing carries no resolution state
-					// (resolution is GraphQL-only, dossier §4); an open
-					// reading is the conservative one.
-					Resolved: false,
 				})
 			}
 			if len(rows) < listPerPage {
-				return out, nil
+				return c.withResolutionStates(project, mr, out)
 			}
 		case http.StatusNotFound, http.StatusForbidden:
 			// Per S00 Q4: a permission-denied listing must NOT render as an
@@ -219,6 +215,34 @@ func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 			return nil, fmt.Errorf("github: list PR review comments %s#%s: unexpected status %d", repo, mr, status)
 		}
 	}
+}
+
+// withResolutionStates fills each listed thread's Resolved field from the
+// forge's GraphQL review threads (dossier §4: resolution is GraphQL-only and
+// the REST listing cannot see it). A reviewer-resolved thread MUST read back
+// resolved — the engine's preserve-resolution rescan fails closed when a
+// resolved artifact is reported open, so an adapter that always claims open
+// would brick every rerun that touches a reviewer-resolved slot. The listing
+// is the read that carries the truth, so the resolution read rides it: a
+// transport failure propagates, never a silently-open reading. An empty
+// listing needs no read.
+func (c *Client) withResolutionStates(project, mr string, threads []forge.Thread) ([]forge.Thread, error) {
+	if len(threads) == 0 {
+		return threads, nil
+	}
+	states, err := c.threadResolutionStates(project, mr)
+	if err != nil {
+		return nil, err
+	}
+	for i := range threads {
+		_, numeric := ghNoteID(threads[i].ID)
+		num, err := strconv.ParseInt(numeric, 10, 64)
+		if err != nil {
+			continue
+		}
+		threads[i].Resolved = states[num]
+	}
+	return threads, nil
 }
 
 // ListBotNotes returns bot-authored issue comments (the summary-comment slot),
@@ -549,6 +573,12 @@ func (c *Client) MergeCAS(project, mr string, m forge.DesiredMerge) (string, err
 	// Three-axis guard: re-read heads FRESH and reject a moved source, target
 	// or merge result BEFORE the PUT (the pre-write SHA-guard, ADR-0015 §2).
 	curSource, curTarget, curDigest, err := c.CurrentHeads(project, mr)
+	if err != nil {
+		// A transport failure on the re-read is NOT a SHA move: surface it as
+		// the error it is — ErrSHAMoved would claim a drift that never
+		// happened and the caller could not tell re-evaluation from breakage.
+		return "", fmt.Errorf("github: re-read current heads before merge %s#%s: %w", project, mr, err)
+	}
 	if curTarget != m.TargetSha {
 		return "", fmt.Errorf("%w: target tip moved (pinned %s, now %s) — refusing to merge an unevaluated target",
 			forge.ErrSHAMoved, m.TargetSha, curTarget)

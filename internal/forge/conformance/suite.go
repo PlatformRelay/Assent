@@ -58,6 +58,10 @@ func Cases() []Case {
 		{ID: "own-markers-recognised-identity", Run: caseOwnMarkersRecognisedIdentity},
 		// Capability-model cases (E10-S04; minted by S00's Q2 table).
 		{ID: "capability-unknown-never-arms", Run: caseCapabilityUnknownNeverArms},
+		// The resolvable-threads licensing round trip (S00 Q2 row 1,
+		// REQ-E10-S07-03): post via REST, resolve, read isResolved back
+		// through the port's listing.
+		{ID: "threads-resolvable-graphql", Run: caseThreadsResolveRoundTrip},
 	}
 }
 

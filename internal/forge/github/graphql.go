@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -91,3 +92,112 @@ const gqlResolveThread = `mutation($threadId: ID!) {
     }
   }
 }`
+
+// gqlReviewThreads reads the PR's review threads with their resolution states
+// (dossier C1/C2: resolution is GraphQL-only, and the REST listing cannot see
+// it). The port's Thread.Resolved is data the engine consumes — a reviewer's
+// resolution must read back resolved — so every bot-thread listing consults
+// this query and maps each review comment's numeric id to its thread's
+// isResolved state.
+const gqlReviewThreads = `query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100, after: $cursor) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          isResolved
+          comments(first: 10) {
+            nodes {
+              databaseId
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
+// threadResolutionStates reads the PR's review threads via GraphQL and returns
+// each review comment's numeric REST id mapped to its thread's isResolved
+// state. Comments this query does not mention are open (the conservative
+// reading); a transport failure propagates — an unreadable resolution state is
+// not silently an open one. The cursor loop is capped like every listing read
+// (maxListPages, fail-closed exhaustion).
+func (c *Client) threadResolutionStates(project, mr string) (map[int64]bool, error) {
+	owner, name, err := ownerRepo(project)
+	if err != nil {
+		return nil, err
+	}
+	number, err := strconv.Atoi(mr)
+	if err != nil {
+		return nil, fmt.Errorf("github: PR number %q is not numeric — review threads cannot be addressed", mr)
+	}
+	states := make(map[int64]bool)
+	cursor := ""
+	for page := 1; ; page++ {
+		if page > maxListPages {
+			return nil, fmt.Errorf(
+				"github: list review threads %s#%s: pagination cap of %d pages reached without a short page — refusing to reconcile against an unreadable resolution state",
+				project, mr, maxListPages)
+		}
+		vars := map[string]any{"owner": owner, "name": name, "number": number}
+		if cursor != "" {
+			vars["cursor"] = cursor
+		}
+		data, err := c.gqlDo(c.ctx, gqlReviewThreads, vars)
+		if err != nil {
+			return nil, fmt.Errorf("github: review threads %s#%s: %w", project, mr, err)
+		}
+		var payload struct {
+			Repository struct {
+				PullRequest struct {
+					ReviewThreads struct {
+						PageInfo struct {
+							HasNextPage bool   `json:"hasNextPage"`
+							EndCursor   string `json:"endCursor"`
+						} `json:"pageInfo"`
+						Nodes []struct {
+							ID         string `json:"id"`
+							IsResolved bool   `json:"isResolved"`
+							Comments   struct {
+								Nodes []struct {
+									DatabaseID int64 `json:"databaseId"`
+								} `json:"nodes"`
+							} `json:"comments"`
+						} `json:"nodes"`
+					} `json:"reviewThreads"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, fmt.Errorf("github: decode reviewThreads %s#%s: %w", project, mr, err)
+		}
+		threads := payload.Repository.PullRequest.ReviewThreads
+		for _, node := range threads.Nodes {
+			for _, comment := range node.Comments.Nodes {
+				if comment.DatabaseID == 0 {
+					continue
+				}
+				states[comment.DatabaseID] = node.IsResolved
+			}
+		}
+		if !threads.PageInfo.HasNextPage {
+			return states, nil
+		}
+		cursor = threads.PageInfo.EndCursor
+	}
+}
+
+// ownerRepo splits an "owner/repo" project address into its GraphQL halves.
+func ownerRepo(project string) (string, string, error) {
+	parts, err := repoParts(project)
+	if err != nil {
+		return "", "", err
+	}
+	i := strings.Index(parts, "/")
+	return parts[:i], parts[i+1:], nil
+}
