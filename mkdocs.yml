@@ -84,6 +84,7 @@ nav:
       - Install: usage/install.md
       - Walkthrough: usage/walkthrough.md
       - CLI reference: usage/cli.md
+      - Operating safely: usage/operating-safely.md
   - Contracts:
       - Marker grammar: contracts/p3-e5-publication-protocol/marker-grammar.md
       - Reconciliation state table: contracts/p3-e5-publication-protocol/reconciliation-state-table.md

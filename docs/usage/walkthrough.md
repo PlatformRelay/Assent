@@ -209,7 +209,7 @@ in `findings.observed`, structurally excluded from the decision — and read the
 `DecisionRecord`s rather than expecting a scan report. Declare the binding's `require:`
 obligations first: an empty `require:` is refused on the run path, so a binding with none
 never reaches this evidence-gathering step — see
-[How to keep assent advisory](cli.md#how-to-keep-assent-advisory).
+[How to keep assent advisory](operating-safely.md#how-to-keep-assent-advisory).
 
 ## Step 5 — wire CI (GitLab first)
 
