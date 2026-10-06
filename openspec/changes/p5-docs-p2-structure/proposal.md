@@ -15,11 +15,12 @@ addition found at re-verification (S00) is itself structural, not factual.
 
 The audit's P2 findings, still true at `3503cc0`:
 
-- **Item 9 (GAP-2).** `docs/index.md`, the published site's front door, is 18 lines of bare
-  links: one sentence, seven links, no Why, no quick start, no status warning. The README
-  carries the whole narrative and the site home carries none of it — while the README calls
-  the site "the map". Its "Start here" links point at `planning/meta-plan.md` and
-  `planning/open-questions.md`, working documents the nav deliberately excludes.
+- **Item 9 (GAP-2).** `docs/index.md`, the published site's front door, is 18 lines: a
+  hero block, a two-sentence intro and eight links. No Why, no quick start, no status
+  warning. The README carries the whole narrative and the site home carries none of it —
+  while the README calls the site "the map". Its "Start here" links point at
+  `planning/meta-plan.md` and `planning/open-questions.md`, working documents the nav
+  deliberately excludes.
 - **Item 10 (GAP-3, half).** The Usage nav order is Install → CLI reference → Walkthrough:
   the 395-line lookup table sits between the install page and the teaching page.
 - **Item 11 (STYLE-1).** `docs/usage/cli.md` is a reference manual wearing a safety manual:
@@ -29,13 +30,13 @@ The audit's P2 findings, still true at `3503cc0`:
   ADR-0008 §Amendment 2 / ADR-0015 / ADR-0017 / ADR-0020.
 
 **Found at re-verification (S00, not in the audit).** The E10 merge (#191) duplicated the
-README quick-start block: `README.md:105–129` repeats the go-install caveat, the lint/test
-block and the "No repo of your own yet?" paragraph that already sit at `:75–91`, leaving a
-stranded "Developers: gates live in the Taskfile:" line in between. The duplicate still
-carries `@v0.1.0`. Once PR 190 merges, its new DOC-13 pin — every copy-pasteable `@vX.Y.Z`
-pin in the initial chapters equals the latest tag — will scan `README.md` and go red on that
-second copy. De-duplicating is a precondition for both this change's item 9 (it copies the
-quick start) and PR 190's clean landing.
+README quick-start block: `README.md:107–123` repeats the go-install caveat, the lint/test
+block and the "No repo of your own yet?" paragraph that already sit at `:75–91`, leaving
+two "Developers: gates live in the Taskfile:" lines (`:105`, `:125`) around the repeat.
+The duplicate still carries `@v0.1.0`. Once PR 190 merges, its new DOC-13 pin — every
+copy-pasteable `@vX.Y.Z` pin in the initial chapters equals the latest tag — will scan
+`README.md` and go red on that second copy. De-duplicating is a precondition for both this
+change's item 9 (it copies the quick start) and PR 190's clean landing.
 
 ## Scope
 
@@ -48,7 +49,12 @@ quick start) and PR 190's clean landing.
 - **S03 (item 11)** — extract the five cli.md trust-model essays verbatim into
   `docs/usage/operating-safely.md` (Usage nav, per REQ-DOCSNAV-S01-01), leaving the flag
   table plus a one-line caveat + link per safety-relevant flag and a pointer paragraph;
-  retarget the two cross-page/in-page references that point at the essays.
+  retarget the references that point at the essays. The reference inventory at `3503cc0`
+  is three, not two: `cli.md`'s doctor section, `walkthrough.md:212`, and a prose pointer
+  inside accepted ADR-0009 (`docs/adr/0009-execution-modes.md:55`) — the ADR is immutable
+  and stays untouched; the disposition is recorded in S03. In the same commit, the new
+  page joins the exitgate retired-phrase corpus so the trust content does not leave the
+  front-of-house sensor set (review finding, see loop.md dispositions).
 
 ## Non-goals (deliberate)
 
@@ -58,12 +64,14 @@ quick start) and PR 190's clean landing.
 - **No factual claims change.** Copied sentences carry PR 190's corrected wording
   (E1–E9; the `.tf` opaque clause; `@v0.4.0`) but nothing else is reworded. Moved essays
   are byte-identical modulo heading level and internal-link targets.
-- **No new gate pins.** The repo's corrections-and-pins culture pairs each correction with
-  a pin, but PR 190 (open) adds pins DOC-12..DOC-15 to `hack/docs/truthlag_pins_test.sh`;
-  a pin added here would race its numbering and could not be co-edited into an open PR.
-  The README↔index.md duplication this change creates is recorded in the hand-off as the
-  follow-up pin candidate (a DOC-16 or numbered-after-190 pin comparing the copied block
-  against the README it came from).
+- **No numbered gate pins.** The repo's corrections-and-pins culture pairs each correction
+  with a pin, but PR 190 (open) adds pins DOC-12..DOC-15 to `hack/docs/truthlag_pins_test.sh`;
+  a numbered pin added here would race its numbering and could not be co-edited into an
+  open PR. The one coverage extension this change does make is to an existing, nameless
+  gate: `operating-safely.md` joins `hack/audit/exitgate_test.sh`'s PHRASE_CORPUS (a list,
+  not a numbered pin — no numbering race). The README↔index.md duplication this change
+  creates and the DOC-13 initial-chapter list's newest member are recorded in the hand-off
+  as the follow-up pin candidates (numbered after PR 190 lands).
 - **No "Writing rules" page** (the audit's item 10 "+ later" half) — it belongs with item 8.
 - **No walkthrough banner, console-block or step edit** — the walkthrough is P0/P1
   territory; only its one link into a moved essay is retargeted (S03).
@@ -79,10 +87,13 @@ quick start) and PR 190's clean landing.
 ## Merge-order note (for the operator)
 
 PR 190 is open against `4bd2d7f` and this branch is based on `3503cc0`. The two PRs touch
-disjoint regions of the only shared file (`README.md`: 190 edits `:22`, `:45–46`, `:76`;
-this change deletes `:105–129`) and this change does not touch
-`hack/docs/truthlag_pins_test.sh`, which 190 extends by 187 lines. Either order merges
-mechanically clean. Landing **this branch first** keeps `main`'s gates green throughout:
-if 190 lands first into today's tree, its DOC-13 pin goes red on the duplicated `@v0.1.0`
-until this branch removes it. The merge authority decides; the recommendation is here
-because the branch with the pin can only be sequenced by the operator.
+two of the same files. `README.md`: 190 edits `:22`, `:45–46`, `:76`; this change deletes
+`:106–125` — disjoint hunks. `docs/usage/walkthrough.md`: 190 edits six hunks
+(`:1–7`, `:67–110`, `:193–199`, `:223–229`, `:232–238`, `:252–258`); this change retargets
+one link at `:212`, outside every hunk. This change touches no other file 190 touches
+(`hack/docs/truthlag_pins_test.sh`, which 190 extends by 187 lines, is untouched here).
+Either order merges mechanically clean. Landing **this branch first** keeps `main`'s gates
+green throughout: if 190 lands first into today's tree, its DOC-13 pin goes red on the
+duplicated `@v0.1.0` until this branch removes it. The merge authority decides; the
+recommendation is here because the branch with the pin can only be sequenced by the
+operator.
