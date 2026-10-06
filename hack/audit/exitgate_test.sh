@@ -267,6 +267,7 @@ PHRASE_CORPUS=(
   docs/usage/walkthrough.md
   docs/usage/cli.md
   docs/usage/install.md
+  docs/usage/operating-safely.md
   docs/usage/quickstart.md
   examples/README.md
   cmd/assent/main.go
