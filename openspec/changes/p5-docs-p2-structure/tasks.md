@@ -24,6 +24,8 @@ go test ./cmd/assent -run TestNoStaleProductClaims
 
 ## T001 — S00: de-duplicate the README quick start
 
+- [x] — closed 2026-10-07, evidence: evidence/T001.md
+
 1. Delete `README.md` lines 106–125 (the repeated go-install caveat, lint/test prose and
    block, "No repo of your own yet?" paragraph, second "Developers:" line), leaving the
    section to read install → caveat → lint/test → sample-repo → forge selection → GitHub

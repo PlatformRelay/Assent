@@ -104,26 +104,6 @@ Unprobed capabilities never arm ([ADR-0021](docs/adr/0021-multi-adapter-forge-se
 
 Developers: gates live in the [`Taskfile`](Taskfile.yml):
 
-`go install` compiles without link-time stamping, so the binary it produces reports
-`assent 0.0.0-dev` — even when you pin a tag (`@v0.1.0`). For a **version-stamped**
-binary take the Homebrew tap or a release archive: goreleaser injects the version
-(`-X main.version`) and the archives are checksum- and signature-verifiable. Both
-routes are in [docs/usage/install.md](https://platformrelay.github.io/Assent/usage/install/).
-
-Lint and test policies locally. Both commands take the **repository root** — `assent`
-appends `.assent` itself, so passing `.assent/` makes it look for `.assent/.assent`:
-
-```bash
-assent lint .
-assent test .
-```
-
-No repo of your own yet? A clone of this one ships runnable sample policy trees; run the
-two commands above from `examples/packs/service-catalog` (that is the fixture
-`hack/docs/readme_smoke_test.sh` executes this block against).
-
-Developers: gates live in the [`Taskfile`](Taskfile.yml):
-
 ```bash
 task check   # the full gate: fmt, vet, lint, test, coverage, build, dogfood, docs, release pins
 ```
