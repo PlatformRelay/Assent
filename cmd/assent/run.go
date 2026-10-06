@@ -23,6 +23,7 @@ import (
 	"github.com/PlatformRelay/assent/internal/core/decision"
 	"github.com/PlatformRelay/assent/internal/core/policy"
 	"github.com/PlatformRelay/assent/internal/forge"
+	"github.com/PlatformRelay/assent/internal/forge/factory"
 	"github.com/PlatformRelay/assent/internal/render"
 	"github.com/PlatformRelay/assent/schemas"
 )
@@ -32,6 +33,7 @@ import (
 // handed straight to the adapter, never stored where it could be logged.
 type runConfig struct {
 	endpoint  string
+	forge     string // --forge {gitlab|github}; empty autodetects from the endpoint host
 	project   string
 	mr        string
 	policy    string
@@ -87,7 +89,7 @@ func (c clockAdapter) Now() time.Time { return c.now() }
 // production path constructs through internal/forge/factory; tests pass the
 // same adapter pointed at an httptest server.
 func runRun(args []string, getenv func(string) string, clock runClock, stdout, stderr io.Writer,
-	forgeFactory func(endpoint, token, botAuthor string) forge.RunPort) int {
+	forgeFactory func(kind, endpoint, token, botAuthor string) forge.RunPort) int {
 	cfg, err := parseRunFlags(args, stderr)
 	if err != nil {
 		// flag parsing already printed usage; -h/--help returns a clean 2.
@@ -98,14 +100,28 @@ func runRun(args []string, getenv func(string) string, clock runClock, stdout, s
 		return 2
 	}
 
-	// The ONLY secret. Read at the boundary; handed straight to the adapter.
-	token := getenv("GITLAB_TOKEN")
-	if token == "" {
-		_, _ = fmt.Fprintln(stderr, "assent run: GITLAB_TOKEN is required (the PAT is never a flag)")
+	// E10-S13: forge selection with remote-host autodetect; ambiguity or an
+	// unrecognised host fails closed (never a default-to-GitLab).
+	kind, endpoint, err := selectForge(cfg.forge, cfg.endpoint)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "assent run:", err)
 		return 2
 	}
 
-	client := forgeFactory(cfg.endpoint, token, cfg.botAuthor)
+	// The ONLY secret. Read at the boundary; handed straight to the adapter.
+	// The token env follows the forge: GITLAB_TOKEN for GitLab, GITHUB_TOKEN
+	// for GitHub (the dossier's read-only pull_request scope for forks).
+	tokenEnv := "GITLAB_TOKEN"
+	if kind == factory.KindGitHub {
+		tokenEnv = "GITHUB_TOKEN"
+	}
+	token := getenv(tokenEnv)
+	if token == "" {
+		_, _ = fmt.Fprintf(stderr, "assent run: %s is required (the token is never a flag)\n", tokenEnv)
+		return 2
+	}
+
+	client := forgeFactory(string(kind), endpoint, token, cfg.botAuthor)
 
 	if err := orchestrate(cfg, client, clock, stdout); err != nil {
 		_, _ = fmt.Fprintln(stderr, "assent run:", err)
@@ -121,6 +137,7 @@ func parseRunFlags(args []string, stderr io.Writer) (runConfig, error) {
 	fs.SetOutput(stderr)
 	var cfg runConfig
 	fs.StringVar(&cfg.endpoint, "gitlab-endpoint", "https://gitlab.com", "GitLab instance base URL")
+	fs.StringVar(&cfg.forge, "forge", "", "forge to drive: gitlab|github (E10-S13); empty autodetects from the endpoint host and FAILS CLOSED on ambiguity")
 	fs.StringVar(&cfg.project, "project", "", "GitLab numeric project id (required)")
 	fs.StringVar(&cfg.mr, "mr", "", "merge-request IID (required)")
 	fs.StringVar(&cfg.policy, "policy", ".assent/merge-policy.yaml", "MergePolicy path (loaded from the TARGET ref)")

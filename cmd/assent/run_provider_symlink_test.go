@@ -121,7 +121,7 @@ func resolveQuotaFact(t *testing.T, checkout string) aggregate.Fact {
 		t.Fatal(err)
 	}
 	facts, resolvedAt, err := resolveRunFacts(
-		context.Background(), conf, ".assent/config.yaml", f.factory()("", "tok", "assent-bot"),
+		context.Background(), conf, ".assent/config.yaml", f.factory()("gitlab", "", "tok", "assent-bot"),
 		"42", "main", checkout, "file:topics/prod/orders.yaml", time.Now().UTC(),
 	)
 	if err != nil {

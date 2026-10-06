@@ -55,7 +55,7 @@ func TestProviderDeclarationAbsentSkipsProvider(t *testing.T) {
 	f := newFakeGitLab(t)
 	f.config = configQuotaRepoFile()
 	f.providerDecls = nil // nothing declared → the fake answers 404
-	client := f.factory()("", "tok", "assent-bot")
+	client := f.factory()("gitlab", "", "tok", "assent-bot")
 
 	conf, err := policy.LoadConfig([]byte(configQuotaRepoFile()))
 	if err != nil {
@@ -87,7 +87,7 @@ func TestProviderDeclarationForgeErrorAbortsResolveRunFacts(t *testing.T) {
 	f.config = configQuotaRepoFile()
 	f.providerDecls = map[string]string{"quota": quotaDeclarationJSON}
 	client := declErrPort{
-		RunPort:  f.factory()("", "tok", "assent-bot"),
+		RunPort:  f.factory()("gitlab", "", "tok", "assent-bot"),
 		declPath: quotaDeclPath,
 		err:      brokenForge(quotaDeclPath, "main", 503),
 	}
@@ -141,7 +141,7 @@ func TestProviderDeclarationUnauthorizedAbortsResolveRunFacts(t *testing.T) {
 			f.config = configQuotaRepoFile()
 			f.providerDecls = map[string]string{"quota": quotaDeclarationJSON}
 			client := declErrPort{
-				RunPort:  f.factory()("", "tok", "assent-bot"),
+				RunPort:  f.factory()("gitlab", "", "tok", "assent-bot"),
 				declPath: quotaDeclPath,
 				err:      brokenForge(quotaDeclPath, "main", status),
 			}

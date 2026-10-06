@@ -560,8 +560,8 @@ func (o capabilityOverridePort) Snapshot(project, mr string) (forge.Snapshot, er
 // factory builds the production adapter (through the neutral factory — the
 // exact production construction) pointed at the fake server, driven end-to-end
 // over HTTP without a live network.
-func (f *fakeGitLab) factory() func(string, string, string) forge.RunPort {
-	return func(_, token, botAuthor string) forge.RunPort {
+func (f *fakeGitLab) factory() func(string, string, string, string) forge.RunPort {
+	return func(_, _, token, botAuthor string) forge.RunPort {
 		if botAuthor != "" {
 			f.botAuthor = botAuthor
 		}
@@ -746,6 +746,11 @@ func runArgs(extra ...string) []string {
 	return append([]string{
 		"--project", "42", "--mr", "7", "--bot-author", "assent-bot",
 		"--subject", "file:topics/orders.yaml",
+		// E10-S13: the test fixtures point at an httptest host the autodetect
+		// cannot recognise (fail-closed by design), so the explicit selection
+		// is part of the default fixture; the autodetect refusals have their
+		// own fail-closed test.
+		"--forge", "gitlab",
 	}, extra...)
 }
 

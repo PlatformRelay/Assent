@@ -86,6 +86,9 @@ func captureRunDoctor(t *testing.T, h http.HandlerFunc) (code int, stdout, stder
 	t.Setenv("CI_PROJECT_ID", forgeDoctorProject)
 	t.Setenv("CI_MERGE_REQUEST_IID", forgeDoctorMR)
 	t.Setenv("CI_API_V4_URL", srv.URL+"/api/v4")
+	// E10-S13: the httptest host is not a recognisable forge host (autodetect
+	// fails closed by design), so the explicit selection is part of the fixture.
+	t.Setenv("ASSENT_FORGE", "gitlab")
 	// Spoofed env self-assertion that would arm on the env-only path.
 	t.Setenv("ASSENT_PIPELINE_CONFIG_PROTECTED", "true")
 	t.Setenv("ASSENT_PIPELINE_CONFIG_AUTHOR_EDITABLE", "false")
@@ -100,7 +103,7 @@ func captureRunDoctor(t *testing.T, h http.HandlerFunc) (code int, stdout, stder
 		t.Fatal(err)
 	}
 
-	code = runDoctor(os.Getenv, wOut, wErr, func(endpoint, token, botAuthor string) forge.RunPort {
+	code = runDoctor(os.Getenv, wOut, wErr, func(kind, endpoint, token, botAuthor string) forge.RunPort {
 		return factory.GitLab(endpoint, token, botAuthor, factory.NoSleep)
 	})
 	_ = wOut.Close()

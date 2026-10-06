@@ -52,10 +52,10 @@ func (h hardFailingForge) MergeCAS(string, string, forge.DesiredMerge) (string, 
 
 // hardFailingFactory yields the fake's real client wrapped so every reconcile
 // WRITE hard-fails.
-func hardFailingFactory(f *fakeGitLab) func(string, string, string) forge.RunPort {
+func hardFailingFactory(f *fakeGitLab) func(string, string, string, string) forge.RunPort {
 	inner := f.factory()
-	return func(endpoint, token, botAuthor string) forge.RunPort {
-		return hardFailingForge{RunPort: inner(endpoint, token, botAuthor)}
+	return func(kind, endpoint, token, botAuthor string) forge.RunPort {
+		return hardFailingForge{RunPort: inner(kind, endpoint, token, botAuthor)}
 	}
 }
 

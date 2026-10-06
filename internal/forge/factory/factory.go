@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
+	"github.com/PlatformRelay/assent/internal/forge/github"
 	"github.com/PlatformRelay/assent/internal/forge/gitlab"
 )
 
@@ -60,12 +61,14 @@ const (
 	KindGitHub Kind = "github"
 )
 
-// New constructs a RunPort for the named forge. Before the GitHub adapter
-// exists, selecting it is an error — never a GitLab fallback.
+// New constructs a RunPort for the named forge. An unknown forge is an error —
+// never a GitLab fallback (E10-S13's fail-closed direction, enforced here).
 func New(kind Kind, endpoint, token, botAuthor string) (forge.RunPort, error) {
 	switch kind {
 	case KindGitLab:
 		return GitLab(endpoint, token, botAuthor), nil
+	case KindGitHub:
+		return github.New(endpoint, token, botAuthor), nil
 	default:
 		return nil, fmt.Errorf("factory: unknown forge %q (expected %q or %q)", kind, KindGitLab, KindGitHub)
 	}

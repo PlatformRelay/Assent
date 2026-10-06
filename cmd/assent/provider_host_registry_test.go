@@ -240,7 +240,7 @@ func TestResolveRunFactsFailsLoudlyOnUnopenableCheckout(t *testing.T) {
 	f := newFakeGitLab(t)
 	f.config = configQuotaRepoFile()
 	f.providerDecls = map[string]string{"quota": quotaDeclarationJSON}
-	client := f.factory()("", "tok", "assent-bot")
+	client := f.factory()("gitlab", "", "tok", "assent-bot")
 
 	conf, err := policy.LoadConfig([]byte(configQuotaRepoFile()))
 	if err != nil {
@@ -342,7 +342,7 @@ func TestResourceOwnerRegistryForgeErrorAbortsResolveRunFacts(t *testing.T) {
 	f.config = configOwnerResourceOwner
 	f.providerDecls = map[string]string{"owner": resourceOwnerDeclarationJSON}
 	client := registry503Port{
-		RunPort: f.factory()("", "tok", "assent-bot"),
+		RunPort: f.factory()("gitlab", "", "tok", "assent-bot"),
 		regPath: "governance/owners.yaml",
 	}
 
@@ -404,7 +404,7 @@ func TestResourceOwnerDeclarationResolvesOwnerFact(t *testing.T) {
 	f.config = configOwnerResourceOwner
 	f.providerDecls = map[string]string{"owner": resourceOwnerDeclarationJSON}
 	client := registryServingPort{
-		RunPort: f.factory()("", "tok", "assent-bot"),
+		RunPort: f.factory()("gitlab", "", "tok", "assent-bot"),
 		regPath: "governance/owners.yaml",
 		body:    "owners:\n  topics/orders.yaml: team-payments\n",
 	}
