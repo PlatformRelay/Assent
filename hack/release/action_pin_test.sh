@@ -20,26 +20,29 @@ pass() { echo "PASS: $*"; }
 # Polarity A (clean): the action pins a released version — an explicit version
 # input validated against a released-tag regex, never @latest and never a
 # branch name.
+# Polarity A (clean): the action pins a released version and consumes it as a
+# CHECKSUM-VERIFIED release archive — the predictability S8545 and REQ-E10-S16-01
+# demand (never a lockfile-less install, never @latest/main/HEAD).
 if grep -Fq '$ASSENT_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$' action.yml; then
   pass "action.yml validates inputs.version against the released-tag shape (never @latest/main)"
 else
   fail "action.yml must validate inputs.version against ^v[0-9]+\\.[0-9]+\\.[0-9]+\$ (the pinned-release requirement)"
 fi
-if grep -Fq 'assent@${ASSENT_VERSION}' action.yml && ! grep -Eq '@latest|@main|@HEAD' action.yml; then
-  pass "action.yml installs the pinned version only"
+if grep -Fq 'sha256sum --check' action.yml && grep -Fq 'checksums.txt' action.yml && ! grep -Eq '@latest|@main|@HEAD|go install' action.yml; then
+  pass "action.yml installs a checksum-verified release archive only"
 else
-  fail "action.yml must never install at @latest, @main or @HEAD (REQ-E10-S16-01)"
+  fail "action.yml must install ONLY a checksum-verified release archive — never a lockfile-less install and never @latest/@main/@HEAD (REQ-E10-S16-01)"
 fi
 
 # Polarity B: the scanner is proven against a violating copy in $WORK.
 PROBE="$(mktemp -d)"
 trap 'rm -rf "$PROBE"' EXIT
 cp action.yml "$PROBE/action.yml"
-sed -i.bak 's/@${ASSENT_VERSION}/@latest/' "$PROBE/action.yml"
-if grep -q '@latest' "$PROBE/action.yml"; then
-  pass "violating copy carries @latest (the control is buildable)"
+sed -i.bak 's/sha256sum --check/echo skipping checksum/' "$PROBE/action.yml"
+if ! grep -Fq 'sha256sum --check' "$PROBE/action.yml" && grep -Fq 'skipping checksum' "$PROBE/action.yml"; then
+  :
 else
-  fail "the violating copy did not carry @latest — the pin gate's control is vacuous"
+  fail "the violating copy did not drop the checksum gate — the control is buildable"
 fi
 
 echo "OK: action pin gate green"

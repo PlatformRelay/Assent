@@ -28,6 +28,9 @@ import (
 	"github.com/PlatformRelay/assent/schemas"
 )
 
+// runErrPrefix is the CLI-facing error prefix (one literal, one meaning).
+const runErrPrefix = "assent run:"
+
 // runConfig is the parsed `assent run` flag set. The GitLab PAT is deliberately
 // NOT a field here — it is read from the GITLAB_TOKEN env var at the boundary and
 // handed straight to the adapter, never stored where it could be logged.
@@ -96,7 +99,7 @@ func runRun(args []string, getenv func(string) string, clock runClock, stdout, s
 		if errors.Is(err, flag.ErrHelp) {
 			return 2
 		}
-		_, _ = fmt.Fprintln(stderr, "assent run:", err)
+		_, _ = fmt.Fprintln(stderr, runErrPrefix, err)
 		return 2
 	}
 
@@ -104,7 +107,7 @@ func runRun(args []string, getenv func(string) string, clock runClock, stdout, s
 	// unrecognised host fails closed (never a default-to-GitLab).
 	kind, endpoint, err := selectForge(cfg.forge, cfg.endpoint)
 	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "assent run:", err)
+		_, _ = fmt.Fprintln(stderr, runErrPrefix, err)
 		return 2
 	}
 
@@ -117,7 +120,7 @@ func runRun(args []string, getenv func(string) string, clock runClock, stdout, s
 	}
 	token := getenv(tokenEnv)
 	if token == "" {
-		_, _ = fmt.Fprintf(stderr, "assent run: %s is required (the token is never a flag)\n", tokenEnv)
+		_, _ = fmt.Fprintf(stderr, "%s %s is required (the token is never a flag)\n", runErrPrefix, tokenEnv)
 		return 2
 	}
 
@@ -126,12 +129,12 @@ func runRun(args []string, getenv func(string) string, clock runClock, stdout, s
 		// The construction seam reports its own error and yields a nil port
 		// (main.go's factory closure does exactly that). Fail closed — an
 		// orchestrate call on a nil port would panic, not exit 2.
-		_, _ = fmt.Fprintln(stderr, "assent run: forge construction failed")
+		_, _ = fmt.Fprintln(stderr, runErrPrefix, "forge construction failed")
 		return 2
 	}
 
 	if err := orchestrate(cfg, client, clock, stdout); err != nil {
-		_, _ = fmt.Fprintln(stderr, "assent run:", err)
+		_, _ = fmt.Fprintln(stderr, runErrPrefix, err)
 		return 1
 	}
 	return 0

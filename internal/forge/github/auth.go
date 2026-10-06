@@ -136,7 +136,13 @@ func (a *appAuth) appJWT() (string, error) {
 	signingInput := base64.RawURLEncoding.EncodeToString(header) + "." +
 		base64.RawURLEncoding.EncodeToString(claims)
 	sum := sha256.Sum256([]byte(signingInput))
-	sig, err := rsa.SignPKCS1v15(cryptoRandReader, key, crypto.SHA256, sum[:])
+	// RS256 (RSASSA-PKCS1-v1_5 + SHA-256) is the JWT algorithm GITHUB'S OWN APP
+	// SPEC REQUIRES — the forge validates this exact scheme, so PKCS1v15 here
+	// is the interoperable contract, not a weak-padding choice. Switching to
+	// PSS would be rejected by the installation-token exchange (the signature
+	// is verified against the documented algorithm). Sonar's S5542 flags the
+	// primitive generically; the constraint above is the justification.
+	sig, err := rsa.SignPKCS1v15(cryptoRandReader, key, crypto.SHA256, sum[:]) //NOSONAR — RS256 is GitHub's documented App-JWT algorithm; PSS is rejected by the exchange.
 	if err != nil {
 		return "", errors.New("github: app JWT signing failed")
 	}

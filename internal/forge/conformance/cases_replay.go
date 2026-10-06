@@ -4,6 +4,14 @@ import (
 	"github.com/PlatformRelay/assent/internal/forge"
 )
 
+// The replay fixtures' canonical thread ids (P3-E5's fixture rows).
+const (
+	replayThreadOne   = "comment/9001"
+	replayThreadTwo   = "comment/9002"
+	replayThreadThree = "comment/9003"
+	replayThreadFour  = "comment/9004"
+)
+
 // cases_replay.go holds the three ADR-0019 publication-protocol replay cases.
 //
 // Each one previously existed TWICE — once as a `fake/...` subtest and once as a
@@ -50,8 +58,8 @@ func caseRerunIdempotence(t TB, f Factory) {
 		// reviewer resolution preserved — are id-shape independent.
 		b := f(t, replayConfig(proj, mrIID))
 		mustSeedNote(t, b, "note/9000", botID, rerunSummaryMarker(), "old summary")
-		mustSeedThread(t, b, "comment/9001", botID, rerunChallengeMarker(), true) // reviewer-resolved
-		mustSeedThread(t, b, "comment/9002", botID, rerunCommentMarker(), false)
+		mustSeedThread(t, b, replayThreadOne, botID, rerunChallengeMarker(), true) // reviewer-resolved
+		mustSeedThread(t, b, replayThreadTwo, botID, rerunCommentMarker(), false)
 
 		created, err := replayRerunIdempotence(b.Port, b.Observer)
 		if err != nil {
@@ -64,7 +72,7 @@ func caseRerunIdempotence(t TB, f Factory) {
 		if got := b.Observer.BotThreadCount(); got != 2 {
 			t.Fatalf("rerun must leave exactly 2 bot threads, got %d", got)
 		}
-		if !b.Observer.IsResolved("comment/9001") {
+		if !b.Observer.IsResolved(replayThreadOne) {
 			t.Fatal("rerun must preserve reviewer resolution of comment/9001")
 		}
 		// Was GitLab-only before extraction; now required of every backend.
@@ -187,7 +195,7 @@ func caseSpoofedMarkerIgnored(t TB, f Factory) {
 
 	t.Run("contributor-marker-invisible-on-rerun", func(t TB) {
 		b := f(t, replayConfig(m.Slot.Project, m.Slot.MR))
-		mustSeedThread(t, b, "comment/9002", botID, m, false)
+		mustSeedThread(t, b, replayThreadTwo, botID, m, false)
 		mustSeedThread(t, b, "comment/6660", "contributor-mallory", m, false)
 
 		before := b.Observer.ThreadCount()
@@ -206,7 +214,7 @@ func caseSpoofedMarkerIgnored(t TB, f Factory) {
 		if after := b.Observer.ThreadCount(); after != before {
 			t.Fatalf("spoofed marker must not create threads on rerun: before=%d after=%d", before, after)
 		}
-		if got := threadOpTarget(receipt, "comment/9002"); got != "comment/9002" {
+		if got := threadOpTarget(receipt, replayThreadTwo); got != replayThreadTwo {
 			t.Fatalf("receipt must target bot thread comment/9002, got %q (contributor would be comment/6660)", got)
 		}
 	})
