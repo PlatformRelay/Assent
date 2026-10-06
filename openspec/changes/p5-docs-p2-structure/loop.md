@@ -55,14 +55,24 @@ Measured at `3503cc0` (= `origin/main`), 2026-10-06:
 - [x] P change created (proposal + spec delta + tasks) — commit `6d3046f`.
 - [x] R spec-set review — round 1: 7 free legs (6 reported; DeepSeek-V4.1-Flash:
       adversarial exit=truncated, empty file, not counted), register at
-      `reviews/spec/register.md` (provisional header kept: the shell timeout
-      killed the wrapper after the legs finished; the unify pass was re-run
-      manually with the script's own brief — see register.md's unified verdict).
-      **Verdict: 2 CRITICAL, both with mechanical fixes the spec already implies,
-      verified in code, raised by ≥2 legs each → fixed in the spec set and
-      re-reviewed once instead of stopping** (spec-loop's CRITICAL-with-mechanical-fix
-      rule; decision logged here).
-- [ ] R re-review (round 2, final).
+      `reviews/spec/register.md`. **Verdict: 2 CRITICAL, both with mechanical fixes
+      the spec already implies, verified in code, raised by ≥2 legs each → fixed in
+      the spec set and re-reviewed once instead of stopping** (mechanical-fix rule;
+      decision logged in the dispositions below).
+- [x] R re-review (round 2, final) — register at `reviews/spec-round2/register.md`
+      (2/4 legs; the DeepSeek-spec and Qwen-2.4T legs timed out). Verdict: BLOCK on
+      one recurring finding + one notation WARNING. **Round-2 disposition (two-round
+      cap reached — fixed, logged, no third round, disclosed at hand-off):**
+      - CRITICAL (GLM-5.3 + Qwen3.8-Flash-Next): my round-1 C2 fix over-corrected —
+        PR 190's README is based on the pre-E10 tree, so sourcing the quick start
+        from it would drop the forge-selection block and the GitHub comment-only note
+        S01-01 mandates (its GitHub row even says **Planned**). VERIFIED in code:
+        pr-190's README lacks `--forge github`/OQ-33/OQ-34 and says Planned at :111.
+        FIX: copy source is the branch README with PR 190's three P0 hunks applied
+        (S01 Goal, REQ-DOC2-S01-04, T002 step 2 rewritten).
+      - WARNING (both legs): S03-04's mutant arithmetic notation garbled
+        ("10−4 of 11"); conclusion unaffected. FIX: reworded with the true counts
+        (11 listed, 10 present — quickstart.md is a pre-existing dead entry; 10−4=6 < 8).
 - [ ] L task loop — T001..T005.
 - [ ] B branch review.
 - [ ] Hand-off — push branch, open NON-DRAFT PR with gh-axi (delivery contract:

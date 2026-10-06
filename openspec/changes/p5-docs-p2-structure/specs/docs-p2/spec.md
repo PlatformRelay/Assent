@@ -58,13 +58,15 @@ the README carries the whole narrative (GAP-2).
 
 **Goal:** rebuild `docs/index.md` around the README's Why + How-it-works + Quick start +
 status banner, links adjusted to docs-relative form, keeping the existing hero block and
-H1. **The copy source is PR 190's README**, not this branch's: the branch's README still
-says `E2–E8` and `@v0.1.0` (PR 190 corrects both), so a verbatim copy from the branch would
-import the stale facts the P0 corrections exist to remove. Where the branch's README and
-PR 190's differ, PR 190's wording wins. "Start here" keeps Vision, walkthrough, ADRs,
-architecture and the decision log; the planning links (meta-plan, open questions) move
-into a "Contributing" tail; index.md's existing two-sentence intro is replaced by the
-README's intro paragraph.
+H1. **The copy source is this branch's README with PR 190's three P0 hunks applied** —
+`:22` `E2–E8`→`E1–E9`, `:45–46` the `.tf` opaque clause, `:76` `@v0.1.0`→`@v0.4.0` —
+because both sources alone are wrong: the branch's README still carries the pre-P0
+wording, and PR 190's README is based on the pre-E10 tree, so it lacks the forge-selection
+block and the GitHub comment-only note that S01-01 mandates (its GitHub-adapter row even
+says **Planned**). The branch's E10-era quick-start content is current truth and stays.
+"Start here" keeps Vision, walkthrough, ADRs, architecture and the decision log; the
+planning links (meta-plan, open questions) move into a "Contributing" tail; index.md's
+existing two-sentence intro is replaced by the README's intro paragraph.
 
 **Operator input:** none (audit-recommended structure).
 
@@ -101,12 +103,12 @@ Requirements:
   - Verify: the story's diff review
   - Level: L0
 - **REQ-DOC2-S01-04** — Given the copied banner/quick-start wording, when it is read, then
-  it carries PR 190's corrected facts — E1–E9 (not E2–E8), the `.tf` opaque clause, and
-  `@v0.4.0` in the go-install caveat — exactly as PR 190's three README hunks word them;
-  the P0 corrections are settled text even though PR 190 is still open.
-  - Test: `docs/index.md` diffed against `git show pr-190:README.md`'s corresponding text
-    (the ref is fetched locally; the three hunks are the only differences from the
-    branch's README)
+  it equals the branch's README text with PR 190's three P0 hunks applied — E1–E9 (not
+  E2–E8), the `.tf` opaque clause, and `@v0.4.0` in the go-install caveat — and the
+  branch's E10-era quick-start content (forge selection, GitHub comment-only note) is
+  carried as-is; the P0 corrections are settled text even though PR 190 is still open.
+  - Test: `docs/index.md` diffed against the branch README with those three hunks applied
+    by hand (they are the only wording differences the copy introduces)
   - Verify: the story's diff review; after both PRs land, DOC-13's scan of
     `docs/index.md` must be green
   - Level: L1
@@ -211,8 +213,9 @@ Requirements:
   when it runs after the extraction, then it is green, and the new page does not leave the
   front-of-house sensor set: `docs/usage/operating-safely.md` is added to
   `hack/audit/exitgate_test.sh`'s PHRASE_CORPUS in the same commit as the page (the
-  shrunk-corpus mutant removes four corpus members and must still redden; 10−4 of 11 is
-  below the MIN of 8, so the mutant survives the addition). No grep at `3503cc0` pins a
+  shrunk-corpus mutant removes four corpus members and must still redden: the corpus then
+  lists 11 files of which 10 are present — `docs/usage/quickstart.md` is a pre-existing
+  dead entry — so removing four leaves 6 present < MIN 8. No grep at `3503cc0` pins a
   sentence inside the five essays (measured: the only `cli.md` pin is XREV-S03-06, which
   targets the flag-table row that stays); the pin co-update duty the origin report
   attaches to item 11 therefore reduces to keeping these gates green. PR 190's DOC-13

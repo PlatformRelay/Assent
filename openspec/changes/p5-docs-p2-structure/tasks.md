@@ -40,17 +40,21 @@ go test ./cmd/assent -run TestNoStaleProductClaims
    sample-repo, forge selection, GitHub comment-only note). Keep "Start here" (vision,
    walkthrough, ADR index, C4, decision log) below the new content; move meta-plan +
    open-questions links into a "Contributing" tail.
-2. **Copy source is PR 190's README, not this branch's** (this branch's README still says
-   `E2–E8`/`@v0.1.0`): fetch it with `git fetch origin pull/190/head:pr-190` and source
-   the banner, Why bullets and quick-start wording from
-   `git show pr-190:README.md` — its three hunks against this branch's README are the
-   E1–E9 range at `:22`, the `.tf` opaque clause at `:45–46`, and `@v0.4.0` at `:76`.
-   Where the two READMEs differ, PR 190's wording wins. Links are adjusted to
-   docs-relative form (`adr/0015-...`, `architecture/c4-context.md`, `usage/install.md`,
-   `planning/open-questions.md`, `api-stability.md`); a docs-relative link wins over
-   PR 190's repo-root form wherever both express the same target.
+2. **Copy source is this branch's README with PR 190's three P0 hunks applied** — both
+   sources alone are wrong: the branch's README still says `E2–E8`/`@v0.1.0`, and
+   PR 190's README is based on the pre-E10 tree (its GitHub-adapter row says **Planned**;
+   it has no forge-selection block or GitHub comment-only note at all). Concretely: copy
+   the branch's README wording for the banner, Why, How-it-works and quick-start text,
+   then apply PR 190's three corrections — `:22` `E2–E8`→`E1–E9`, `:45–46` the `.tf`
+   opaque clause ("`.tf` files are governed but opaque (whole-file REVIEW, never a
+   partial parse)"), `:76` `@v0.1.0`→`@v0.4.0` (`git show pr-190:README.md` shows the
+   corrected wordings; `git fetch origin pull/190/head:pr-190` if the ref is missing).
+   Keep the branch's E10-era quick-start content (forge selection, GitHub comment-only
+   note) as-is. Links are adjusted to docs-relative form (`adr/0015-...`,
+   `architecture/c4-context.md`, `usage/install.md`, `planning/open-questions.md`,
+   `api-stability.md`).
 3. Verify: the per-task gate set; every link resolves (mkdocs strict); REQ-DOC2-S01-04's
-   wording check against `git show pr-190:README.md`.
+   wording check against the branch README with the three hunks applied.
 4. Run `bash hack/check-sanitization.sh` and record the result, with the REQ-DOCSNAV-S01-04
    sanitization read, in the story's evidence file.
 5. Commit: `:memo: docs(index): carry the README's story on the site home`
