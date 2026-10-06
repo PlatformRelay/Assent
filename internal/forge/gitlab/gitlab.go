@@ -451,7 +451,7 @@ func (c *Client) GetMR(project, mr string) (MRInfo, error) {
 		return MRInfo{}, err
 	}
 
-	return MRInfo{
+	info := MRInfo{
 		IID:             strconv.Itoa(mrResp.IID),
 		ProjectID:       strconv.Itoa(mrResp.ProjectID),
 		SourceProjectID: strconv.Itoa(mrResp.SourceProjectID),
@@ -461,7 +461,16 @@ func (c *Client) GetMR(project, mr string) (MRInfo, error) {
 		TargetSHA:       targetSHA,
 		ForkMR:          mrResp.SourceProjectID != 0 && mrResp.SourceProjectID != mrResp.ProjectID,
 		Labels:          mrResp.Labels,
-	}, nil
+	}
+	// E10 branch-review fix: GetMR IS the run's own pinned read — it populates
+	// the pin so the MR-relative accessors (FileAtBase/FileAtHead) judge bytes
+	// at the SAME SHAs this read reported (REV1-S01's one-read-chain rule). A
+	// separate re-read here would let a head move between the pin (the record's
+	// SHAs) and the governed read (the judged bytes) — the move-and-restore
+	// merge of un-evaluated bytes the branch review's CRITICAL names.
+	c.mrPinnedProject = project + "/" + mr
+	c.mrPinnedInfo = &info
+	return *c.mrPinnedInfo, nil
 }
 
 // branchTip returns the tip commit id of a branch via

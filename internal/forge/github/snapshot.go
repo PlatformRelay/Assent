@@ -201,7 +201,23 @@ func (c *Client) GetMR(project, mr string) (forge.MRInfo, error) {
 	if err != nil {
 		return forge.MRInfo{}, err
 	}
-	return mrInfoFromPR(repo, pr)
+	info, err := mrInfoFromPR(repo, pr)
+	if err != nil {
+		return forge.MRInfo{}, err
+	}
+	// E10 branch-review fix: GetMR IS the run's own pinned read — it populates
+	// the pin so FileAtBase/FileAtHead judge bytes at the SAME SHAs this read
+	// reported (REV1-S01's one-read-chain rule). A third, separate PR read
+	// would let a head move between the record's pin (this read's SHAs) and
+	// the governed read (its bytes) — the move-and-restore merge of
+	// un-evaluated bytes the branch review's CRITICAL names. pinMu, not
+	// scopeMu: mrPinned consults the pin while holding pinMu, and a mutex may
+	// never be re-entered.
+	c.pinMu.Lock()
+	c.mrPinnedKey = project + "/" + mr
+	c.mrPinnedInfo = info
+	c.pinMu.Unlock()
+	return info, nil
 }
 
 // mrPinned returns the pinned MR read for (project, mr), populating the cache
@@ -210,19 +226,18 @@ func (c *Client) GetMR(project, mr string) (forge.MRInfo, error) {
 // read chain only: the CAS reads (CurrentHeads) deliberately go FRESH, so the
 // SHA-guard sees the forge's current heads, not the cached evaluation pin.
 func (c *Client) mrPinned(project, mr string) (forge.MRInfo, error) {
-	c.scopeMu.Lock()
-	defer c.scopeMu.Unlock()
 	key := project + "/" + mr
+	c.pinMu.Lock()
 	if c.mrPinnedKey == key && c.mrPinnedInfo.IID != "" {
-		return c.mrPinnedInfo, nil
+		info := c.mrPinnedInfo
+		c.pinMu.Unlock()
+		return info, nil
 	}
-	info, err := c.GetMR(project, mr)
-	if err != nil {
-		return forge.MRInfo{}, err
-	}
-	c.mrPinnedKey = key
-	c.mrPinnedInfo = info
-	return info, nil
+	c.pinMu.Unlock()
+	// GetMR IS the pin: it fills the cache itself (the run's own pinned read),
+	// so this re-read only happens for an MR the run never described. GetMR
+	// takes pinMu for the write; never call it while holding pinMu.
+	return c.GetMR(project, mr)
 }
 
 // contentScopeOK probes the content-scope permission the read it licenses needs

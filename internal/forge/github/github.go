@@ -59,26 +59,26 @@ type Client struct {
 	scopeMu sync.Mutex
 	scopeOK map[string]bool
 
-	// mrPinnedKey/mrPinnedInfo cache the LAST PR read (E10-S07), the GitHub
-	// mirror of the GitLab adapter's pin: the MR-relative accessors read at the
-	// SHAs this cache carries so judged bytes and record pins share one read
-	// chain. A fresh (project, mr) evicts it.
-	mrPinnedKey  string
-	mrPinnedInfo forge.MRInfo
-
 	// mergeRefState records the LAST merge-ref probe outcome for the pinned
 	// MR (snapshot.go's mergeResultDigest), which the merge-result-pinning
 	// capability entry grades from. lastMergeState records the mergeable_state
 	// of the latest PR read, which gates whether the merge-ref probe runs at
 	// all (REQ-E10-S11-03: a non-clean PR is not mergeable now — the merge
-	// queue shape — and the digest axis is honestly unavailable). mergeRefState
-	// is guarded with the same small-state mutex as the pin caches;
+	// queue shape — and the digest axis is honestly unavailable).
 	// lastMergeState carries its OWN mutex because it is recorded from the PR
-	// read chain, which mrPinned holds scopeMu through (a mutex may never be
-	// re-entered).
+	// read chain, which mrPinned holds pinMu through (a mutex may never be
+	// re-entered); the GitLab mirror keeps the same discipline.
 	mergeRefState  string
 	stateMu        sync.Mutex
 	lastMergeState string
+
+	// mrPinnedKey/mrPinnedInfo are guarded by pinMu — their own mutex, for the
+	// same re-entry reason: GetMR (the run's own pinned read) WRITES the pin
+	// from inside the read chain, and mrPinned consults it while holding the
+	// same lock, so scopeMu must not carry the pin.
+	mrPinnedKey  string
+	mrPinnedInfo forge.MRInfo
+	pinMu        sync.Mutex
 
 	// nodeIDs remembers each review comment's GraphQL node id (REST `node_id`)
 	// keyed by its numeric REST id. Thread resolution is GraphQL-only on
