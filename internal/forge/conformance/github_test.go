@@ -600,14 +600,14 @@ func (h *githubHarness) serveContent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	switch {
-	case ref == h.targetSHA:
+	switch ref {
+	case h.targetSHA:
 		if !h.baseSet {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		h.serveContentBase64(w, h.baseFile)
-	case ref == h.sourceSHA:
+	case h.sourceSHA:
 		if !h.headSet {
 			http.Error(w, "absent", http.StatusNotFound)
 			return

@@ -146,18 +146,18 @@ func TestChangedFilesCompleteness(t *testing.T) {
 	t.Run("pagination ceiling fails closed", func(t *testing.T) {
 		requests := 0
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch {
-			case r.URL.Path == "/repos/octo-org/base-repo/pulls/7/files":
+			switch r.URL.Path {
+			case "/repos/octo-org/base-repo/pulls/7/files":
 				requests++
 				// A page that NEVER shortens: 100 entries every time.
 				_, _ = io.WriteString(w, filePage(listPerPage))
-			case r.URL.Path == "/repos/octo-org/base-repo/pulls/7":
+			case "/repos/octo-org/base-repo/pulls/7":
 				_, _ = io.WriteString(w, sameRepoPR)
-			case r.URL.Path == "/repos/octo-org/base-repo/git/ref/refs/pull/7/merge":
+			case "/repos/octo-org/base-repo/git/ref/refs/pull/7/merge":
 				_, _ = io.WriteString(w, `{"object":{"sha":"mrgSHA","type":"commit"}}`)
-			case r.URL.Path == "/repos/octo-org/base-repo/pulls/7/comments":
+			case "/repos/octo-org/base-repo/pulls/7/comments":
 				_, _ = io.WriteString(w, "[]")
-			case r.URL.Path == "/repos/octo-org/base-repo":
+			case "/repos/octo-org/base-repo":
 				_, _ = io.WriteString(w, `{"allow_auto_merge":false}`)
 			default:
 				http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)

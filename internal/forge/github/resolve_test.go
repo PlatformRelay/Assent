@@ -125,8 +125,8 @@ func TestDismissedApprovalNotCounted(t *testing.T) {
 func TestUnprovableEligibilityFailsClosed(t *testing.T) {
 	reviewsFetched := 0
 	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/repos/octo-org/base-repo/pulls/7/reviews":
+		switch r.URL.Path {
+		case "/repos/octo-org/base-repo/pulls/7/reviews":
 			reviewsFetched++
 			_, _ = io.WriteString(w, "["+reviewRow(1, "alice", "APPROVED")+"]")
 		default:
