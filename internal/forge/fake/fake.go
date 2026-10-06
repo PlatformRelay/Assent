@@ -57,7 +57,10 @@ type Forge struct {
 	TargetBranch string
 	Labels       []string
 	ChangedFiles []string
-	Capabilities forge.CapabilityFlags
+	// Capabilities is the fake's neutral capability report (E10-S04). Nil means
+	// "the all-unknown report" — which by ADR-0021 §3 refuses to arm, the
+	// fail-safe default. snapshot_resolve.go builds the explicit report from it.
+	Capabilities forge.CapabilityReport
 	ResolveMode  ResolveMode
 
 	// MR fixture knobs for GetMR (E10-S02): the identity the MR-relative

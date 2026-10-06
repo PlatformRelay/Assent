@@ -352,23 +352,41 @@ func TestChangedFiles404IsError(t *testing.T) {
 }
 
 // REQ-E4-S02-03: capability flags expose tier gaps honestly (Free vs Premium).
-func TestSnapshotCapabilityFlags(t *testing.T) {
+func TestSnapshotCapabilityReport(t *testing.T) {
 	t.Run("premium", func(t *testing.T) {
 		c, _ := newServer(t, premiumSnapshotHandler(t))
 		snap, err := c.Snapshot(snapshotProject, snapshotMR)
 		if err != nil {
 			t.Fatalf("Snapshot: %v", err)
 		}
-		want := forge.CapabilityFlags{
-			Tier:                        forge.TierPremium,
-			HasApprovalRulesAPI:         true,
-			DiscussionsResolvedGate:     true,
-			MergeResultDigestRecordable: true,
-			MergeTrainAvailable:         true,
-			ProtectedPipelineExternal:   true,
+		// E10-S04: the probe answers the closed enum. Probed honestly:
+		// threads-block-merge and merge-result-pinning (project settings) and
+		// eligible-approval-evidence (approval-rules API). Constant-supported:
+		// resolvable-threads, sha-guarded-merge, deferred-merge-arming,
+		// arming-revoked-on-push. Absent on GitLab: blocking-review,
+		// review-dismissal-restrictions. NOT probed → unknown: the retired
+		// protected-pipeline-source heuristic (SEC-04) and
+		// approval-reset-on-push (RELI-03).
+		want := map[forge.Capability]forge.CapabilityState{
+			forge.CapabilityResolvableThreads:           forge.CapabilitySupported,
+			forge.CapabilityThreadsBlockMerge:           forge.CapabilitySupported,
+			forge.CapabilityBlockingReview:              forge.CapabilityAbsent,
+			forge.CapabilityReviewDismissalRestrictions: forge.CapabilityAbsent,
+			forge.CapabilitySHAGuardedMerge:             forge.CapabilitySupported,
+			forge.CapabilityDeferredMergeArming:         forge.CapabilitySupported,
+			forge.CapabilityArmingRevokedOnPush:         forge.CapabilitySupported,
+			forge.CapabilityMergeResultPinning:          forge.CapabilitySupported,
+			forge.CapabilityEligibleApprovalEvidence:    forge.CapabilitySupported,
+			forge.CapabilityApprovalResetOnPush:         forge.CapabilityUnknown,
+			forge.CapabilityProtectedPipelineSource:     forge.CapabilityUnknown,
 		}
-		if snap.Capabilities != want {
-			t.Errorf("Capabilities = %+v, want %+v", snap.Capabilities, want)
+		for c, want := range want {
+			if got := snap.Capabilities.State(c); got != want {
+				t.Errorf("capability %q state = %q, want %q (reason %q)", c, got, want, snap.Capabilities.Reason(c))
+			}
+		}
+		if got := snap.Capabilities.Reason(forge.CapabilityProtectedPipelineSource); !strings.Contains(got, "OQ-33") {
+			t.Errorf("the protected-pipeline-source unknown reason must name its open question; got %q", got)
 		}
 	})
 
@@ -400,14 +418,14 @@ func TestSnapshotCapabilityFlags(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Snapshot: %v", err)
 		}
-		if snap.Capabilities.Tier != forge.TierFree {
-			t.Errorf("Tier = %q, want free", snap.Capabilities.Tier)
+		if got := snap.Capabilities.State(forge.CapabilityEligibleApprovalEvidence); got != forge.CapabilityAbsent {
+			t.Errorf("eligible-approval-evidence = %q on the Free fixture, want absent (no eligible approver set)", got)
 		}
-		if snap.Capabilities.HasApprovalRulesAPI {
-			t.Error("HasApprovalRulesAPI = true on Free fixture, want false")
+		if got := snap.Capabilities.Reason(forge.CapabilityEligibleApprovalEvidence); !strings.Contains(got, "GitLab Free") {
+			t.Errorf("the free-tier reason must name the tier; got %q", got)
 		}
-		if snap.Capabilities.MergeTrainAvailable {
-			t.Error("MergeTrainAvailable = true on Free fixture, want false (no invented Premium features)")
+		if got := snap.Capabilities.State(forge.CapabilityMergeResultPinning); got != forge.CapabilityAbsent {
+			t.Errorf("merge-result-pinning = %q on the Free fixture, want absent (no merge trains)", got)
 		}
 	})
 }

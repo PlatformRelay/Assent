@@ -1,6 +1,10 @@
 package conformance
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/PlatformRelay/assent/internal/forge"
+)
 
 // suite_test.go is the ENTRY POINT layer: it runs the shared suite against both
 // built-in backends.
@@ -74,9 +78,51 @@ func TestConformanceDuplicateRepair(t *testing.T) {
 	runCaseOnAllBackends(t, "p3e5-duplicate-repair")
 }
 
-// TestConformanceSpoofedMarkerIgnored is REQ-E4-S09-03.
-func TestConformanceSpoofedMarkerIgnored(t *testing.T) {
-	runCaseOnAllBackends(t, "p3e5-spoofed-marker-ignored")
+// TestConformanceOwnMarkersRecognisedIdentity is ADR-0021 item 7: the marker
+// filter matches the AUTHENTICATED identity, not "any bot".
+func TestConformanceOwnMarkersRecognisedIdentity(t *testing.T) {
+	runCaseOnAllBackends(t, "own-markers-recognised-identity")
+}
+
+// TestConformanceUnknownNeverArms is S00 Q2's arming case (REQ-E10-S04-02):
+// unknown refuses arming with zero writes, and the mandatory positive control
+// (the same backend with arming granted) merges — both live in one case body.
+func TestConformanceUnknownNeverArms(t *testing.T) {
+	runCaseOnAllBackends(t, "capability-unknown-never-arms")
+}
+
+// TestConformanceCapabilityReportExhaustive is S00 Q2's exhaustiveness case
+// (REQ-E10-S04-01): every member of the closed enum carries a tri-state and a
+// reason on every backend. It is a DIRECT entry test over the two built-in
+// backends, deliberately not a Cases() row: the report's shape is a property of
+// the PORT's snapshot, which the sabotage fixture does not corrupt, so the
+// can-fail gate has no purchase on it — the catalog row carries that
+// disposition.
+func TestCapabilityReportExhaustiveOnAllBackends(t *testing.T) {
+	for _, be := range backends() {
+		t.Run(be.name, func(sub *testing.T) {
+			caseCapabilityReportExhaustive(tbT{sub}, be.f)
+		})
+	}
+}
+
+// TestCapabilityAllSupportedArmsForgeLevel is the all-supported positive
+// control pinned at the FORGE package (REQ-E10-S04-02): the all-supported
+// report arms, so the never-arms refusal above cannot be satisfied by a
+// consult function that refuses everything.
+func TestAllSupportedDoesArmForgeLevel(t *testing.T) {
+	entries := map[forge.Capability]forge.CapabilityEntry{}
+	for _, c := range forge.AllCapabilities() {
+		entries[c] = forge.SupportedCapabilityEntry("fixture: probe proven")
+	}
+	report, err := forge.NewCapabilityReport(entries)
+	if err != nil {
+		t.Fatalf("capability report: %v", err)
+	}
+	probe := forge.PreconditionFromReport(report)
+	if !probe.ArmEligible {
+		t.Fatalf("the all-supported report MUST arm — without this the refusal tests are vacuous; refusals=%+v", probe.Refusals)
+	}
 }
 
 // TestConformanceForkHeadUnchangedFileNoLifecycle is S00 Q1's case: a fork MR
@@ -104,15 +150,7 @@ func TestConformanceAbsentFileIsAbsent(t *testing.T) {
 	runCaseOnAllBackends(t, "absent-file-still-renders-as-absent")
 }
 
-// TestConformanceOwnMarkersRecognisedIdentity is ADR-0021 item 7: the marker
-// filter matches the AUTHENTICATED identity, not "any bot".
-func TestConformanceOwnMarkersRecognisedIdentity(t *testing.T) {
-	runCaseOnAllBackends(t, "own-markers-recognised-identity")
-}
-
 // TestSHAGuardObservesMergeAttempts is REQ-E10-S01-04's named proof: the extracted
-// SHA-guard cases still observe a merge ATTEMPT COUNT and not merely a returned
-// error.
 //
 // It is written as a property over the observation surface rather than a re-run of
 // the cases, because the weakening it guards against is not "the case fails" — it
@@ -157,4 +195,9 @@ func TestSHAGuardObservesMergeAttempts(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestConformanceSpoofedMarkerIgnored is REQ-E4-S09-03.
+func TestConformanceSpoofedMarkerIgnored(t *testing.T) {
+	runCaseOnAllBackends(t, "p3e5-spoofed-marker-ignored")
 }

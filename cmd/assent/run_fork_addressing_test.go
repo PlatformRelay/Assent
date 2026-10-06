@@ -51,3 +51,37 @@ func TestPolicyLoadsFromTargetRefOnForkMR(t *testing.T) {
 		t.Fatalf("expected merge-policy + ruleset-binding loads, got %d: %+v", len(f.policyLoads), f.policyLoads)
 	}
 }
+
+// TestRunProtectedPipelineUnknownRefusesArming pins the v1 GitLab arming
+// consequence of E10-S04 (judgment call (e), D-nnn): the retired
+// ci_config_path '@' substring heuristic leaves protected-pipeline-source
+// UNKNOWN — the SEC-04 shape ADR-0021 forbids — and unknown refuses arming
+// (ADR-0021 §3, unprobed is not proof). The run decides APPROVE, writes the
+// record, and writes NOTHING to the forge; the refusal reason names OQ-33.
+//
+// WITHOUT the forgeProbesAllSupported() override: this is the honest v1 shape
+// of every GitLab run — GitLab comments but does not arm until a decidable
+// predicate lands (the decision row records it).
+func TestRunProtectedPipelineUnknownRefusesArming(t *testing.T) {
+	f := newFakeGitLab(t)
+	// No override: the adapter's honest capability report drives the run.
+	f.capReportOverride = nil
+	f.baseFile = "partitions: 12\n"
+	f.headFile = "partitions: 24\n"
+
+	var out bytes.Buffer
+	code := runRun(runArgs("--arm"), env("tok"), fixedClock(), &out, &out, f.factory())
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0 (advisory outcome)\n%s", code, out.String())
+	}
+	body := out.String()
+	if !strings.Contains(body, `"decision":"APPROVE"`) {
+		t.Fatalf("the decision itself is unaffected by arming:\n%s", body)
+	}
+	if f.approvals != 0 || f.merges != 0 {
+		t.Fatalf("an unknown protected-pipeline-source must refuse arming with zero writes: approvals=%d merges=%d", f.approvals, f.merges)
+	}
+	if !strings.Contains(body, "arming precondition unmet") {
+		t.Fatalf("the summary must report the honest refusal:\n%s", body)
+	}
+}

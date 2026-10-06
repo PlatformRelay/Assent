@@ -70,6 +70,13 @@ type Capabilities struct {
 	// (ADR-0015 §4). Only true when the pipeline config is proven to come from a
 	// protected source that the MR branch cannot edit.
 	ProtectedConfigVerified bool
+	// ForgeCapabilities is the adapter's typed capability report (E10-S04,
+	// ADR-0021 item 3): supported | absent | unknown per capability of the
+	// closed eleven-flag enum, with the reason the state is what it is.
+	// `unknown` entries are the ones that refused arming — unprobed is not
+	// proof. `omitempty` keeps every prior doctor output byte-identical when
+	// no forge probe ran.
+	Forge []forge.CapabilityEntryView `json:"forge,omitempty"`
 }
 
 // DuplicatePrevention values mirror P3-E5 / ADR-0019 doctor reporting.

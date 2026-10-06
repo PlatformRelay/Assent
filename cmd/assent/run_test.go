@@ -79,6 +79,12 @@ type fakeGitLab struct {
 	// forkMR models a fork workflow (source_project_id != target project_id).
 	forkMR bool
 
+	// capReportOverride, when set, replaces the adapter's capability report at
+	// the port (E10-S04 test fixture: a forge whose probe proved everything).
+	// See forgeProbesAllSupported for why this exists and what refuses arming
+	// without it.
+	capReportOverride *forge.CapabilityReport
+
 	// policyLoads records FileAtRef calls for `.assent/**` policy documents.
 	policyLoads []policyLoad
 }
@@ -133,6 +139,12 @@ func newFakeGitLab(t *testing.T) *fakeGitLab {
 		approvalEligible:    true,
 		approvalRulesStatus: http.StatusOK,
 	}
+	// E10-S04: the run fixtures model a forge whose probe proved every
+	// capability (see forgeProbesAllSupported). The honest v1 GitLab report —
+	// protected-pipeline-source unknown, arming refused — is pinned by
+	// TestRunProtectedPipelineUnknownRefusesArming and by the adapter's own
+	// capability-report tests.
+	f.forgeProbesAllSupported()
 	f.changedFiles = []string{f.governedPath}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(f.srv.Close)
@@ -496,6 +508,55 @@ func (f *fakeGitLab) recordPolicyLoad(path, ref string) {
 	f.policyLoads = append(f.policyLoads, policyLoad{path: path, ref: ref})
 }
 
+// forgeProbesAllSupported arms the fake's forge: the adapter serves its honest
+// capability report through the HTTP harness, but this fixture OVERRIDES the
+// report at the port with the all-supported one — the shape of a forge whose
+// probe HAS proven every capability (E10-S04). The override exists because the
+// real GitLab adapter's v1 report marks protected-pipeline-source UNKNOWN (the
+// retired SEC-04 heuristic; OQ-33), which refuses arming for every fixture —
+// correct for production, but it would make these arming tests incapable of
+// pinning the write path they exist to pin. The refusal behaviour itself is
+// pinned by TestRunProtectedPipelineUnknownRefusesArming, which runs WITHOUT
+// the override.
+//
+// newFakeGitLab calls this by DEFAULT: every run fixture in this package is
+// armed-capable, matching the pre-E10 fixtures' intent; tests that pin the
+// honest refusal unset f.capReportOverride themselves.
+func (f *fakeGitLab) forgeProbesAllSupported() {
+	entries := map[forge.Capability]forge.CapabilityEntry{}
+	for _, c := range forge.AllCapabilities() {
+		entries[c] = forge.SupportedCapabilityEntry("fixture: probe proven")
+	}
+	report, err := forge.NewCapabilityReport(entries)
+	if err != nil {
+		panic("capability report: " + err.Error())
+	}
+	f.capReportOverride = &report
+}
+
+// honestCapabilities removes the fixture's capability-report override, so the
+// run sees the adapter's REAL v1 GitLab report — protected-pipeline-source
+// unknown (the retired SEC-04 heuristic; OQ-33), arming refused. Every
+// refusal-polarity fixture calls this.
+func (f *fakeGitLab) honestCapabilities() { f.capReportOverride = nil }
+
+// capabilityOverridePort is the fixture-level port decorator: one honest
+// Snapshot read, with the capability report replaced by the configured fixture
+// report. It exists ONLY in tests — production cmd/assent has no such knob.
+type capabilityOverridePort struct {
+	forge.RunPort
+	report forge.CapabilityReport
+}
+
+func (o capabilityOverridePort) Snapshot(project, mr string) (forge.Snapshot, error) {
+	snap, err := o.RunPort.Snapshot(project, mr)
+	if err != nil {
+		return forge.Snapshot{}, err
+	}
+	snap.Capabilities = o.report
+	return snap, nil
+}
+
 // factory builds the production adapter (through the neutral factory — the
 // exact production construction) pointed at the fake server, driven end-to-end
 // over HTTP without a live network.
@@ -504,7 +565,11 @@ func (f *fakeGitLab) factory() func(string, string, string) forge.RunPort {
 		if botAuthor != "" {
 			f.botAuthor = botAuthor
 		}
-		return factory.GitLab(f.srv.URL, token, botAuthor, factory.NoSleep)
+		port := factory.GitLab(f.srv.URL, token, botAuthor, factory.NoSleep)
+		if f.capReportOverride != nil {
+			return capabilityOverridePort{RunPort: port, report: *f.capReportOverride}
+		}
+		return port
 	}
 }
 
@@ -795,6 +860,7 @@ func TestRunEmptyRequireNeverApproves(t *testing.T) {
 // approve/merge writes. --arm alone cannot override (E4-S06 / D-034).
 func TestRunApproveUnarmedNoWrite(t *testing.T) {
 	f := newFakeGitLab(t)
+	f.honestCapabilities() // refusal polarity
 	f.projectJSON = fakeForgeIneligibleProjectJSON
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n"

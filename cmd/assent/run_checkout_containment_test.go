@@ -389,6 +389,7 @@ func TestCheckoutRefusesSymlinkedGovernedFile(t *testing.T) {
 
 	t.Run("head-side file symlink is refused", func(t *testing.T) {
 		f := newFakeGitLab(t)
+		f.forgeProbesAllSupported() // armed fixture (see approving()'s note)
 		f.baseFile = "partitions: 12\n"
 		f.headFile = "partitions: 12\n" // the repo's own head: UNCHANGED
 

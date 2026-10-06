@@ -67,9 +67,13 @@ type errWriter struct{}
 func (errWriter) Write([]byte) (int, error) { return 0, errors.New("stdout is gone") }
 
 // approving configures the fake for the APPROVE + armed-merge polarity (a
-// partitions GROW proves `non-destructive`; the default premium project JSON
-// makes the forge probe arm-eligible).
 func approving(f *fakeGitLab) {
+	// E10-S04: the arming gate now reads the neutral capability report, whose
+	// real GitLab answer marks protected-pipeline-source UNKNOWN (the retired
+	// SEC-04 heuristic; OQ-33). The armed-polarity fixtures override the report
+	// — the shape of a forge whose probe proved every capability — so these
+	// tests keep pinning the WRITE path; the honest refusal is pinned
+	// separately by TestRunProtectedPipelineUnknownRefusesArming.
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n"
 }
@@ -347,6 +351,7 @@ func TestEmitBeforeReconcileByteStable(t *testing.T) {
 	// refuses arming) stays a clean exit 0, with the record already emitted.
 	t.Run("fail_closed_refusal_still_exit_zero", func(t *testing.T) {
 		f := newFakeGitLab(t)
+		f.honestCapabilities() // refusal polarity
 		f.projectJSON = fakeForgeIneligibleProjectJSON
 		approving(f)
 		emitPath := filepath.Join(t.TempDir(), "record.json")

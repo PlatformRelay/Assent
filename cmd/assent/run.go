@@ -186,7 +186,7 @@ func orchestrate(cfg runConfig, client forge.RunPort, clock runClock, stdout io.
 	// Snapshot already produced is the pin: the record and the read cannot
 	// disagree because there is only one read chain.
 	mergeDigest := snapshot.Heads.MergeResultDigest
-	probe := forge.PreconditionFromCapabilities(snapshot.Capabilities)
+	probe := forge.PreconditionFromReport(snapshot.Capabilities)
 
 	// 2. Load the frozen MergePolicy + RulesetBinding from the TARGET ref
 	//    (ADR-0015 §1) — NEVER the source branch — under strict decode (E2-S01).

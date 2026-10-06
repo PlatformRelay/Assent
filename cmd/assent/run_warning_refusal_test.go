@@ -30,6 +30,7 @@ func corruptBotMarkerBody() string {
 // it.
 func TestRunSurfacesForgeWarningOnUnarmedRefusal(t *testing.T) {
 	f := newFakeGitLab(t)
+	f.honestCapabilities()                         // refusal polarity
 	f.projectJSON = fakeForgeIneligibleProjectJSON // forge refuses to arm
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n" // an increase → APPROVE decision
@@ -66,6 +67,7 @@ func TestRunSurfacesForgeWarningOnUnarmedRefusal(t *testing.T) {
 // noise. Without it, unconditionally appending a suffix would pass.
 func TestRunEmitsNoWarningSuffixOnCleanRefusal(t *testing.T) {
 	f := newFakeGitLab(t)
+	f.honestCapabilities() // refusal polarity
 	f.projectJSON = fakeForgeIneligibleProjectJSON
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n"

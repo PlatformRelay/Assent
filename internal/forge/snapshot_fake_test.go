@@ -30,14 +30,7 @@ func TestSnapshotFake(t *testing.T) {
 	f.TargetBranch = tgtBranch
 	f.Labels = []string{"security-hold"}
 	f.ChangedFiles = []string{"topics/prod/orders.yaml", "internal/handler.go", ".assent/policy.yaml"}
-	f.Capabilities = forge.CapabilityFlags{
-		Tier:                        forge.TierPremium,
-		HasApprovalRulesAPI:         true,
-		DiscussionsResolvedGate:     true,
-		MergeResultDigestRecordable: true,
-		MergeTrainAvailable:         true,
-		ProtectedPipelineExternal:   true,
-	}
+	f.Capabilities = supportedCapReport(t)
 	f.SeedThread("note/9001", bot, reviewMarker(), false)
 	f.SeedThread("note/9002", "contributor", reviewMarker(), false)
 
@@ -72,8 +65,11 @@ func TestSnapshotFake(t *testing.T) {
 		t.Errorf("ChangedFiles = %v, want sorted %v", snap.ChangedFiles, wantFiles)
 	}
 
-	if snap.Capabilities != f.Capabilities {
-		t.Errorf("Capabilities = %+v, want %+v", snap.Capabilities, f.Capabilities)
+	if got := snap.Capabilities.State(forge.CapabilityResolvableThreads); got != f.Capabilities.State(forge.CapabilityResolvableThreads) {
+		t.Errorf("Capabilities.State(resolvable-threads) = %q, want the fixture's report state", got)
+	}
+	if got := snap.Capabilities.State(forge.CapabilityEligibleApprovalEvidence); got != forge.CapabilitySupported {
+		t.Errorf("Capabilities.State(eligible-approval-evidence) = %q, want supported on the all-supported fixture", got)
 	}
 
 	if len(snap.BotThreads) != 1 || snap.BotThreads[0].ID != "note/9001" {

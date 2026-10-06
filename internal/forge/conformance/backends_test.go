@@ -225,6 +225,7 @@ func (h *gitlabHarness) serveMR(w http.ResponseWriter, _ *http.Request) {
 		"sha":               h.sourceSHA,
 		"source_branch":     "feature",
 		"target_branch":     "main",
+		"changes_count":     "1",
 	})
 	// Fire AFTER the response is written, so this read returns the PRE-move value
 	// and only the NEXT one sees the drift.

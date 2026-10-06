@@ -128,10 +128,6 @@ func (h *gitlabHarness) handle(w http.ResponseWriter, r *http.Request) {
 		h.createNote(w, r)
 	case r.Method == http.MethodPut && strings.HasPrefix(path, notesBase+"/"):
 		h.updateNote(w, r, path, notesBase)
-	case r.Method == http.MethodGet && path == mrBase+"/approve":
-		h.approve(w, r)
-	case r.Method == http.MethodPut && strings.HasPrefix(path, mrBase+"/merge"):
-		h.merge(w, r)
 	case r.Method == http.MethodGet && path == mrBase:
 		h.serveMR(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(path, branchBase):
@@ -140,8 +136,28 @@ func (h *gitlabHarness) handle(w http.ResponseWriter, r *http.Request) {
 		h.approve(w, r)
 	case r.Method == http.MethodPut && strings.HasPrefix(path, mrBase+"/merge"):
 		h.merge(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(path, mrBase+"/approval_rules"):
+		// One Premium-shaped approval rule: eligible-approval-evidence supported.
+		if r.URL.Query().Get("page") == "1" {
+			_, _ = w.Write([]byte(`[{"id":1,"name":"default","approvals_required":1}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
 	case r.Method == http.MethodGet && isFileRawOf(h, path):
 		h.serveFile(w, r, path)
+	case r.Method == http.MethodGet && strings.HasPrefix(path, mrBase+"/diffs"):
+		// The capability cases drive the full Snapshot, whose changed-file
+		// enumeration needs the diffs endpoint: one governed path, complete.
+		if r.URL.Query().Get("page") == "1" {
+			_, _ = w.Write([]byte(`[{"old_path":"topics/orders.yaml","new_path":"topics/orders.yaml"}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	case r.Method == http.MethodGet && strings.HasPrefix(path, fmt.Sprintf("/api/v4/projects/%s", url.PathEscape(h.project))):
+		// The project probe (E10-S04's capability report): the settings the
+		// probes read. Only the two READ settings are asserted-on by cases; the
+		// protected-pipeline-source is deliberately NOT probed by any predicate.
+		_, _ = w.Write([]byte(`{"only_allow_merge_if_all_discussions_are_resolved":true,"merge_trains_enabled":false}`))
 	default:
 		http.Error(w, "unexpected "+r.Method+" "+path, http.StatusInternalServerError)
 	}

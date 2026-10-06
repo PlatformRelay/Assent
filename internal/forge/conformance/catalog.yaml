@@ -240,7 +240,7 @@ cases:
     adapters: [github]
     note: deferred to E10-S07 — the fine-grained-PAT shape (repo read 200, every content read 404) is a GitHub token shape
 
-  # --- S00 Q2/Q3 capability cases: deferred rows until E10-S04/S06 lands them ---
+  # --- S00 Q2/Q3 capability cases ---
   - id: threads-resolvable-graphql
     adr: ADR-0021 §3
     level: L1
@@ -251,35 +251,58 @@ cases:
     adapters: [github]
     note: licenses GitHub resolvable-threads C constant — post a thread, resolve via GraphQL, read isResolved (E10-S06/S07)
 
-  - id: capability-report-exhaustive
-    adr: ADR-0021 §3
-    level: L1
-    req: REQ-E10-S04-01
-    test: TestConformanceCapabilityReportExhaustive
-    package: internal/forge/conformance
-    forge: github-deferred
-    adapters: [fake, gitlab, github]
-    note: deferred to E10-S04 — every enum member carries an entry on every adapter
-
   - id: capability-unknown-never-arms
     adr: ADR-0021 §3
     level: L1
     req: REQ-E10-S04-02
-    test: TestConformanceUnknownCapabilityNeverArms
+    test: TestConformanceUnknownNeverArms
+    package: internal/forge/conformance
+    forge: both
+    adapters: [fake, gitlab]
+    note: unknown at a consultation point refuses arming, merges == 0 — and the mandatory positive control (arming granted ⇒ merges == 1) lives in the same case body
+
+  - id: capability-report-exhaustive
+    adr: ADR-0021 §3
+    level: L1
+    req: REQ-E10-S04-01
+    test: TestCapabilityReportExhaustiveOnAllBackends
     package: internal/forge/conformance
     forge: github-deferred
     adapters: [fake, gitlab, github]
-    note: deferred to E10-S04 — unknown at a consultation point refuses arming, merges == 0
+    note: executed by a direct entry test over both built-in factories (not RunSuite) — the report's shape is a PORT property the sabotage fixture cannot corrupt, so the can-fail gate has no purchase; dispositioned as executed-outside-RunSuite
 
   - id: capability-supported-does-arm
     adr: ADR-0021 §3
     level: L1
     req: REQ-E10-S04-02
-    test: TestConformanceSupportedCapabilityArms
-    package: internal/forge/conformance
+    test: TestAllSupportedDoesArmForgeLevel
+    package: internal/forge
     forge: github-deferred
-    adapters: [fake, gitlab, github]
-    note: deferred to E10-S04 — positive control, merges == 1
+    adapters: [fake, gitlab]
+    note: unit-level positive control — the all-supported report is a FIXTURE shape, unreachable through an honest adapter's v1 report; the adapter-level positive control is E10-S12's TestDeltasFailClosed (merges == 1)
+
+  # --- S00 Q3 capability-gap cases: the record surface, pinned at cmd/assent ---
+  - id: capability-gap-string-is-merge-result-only
+    adr: ADR-0021 item 8
+    level: L1
+    req: REQ-E10-S04-04
+    test: TestConformanceCapabilityGapCarriesOnlyMergeResult
+    package: cmd/assent
+    forge: github-deferred
+    adapters: [fake, gitlab]
+    note: deferred to E10-S04's cmd rows — N extra absent/unknown capabilities leave pins.capabilityGap byte-identical; the doctor report carries all N
+
+  - id: capability-gap-positive-control
+    adr: ADR-0021 item 8
+    level: L1
+    req: REQ-E10-S04-04
+    test: TestConformanceCapabilityGapStillRecordsMergeResult
+    package: cmd/assent
+    forge: github-deferred
+    adapters: [fake, gitlab]
+    note: deferred to E10-S04's cmd rows — the merge-result gap itself IS still recorded
+
+  # --- GitHub-deferred (E10) — catalog stubs only ---
 
   - id: capability-gap-string-is-merge-result-only
     adr: ADR-0021 item 8

@@ -1,5 +1,7 @@
 package forge
 
+import "fmt"
+
 // DuplicatePrevention records the doctor-reported duplicate-thread guarantee
 // per P3-E5 / ADR-0019 (single-writer-serialized vs unserialized-best-effort).
 type DuplicatePrevention string
@@ -41,38 +43,45 @@ type PreconditionProbe struct {
 	CapabilityGaps          []CapabilityGapReason
 }
 
-// PreconditionFromCapabilities evaluates arming preconditions from forge Snapshot
-// capability flags (D-034 forge-probe path). Default-deny: any missing gate or
-// tier gap refuses arming with typed reasons.
-func PreconditionFromCapabilities(caps CapabilityFlags) PreconditionProbe {
+// PreconditionFromReport evaluates arming preconditions from the forge's
+// capability report (E10-S04, ADR-0021 item 3). Default-deny: any consultation
+// point not PROVEN `supported` refuses arming with a typed reason; `unknown`
+// and `absent` refuse identically with distinguishable detail strings
+// (REQ-E10-S04-02 — unprobed is not proof).
+//
+// The arming consultation set is STATED (S00 Q2's scope rule): exactly the three
+// ADR-0015 §4/§8 gates precondition.go has always consulted —
+// protected-pipeline-source, threads-block-merge, eligible-approval-evidence.
+// Every other capability is consulted by its own path or carried to doctor.
+func PreconditionFromReport(report CapabilityReport) PreconditionProbe {
 	probe := PreconditionProbe{
 		// Snapshot does not yet probe per-MR resource_group serialization — safe
 		// default on ambiguity (P3-E5 / spike-secure-setup D15).
 		DuplicatePrevention: DuplicatePreventionBestEffort,
 	}
 
-	if caps.ProtectedPipelineExternal {
-		probe.ProtectedConfigVerified = true
-	} else {
+	if report.ArmedBlocks(CapabilityProtectedPipelineSource) {
 		probe.Refusals = append(probe.Refusals, PreconditionRefusal{
 			Code:   RefusalInsecureTopology,
-			Detail: "CI configuration is author-editable in-repo (.gitlab-ci.yml) with no external/protected config file (forge dossier C17)",
+			Detail: protectionTopologyRefusalDetail(report),
 		})
+	} else {
+		probe.ProtectedConfigVerified = true
 	}
 
-	if !caps.DiscussionsResolvedGate {
+	if report.ArmedBlocks(CapabilityThreadsBlockMerge) {
 		probe.Refusals = append(probe.Refusals, PreconditionRefusal{
 			Code:   RefusalDiscussionsGateMissing,
-			Detail: "only_allow_merge_if_all_discussions_are_resolved is not enabled (forge dossier C3 / ADR-0009)",
+			Detail: discussionsGateRefusalDetail(report),
 		})
 	}
 
-	if !caps.HasApprovalRulesAPI || caps.Tier == TierFree {
+	if report.ArmedBlocks(CapabilityEligibleApprovalEvidence) {
 		probe.AutoMergeEligible = false
 		probe.CapabilityGaps = append(probe.CapabilityGaps, GapFreeTierRequireReview)
 		probe.Refusals = append(probe.Refusals, PreconditionRefusal{
 			Code:   RefusalTierCapabilityGap,
-			Detail: "GitLab tier lacks enforced approval-rules API — require-review evidence is unsatisfiable (forge dossier C6/C7)",
+			Detail: approvalEvidenceRefusalDetail(report),
 		})
 	} else {
 		probe.AutoMergeEligible = true
@@ -80,4 +89,40 @@ func PreconditionFromCapabilities(caps CapabilityFlags) PreconditionProbe {
 
 	probe.ArmEligible = len(probe.Refusals) == 0
 	return probe
+}
+
+// protectionTopologyRefusalDetail renders the protected-pipeline-source refusal
+// with the state (absent vs unknown) and the adapter's own reason — the two
+// states refuse identically but must read differently (REQ-E10-S04-02).
+func protectionTopologyRefusalDetail(report CapabilityReport) string {
+	return capabilityRefusalDetail(report, CapabilityProtectedPipelineSource,
+		"the protected-pipeline-source capability is not proven — the CI configuration that drives assent may be author-editable (ADR-0015 §4)")
+}
+
+func discussionsGateRefusalDetail(report CapabilityReport) string {
+	return capabilityRefusalDetail(report, CapabilityThreadsBlockMerge,
+		"unresolved discussion resolution gate is not proven to block the merge (forge dossier C3 / ADR-0009)")
+}
+
+func approvalEvidenceRefusalDetail(report CapabilityReport) string {
+	return capabilityRefusalDetail(report, CapabilityEligibleApprovalEvidence,
+		"forge-proven eligible approval evidence is unsatisfiable — require-review cannot be proven on this forge (ADR-0017 §3)")
+}
+
+// capabilityRefusalDetail composes state + reason into a refusal detail string.
+func capabilityRefusalDetail(report CapabilityReport, c Capability, consequence string) string {
+	return fmt.Sprintf("capability %q is %s — %s. %s",
+		c, capabilityStatePhrase(report.State(c)), consequence, report.Reason(c))
+}
+
+// capabilityStatePhrase distinguishes unknown from absent in prose: the two
+// states refuse arming identically, but a reader must be able to tell "the
+// forge lacks it" from "nobody proved it".
+func capabilityStatePhrase(s CapabilityState) string {
+	switch s {
+	case CapabilityUnknown:
+		return "UNPROBED/UNKNOWN"
+	default:
+		return "ABSENT"
+	}
 }

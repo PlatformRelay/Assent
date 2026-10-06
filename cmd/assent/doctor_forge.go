@@ -11,14 +11,17 @@ import (
 const doctorEnvInsecureBanner = "INSECURE: env self-assertion — protected-source signals are spoofable by an author-editable CI job; forge probe unavailable (no GITLAB_TOKEN)"
 
 // DoctorFromForgeProbe maps a forge PreconditionProbe into cmd/assent's
-// PreconditionReport (ADR-0017 §9 additive fields).
-func DoctorFromForgeProbe(probe forge.PreconditionProbe) PreconditionReport {
+// PreconditionReport (ADR-0017 §9 additive fields), carrying the adapter's
+// typed capability report on the doctor surface (E10-S04): supported | absent
+// | unknown + reason per capability of the closed enum.
+func DoctorFromForgeProbe(probe forge.PreconditionProbe, capabilities forge.CapabilityReport) PreconditionReport {
 	report := PreconditionReport{
 		ArmEligible:         probe.ArmEligible,
 		AutoMergeEligible:   probe.AutoMergeEligible,
 		DuplicatePrevention: string(probe.DuplicatePrevention),
 		Capabilities: Capabilities{
 			ProtectedConfigVerified: probe.ProtectedConfigVerified,
+			Forge:                   capabilities.Sorted(),
 		},
 		CapabilityGaps: probe.CapabilityGaps,
 	}
@@ -63,7 +66,7 @@ func runDoctor(getenv func(string) string, stdout, stderr io.Writer,
 			_, _ = fmt.Fprintln(stderr, "assent doctor:", err)
 			return 2
 		}
-		report := DoctorFromForgeProbe(forge.PreconditionFromCapabilities(snapshot.Capabilities))
+		report := DoctorFromForgeProbe(forge.PreconditionFromReport(snapshot.Capabilities), snapshot.Capabilities)
 		return emitDoctorReport(report, stdout, stderr, false)
 	}
 

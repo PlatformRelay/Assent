@@ -72,7 +72,7 @@ func doctorReportFromForgeHandler(t *testing.T, h http.HandlerFunc) Precondition
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	return DoctorFromForgeProbe(forge.PreconditionFromCapabilities(snap.Capabilities))
+	return DoctorFromForgeProbe(forge.PreconditionFromReport(snap.Capabilities), snap.Capabilities)
 }
 
 // captureRunDoctor drives runDoctor end-to-end through snapshotFactory with env

@@ -56,6 +56,8 @@ func Cases() []Case {
 		{ID: "forbidden-never-renders-as-absent", Run: caseForbiddenNeverRendersAsAbsent},
 		{ID: "absent-file-still-renders-as-absent", Run: caseAbsentFileStillRendersAsAbsent},
 		{ID: "own-markers-recognised-identity", Run: caseOwnMarkersRecognisedIdentity},
+		// Capability-model cases (E10-S04; minted by S00's Q2 table).
+		{ID: "capability-unknown-never-arms", Run: caseCapabilityUnknownNeverArms},
 	}
 }
 

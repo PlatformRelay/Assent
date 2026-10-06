@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/PlatformRelay/assent/internal/forge"
 )
 
 // AUD-S10 (audit findings REL-03 / SEC-08): every forge response read is
@@ -266,8 +268,8 @@ func TestApprovalRulesFailSafeSurvivesCap(t *testing.T) {
 			if err != nil {
 				t.Fatalf("approval-rules %d must fail SAFE to Free tier, not error: %v", status, err)
 			}
-			if snap.Capabilities.HasApprovalRulesAPI {
-				t.Fatal("approval-rules probe must report false when the API is unavailable")
+			if got := snap.Capabilities.State(forge.CapabilityEligibleApprovalEvidence); got != forge.CapabilityAbsent {
+				t.Fatal("approval-rules probe must grade the capability ABSENT when the API is unavailable")
 			}
 		})
 	}

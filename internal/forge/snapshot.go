@@ -17,7 +17,11 @@ const EnumerationIncompletePrefix = "forge changed-file enumeration incomplete: 
 type Snapshot struct {
 	Heads        MRHeads
 	ChangedFiles []string
-	Capabilities CapabilityFlags
+	// Capabilities is the NEUTRAL capability report (E10-S04, ADR-0021 item 3):
+	// supported | absent | unknown per capability of the closed eleven-flag
+	// enum, with the reason the state is what it is. `unknown` never arms
+	// (ADR-0021 §3, unprobed is not proof).
+	Capabilities CapabilityReport
 	BotThreads   []Thread
 
 	// ChangedFilesComplete reports whether ChangedFiles is the PROVABLY COMPLETE
@@ -67,28 +71,4 @@ type MRHeads struct {
 	// ForkMR is true when the MR source project differs from the target project
 	// (GitLab fork workflow). ADR-0015 §8: fork/untrusted context is advisory-only.
 	ForkMR bool
-}
-
-// GitLabTier is the licensed tier detected from forge probe data (dossier §1).
-type GitLabTier string
-
-const (
-	// TierFree is the GitLab Free licensed tier (dossier §1).
-	TierFree GitLabTier = "free"
-	// TierPremium is the GitLab Premium licensed tier.
-	TierPremium GitLabTier = "premium"
-	// TierUltimate is the GitLab Ultimate licensed tier.
-	TierUltimate GitLabTier = "ultimate"
-)
-
-// CapabilityFlags exposes tier and merge-gate capabilities for doctor and Resolve
-// fail-closed decisions (forge dossier §1 C3/C6/C7/C13/C14/C17).
-type CapabilityFlags struct {
-	Tier GitLabTier
-
-	HasApprovalRulesAPI         bool
-	DiscussionsResolvedGate     bool
-	MergeResultDigestRecordable bool
-	MergeTrainAvailable         bool
-	ProtectedPipelineExternal   bool
 }
