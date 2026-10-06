@@ -344,3 +344,38 @@ cases:
     forge: github-deferred
     adapters: []
     note: merge-queue merge-result digest pinning — live proof deferred to E10
+
+  # --- E10-S05 port-level transport cases (ADR-0021 item 4) ---
+  # Adapter-transport-shaped by nature: the fake has no transport to violate, so
+  # they run as direct entry tests on the GitLab factory now and on the GitHub
+  # factory when it lands (E10-S06+). Disposition: [gitlab] with the GitHub
+  # adapter joining at E10-S06 — the rows are never unowned.
+  - id: transport-bounded-reads
+    adr: ADR-0021 item 4
+    level: L1
+    req: REQ-E10-S05-01
+    test: TestConformanceBoundedReads
+    package: internal/forge/conformance
+    forge: github-deferred
+    adapters: [gitlab, github]
+    note: direct entry test (adapter-factory-shaped; the fake has no transport to violate) — an oversized body and a never-shortening paginator both fail closed
+
+  - id: writes-never-retried
+    adr: ADR-0021 item 4
+    level: L1
+    req: REQ-E10-S05-02
+    test: TestConformanceWritesNeverRetried
+    package: internal/forge/conformance
+    forge: github-deferred
+    adapters: [gitlab, github]
+    note: direct entry test — an injected 5xx write is attempted EXACTLY once
+
+  - id: transport-deadline-bounded
+    adr: ADR-0021 item 4
+    level: L1
+    req: REQ-E10-S05-02
+    test: TestConformanceDeadlineBounded
+    package: internal/forge/conformance
+    forge: github-deferred
+    adapters: [gitlab, github]
+    note: direct entry test — a response slower than the per-request deadline errors within its budget (one attempt, not the whole run)

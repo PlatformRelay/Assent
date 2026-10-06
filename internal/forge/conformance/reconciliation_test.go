@@ -52,10 +52,6 @@ type gitlabHarness struct {
 	approveCalls int
 	mergePUTs    int
 
-	// E10-S02: governed-file content + fork modelling, so the addressing cases
-	// (S00 Q1/Q4) run against GitLab. A side that was never seeded is absent;
-	// the Set flags keep a seeded EMPTY file (present, zero bytes) distinct
-	// from absence.
 	forkMR       bool
 	governedPath string
 	baseFile     []byte
@@ -63,6 +59,17 @@ type gitlabHarness struct {
 	headFile     []byte
 	headSet      bool
 	refusedPath  string
+
+	// Transport knobs (E10-S05): the port-level transport conformance cases
+	// need a backend that can violate each requirement and let the case prove
+	// the fail-closed polarity.
+	pageStorm   bool          // every discussions page serves a FULL page (never shortens)
+	writeStatus int           // when non-200, every write endpoint answers this status
+	slowAfter   time.Duration // when non-zero, the MR read sleeps this long before answering
+
+	// discRequests counts the discussions POSTs the harness received — the
+	// write-never-retried case reads it.
+	discPOSTs int
 
 	// afterMRRead fires once an MR read has been SERVED — the TOCTOU seam.
 	afterMRRead func(h *gitlabHarness)
@@ -95,10 +102,19 @@ func (h *gitlabHarness) client(t interface {
 	Cleanup(func())
 }) *gitlab.Client {
 	t.Helper()
+	return h.clientWith(t, gitlab.WithSleeper(func(time.Duration) {}))
+}
+
+// clientWith builds the harness's client with explicit options, for the
+// transport cases that must override the retry/deadline policy.
+func (h *gitlabHarness) clientWith(t interface {
+	Helper()
+	Cleanup(func())
+}, opts ...gitlab.Option) *gitlab.Client {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(h.handle))
 	t.Cleanup(srv.Close)
-	return gitlab.New(srv.URL, "test-token", h.botAuthor,
-		gitlab.WithSleeper(func(time.Duration) {}))
+	return gitlab.New(srv.URL, "test-token", h.botAuthor, opts...)
 }
 
 func (h *gitlabHarness) handle(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +240,19 @@ func (h *gitlabHarness) serveFileContent(ref string) string {
 }
 
 func (h *gitlabHarness) serveDiscussions(w http.ResponseWriter, r *http.Request) {
+	// E10-S05 transport knob: a paginator that never shortens its pages. The
+	// harness serves a FULL page on every request, so the adapter's cap must
+	// fail closed instead of spinning or silently truncating.
+	if h.pageStorm {
+		storm := make([]map[string]any, 100)
+		for i := range storm {
+			storm[i] = map[string]any{
+				"id": fmt.Sprintf("storm-%d", i),
+			}
+		}
+		_ = json.NewEncoder(w).Encode(storm)
+		return
+	}
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page <= 0 {
 		page = 1
@@ -254,6 +283,11 @@ func (h *gitlabHarness) serveDiscussions(w http.ResponseWriter, r *http.Request)
 
 func (h *gitlabHarness) createDiscussion(w http.ResponseWriter, r *http.Request) {
 	h.createCalls++
+	h.discPOSTs++
+	if h.writeStatus != 0 {
+		http.Error(w, "injected transport failure", h.writeStatus)
+		return
+	}
 	body, _ := io.ReadAll(r.Body)
 	form, _ := url.ParseQuery(string(body))
 	h.nextID++

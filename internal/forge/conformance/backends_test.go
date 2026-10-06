@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/forge/fake"
@@ -214,6 +215,12 @@ func gitlabFactory(t TB, cfg Config) Backend {
 
 func (h *gitlabHarness) serveMR(w http.ResponseWriter, _ *http.Request) {
 	h.mrReads++
+	// E10-S05 transport knob: a response slower than a short per-request
+	// deadline. The sleep happens BEFORE the answer, so the read must hit the
+	// per-request context deadline (the adapter's request timeout), never hang.
+	if h.slowAfter > 0 {
+		time.Sleep(h.slowAfter)
+	}
 	sourceProjectID := 42
 	if h.forkMR {
 		sourceProjectID = 999
