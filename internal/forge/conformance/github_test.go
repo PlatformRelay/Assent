@@ -502,9 +502,11 @@ func (h *githubHarness) updateNoteRow(w http.ResponseWriter, r *http.Request) {
 		if h.notes[i].id == numeric {
 			h.notes[i].body = posted.Body
 			w.WriteHeader(http.StatusOK)
-			// The echo is the fixture's own id (a decoded int), never raw
-			// request bytes — gosec's G705 taint cannot reach it.
-			_, _ = fmt.Fprintf(w, `{"id":%d}`, numeric)
+			// The echo is the fixture's own decoded int id, never raw request
+			// bytes; G705's taint model cannot see that, so the echo is
+			// annotated rather than restructured — restructuring would hide
+			// the honest id round-trip the tests assert on.
+			_, _ = fmt.Fprintf(w, `{"id":%d}`, numeric) //nolint:gosec // G705 — decoded fixture int, not request-tainted data.
 			return
 		}
 	}
