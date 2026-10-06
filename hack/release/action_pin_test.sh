@@ -48,10 +48,10 @@ fi
 if grep -Eq 'x86_64|macos' action.yml; then
   fail "action.yml must not contain the un-mapped asset names x86_64/macos"
 fi
-if grep -Fq "awk -v a=" action.yml && grep -Fq 'sha256sum --check --strict' action.yml; then
-  pass "action.yml selects the checksum line by EXACT asset name (the .spdx.json substring shape refused)"
+if grep -Fq "awk -v a=" action.yml && grep -Fq 'sha256sum --check --strict' action.yml && grep -Fq 'no checksum line' action.yml; then
+  pass "action.yml selects the checksum line by EXACT name and refuses an empty selection (the macOS empty-input fail-open refused)"
 else
-  fail "action.yml must checksum by exact asset name — a substring grep would check the never-downloaded .spdx.json SBOM"
+  fail "action.yml must checksum by exact asset name AND fail closed when the asset has no checksum line (the macOS /sbin/sha256sum empty-input exit-0 shape)"
 fi
 
 PROBE="$(mktemp -d)"

@@ -23,7 +23,7 @@ inputs:
     description: "Released assent version to run (pinned; e.g. v0.4.0)"
     required: true
   subject:
-    description: "Governed-subject entryRef (file:<path>) — the file diffed for evaluation"
+    description: "Repo-relative path of the governed file (the action adds the file: entryRef prefix)"
     required: true
   bot-author:
     description: "Bot login the author-identity filter matches (the token's own login)"
@@ -89,8 +89,16 @@ runs:
         curl -fSL --retry 3 --proto "=https" -o "$work/checksums.txt" "$asset_base/checksums.txt"
         # Exact-name match (awk on the SECOND field): a substring grep would
         # also match the asset's .spdx.json SBOM line and check a file we never
-        # downloaded. The archive digest is what must verify.
-        (cd "$work" && awk -v a="$asset" '$2 == a { print $1 "  " $2 }' checksums.txt | sha256sum --check --strict --status -)
+        # downloaded. The archive digest is what must verify. The selection is
+        # CAPTURED and refused when empty: macOS's /sbin/sha256sum exits 0 on
+        # empty input, so an unselected line must fail LOUDLY (fail-closed —
+        # the final review's finding).
+        checksum_line="$(cd "$work" && awk -v a="$asset" '$2 == a { print $1 "  " $2 }' checksums.txt)"
+        if [[ -z "$checksum_line" ]]; then
+          echo "assent action: no checksum line for $asset in checksums.txt — refusing to install an unverified archive" >&2
+          exit 1
+        fi
+        printf '%s\n' "$checksum_line" | (cd "$work" && sha256sum --check --strict --status -)
         tar -xzf "$work/$asset" -C "$work" assent
         echo "$work" >> "$GITHUB_PATH"
     - name: Run the gate
