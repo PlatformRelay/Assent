@@ -62,7 +62,17 @@ func DecodeCatalog(raw []byte) (Catalog, error) {
 	if err := dec.Decode(&c); err != nil {
 		return Catalog{}, fmt.Errorf("conformance catalog: %w", err)
 	}
+	seen := make(map[string]bool, len(c.Cases))
 	for _, row := range c.Cases {
+		// A duplicated case id is a coverage lie in both directions: the
+		// second row can silently override the first in every consumer that
+		// indexes by id, and a case ID is the join key the gates diff on.
+		if seen[row.ID] {
+			return Catalog{}, fmt.Errorf(
+				"conformance catalog: case id %q is declared more than once — ids are the catalog's join key and must be unique",
+				row.ID)
+		}
+		seen[row.ID] = true
 		for _, a := range row.Adapters {
 			if !KnownAdapters[a] {
 				return Catalog{}, fmt.Errorf(

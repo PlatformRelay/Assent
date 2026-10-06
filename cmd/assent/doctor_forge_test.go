@@ -7,10 +7,9 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
-	"github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/forge/factory"
 )
 
 const (
@@ -68,13 +67,12 @@ func doctorReportFromForgeHandler(t *testing.T, h http.HandlerFunc) Precondition
 	t.Setenv("CI_MERGE_REQUEST_IID", forgeDoctorMR)
 	t.Setenv("CI_API_V4_URL", srv.URL+"/api/v4")
 
-	client := gitlab.New(srv.URL, forgeDoctorToken, "assent-bot",
-		gitlab.WithSleeper(func(time.Duration) {}))
+	client := factory.GitLab(srv.URL, forgeDoctorToken, "assent-bot", factory.NoSleep)
 	snap, err := client.Snapshot(forgeDoctorProject, forgeDoctorMR)
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	return DoctorFromForgeProbe(forge.PreconditionFromCapabilities(snap.Capabilities))
+	return DoctorFromForgeProbe(forge.PreconditionFromReport(snap.Capabilities), snap.Capabilities)
 }
 
 // captureRunDoctor drives runDoctor end-to-end through snapshotFactory with env
@@ -88,6 +86,9 @@ func captureRunDoctor(t *testing.T, h http.HandlerFunc) (code int, stdout, stder
 	t.Setenv("CI_PROJECT_ID", forgeDoctorProject)
 	t.Setenv("CI_MERGE_REQUEST_IID", forgeDoctorMR)
 	t.Setenv("CI_API_V4_URL", srv.URL+"/api/v4")
+	// E10-S13: the httptest host is not a recognisable forge host (autodetect
+	// fails closed by design), so the explicit selection is part of the fixture.
+	t.Setenv("ASSENT_FORGE", "gitlab")
 	// Spoofed env self-assertion that would arm on the env-only path.
 	t.Setenv("ASSENT_PIPELINE_CONFIG_PROTECTED", "true")
 	t.Setenv("ASSENT_PIPELINE_CONFIG_AUTHOR_EDITABLE", "false")
@@ -102,9 +103,8 @@ func captureRunDoctor(t *testing.T, h http.HandlerFunc) (code int, stdout, stder
 		t.Fatal(err)
 	}
 
-	code = runDoctor(os.Getenv, wOut, wErr, func(endpoint, token, botAuthor string) forge.Snapshotter {
-		return gitlab.New(endpoint, token, botAuthor,
-			gitlab.WithSleeper(func(time.Duration) {}))
+	code = runDoctor(os.Getenv, wOut, wErr, func(_ string, endpoint, token, botAuthor string) forge.RunPort {
+		return factory.GitLab(endpoint, token, botAuthor, factory.NoSleep)
 	})
 	_ = wOut.Close()
 	_ = wErr.Close()

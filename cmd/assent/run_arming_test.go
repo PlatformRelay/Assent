@@ -60,7 +60,11 @@ func TestRunExpiredFactBlocksArming(t *testing.T) {
 //	summarize(result.Decision, false, …) → reds with_flag_reports_arm_true
 func TestRunArmFlagIsAdvisoryOnly(t *testing.T) {
 	// A forge-probed-eligible APPROVE fixture: the arming preconditions ARE met,
-	// so writes happen and the flag is the only variable under test.
+	// so writes happen and the flag is the only variable under test. The
+	// capability report is overridden with the all-supported one — the real
+	// GitLab adapter reports protected-pipeline-source UNKNOWN in v1 (the
+	// retired SEC-04 heuristic; OQ-33), which refuses arming for every fixture;
+	// the refusal itself is pinned by TestRunProtectedPipelineUnknownRefusesArming.
 	runFixture := func(t *testing.T, extra ...string) (summary string, approvals, merges int) {
 		t.Helper()
 		f := newFakeGitLab(t)

@@ -142,9 +142,12 @@ func TestMRInfoIsOneTypeAcrossPortAndAdapter(t *testing.T) {
 		t.Fatalf("MRInfo is owned by %q, want internal/forge (the type must live on the port)", portType.PkgPath())
 	}
 	// The lift is behaviour-preserving only if the shape survived it verbatim.
-	// Labels is the one deliberate ADDITION since the lift (D-182): the live run
+	// Labels is the deliberate ADDITION since the lift (D-182): the live run
 	// path needs the MR's forge labels to bind the engine's `mr.labels` scope.
-	want := []string{"IID", "ProjectID", "SourceBranch", "TargetBranch", "SourceSHA", "TargetSHA", "ForkMR", "Labels"}
+	// SourceProjectID is the deliberate ADDITION since E10-S02 (ADR-0021 item 5):
+	// the MR-relative head accessor needs the source repository identifier, so a
+	// fork's head is addressed inside the repository that holds it.
+	want := []string{"IID", "ProjectID", "SourceBranch", "TargetBranch", "SourceSHA", "TargetSHA", "ForkMR", "SourceProjectID", "Labels"}
 	var got []string
 	for i := range portType.NumField() {
 		got = append(got, portType.Field(i).Name)

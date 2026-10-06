@@ -105,14 +105,15 @@ func (c *Client) mrWithAuthor(project, mr string) (mrMeta, error) {
 
 	return mrMeta{
 		info: MRInfo{
-			IID:          fmt.Sprintf("%d", mrResp.IID),
-			ProjectID:    fmt.Sprintf("%d", mrResp.ProjectID),
-			SourceBranch: mrResp.SourceBranch,
-			TargetBranch: mrResp.TargetBranch,
-			SourceSHA:    mrResp.SHA,
-			TargetSHA:    targetSHA,
-			ForkMR:       mrResp.SourceProjectID != 0 && mrResp.SourceProjectID != mrResp.ProjectID,
-			Labels:       mrResp.Labels,
+			IID:             fmt.Sprintf("%d", mrResp.IID),
+			ProjectID:       fmt.Sprintf("%d", mrResp.ProjectID),
+			SourceProjectID: fmt.Sprintf("%d", mrResp.SourceProjectID),
+			SourceBranch:    mrResp.SourceBranch,
+			TargetBranch:    mrResp.TargetBranch,
+			SourceSHA:       mrResp.SHA,
+			TargetSHA:       targetSHA,
+			ForkMR:          mrResp.SourceProjectID != 0 && mrResp.SourceProjectID != mrResp.ProjectID,
+			Labels:          mrResp.Labels,
 		},
 		author:       mrResp.Author.Username,
 		changesCount: mrResp.ChangesCount,
@@ -265,22 +266,61 @@ func enumerationGap(entries int, changesCount string, terminated, overflow bool)
 	return ""
 }
 
-func (c *Client) probeCapabilities(project, mr string) (forge.CapabilityFlags, error) {
-	caps := forge.CapabilityFlags{
-		// merge_ref (C16) is available on all tiers — record-only digest axis.
-		MergeResultDigestRecordable: true,
+func (c *Client) probeCapabilities(project, mr string) (forge.CapabilityReport, error) {
+	// E10-S04 (ADR-0021 item 3): the probe TRANSPORT failure is a hard process
+	// error — it propagates as this function's error, never a silent downgrade
+	// to `unknown` (REQ-E10-S04-05: a 5xx on one endpoint must not flip
+	// APPROVE→REVIEW as an "unknown" capability; a broken forge aborts the run).
+	caps := map[forge.Capability]forge.CapabilityEntry{
+		// C constants licensed by named conformance cases (S00 Q2 rows 1/5/6/7):
+		// the p3e5-* reconciliation cases license resolvable-threads; the
+		// sha-guard-* cases license sha-guarded-merge; the dossier records MWPS
+		// as tier-independent deferred arming with revoke-on-push.
+		forge.CapabilityResolvableThreads: {State: forge.CapabilitySupported, Reason: "constant supported — licensed by the p3e5-* reconciliation conformance cases (S00 Q2 row 1)"},
+		forge.CapabilitySHAGuardedMerge:   {State: forge.CapabilitySupported, Reason: "constant supported — licensed by the sha-guard-* conformance cases (PUT /merge?sha= CAS)"},
+		forge.CapabilityDeferredMergeArming: {
+			State:  forge.CapabilitySupported,
+			Reason: "constant supported — merge-when-pipelines-succeed is tier-independent (dossier C11)",
+		},
+		forge.CapabilityArmingRevokedOnPush: {
+			State:  forge.CapabilitySupported,
+			Reason: "constant supported — any new commit cancels MWPS arming (dossier C11)",
+		},
+		// Honestly absent on GitLab (no REQUEST_CHANGES primitive, no analogue;
+		// ADR-0017 §3 uses threads — dossier C4/C8).
+		forge.CapabilityBlockingReview: {State: forge.CapabilityAbsent, Reason: "GitLab has no REQUEST_CHANGES review primitive; blocking review is carried by resolvable threads (ADR-0017 §3)"},
+		forge.CapabilityReviewDismissalRestrictions: {
+			State:  forge.CapabilityAbsent,
+			Reason: "no GitLab analogue (dossier row 4)",
+		},
+		// Retired SEC-04 heuristic (S00 Q2 row 11): a ci_config_path substring
+		// test is a heuristic, not a probe — it proves neither that the
+		// referenced CI config sits on a protected branch nor that the MR author
+		// cannot push to it. Until a decidable predicate exists (OQ-33), this is
+		// unknown, and unknown refuses to arm (ADR-0021 §3).
+		forge.CapabilityProtectedPipelineSource: {
+			State:  forge.CapabilityUnknown,
+			Reason: "no operationally decidable predicate is probed — the retired ci_config_path '@' substring heuristic was the SEC-04 shape (audit 2026-08-09); OQ-33 records the candidate probes",
+		},
+		// Never probed by any adapter version (audit RELI-03): unknown, not
+		// assumed-true. The arming path does not consult it in v1, but doctor
+		// must state it honestly.
+		forge.CapabilityApprovalResetOnPush: {
+			State:  forge.CapabilityUnknown,
+			Reason: "not probed — reset_approvals_on_push is not read by any probe today (audit RELI-03); an unprobed setting may never be cited as a safety argument",
+		},
 	}
 
 	status, raw, err := c.do(http.MethodGet,
 		fmt.Sprintf("/api/v4/projects/%s", url.PathEscape(project)), nil, "")
 	if err != nil {
-		return forge.CapabilityFlags{}, err
+		return forge.CapabilityReport{}, err
 	}
 	if status == http.StatusNotFound {
-		return caps, nil
+		return forge.NewCapabilityReport(caps)
 	}
 	if status != http.StatusOK {
-		return forge.CapabilityFlags{}, fmt.Errorf("gitlab: get project %s: unexpected status %d", project, status)
+		return forge.CapabilityReport{}, fmt.Errorf("gitlab: get project %s: unexpected status %d", project, status)
 	}
 	var proj struct {
 		OnlyAllowMergeIfAllDiscussionsAreResolved bool   `json:"only_allow_merge_if_all_discussions_are_resolved"`
@@ -288,23 +328,41 @@ func (c *Client) probeCapabilities(project, mr string) (forge.CapabilityFlags, e
 		CIConfigPath                              string `json:"ci_config_path"`
 	}
 	if err := json.Unmarshal(raw, &proj); err != nil {
-		return forge.CapabilityFlags{}, fmt.Errorf("gitlab: decode project %s: %w", project, err)
+		return forge.CapabilityReport{}, fmt.Errorf("gitlab: decode project %s: %w", project, err)
 	}
-	caps.DiscussionsResolvedGate = proj.OnlyAllowMergeIfAllDiscussionsAreResolved
-	caps.MergeTrainAvailable = proj.MergeTrainsEnabled
-	caps.ProtectedPipelineExternal = strings.Contains(proj.CIConfigPath, "@")
+	caps[forge.CapabilityThreadsBlockMerge] = probedEntry(proj.OnlyAllowMergeIfAllDiscussionsAreResolved,
+		"only_allow_merge_if_all_discussions_are_resolved is true (forge dossier C3 / ADR-0009)",
+		"only_allow_merge_if_all_discussions_are_resolved is false — unresolved discussions do not block the merge (forge dossier C3 / ADR-0009)")
+	caps[forge.CapabilityMergeResultPinning] = probedEntry(proj.MergeTrainsEnabled,
+		"merge_trains_enabled is true — merge trains publish a real merge-result digest (S00 Q2 row 8)",
+		"merge_trains_enabled is false — plain merge exposes no merge-result digest; the CAS pins the adapter-synthesised digest (dossier C16)")
 
 	hasRules, err := c.hasApprovalRulesAPI(project, mr)
 	if err != nil {
-		return forge.CapabilityFlags{}, err
+		return forge.CapabilityReport{}, err
 	}
-	caps.HasApprovalRulesAPI = hasRules
 	if hasRules {
-		caps.Tier = forge.TierPremium
+		caps[forge.CapabilityEligibleApprovalEvidence] = forge.CapabilityEntry{
+			State:  forge.CapabilitySupported,
+			Reason: "approval-rules API present with required approvals (Premium tier); eligible_approvers is forge-computed (S00 Q2 row 9, graded full)",
+		}
 	} else {
-		caps.Tier = forge.TierFree
+		caps[forge.CapabilityEligibleApprovalEvidence] = forge.CapabilityEntry{
+			State:  forge.CapabilityAbsent,
+			Reason: "approval-rules API absent (GitLab Free) — no forge-computed eligible approver set, require-review unsatisfiable (dossier C6/C7)",
+		}
 	}
-	return caps, nil
+	return forge.NewCapabilityReport(caps)
+}
+
+// probedEntry builds an entry whose state is the probe's boolean outcome and
+// whose reason names the probe and its outcome, so doctor can show WHY the
+// state is what it is.
+func probedEntry(v bool, trueReason, falseReason string) forge.CapabilityEntry {
+	if v {
+		return forge.CapabilityEntry{State: forge.CapabilitySupported, Reason: "probe: " + trueReason}
+	}
+	return forge.CapabilityEntry{State: forge.CapabilityAbsent, Reason: "probe: " + falseReason}
 }
 
 // hasApprovalRulesAPI probes GET .../approval_rules with pagination. A 404 or 403

@@ -15,7 +15,7 @@ func TestSnapshotInPackage(t *testing.T) {
 	f.SourceBranch = "feature/x"
 	f.TargetBranch = "main"
 	f.ChangedFiles = []string{"b.yaml", "a.go"}
-	f.Capabilities = forge.CapabilityFlags{Tier: forge.TierPremium, HasApprovalRulesAPI: true}
+	f.Capabilities = supportedCapReport(t)
 	f.SeedThread("note/9001", bot, marker(), false)
 	f.SeedThread("note/6660", "contributor", marker(), false)
 
@@ -89,7 +89,7 @@ func TestSnapshotDiffEndpointErrorKnob(t *testing.T) {
 
 func TestResolveEligibleInPackage(t *testing.T) {
 	f := fake.New(bot, "src", "tgt", "dig")
-	f.Capabilities = forge.CapabilityFlags{Tier: forge.TierPremium, HasApprovalRulesAPI: true}
+	f.Capabilities = supportedCapReport(t)
 	req := forge.ResolveRequest{
 		Project: "p", MR: "1", Subject: "topic",
 		SourceSha: "src", TargetSha: "tgt", MergeResultDigest: "dig",
@@ -108,7 +108,7 @@ func TestResolveEligibleInPackage(t *testing.T) {
 
 func TestResolveGapFreeTierAutoMode(t *testing.T) {
 	f := fake.New(bot, "src", "tgt", "dig")
-	f.Capabilities = forge.CapabilityFlags{Tier: forge.TierFree, HasApprovalRulesAPI: false}
+	f.Capabilities = unsupportedCapReport(t)
 	req := forge.ResolveRequest{Project: "p", MR: "1", Subject: "topic"}
 	got, err := f.Resolve(req)
 	if err != nil {
@@ -135,4 +135,38 @@ func TestListBotThreadsRescanHook(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected rescan hook error")
 	}
+}
+
+// supportedCapReport builds the fixture's capability report with every
+// capability supported (E10-S04): the fake grades eligible-approval-evidence
+// off this report.
+func supportedCapReport(t *testing.T) forge.CapabilityReport {
+	t.Helper()
+	entries := map[forge.Capability]forge.CapabilityEntry{}
+	for _, c := range forge.AllCapabilities() {
+		entries[c] = forge.SupportedCapabilityEntry("fixture probe")
+	}
+	report, err := forge.NewCapabilityReport(entries)
+	if err != nil {
+		t.Fatalf("capability report: %v", err)
+	}
+	return report
+}
+
+// unsupportedCapReport grades eligible-approval-evidence absent — the Free-tier
+// shape — with everything else supported, so the only varied row is the one the
+// test is about.
+func unsupportedCapReport(t *testing.T) forge.CapabilityReport {
+	t.Helper()
+	report := supportedCapReport(t)
+	entries := map[forge.Capability]forge.CapabilityEntry{}
+	for _, c := range forge.AllCapabilities() {
+		entries[c] = forge.CapabilityEntry{State: report.State(c), Reason: report.Reason(c)}
+	}
+	entries[forge.CapabilityEligibleApprovalEvidence] = forge.AbsentCapabilityEntry("free tier — no eligible approver set")
+	out, err := forge.NewCapabilityReport(entries)
+	if err != nil {
+		t.Fatalf("capability report: %v", err)
+	}
+	return out
 }

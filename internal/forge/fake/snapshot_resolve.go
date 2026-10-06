@@ -1,6 +1,7 @@
 package fake
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/PlatformRelay/assent/internal/core/aggregate"
@@ -50,9 +51,40 @@ func (f *Forge) Snapshot(_, _ string) (forge.Snapshot, error) {
 		// uses it. ChangedFilesGap is the truncation knob; empty = complete.
 		ChangedFilesComplete: f.ChangedFilesGap == "",
 		ChangedFilesGap:      f.ChangedFilesGap,
-		Capabilities:         f.Capabilities,
+		Capabilities:         f.capabilities(),
 		BotThreads:           threads,
 	}, nil
+}
+
+// GetMR returns the MR metadata the test fixture configured (E10-S02). ForkMR
+// and SourceProjectID are explicit knobs: a fixture that declares ForkMR=true
+// without a source repository id models the absent-means-trusted trap (the
+// accessor must fail closed, never degrade to non-fork).
+func (f *Forge) GetMR(_, _ string) (forge.MRInfo, error) {
+	if f.MRFork && (f.MRSourceProjectID == "" || f.MRSourceProjectID == "0") {
+		return forge.MRInfo{}, fmt.Errorf("fake: fork MR fixture has no source project id — head content cannot be addressed (fail-closed)")
+	}
+	return forge.MRInfo{
+		IID:             f.MRIID,
+		ProjectID:       f.MRProjectID,
+		SourceProjectID: f.MRSourceProjectID,
+		SourceBranch:    f.SourceBranch,
+		TargetBranch:    f.TargetBranch,
+		SourceSHA:       f.CurrentSourceSha,
+		TargetSHA:       f.CurrentTargetSha,
+		ForkMR:          f.MRFork,
+		Labels:          f.Labels,
+	}, nil
+}
+
+// capabilitiesOrUnknown returns the fixture's capability report, or the
+// all-unknown report when the fixture carries none — the fail-safe default
+// (unknown never arms, ADR-0021 §3).
+func (f *Forge) capabilities() forge.CapabilityReport {
+	if !f.Capabilities.IsZero() {
+		return f.Capabilities
+	}
+	return forge.AllUnknownCapabilityReport()
 }
 
 // Resolve implements forge.Resolver. It never returns silent evidence — only explicit
@@ -73,7 +105,14 @@ func (f *Forge) resolveMode() ResolveMode {
 	if f.ResolveMode != "" {
 		return f.ResolveMode
 	}
-	if !f.Capabilities.HasApprovalRulesAPI || f.Capabilities.Tier == forge.TierFree {
+	// E10-S04: the fake grades eligible-approval-evidence off the capability
+	// report, exactly as a real adapter does — supported ⇒ forge-proven
+	// eligible approval; absent or unknown ⇒ the require-review capability gap.
+	report := f.Capabilities
+	if report.IsZero() {
+		report = forge.AllUnknownCapabilityReport()
+	}
+	if report.State(forge.CapabilityEligibleApprovalEvidence) != forge.CapabilitySupported {
 		return ResolveGapFreeTier
 	}
 	return ResolveEligible

@@ -90,6 +90,38 @@ No repo of your own yet? A clone of this one ships runnable sample policy trees;
 two commands above from `examples/packs/service-catalog` (that is the fixture
 `hack/docs/readme_smoke_test.sh` executes this block against).
 
+Runs on a real merge request select their forge explicitly (E10-S13 — no default forge):
+
+```bash
+GITLAB_TOKEN=<pat> assent run --forge gitlab --project 42 --mr 7 --subject file:topics/orders.yaml --bot-author assent-bot
+GITHUB_TOKEN=<token> assent run --forge github --project owner/repo --mr 7 --bot-author assent-bot
+```
+
+On GitHub v1 runs **comment-only** — they decide and comment but never arm auto-merge until
+a decidable `protected-pipeline-source` predicate exists ([OQ-33](docs/planning/open-questions.md);
+[OQ-34](docs/planning/open-questions.md) holds `require-review` evidence to the same bar).
+Unprobed capabilities never arm ([ADR-0021](docs/adr/0021-multi-adapter-forge-seam.md) §3).
+
+Developers: gates live in the [`Taskfile`](Taskfile.yml):
+
+`go install` compiles without link-time stamping, so the binary it produces reports
+`assent 0.0.0-dev` — even when you pin a tag (`@v0.1.0`). For a **version-stamped**
+binary take the Homebrew tap or a release archive: goreleaser injects the version
+(`-X main.version`) and the archives are checksum- and signature-verifiable. Both
+routes are in [docs/usage/install.md](https://platformrelay.github.io/Assent/usage/install/).
+
+Lint and test policies locally. Both commands take the **repository root** — `assent`
+appends `.assent` itself, so passing `.assent/` makes it look for `.assent/.assent`:
+
+```bash
+assent lint .
+assent test .
+```
+
+No repo of your own yet? A clone of this one ships runnable sample policy trees; run the
+two commands above from `examples/packs/service-catalog` (that is the fixture
+`hack/docs/readme_smoke_test.sh` executes this block against).
+
 Developers: gates live in the [`Taskfile`](Taskfile.yml):
 
 ```bash
@@ -107,7 +139,7 @@ Honest tiers post-E8 (D-104). **Core** = shipped and covered by conformance test
 | GitLab forge | **Core** | Snapshot, resolve, reconcile, merge CAS |
 | Provider builtins | **Core** | GitLab groups, ownership file, static facts |
 | Renderer | **Core** | Finding threads, summaries, presentation lint |
-| GitHub adapter | **Planned** | E10 — designed seam, implementation unlocked ([D-140](docs/decisions/decisions.md)) |
+| GitHub adapter | **Core (comment-only in v1)** | Snapshot, resolve, reconcile, merge CAS, Actions entrypoint ([E10](openspec/specs/p5-e10-github-forge/spec.md), [D-140](docs/decisions/decisions.md)); auto-merge arming awaits a decidable `protected-pipeline-source` predicate ([OQ-33](docs/planning/open-questions.md)) and require-review evidence awaits [OQ-34](docs/planning/open-questions.md) — unprobed never arms ([ADR-0021](docs/adr/0021-multi-adapter-forge-seam.md) §3) |
 | Rego backend | **Planned** | E11 — CEL/assert path is Core today; implementation unlocked ([D-141](docs/decisions/decisions.md)) |
 | `serve` (HTTP API) | **Designed** | E12 — CLI-only in v1 |
 | Remote packs | **Locked** | E13 — local `.assent/` only |

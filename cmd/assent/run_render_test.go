@@ -64,7 +64,7 @@ func TestBuildDesiredUsesRenderer(t *testing.T) {
 	info := forge.MRInfo{SourceSHA: "src", TargetSHA: "tgt"}
 	head := []byte("head-bytes")
 
-	desired, _ := buildDesired(cfg, info, cfg.subject, head, result, recordJSON, false, report.Presentation, rctx)
+	desired, _ := buildDesired(cfg, info, cfg.subject, head, result, recordJSON, false, report.Presentation, rctx, info.SourceSHA+"\n"+info.TargetSHA)
 	if desired.Thread == nil {
 		t.Fatal("expected thread for REVIEW")
 	}
@@ -151,7 +151,7 @@ func TestBuildDesiredSummaryUsesRenderer(t *testing.T) {
 				t.Fatalf("MarshalRecord: %v", err)
 			}
 			rctx := buildRenderContext(render.DefaultOptions(), mp, bind, cs, nil, info, "")
-			desired, _ := buildDesired(cfg, info, cfg.subject, head, result, recordJSON, false, report.Presentation, rctx)
+			desired, _ := buildDesired(cfg, info, cfg.subject, head, result, recordJSON, false, report.Presentation, rctx, info.SourceSHA+"\n"+info.TargetSHA)
 			if desired.Summary == nil {
 				t.Fatal("expected Summary for all decision outcomes")
 			}
@@ -247,7 +247,7 @@ func TestRunPathDocsLinkIsAuthoredNeverMinted(t *testing.T) {
 
 			cfg := runConfig{project: "42", mr: "7", subject: "file:topics/orders.yaml"}
 			info := forge.MRInfo{SourceSHA: "src", TargetSHA: "tgt"}
-			desired, _ := buildDesired(cfg, info, cfg.subject, []byte("head-bytes"), result, recordJSON, false, report.Presentation, rctx)
+			desired, _ := buildDesired(cfg, info, cfg.subject, []byte("head-bytes"), result, recordJSON, false, report.Presentation, rctx, info.SourceSHA+"\n"+info.TargetSHA)
 			if desired.Thread == nil {
 				t.Fatal("expected thread for REVIEW")
 			}

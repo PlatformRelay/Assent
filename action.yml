@@ -1,0 +1,129 @@
+name: "assent"
+# E10-S16: the composite Actions entrypoint. It is PACKAGING ONLY — no new
+# adapter behaviour (D-140's closed sub-question: last and independently
+# droppable). The action invokes the RELEASED binary at a PINNED, checksum-
+# verified version (REQ-E10-S16-01); it never installs at HEAD.
+#
+# Trust model (ADR-0015 §4 / dossier C17, REQ-E10-S16-02): the workflow example
+# runs on `pull_request`, so a fork PR executes the BASE-ref workflow with a
+# read-only, secretless token; policy loads from the TARGET ref (never the PR
+# head) inside assent itself (ADR-0015 §1). Required token scopes are documented
+# below and in docs/usage/.
+#
+# Inputs:
+#   version — the released tag to run, e.g. "v0.4.0". Pinned by the caller.
+#   token   — GITHUB_TOKEN (read-only scope suffices for forks).
+description: |
+  assent: a deterministic, policy-driven auto-merge gate for self-service
+  configuration repositories. Evaluates one PR against the repo's .assent/
+  policy tree and approves, comments, or blocks — every decision emitted as an
+  auditable DecisionRecord.
+inputs:
+  version:
+    description: "Released assent version to run (pinned; e.g. v0.4.0)"
+    required: true
+  subject:
+    description: "Repo-relative path of the governed file (the action adds the file: entryRef prefix)"
+    required: true
+  bot-author:
+    description: "Bot login the author-identity filter matches (the token's own login)"
+    required: true
+  project:
+    description: "GitHub repository as owner/repo"
+    required: false
+    default: ""
+  github-token:
+    description: "GITHUB_TOKEN with repo read + pull_requests:write; fork PRs keep the read-only base-ref workflow trust"
+    required: true
+  pull-request:
+    description: "PR number"
+    required: true
+  policy:
+    description: "MergePolicy path, loaded from the target ref"
+    required: false
+    default: ".assent/merge-policy.yaml"
+  binding:
+    description: "RulesetBinding path, loaded from the target ref"
+    required: false
+    default: ".assent/ruleset-binding.yaml"
+runs:
+  using: "composite"
+  steps:
+    # The pin is asserted by hack/release/action_pin_test.sh (E10-S16-01):
+    # `version: pinned-at-tag` — the action must never install at HEAD.
+    - name: Install the pinned, checksum-verified release
+      shell: bash
+      env:
+        ASSENT_VERSION: ${{ inputs.version }}
+
+      run: |
+        set -euo pipefail
+        # The pin pattern is deliberate: a released VERSION (never the latest
+        # tag, never a branch head), consumed as a CHECKSUM-VERIFIED release
+        # archive — the predictability Sonar's S8545 demands and REQ-E10-S16-01
+        # requires (never a lockfile-less install, never a branch head).
+        if [[ ! "$ASSENT_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "assent action: inputs.version must be a released tag (e.g. v0.4.0); got '$ASSENT_VERSION'" >&2
+          exit 1
+        fi
+        # Resolve the release's platform asset + checksums.txt (goreleaser's
+        # artifacts), then verify the archive digest BEFORE extraction. The
+        # goreleaser naming convention is
+        # assent_<ver>_<goos>_<goarch>.tar.gz — the RUNNER values map to
+        # the GOOS/GOARCH names goreleaser publishes.
+        asset_base="https://github.com/PlatformRelay/assent/releases/download/${ASSENT_VERSION}"
+        case "$RUNNER_OS" in
+          Linux)  os="linux" ;;
+          macOS)  os="darwin" ;;
+          *) echo "assent action: unsupported runner OS '$RUNNER_OS'" >&2; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH" in
+          X64)   arch="amd64" ;;
+          ARM64) arch="arm64" ;;
+          *) echo "assent action: unsupported runner arch '$RUNNER_ARCH'" >&2; exit 1 ;;
+        esac
+        ver="${ASSENT_VERSION#v}"
+        asset="assent_${ver}_${os}_${arch}.tar.gz"
+        work="$(mktemp -d)"
+        curl -fSL --retry 3 --proto "=https" -o "$work/$asset" "$asset_base/$asset"
+        curl -fSL --retry 3 --proto "=https" -o "$work/checksums.txt" "$asset_base/checksums.txt"
+        # Exact-name match (awk on the SECOND field): a substring grep would
+        # also match the asset's .spdx.json SBOM line and check a file we never
+        # downloaded. The archive digest is what must verify. The selection is
+        # CAPTURED and refused when empty: macOS's /sbin/sha256sum exits 0 on
+        # empty input, so an unselected line must fail LOUDLY (fail-closed —
+        # the final review's finding).
+        checksum_line="$(cd "$work" && awk -v a="$asset" '$2 == a { print $1 "  " $2 }' checksums.txt)"
+        if [[ -z "$checksum_line" ]]; then
+          echo "assent action: no checksum line for $asset in checksums.txt — refusing to install an unverified archive" >&2
+          exit 1
+        fi
+        printf '%s\n' "$checksum_line" | (cd "$work" && sha256sum --check --strict --status -)
+        tar -xzf "$work/$asset" -C "$work" assent
+        echo "$work" >> "$GITHUB_PATH"
+    - name: Run the gate
+      shell: bash
+      env:
+        # Required token scopes: repo read + pull_requests:write (comment and
+        # review-comment authoring) + read access to the target ref's policy
+        # tree. Fork PRs keep the read-only base-ref workflow trust (dossier
+        # C17) — the token never gains write authority the base branch does
+        # not already grant.
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        ASSENT_PROJECT: ${{ inputs.project != '' && inputs.project || github.repository }}
+        ASSENT_PR: ${{ inputs.pull-request }}
+        ASSENT_SUBJECT: ${{ inputs.subject }}
+        ASSENT_BOT_AUTHOR: ${{ inputs.bot-author }}
+        ASSENT_POLICY: ${{ inputs.policy }}
+        ASSENT_BINDING: ${{ inputs.binding }}
+      run: |
+        # The inputs travel through env, never inline interpolation — a
+        # PR-controlled input value can never reach the script's command
+        # position (the standard injection shape).
+        assent run --forge github \
+          --project "$ASSENT_PROJECT" \
+          --mr "$ASSENT_PR" \
+          --subject "file:$ASSENT_SUBJECT" \
+          --bot-author "$ASSENT_BOT_AUTHOR" \
+          --policy "$ASSENT_POLICY" \
+          --binding "$ASSENT_BINDING"

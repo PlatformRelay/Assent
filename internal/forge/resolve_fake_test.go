@@ -38,7 +38,7 @@ func TestResolveFake(t *testing.T) {
 		t.Parallel()
 		f := fake.New(bot, srcSHA, tgtSHA, mergeDig)
 		f.MRAuthor = author
-		f.Capabilities = forge.CapabilityFlags{Tier: forge.TierPremium, HasApprovalRulesAPI: true}
+		f.Capabilities = supportedCapReport(t)
 		f.ResolveMode = fake.ResolveEligible
 
 		var first forge.ResolveResult
@@ -90,7 +90,7 @@ func TestResolveFake(t *testing.T) {
 		t.Parallel()
 		f := fake.New(bot, srcSHA, tgtSHA, mergeDig)
 		f.MRAuthor = author
-		f.Capabilities = forge.CapabilityFlags{Tier: forge.TierFree, HasApprovalRulesAPI: false}
+		f.Capabilities = unsupportedCapReport(t)
 		f.ResolveMode = fake.ResolveGapFreeTier
 
 		got, err := f.Resolve(eligibleReq)
@@ -122,4 +122,36 @@ func TestResolveFake(t *testing.T) {
 	})
 
 	var _ forge.Resolver = (*fake.Forge)(nil)
+}
+
+// supportedCapReport builds the fixture's capability report with every
+// capability supported (E10-S04).
+func supportedCapReport(t *testing.T) forge.CapabilityReport {
+	t.Helper()
+	entries := map[forge.Capability]forge.CapabilityEntry{}
+	for _, c := range forge.AllCapabilities() {
+		entries[c] = forge.SupportedCapabilityEntry("fixture probe")
+	}
+	report, err := forge.NewCapabilityReport(entries)
+	if err != nil {
+		t.Fatalf("capability report: %v", err)
+	}
+	return report
+}
+
+// unsupportedCapReport grades eligible-approval-evidence absent — the Free-tier
+// shape — with everything else supported.
+func unsupportedCapReport(t *testing.T) forge.CapabilityReport {
+	t.Helper()
+	report := supportedCapReport(t)
+	entries := map[forge.Capability]forge.CapabilityEntry{}
+	for _, c := range forge.AllCapabilities() {
+		entries[c] = forge.CapabilityEntry{State: report.State(c), Reason: report.Reason(c)}
+	}
+	entries[forge.CapabilityEligibleApprovalEvidence] = forge.AbsentCapabilityEntry("free tier — no eligible approver set")
+	out, err := forge.NewCapabilityReport(entries)
+	if err != nil {
+		t.Fatalf("capability report: %v", err)
+	}
+	return out
 }

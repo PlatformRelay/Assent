@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/forge/fake"
@@ -50,6 +51,17 @@ func (b fakeBackend) MoveTargetHead(sha string) { b.f.CurrentTargetSha = sha }
 
 func (b fakeBackend) MoveSourceHead(sha string) { b.f.CurrentSourceSha = sha }
 
+func (b fakeBackend) SeedFile(path, side string, content []byte) {
+	b.f.SeedFileAtRef(path, side, content)
+}
+
+func (b fakeBackend) RefuseFileRead(path string) {
+	if b.f.RefusedReads == nil {
+		b.f.RefusedReads = map[string]error{}
+	}
+	b.f.RefusedReads[path] = forge.ErrUnauthorized
+}
+
 func (b fakeBackend) Pins() forge.DesiredMerge {
 	return forge.DesiredMerge{
 		SourceSha:         b.f.CurrentSourceSha,
@@ -82,8 +94,8 @@ func (b gitlabBackend) MergesPerformed() int { return b.cp.mergesPerformed }
 func (b gitlabBackend) Approvals() int       { return b.cp.approvals }
 func (b gitlabBackend) ThreadsCreated() int  { return b.cp.threadsCreated }
 func (b gitlabBackend) ThreadsResolved() int { return b.cp.threadsResolved }
-func (b gitlabBackend) NotesCreated() int    { return b.h.noteCreateCalls }
-func (b gitlabBackend) NotesUpdated() int    { return b.h.noteUpdateCalls }
+func (b gitlabBackend) NotesCreated() int    { return int(b.h.noteCreateCalls.Load()) }
+func (b gitlabBackend) NotesUpdated() int    { return int(b.h.noteUpdateCalls.Load()) }
 
 func (b gitlabBackend) NoteBody(id string) string {
 	n, err := strconv.Atoi(strings.TrimPrefix(id, "note/"))
@@ -153,6 +165,19 @@ func (b gitlabBackend) MoveSourceHead(sha string) { b.h.sourceSHA = sha }
 // exposes no merge-result digest — which is exactly why a case carrying a literal
 // digest could only ever run against the fake. Collapsing the synthetic digest
 // onto a real one is E10-S03.
+func (b gitlabBackend) SeedFile(_ string, side string, content []byte) {
+	switch side {
+	case FileSideBase:
+		b.h.baseFile = append([]byte(nil), content...)
+		b.h.baseSet = true
+	case FileSideHead:
+		b.h.headFile = append([]byte(nil), content...)
+		b.h.headSet = true
+	}
+}
+
+func (b gitlabBackend) RefuseFileRead(path string) { b.h.refusedPath = path }
+
 func (b gitlabBackend) Pins() forge.DesiredMerge {
 	return forge.DesiredMerge{
 		SourceSha:         b.h.sourceSHA,
@@ -175,6 +200,8 @@ func gitlabFactory(t TB, cfg Config) Backend {
 	h.botAuthor = cfg.BotAuthor
 	h.sourceSHA = cfg.CurrentSourceSHA
 	h.targetSHA = cfg.CurrentTargetSHA
+	h.forkMR = cfg.ForkMR
+	h.governedPath = cfg.GovernedPath
 	cp := newCountingPort(h.client(t))
 	b := gitlabBackend{h: h, cp: cp}
 	return Backend{Port: cp, Fixture: b, Observer: b}
@@ -187,13 +214,25 @@ func gitlabFactory(t TB, cfg Config) Backend {
 // their catalog rows said `forge: gitlab`. These three routes close that gap.
 
 func (h *gitlabHarness) serveMR(w http.ResponseWriter, _ *http.Request) {
-	h.mrReads++
+	h.mrReads.Add(1)
+	// E10-S05 transport knob: a response slower than a short per-request
+	// deadline. The sleep happens BEFORE the answer, so the read must hit the
+	// per-request context deadline (the adapter's request timeout), never hang.
+	if h.slowAfter > 0 {
+		time.Sleep(h.slowAfter)
+	}
+	sourceProjectID := 42
+	if h.forkMR {
+		sourceProjectID = 999
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"iid":           1,
-		"project_id":    42,
-		"sha":           h.sourceSHA,
-		"source_branch": "feature",
-		"target_branch": "main",
+		"iid":               1,
+		"project_id":        42,
+		"source_project_id": sourceProjectID,
+		"sha":               h.sourceSHA,
+		"source_branch":     "feature",
+		"target_branch":     "main",
+		"changes_count":     "1",
 	})
 	// Fire AFTER the response is written, so this read returns the PRE-move value
 	// and only the NEXT one sees the drift.
@@ -209,13 +248,13 @@ func (h *gitlabHarness) serveBranch(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *gitlabHarness) approve(w http.ResponseWriter, _ *http.Request) {
-	h.approveCalls++
+	h.approveCalls.Add(1)
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{"id": 1})
 }
 
 func (h *gitlabHarness) merge(w http.ResponseWriter, r *http.Request) {
-	h.mergePUTs++
+	h.mergePUTs.Add(1)
 	// ?sha= is GitLab's compare-and-swap on the SOURCE head: a moved source is
 	// 409, no merge. Modelled faithfully so the case proves the guard, not the fake.
 	if got := r.URL.Query().Get("sha"); got != h.sourceSHA {

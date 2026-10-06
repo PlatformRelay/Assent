@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
-	"github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/forge/factory"
 )
 
 // version is the CLI semver surfaced by `assent version`. Release builds inject it via
@@ -68,8 +68,13 @@ func subcommands() []subcommand {
 			// and the clock is bound to time.Now here and threaded down as data.
 			run: func(args []string) int {
 				return runRun(args, os.Getenv, time.Now, os.Stdout, os.Stderr,
-					func(endpoint, token, botAuthor string) forgePort {
-						return gitlab.New(endpoint, token, botAuthor)
+					func(kind, endpoint, token, botAuthor string) forge.RunPort {
+						port, err := factory.New(factory.Kind(kind), endpoint, token, botAuthor)
+						if err != nil {
+							_, _ = fmt.Fprintln(os.Stderr, "assent run:", err)
+							return nil
+						}
+						return port
 					})
 			},
 		},
@@ -79,8 +84,13 @@ func subcommands() []subcommand {
 			usage:    "assent doctor",
 			run: func([]string) int {
 				return runDoctor(os.Getenv, os.Stdout, os.Stderr,
-					func(endpoint, token, botAuthor string) forge.Snapshotter {
-						return gitlab.New(endpoint, token, botAuthor)
+					func(kind, endpoint, token, botAuthor string) forge.RunPort {
+						port, err := factory.New(factory.Kind(kind), endpoint, token, botAuthor)
+						if err != nil {
+							_, _ = fmt.Fprintln(os.Stderr, "assent doctor:", err)
+							return nil
+						}
+						return port
 					})
 			},
 		},

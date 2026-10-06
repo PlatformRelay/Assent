@@ -64,6 +64,25 @@ type Client struct {
 	// client may be shared across goroutines.
 	warnMu   sync.Mutex
 	warnings map[string]struct{}
+
+	// mrPinnedProject/mrPinnedInfo cache the LAST MR read (E10-S02). The
+	// MR-relative governed-subject accessors (FileAtBase/FileAtHead) read at the
+	// SHAs this cache carries so judged bytes and record pins share one read
+	// chain. FIRST WRITE WINS (E10 branch-review round 2, finding 6): GetMR
+	// writes the pin only when the cache is empty or pinned to a DIFFERENT
+	// (project, mr) — a same-MR re-read (CurrentHeads' CAS re-read) never
+	// overwrites the pin, because a pin that moved with the freshest read would
+	// let a post-evaluation re-read redirect the governed reads and the approval
+	// pin to a head that moved after evaluation. A different (project, mr)
+	// evicts the pin (a stale pin would be worse than none). The port stays
+	// stateless — the composite (project, mr) handle keys the cache, per the
+	// execution decision in the change p5-e10-github-forge-execution
+	// (REQ-E10X-01-01). Guarded by pinMu (the github.Client mirror): GetMR
+	// writes the pin from inside the read chain and mrPinned consults it while
+	// holding the same lock, so scopeMu/warnMu must not carry the pin.
+	mrPinnedProject string
+	mrPinnedInfo    *MRInfo
+	pinMu           sync.Mutex
 }
 
 // warn records a non-fatal anomaly (AUD-S12 / REL-06). Duplicates collapse.
@@ -235,7 +254,15 @@ var ErrNotFound = forge.ErrNotFound
 // attempt with a token that GitLab forbids (an MR author may not approve their
 // own MR; the caller supplies a different token). It is surfaced clearly so the
 // caller does not mistake an authorization refusal for a transient error.
-var ErrUnauthorized = errors.New("gitlab: unauthorized (401/403)")
+//
+// E10-S02 (ADR-0021 item 6): the SENTINEL now lives on the forge port as
+// forge.ErrUnauthorized, so a caller can match a permission failure without
+// importing this adapter, and the S00 Q4 table's forbidden≠absent mapping is a
+// PORT concept. This is the adapter's transitional alias — it IS the port
+// sentinel, so errors.Is(err, forge.ErrUnauthorized) and
+// errors.Is(err, gitlab.ErrUnauthorized) are the same question. The adapter
+// wraps it with its own `gitlab: ` context at the call sites.
+var ErrUnauthorized = forge.ErrUnauthorized
 
 // MRInfo is the merge-request metadata `assent run` pins its evaluation to.
 //
@@ -298,6 +325,11 @@ func readBounded(r io.Reader, limit int64) ([]byte, error) {
 // AUD-S11 retry budget is not spent on it: the same endpoint will send the same
 // oversized document again. It is classified like a 4xx, not like a 5xx.
 var errBodyTooLarge = errors.New("gitlab: response body over limit")
+
+// errRateLimited is the transport failure a rate-limited 403 maps to: never a
+// sentinel, never absence (S00 Q4's port-level rule, which every adapter
+// satisfies the same way).
+var errRateLimited = errors.New("gitlab: rate limited (primary/secondary limit) — transport failure")
 
 // retryableMethod reports whether an HTTP method is safe to replay
 // automatically (AUD-S11 / REL-04). ONLY the idempotent reads are: replaying a
@@ -393,11 +425,32 @@ func (c *Client) doOnce(method, path string, body io.Reader, contentType string)
 		return 0, nil, fmt.Errorf("gitlab: %s %s: %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	// The rate-limit markers are consulted ONLY on the statuses they can
+	// accompany a rejection with (403 primary/secondary limit, 429): a
+	// successful response carrying X-RateLimit-Remaining: 0 is the request
+	// that CONSUMED the budget's last unit and must never be discarded.
+	if isRateLimited(resp.StatusCode, resp.Header) {
+		return resp.StatusCode, nil, errRateLimited
+	}
 	raw, err := readBounded(resp.Body, maxResponseBytes)
 	if err != nil {
 		return resp.StatusCode, nil, fmt.Errorf("gitlab: read body %s %s: %w", method, path, err)
 	}
 	return resp.StatusCode, raw, nil
+}
+
+// isRateLimited reports a response to a 403/429 carrying a primary/secondary
+// rate-limit marker (S00 Q4's transport row: a rate-limited 403 is a transport
+// failure — retried like a 429, never mapped to a sentinel, never absence).
+// GitLab conveys it via the Retry-After header; X-RateLimit-Remaining: 0 is
+// the other shape. On any other status the headers are not rate-limit
+// rejections — a 200/201 that consumed the budget's last unit must not be
+// discarded.
+func isRateLimited(status int, h http.Header) bool {
+	if status != http.StatusForbidden && status != http.StatusTooManyRequests {
+		return false
+	}
+	return h.Get("Retry-After") != "" || h.Get("X-RateLimit-Remaining") == "0"
 }
 
 // GetMR reads the MR metadata plus the target branch tip. It performs two GETs:
@@ -416,12 +469,13 @@ func (c *Client) GetMR(project, mr string) (MRInfo, error) {
 		return MRInfo{}, fmt.Errorf("gitlab: get MR %s!%s: unexpected status %d", project, mr, status)
 	}
 	var mrResp struct {
-		IID          int      `json:"iid"`
-		ProjectID    int      `json:"project_id"`
-		SHA          string   `json:"sha"`
-		SourceBranch string   `json:"source_branch"`
-		TargetBranch string   `json:"target_branch"`
-		Labels       []string `json:"labels"`
+		IID             int      `json:"iid"`
+		ProjectID       int      `json:"project_id"`
+		SourceProjectID int      `json:"source_project_id"`
+		SHA             string   `json:"sha"`
+		SourceBranch    string   `json:"source_branch"`
+		TargetBranch    string   `json:"target_branch"`
+		Labels          []string `json:"labels"`
 	}
 	if err := json.Unmarshal(raw, &mrResp); err != nil {
 		return MRInfo{}, fmt.Errorf("gitlab: decode MR %s!%s: %w", project, mr, err)
@@ -432,15 +486,37 @@ func (c *Client) GetMR(project, mr string) (MRInfo, error) {
 		return MRInfo{}, err
 	}
 
-	return MRInfo{
-		IID:          strconv.Itoa(mrResp.IID),
-		ProjectID:    strconv.Itoa(mrResp.ProjectID),
-		SourceBranch: mrResp.SourceBranch,
-		TargetBranch: mrResp.TargetBranch,
-		SourceSHA:    mrResp.SHA,
-		TargetSHA:    targetSHA,
-		Labels:       mrResp.Labels,
-	}, nil
+	info := MRInfo{
+		IID:             strconv.Itoa(mrResp.IID),
+		ProjectID:       strconv.Itoa(mrResp.ProjectID),
+		SourceProjectID: strconv.Itoa(mrResp.SourceProjectID),
+		SourceBranch:    mrResp.SourceBranch,
+		TargetBranch:    mrResp.TargetBranch,
+		SourceSHA:       mrResp.SHA,
+		TargetSHA:       targetSHA,
+		ForkMR:          mrResp.SourceProjectID != 0 && mrResp.SourceProjectID != mrResp.ProjectID,
+		Labels:          mrResp.Labels,
+	}
+	// E10 branch-review fix: GetMR IS the run's own pinned read — it populates
+	// the pin so the MR-relative accessors (FileAtBase/FileAtHead) judge bytes
+	// at the SAME SHAs this read reported (REV1-S01's one-read-chain rule). A
+	// separate re-read here would let a head move between the pin (the record's
+	// SHAs) and the governed read (the judged bytes) — the move-and-restore
+	// merge of un-evaluated bytes the branch review's CRITICAL names.
+	//
+	// FIRST WRITE WINS: the pin is written only when the cache is empty or
+	// pinned to a different (project, mr). A same-MR re-read — the CAS's
+	// CurrentHeads read — must NOT move the evaluation pin: Approve and the
+	// governed reads follow the pin, and the pin must stay at the SHAs the
+	// evaluation actually judged, whatever the forge reports later.
+	key := project + "/" + mr
+	c.pinMu.Lock()
+	if c.mrPinnedProject != key {
+		c.mrPinnedProject = key
+		c.mrPinnedInfo = &info
+	}
+	c.pinMu.Unlock()
+	return info, nil
 }
 
 // branchTip returns the tip commit id of a branch via
@@ -484,11 +560,90 @@ func (c *Client) FileAtRef(project, path, ref string) ([]byte, error) {
 	switch status {
 	case http.StatusOK:
 		return raw, nil
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, fmt.Errorf("gitlab: %w: file %q at ref %q (status %d)", forge.ErrUnauthorized, path, ref, status)
 	case http.StatusNotFound:
 		return nil, fmt.Errorf("gitlab: %w: file %q at ref %q", forge.ErrNotFound, path, ref)
 	default:
 		return nil, fmt.Errorf("gitlab: get file %q at ref %q: unexpected status %d", path, ref, status)
 	}
+}
+
+// FileAtBase reads the governed subject's content on the BASE side of the merge
+// request (E10-S02, ADR-0021 item 5). MR-relative: the base side of an MR is the
+// TARGET project's target commit by definition (the base of an MR is never
+// forked), so this reads the pinned target SHA of the target project — the same
+// commit GetMR reported, which is the evaluation pin (REV1-S01/D-183: judged
+// bytes must equal pinned bytes).
+//
+// The pinned SHA comes from the adapter's own MR read (see mrPin), so the record
+// and the read cannot disagree — re-resolving the target tip here would judge
+// bytes of a branch tip that moved since GetMR while the record pins the
+// original SHA (the move-and-restore shape REV1-S01 closed).
+func (c *Client) FileAtBase(project, mr, path string) ([]byte, error) {
+	info, err := c.mrPinned(project, mr)
+	if err != nil {
+		return nil, err
+	}
+	return c.FileAtRef(project, path, info.TargetSHA)
+}
+
+// FileAtHead reads the governed subject's content on the HEAD side of the merge
+// request. MR-relative (ADR-0021 item 5 / S00 Q1): the adapter owns how it
+// reaches the head.
+//
+// For GitLab the head commit is read at the PINNED source SHA (the same value
+// GetMR/Snapshot pinned into the record) inside the repository that holds it —
+// the source project for a fork, the target project otherwise. A
+// branch-name read is forbidden: it judges whatever the branch pointed at
+// mid-run (REV1-S01), and on a fork a branch-name read inside the TARGET
+// project 404s and mints a fabricated whole-file DELETE (S00 Q1).
+func (c *Client) FileAtHead(project, mr, path string) ([]byte, error) {
+	info, err := c.mrPinned(project, mr)
+	if err != nil {
+		return nil, err
+	}
+	if info.ForkMR {
+		if info.SourceProjectID == "" || info.SourceProjectID == "0" {
+			return nil, fmt.Errorf("gitlab: fork MR %s!%s has no source project id — head content cannot be addressed (fail-closed)", project, mr)
+		}
+		return c.FileAtRef(info.SourceProjectID, path, info.SourceSHA)
+	}
+	return c.FileAtRef(project, path, info.SourceSHA)
+}
+
+// mrPinned returns the pinned MR read for (project, mr), populating the cache
+// on first touch. The MR-relative accessors read content AT the SHAs this
+// method's returned MRInfo carries, so the judged bytes and the record's pins
+// come from the SAME read chain (REV1-S01: judged content at the pinned commit
+// SHA) and a mid-run branch move cannot decouple them — the commit the cache
+// (project, mr) handle keys the cache.
+// mrPinned returns the pinned MR read for (project, mr), populating the cache
+// on first touch. The MR-relative accessors read content AT the SHAs this
+// method's returned MRInfo carries, so the judged bytes and the record's pins
+// come from the SAME read chain (REV1-S01: judged content at the pinned commit
+// SHA) and a mid-run branch move cannot decouple them — the commit the cache
+// holds is the pin, not a re-resolved tip.
+//
+// The cache is a single pinned MR: `assent run`/`assent doctor` drive ONE merge
+// request per process, and a fresh MR evicts the pin (a stale pin would be the
+// judged-bytes≠pinned-bytes defect in reverse). This is adapter-internal state
+// in service of the port contract — the PORT stays stateless; the composite
+// (project, mr) handle keys the cache.
+//
+// The miss path needs no manual cache write: GetMR IS the pin (first write
+// wins) and fills the cache itself; a same-MR miss cannot leave the cache empty.
+func (c *Client) mrPinned(project, mr string) (MRInfo, error) {
+	key := project + "/" + mr
+	c.pinMu.Lock()
+	if c.mrPinnedProject == key && c.mrPinnedInfo != nil {
+		info := *c.mrPinnedInfo
+		c.pinMu.Unlock()
+		return info, nil
+	}
+	c.pinMu.Unlock()
+	// GetMR takes pinMu for the write; never call it while holding pinMu.
+	return c.GetMR(project, mr)
 }
 
 // discussion is the subset of a GitLab discussion the adapter reads.
@@ -813,6 +968,11 @@ func (c *Client) Approve(project, mr string) (string, error) {
 // merge protection is still the ?sha= PUT + target re-read in MergeCAS. The
 // honest "gitlab has no merge-result digest" audit fact is recorded SEPARATELY
 // in the DecisionRecord's capabilityGap by cmd/assent — never here.
+//
+// The re-read goes FRESH and does NOT move the evaluation pin: GetMR's pin
+// write is first-write-wins, so this read returns the forge's current heads
+// while the pin stays at the SHAs the evaluation judged — the MR-relative
+// governed reads keep following the evaluated pin.
 func (c *Client) CurrentHeads(project, mr string) (source, target, digest string, err error) {
 	info, err := c.GetMR(project, mr)
 	if err != nil {
@@ -888,3 +1048,19 @@ func (c *Client) MergeCAS(project, mr string, m forge.DesiredMerge) (string, err
 
 // static assertion that *Client implements the forge.Forge port.
 var _ forge.Forge = (*Client)(nil)
+
+// Identity reports the authenticated identity marker filtering matches
+// (E10-S02, ADR-0021 item 7). A GitLab PAT authenticates as a USER: the
+// artifacts assent authors are authored by the user login the client was
+// constructed with, which is exactly the login ListBotThreads/ListBotNotes
+// filter on. An "exclude any bot" filter would blind assent to its own comments
+// — the identity the port exposes IS the filter identity, by construction here.
+func (c *Client) Identity() (forge.Identity, error) {
+	return forge.Identity{
+		Kind:  forge.IdentityUser,
+		Login: c.botAuthor,
+		ID:    c.botAuthor,
+	}, nil
+}
+
+var _ forge.RunPort = (*Client)(nil)

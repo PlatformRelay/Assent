@@ -83,6 +83,24 @@ would be silently overwritten by the next `task changelog-write`.
   Loosening this will mean folding the refusal into the opaque, fail-safe REVIEW path so such a
   repository still gets a decision, never by following the link; no release carries that yet.
 
+- **GitLab arming stops in v1 until a decidable protected-pipeline-source predicate exists
+(D-186, E10-S04).** Builds after E10-S04 grade arming from the neutral capability report
+(ADR-0021 §3), and the retired `ci_config_path` substring heuristic was the only probe that ever
+made `protected-pipeline-source` pass on GitLab — a heuristic that proved neither that the
+referenced CI config sits on a protected branch nor that the MR author cannot push to it, i.e.
+the SEC-04 shape (audit 2026-08-09). Under the port rule `unknown` never arms, the honest v1
+report marks that capability UNKNOWN on GitLab, so **GitLab runs decide and comment but do not
+arm auto-merge** until `OQ-33` is answered and a decidable probe ships. Approval, threads,
+decisions and records are unchanged; only the auto-merge arming path is refused, with the typed
+`insecure-topology` reason and the open question cited in `assent doctor`. **Action required if
+  you rely on GitLab auto-merge**: keep the MR available for a human (or the platform's own
+  protections) until the OQ-33 predicate lands; the decision record, threads and approvals are
+  unchanged. GitHub v1 ships comment-only for the same reason (rows 9 and 11 unknown per
+  OQ-33/OQ-34). The same hold covers the deferred-arming deltas (D-188, E10-S11): the
+  arming-revoked-on-push, review-dismissal-restrictions and merge-result-pinning consults live
+  only on the `enablePullRequestAutoMerge` verb that v1 production never calls, and a future
+  capability promotion MUST wire them into the run path before they become live.
+
 """
 # D-180: the committed CHANGELOG.md holds RELEASED versions only. With
 # ASSENT_CHANGELOG_RELEASED_ONLY=1 — set by hack/release/render-changelog.sh, the

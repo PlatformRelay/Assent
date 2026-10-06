@@ -1,0 +1,30 @@
+546-func (h *githubHarness) serveContent(w http.ResponseWriter, r *http.Request) {
+547-	ref := r.URL.Query().Get("ref")
+548-	if h.contentsStatus != 0 {
+[0m
+[0m→ [0mRead internal/forge/conformance/github_test.go[90m [limit=120, offset=220][0m
+[0m
+[0m$ [0mrg -n "detectForgeFromEndpoint" --glob '*.go' . | grep -v _test.go; echo ---; rg -n "detectForgeFromEndpoint" --glob '*.go' .
+./cmd/assent/forge_select.go:74:func detectForgeFromEndpoint(endpoint string) (factory.Kind, bool) {
+---
+./cmd/assent/forge_select.go:74:func detectForgeFromEndpoint(endpoint string) (factory.Kind, bool) {
+[0m
+Read the brief, the delta commits (`75089a2..d919778`), the named files, the round-1 leg notes, the epic spec REQs (S03/S11/S12/S13/S14) and the S00 Q2 table; ran `go test -count=1 ./cmd/assent ./internal/forge/...` and `go vet` — all green. Findings, most serious first:
+
+**MINOR | cmd/assent/run.go:195,212,409-414,438 | The record's two read chains survive the round-1 fix on the digest axis: `pins.SourceSha` comes from orchestrate's `GetMR` read while `mergeDigest`/the capability grade come from `Snapshot`'s own later `freshPR` (internal/forge/github/snapshot.go:506). A head move between the two reads emits a record pairing `sourceSha=A` with a merge-result digest minted for head B — a digest for an unevaluated state. Fail-closed downstream (the `CurrentHeads` pre-check and the PUT `sha` both refuse), so never an unsafe merge — but the emitted record is internally inconsistent in exactly the drift window round 1's CRITICAL named. | Fix: after `Snapshot` (run.go:203), hard-error when `snapshot.Heads.SourceSHA != info.SourceSHA` (turn the silent two-read drift into an explicit fail-closed), or ride the digest probe on the pinning read chain.**
+
+**MINOR | cmd/assent/forge_select.go:35-38,74-84 | The round-1 endpoint fix re-opens a small axis: `hostOf` accepts host `github.com` and both the explicit-GitHub arm and the autodetect arm pass `https://github.com` through as the adapter's REST/GraphQL base — every request then goes to the web host, failing late with "unexpected status 404" instead of at selection (the error's own text promises `https://api.github.com`). Additionally `detectForgeFromEndpoint` (:74-84) has zero callers — the same dead-code shape a round-1 leg flagged in this exact function — and `TestForgeSelection` has no empty-`--forge` GitHub row (autodetect of `api.github.com` is implemented but untested). | Fix: require/normalise the `api.github.com` host for the GitHub kind (never pass the web host through), delete `detectForgeFromEndpoint`, add the autodetect-github row to the named gate.**
+
+**MINOR | internal/forge/github/write.go:489-494 | The commit_id-pin fix left the old `if err != nil` block behind — a duplicated, unreachable dead check on the marshal, dead code the same commit's "dead code" fix claims to remove. | Fix: delete the second block.**
+
+**MINOR | cmd/assent/run.go:395-407 | Two stacked "6. Build the DecisionRecord" comment blocks; the first describes the PRE-fix ungated pinning ("pinned when the adapter carries a real merge result") and now contradicts the capability-gated code below it — a doc-lie introduced by fix 2b5f934. | Fix: delete the stale first block.**
+
+**MINOR | internal/forge/github/snapshot.go:63-67 + internal/forge/github/github.go:68-70 | Stale lock rationale: both comments claim the PR read chain holds scopeMu/pinMu while `recordMergeableState`/`recordPRChangedFiles` run, but `freshPR` is called with no lock held (`GetMR` takes `pinMu` only after `freshPR` returns; `Snapshot` holds none). A future edit trusting the comment could consolidate this state onto `scopeMu` and reintroduce a re-entrant-lock deadlock. | Fix: correct the comments to the real invariant (recorded outside any lock).**
+
+**MINOR | internal/forge/gitlab/gitlab.go:497-499,615-616 | The GitLab pin-cache writes are unsynchronized, while the same struct guards its warnings set "because one client may be shared across goroutines" and the GitHub mirror guards the identical state with `pinMu` — sharing one client across goroutines is a data race on `mrPinnedProject`/`mrPinnedInfo`. Pre-existing shape, but the delta added a write from `GetMR`. | Fix: one mutex, or a comment stating the single-threaded RunPort invariant that covers the pin too.**
+
+**MINOR | internal/forge/conformance/sentinel_cases_test.go:45-59,78-93 | The rate-limit rows assert only "not ErrNotFound, not ErrUnauthorized" — any unrelated error mapping keeps the row green; the transport identity and the retry behaviour are pinned only in the adapter-level tests (gitlab_limits_test.go:358). | Fix: assert the error names the rate limit (or a retried-attempt count on the harness) so the conformance row pins the transport identity itself.**
+
+**Fixes verified closed:** one-read-chain pin (GetMR fills the cache on both adapters, `mrPinned` consults without re-entry), forge-consistent endpoint resolution + `TestForgeSelection` (gitlab.com default can't reach the GitHub adapter), capability-gated merge-result pin matching REQ-E10-S03-01, honest grading (deferred-merge-arming unknown in both directions, threads-block-merge reason no longer claims a phantom probe, `TestUnverifiedReportedUnknown` + the graded-rows polarity control), rate-limit-on-success (`isRateLimited` gated to 403/429 on both adapters, with the on-success polarity tests), PKCS#8 with RSA-only enforcement, `Approve` commit_id pin, `ResolveThread`'s reviewThreads→thread-node-id mapping (fail-closed on unmapped ids), catalog integrity (duplicate-id rejection, `TestEveryRowHasAdapterDisposition`, both Q4 sentinel cases on both factories with real harness shapes), the changed_files cross-check (pure `changedFilesVerdict` with cap/short-fall/ceiling shapes unit-tested), and the nil-port guard with its test. **Not verified (read-only):** the S00 Q2 row-8 predicate (C14 ruleset) vs the implemented C16 merge-ref probe — the substitution satisfies REQ-E10-S11-03's text and T11/T14 own the S00 table fill, but it is an undocumented model drift to watch.
+
+VERDICT: APPROVE

@@ -102,6 +102,26 @@ func TestCatalogStrictDecode(t *testing.T) {
 `,
 			wantSub: "field frge not found",
 		},
+		{
+			name: "duplicate case id",
+			yaml: `cases:
+  - id: twice
+    level: L1
+    req: REQ-X
+    test: TestX
+    package: internal/forge/conformance
+    forge: gitlab
+    adapters: [gitlab]
+  - id: twice
+    level: L1
+    req: REQ-X
+    test: TestY
+    package: internal/forge/conformance
+    forge: gitlab
+    adapters: [gitlab]
+`,
+			wantSub: `case id "twice" is declared more than once`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := DecodeCatalog([]byte(tc.yaml))
@@ -128,5 +148,24 @@ func TestCatalogStrictDecode(t *testing.T) {
 `
 	if _, err := DecodeCatalog([]byte(ok)); err != nil {
 		t.Fatalf("a well-formed row must decode, got %v", err)
+	}
+}
+
+// TestEveryRowHasAdapterDisposition is REQ-E10-S14-01's named gate: every
+// EXECUTABLE row names its adapters explicitly. A row whose adapters list is
+// empty claims coverage against nothing — the exact overstatement a strict
+// coverage index exists to prevent — so it is an error unless the row is a
+// github-deferred stub, where the empty list is the row's way of saying
+// "nothing executes this yet".
+func TestEveryRowHasAdapterDisposition(t *testing.T) {
+	cat, err := LoadCatalog(catalogPath)
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	for _, row := range cat.Cases {
+		if len(row.Adapters) == 0 && row.Forge != DeferredForge {
+			t.Errorf("row %q carries no adapters disposition and is not %s — every executable row must name its adapters explicitly (REQ-E10-S14-01)",
+				row.ID, DeferredForge)
+		}
 	}
 }

@@ -2,12 +2,15 @@ package gitlab
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/PlatformRelay/assent/internal/forge"
 )
 
 // AUD-S10 (audit findings REL-03 / SEC-08): every forge response read is
@@ -266,8 +269,8 @@ func TestApprovalRulesFailSafeSurvivesCap(t *testing.T) {
 			if err != nil {
 				t.Fatalf("approval-rules %d must fail SAFE to Free tier, not error: %v", status, err)
 			}
-			if snap.Capabilities.HasApprovalRulesAPI {
-				t.Fatal("approval-rules probe must report false when the API is unavailable")
+			if got := snap.Capabilities.State(forge.CapabilityEligibleApprovalEvidence); got != forge.CapabilityAbsent {
+				t.Fatal("approval-rules probe must grade the capability ABSENT when the API is unavailable")
 			}
 		})
 	}
@@ -349,4 +352,56 @@ func writeFullNotePage(w io.Writer, body string) {
 	}
 	b.WriteByte(']')
 	_, _ = io.WriteString(w, b.String())
+}
+
+// TestRateLimit403IsTransportError pins S00 Q4's transport row at the adapter:
+// a 403 carrying the rate-limit marker is a transport failure (retried within
+// the budget), never a sentinel and never absence.
+func TestRateLimit403IsTransportError(t *testing.T) {
+	attempts := 0
+	c, _ := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "1")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.WriteHeader(http.StatusForbidden)
+		attempts++
+		_, _ = io.WriteString(w, `{"message":"rate limit exceeded"}`)
+	})
+
+	_, err := c.FileAtRef("42", ".assent/merge-policy.yaml", "tgtSHA")
+	if err == nil {
+		t.Fatal("rate-limited 403 must fail, got nil")
+	}
+	if !errors.Is(err, errRateLimited) {
+		t.Errorf("error must wrap the adapter's errRateLimited, got %v", err)
+	}
+	if errors.Is(err, forge.ErrNotFound) || errors.Is(err, forge.ErrUnauthorized) {
+		t.Errorf("a rate-limited 403 is a transport failure, never a sentinel: %v", err)
+	}
+	if attempts != defaultMaxAttempts {
+		t.Errorf("rate-limited attempts = %d, want %d (transport failure, retried)", attempts, defaultMaxAttempts)
+	}
+}
+
+// TestRateLimitHeadersOnSuccessDoNotDiscardResult pins the transport policy's
+// other polarity: the rate-limit markers are consulted ONLY on a 403/429. A
+// 200 read carrying X-RateLimit-Remaining: 0 is the request that consumed the
+// budget's last unit and MUST be handed to the caller.
+func TestRateLimitHeadersOnSuccessDoNotDiscardResult(t *testing.T) {
+	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/raw") {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.Header().Set("Retry-After", "60")
+			_, _ = io.WriteString(w, "partitions: 12\n")
+			return
+		}
+		http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+	})
+
+	got, err := c.FileAtRef("42", ".assent/merge-policy.yaml", "tgtSHA")
+	if err != nil {
+		t.Fatalf("a 200 carrying X-RateLimit-Remaining: 0 must not be discarded, got %v", err)
+	}
+	if string(got) != "partitions: 12\n" {
+		t.Errorf("content = %q, want the served file", got)
+	}
 }

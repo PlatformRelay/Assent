@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,31 +34,60 @@ type gitlabNote struct {
 }
 
 type gitlabHarness struct {
-	project         string
-	mr              string
-	botAuthor       string
+	project   string
+	mr        string
+	botAuthor string
+	// discussions/notes are the handler-mutated state stores. Handler WRITES to
+	// them are single-flow in this suite (the adapter is driven serially); the
+	// COUNTERS below are the only state two handler goroutines touch at once —
+	// the deadline-bounded case fires overlapping reads, so every counter is an
+	// atomic (go test -race would red on ++ from concurrent handler goroutines).
 	discussions     []gitlabDiscussion
 	notes           []gitlabNote
-	nextID          int
-	createCalls     int
-	resolveCalls    int
-	noteCreateCalls int
-	noteUpdateCalls int
+	nextID          atomic.Int64
+	createCalls     atomic.Int64
+	resolveCalls    atomic.Int64
+	noteCreateCalls atomic.Int64
+	noteUpdateCalls atomic.Int64
 
 	// E10-S01: MR heads + merge/approve state, so the SHA-guard cases can run
 	// against GitLab instead of being fake-only.
 	sourceSHA    string
 	targetSHA    string
-	mrReads      int
-	approveCalls int
-	mergePUTs    int
+	mrReads      atomic.Int64
+	approveCalls atomic.Int64
+	mergePUTs    atomic.Int64
+
+	forkMR       bool
+	governedPath string
+	baseFile     []byte
+	baseSet      bool
+	headFile     []byte
+	headSet      bool
+	refusedPath  string
+
+	// Transport knobs (E10-S05): the port-level transport conformance cases
+	// need a backend that can violate each requirement and let the case prove
+	// the fail-closed polarity.
+	pageStorm   bool          // every discussions page serves a FULL page (never shortens)
+	writeStatus int           // when non-200, every write endpoint answers this status
+	slowAfter   time.Duration // when non-zero, the MR read sleeps this long before answering
+
+	// rateLimited403 marks the file raw reads as RATE-LIMITED 403s (the
+	// transport shape S00 Q4's rate-limit row drives: a rate-limited 403 is a
+	// transport error, never a sentinel).
+	rateLimited403 bool
+
+	// discPOSTs counts the discussions POSTs the harness received — the
+	// write-never-retried case reads it.
+	discPOSTs atomic.Int64
 
 	// afterMRRead fires once an MR read has been SERVED — the TOCTOU seam.
 	afterMRRead func(h *gitlabHarness)
 }
 
 func newGitLabHarness(project, mr string) *gitlabHarness {
-	return &gitlabHarness{project: project, mr: mr, botAuthor: botID, nextID: 9000}
+	return &gitlabHarness{project: project, mr: mr, botAuthor: botID}
 }
 
 func (h *gitlabHarness) seed(id, author string, marker forge.Marker, resolved bool) error {
@@ -83,10 +113,19 @@ func (h *gitlabHarness) client(t interface {
 	Cleanup(func())
 }) *gitlab.Client {
 	t.Helper()
+	return h.clientWith(t, gitlab.WithSleeper(func(time.Duration) {}))
+}
+
+// clientWith builds the harness's client with explicit options, for the
+// transport cases that must override the retry/deadline policy.
+func (h *gitlabHarness) clientWith(t interface {
+	Helper()
+	Cleanup(func())
+}, opts ...gitlab.Option) *gitlab.Client {
+	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(h.handle))
 	t.Cleanup(srv.Close)
-	return gitlab.New(srv.URL, "test-token", h.botAuthor,
-		gitlab.WithSleeper(func(time.Duration) {}))
+	return gitlab.New(srv.URL, "test-token", h.botAuthor, opts...)
 }
 
 func (h *gitlabHarness) handle(w http.ResponseWriter, r *http.Request) {
@@ -124,12 +163,113 @@ func (h *gitlabHarness) handle(w http.ResponseWriter, r *http.Request) {
 		h.approve(w, r)
 	case r.Method == http.MethodPut && strings.HasPrefix(path, mrBase+"/merge"):
 		h.merge(w, r)
+	case r.Method == http.MethodGet && strings.HasPrefix(path, mrBase+"/approval_rules"):
+		// One Premium-shaped approval rule: eligible-approval-evidence supported.
+		if r.URL.Query().Get("page") == "1" {
+			_, _ = w.Write([]byte(`[{"id":1,"name":"default","approvals_required":1}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	case r.Method == http.MethodGet && isFileRawOf(h, path):
+		h.serveFile(w, r, path)
+	case r.Method == http.MethodGet && strings.HasPrefix(path, mrBase+"/diffs"):
+		// The capability cases drive the full Snapshot, whose changed-file
+		// enumeration needs the diffs endpoint: one governed path, complete.
+		if r.URL.Query().Get("page") == "1" {
+			_, _ = w.Write([]byte(`[{"old_path":"topics/orders.yaml","new_path":"topics/orders.yaml"}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	case r.Method == http.MethodGet && strings.HasPrefix(path, fmt.Sprintf("/api/v4/projects/%s", url.PathEscape(h.project))):
+		// The project probe (E10-S04's capability report): the settings the
+		// probes read. Only the two READ settings are asserted-on by cases; the
+		// protected-pipeline-source is deliberately NOT probed by any predicate.
+		_, _ = w.Write([]byte(`{"only_allow_merge_if_all_discussions_are_resolved":true,"merge_trains_enabled":false}`))
 	default:
 		http.Error(w, "unexpected "+r.Method+" "+path, http.StatusInternalServerError)
 	}
 }
 
+// isFileRawOf reports whether the request is a governed-file raw read the
+// harness models: a content read inside the TARGET project, or — when the MR is
+// a fork — inside the SOURCE project the MR JSON declares (999). E10-S02: the
+// fork's head content lives in the source repo, so FileAtHead reads there.
+func isFileRawOf(h *gitlabHarness, path string) bool {
+	if !strings.HasSuffix(path, "/raw") {
+		return false
+	}
+	if strings.HasPrefix(path, fmt.Sprintf("/api/v4/projects/%s/repository/files/", url.PathEscape(h.project))) {
+		return true
+	}
+	return h.forkMR && strings.HasPrefix(path, "/api/v4/projects/999/repository/files/")
+}
+
+// serveFile serves governed-file content by ref: the pinned target SHA is the
+// base side, the pinned source SHA the head side, exactly the shape the adapter
+// reads. A side that was never seeded is ABSENT (404 → the adapter's
+// ErrNotFound); an unseeded side must not render as present-empty content, or
+// the absent-file positive control could not fail. A refused path answers 403 —
+// the forbidden≠absent seam the sentinel cases prove.
+func (h *gitlabHarness) serveFile(w http.ResponseWriter, r *http.Request, p string) {
+	ref := r.URL.Query().Get("ref")
+	if h.rateLimited403 {
+		w.Header().Set("Retry-After", "60")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		http.Error(w, "rate limit exceeded", http.StatusForbidden)
+		return
+	}
+	if h.refusedPath != "" && strings.Contains(p, url.PathEscape(h.refusedPath)) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	switch h.serveFileContent(ref) {
+	case fileSideBase:
+		if !h.baseSet {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write(h.baseFile)
+	case fileSideHead:
+		if !h.headSet {
+			http.Error(w, "absent", http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write(h.headFile)
+	default:
+		http.Error(w, "unexpected ref "+ref, http.StatusNotFound)
+	}
+}
+
+// fileSideBase / fileSideHead mark which side (if any) a raw read resolves to,
+// given the ref the client asked for.
+const fileSideBase = "base"
+const fileSideHead = "head"
+
+func (h *gitlabHarness) serveFileContent(ref string) string {
+	switch ref {
+	case h.targetSHA:
+		return fileSideBase
+	case h.sourceSHA:
+		return fileSideHead
+	default:
+		return ""
+	}
+}
+
 func (h *gitlabHarness) serveDiscussions(w http.ResponseWriter, r *http.Request) {
+	// E10-S05 transport knob: a paginator that never shortens its pages. The
+	// harness serves a FULL page on every request, so the adapter's cap must
+	// fail closed instead of spinning or silently truncating.
+	if h.pageStorm {
+		storm := make([]map[string]any, 100)
+		for i := range storm {
+			storm[i] = map[string]any{
+				"id": fmt.Sprintf("storm-%d", i),
+			}
+		}
+		_ = json.NewEncoder(w).Encode(storm)
+		return
+	}
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page <= 0 {
 		page = 1
@@ -159,11 +299,15 @@ func (h *gitlabHarness) serveDiscussions(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *gitlabHarness) createDiscussion(w http.ResponseWriter, r *http.Request) {
-	h.createCalls++
+	h.createCalls.Add(1)
+	h.discPOSTs.Add(1)
+	if h.writeStatus != 0 {
+		http.Error(w, "injected transport failure", h.writeStatus)
+		return
+	}
 	body, _ := io.ReadAll(r.Body)
 	form, _ := url.ParseQuery(string(body))
-	h.nextID++
-	id := fmt.Sprintf("note/%d", h.nextID)
+	id := fmt.Sprintf("note/%d", h.nextID.Add(1))
 	h.discussions = append(h.discussions, gitlabDiscussion{
 		id: id, body: form.Get("body"), resolved: false, author: h.botAuthor,
 	})
@@ -176,7 +320,7 @@ func (h *gitlabHarness) resolveDiscussion(w http.ResponseWriter, r *http.Request
 		http.Error(w, "missing resolved=true", http.StatusBadRequest)
 		return
 	}
-	h.resolveCalls++
+	h.resolveCalls.Add(1)
 	rawID := strings.TrimPrefix(path, escapedBase+"/")
 	id, err := url.PathUnescape(rawID)
 	if err != nil {
@@ -220,18 +364,17 @@ func (h *gitlabHarness) serveNotes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *gitlabHarness) createNote(w http.ResponseWriter, r *http.Request) {
-	h.noteCreateCalls++
+	h.noteCreateCalls.Add(1)
 	body, _ := io.ReadAll(r.Body)
 	form, _ := url.ParseQuery(string(body))
-	h.nextID++
-	id := h.nextID
+	id := int(h.nextID.Add(1))
 	h.notes = append(h.notes, gitlabNote{id: id, body: form.Get("body"), author: h.botAuthor})
 	w.WriteHeader(http.StatusCreated)
 	_, _ = io.WriteString(w, fmt.Sprintf(`{"id":%d}`, id))
 }
 
 func (h *gitlabHarness) updateNote(w http.ResponseWriter, r *http.Request, path, notesBase string) {
-	h.noteUpdateCalls++
+	h.noteUpdateCalls.Add(1)
 	body, _ := io.ReadAll(r.Body)
 	form, _ := url.ParseQuery(string(body))
 	rawID := strings.TrimPrefix(path, notesBase+"/")
@@ -325,8 +468,8 @@ func TestSpoofedMarkerStillIgnored(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Reconcile: %v", err)
 			}
-			if h.createCalls != 1 {
-				t.Fatalf("the spoof must not satisfy the slot; createCalls=%d, want 1", h.createCalls)
+			if got := h.createCalls.Load(); got != 1 {
+				t.Fatalf("the spoof must not satisfy the slot; createCalls=%d, want 1", got)
 			}
 			if len(receipt.Warnings) != 0 {
 				t.Fatalf("receipt must carry no warnings for a contributor note, got %v", receipt.Warnings)

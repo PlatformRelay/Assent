@@ -257,7 +257,7 @@ schema drift guard; **D-112–D-117 cited.** **9 stories (9 autonomous)** — E1
 without compare debt.
 Seeds: `examples/comparison/**`, `hack/compare/exitgate_test.sh`.
 
-### E10 — GitHub adapter + Actions entrypoint — **UNLOCKED (D-140, 2026-08-10)** — spec: [p5-e10-github-forge](p5-e10-github-forge/spec.md)
+### E10 — GitHub adapter + Actions entrypoint — **SHIPPED (comment-only v1; D-140 + D-186/D-187, 2026-10-06)** — spec: [p5-e10-github-forge](p5-e10-github-forge/spec.md)
 Was Locked (D-012), reaffirmed locked by D-017 and D-019; unlocked by direct operator
 instruction (D-140), not by the named-consumer trigger. Seam kept honest by the P1-E3-S03
 dossier (REQUEST_CHANGES + conversation-resolution parity, merge queue as merge-result pin,
@@ -269,6 +269,12 @@ files a second adapter cannot import), a neutral capability model where `unknown
 and port-level transport/auth policy. Ordering is normative: the seam (S01–S05) lands before
 the first GitHub API call. v1 target is behavioural parity for the **gate**, with capability
 gaps failing closed.
+**Status (2026-10-06, execution change `p5-e10-github-forge-execution`):** S00–S17 landed —
+the adapter, the conformance factory, forge selection and the Actions entrypoint are shipped;
+the capability model retires the GitLab `@` heuristic, so **both forges' v1 arming waits for a
+decidable `protected-pipeline-source` predicate (OQ-33)** and GitHub's require-review evidence
+waits OQ-34 — v1 GitHub comments and does not gate (D-186/D-187 record the behaviour changes).
+S18 (live adoption proof) remains **operator-gated**.
 
 ### E11 — Complex-rule backend (Rego) — **IMPLEMENTATION UNLOCKED (D-141, 2026-08-10)** — spec: [p5-e11-rego-backend](p5-e11-rego-backend/spec.md)
 Contract unlocked by D-017; implementation was gated twice — "after Phase 4" (satisfied, the

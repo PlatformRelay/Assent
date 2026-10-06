@@ -147,12 +147,35 @@ type Fixture interface {
 	// model the window cannot host that case honestly, so this is a required
 	// method rather than an optional hook.
 	DriftSourceHeadAfterRead(sha string)
+
+	// SeedFile records the governed subject's content on one side of the merge
+	// request (E10-S02): side "base" or "head". MR-relative accessors read the
+	// two sides; the fake keys them by side, the GitLab harness serves them at
+	// the pinned SHAs, a fork-serving backend serves the head side wherever its
+	// forge holds head content. An absent side is absence (forge.ErrNotFound) —
+	// never fabricated content.
+	SeedFile(path, side string, content []byte)
+
+	// RefuseFileRead makes every accessor read of `path` fail with the given
+	// REFUSAL — forge.ErrUnauthorized — regardless of what content exists. This
+	// is the forbidden≠absent seam (S00 Q4): the case proves a permission
+	// failure never renders as absence, and the positive control proves a real
+	// 404 still does.
+	RefuseFileRead(path string)
 }
+
+// File sides of the governed subject, for SeedFile. Side-keyed rather than
+// SHA-keyed: the port's accessors are MR-relative, so the fixture models the two
+// SIDES of one merge request, not URLs.
+const (
+	FileSideBase = "base"
+	FileSideHead = "head"
+)
 
 // Backend is one constructed backend under test: the port a case drives, plus
 // the two surfaces it arranges and observes through.
 type Backend struct {
-	Port     forge.Forge
+	Port     forge.RunPort
 	Fixture  Fixture
 	Observer Observer
 }
@@ -173,4 +196,14 @@ type Config struct {
 	CurrentSourceSHA         string
 	CurrentTargetSHA         string
 	CurrentMergeResultDigest string
+
+	// ForkMR models a fork workflow: the MR's head lives in a source repository
+	// the backend decides internally (GitLab source project id; GitHub PR head).
+	// The addressing cases need it because the fabricated-DELETE defect is
+	// fork-shaped.
+	ForkMR bool
+
+	// GovernedPath is the governed subject the addressing cases read through the
+	// MR-relative accessors. Empty means the case seeds/reads its own paths.
+	GovernedPath string
 }

@@ -82,6 +82,7 @@ func TestRunTierGapNeverApproves(t *testing.T) {
 	f.mergePolicy = mergePolicyOwnership
 	f.rulesetBinding = rulesetBindingOwnership
 	f.freeTier = true
+	f.honestCapabilities() // refusal polarity
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n"
 
@@ -130,6 +131,7 @@ func TestRunForgeProbedArmingGatesWrites(t *testing.T) {
 func TestRunForgeProbeRefusesArmDespiteFlag(t *testing.T) {
 	t.Run("missing_C3_gate", func(t *testing.T) {
 		f := newFakeGitLab(t)
+		f.honestCapabilities() // refusal polarity: the adapter's honest report
 		f.projectJSON = fakeForgeIneligibleProjectJSON
 		f.baseFile = "partitions: 12\n"
 		f.headFile = "partitions: 24\n"
@@ -149,6 +151,7 @@ func TestRunForgeProbeRefusesArmDespiteFlag(t *testing.T) {
 
 	t.Run("insecure_C17_topology", func(t *testing.T) {
 		f := newFakeGitLab(t)
+		f.honestCapabilities() // refusal polarity
 		f.projectJSON = fakeForgeInsecureProjectJSON
 		f.baseFile = "partitions: 12\n"
 		f.headFile = "partitions: 24\n"
@@ -165,6 +168,7 @@ func TestRunForgeProbeRefusesArmDespiteFlag(t *testing.T) {
 
 	t.Run("tier_gap", func(t *testing.T) {
 		f := newFakeGitLab(t)
+		f.honestCapabilities() // refusal polarity
 		f.freeTier = true
 		f.mergePolicy = mergePolicyChallenge
 		f.baseFile = "partitions: 12\n"

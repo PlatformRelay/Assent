@@ -17,7 +17,13 @@ import (
 
 // registryStub answers FileAtRef for the ownership registry only, recording the
 // ref it was asked for — the trust-boundary evidence (GUIDELINES §Safety 3).
+//
+// E10-S02: loadResourceOwnerRegistry now takes the full forge.RunPort, so the
+// stub embeds the interface and overrides only the method it exercises. It
+// never implements a forge write — a stub that could approve would be a
+// write-capable test substrate where the production path reads only.
 type registryStub struct {
+	forge.RunPort
 	raw     []byte
 	err     error
 	gotRefs []string
@@ -234,7 +240,7 @@ func TestResolveRunFactsFailsLoudlyOnUnopenableCheckout(t *testing.T) {
 	f := newFakeGitLab(t)
 	f.config = configQuotaRepoFile()
 	f.providerDecls = map[string]string{"quota": quotaDeclarationJSON}
-	client := f.factory()("", "tok", "assent-bot")
+	client := f.factory()("gitlab", "", "tok", "assent-bot")
 
 	conf, err := policy.LoadConfig([]byte(configQuotaRepoFile()))
 	if err != nil {
@@ -311,7 +317,7 @@ providers:
 // normally. That is the live shape of a flaky forge, which a stub covering only
 // loadResourceOwnerRegistry cannot express.
 type registry503Port struct {
-	forgePort
+	forge.RunPort
 	regPath string
 }
 
@@ -319,7 +325,7 @@ func (c registry503Port) FileAtRef(project, p, ref string) ([]byte, error) {
 	if p == c.regPath {
 		return nil, brokenForge(p, ref, 503)
 	}
-	return c.forgePort.FileAtRef(project, p, ref)
+	return c.RunPort.FileAtRef(project, p, ref)
 }
 
 // TestResourceOwnerRegistryForgeErrorAbortsResolveRunFacts — the wiring the unit
@@ -336,8 +342,8 @@ func TestResourceOwnerRegistryForgeErrorAbortsResolveRunFacts(t *testing.T) {
 	f.config = configOwnerResourceOwner
 	f.providerDecls = map[string]string{"owner": resourceOwnerDeclarationJSON}
 	client := registry503Port{
-		forgePort: f.factory()("", "tok", "assent-bot"),
-		regPath:   "governance/owners.yaml",
+		RunPort: f.factory()("gitlab", "", "tok", "assent-bot"),
+		regPath: "governance/owners.yaml",
 	}
 
 	conf, err := policy.LoadConfig([]byte(configOwnerResourceOwner))
@@ -369,7 +375,7 @@ func TestResourceOwnerRegistryForgeErrorAbortsResolveRunFacts(t *testing.T) {
 // registryServingPort is the whole forge with the ownership registry answering
 // normally from the target ref; every other read falls through to the fake.
 type registryServingPort struct {
-	forgePort
+	forge.RunPort
 	regPath string
 	body    string
 }
@@ -378,7 +384,7 @@ func (c registryServingPort) FileAtRef(project, p, ref string) ([]byte, error) {
 	if p == c.regPath {
 		return []byte(c.body), nil
 	}
-	return c.forgePort.FileAtRef(project, p, ref)
+	return c.RunPort.FileAtRef(project, p, ref)
 }
 
 // TestResourceOwnerDeclarationResolvesOwnerFact — the fixture guard.
@@ -398,9 +404,9 @@ func TestResourceOwnerDeclarationResolvesOwnerFact(t *testing.T) {
 	f.config = configOwnerResourceOwner
 	f.providerDecls = map[string]string{"owner": resourceOwnerDeclarationJSON}
 	client := registryServingPort{
-		forgePort: f.factory()("", "tok", "assent-bot"),
-		regPath:   "governance/owners.yaml",
-		body:      "owners:\n  topics/orders.yaml: team-payments\n",
+		RunPort: f.factory()("gitlab", "", "tok", "assent-bot"),
+		regPath: "governance/owners.yaml",
+		body:    "owners:\n  topics/orders.yaml: team-payments\n",
 	}
 
 	conf, err := policy.LoadConfig([]byte(configOwnerResourceOwner))

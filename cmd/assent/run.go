@@ -23,16 +23,20 @@ import (
 	"github.com/PlatformRelay/assent/internal/core/decision"
 	"github.com/PlatformRelay/assent/internal/core/policy"
 	"github.com/PlatformRelay/assent/internal/forge"
-	"github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/forge/factory"
 	"github.com/PlatformRelay/assent/internal/render"
 	"github.com/PlatformRelay/assent/schemas"
 )
+
+// runErrPrefix is the CLI-facing error prefix (one literal, one meaning).
+const runErrPrefix = "assent run:"
 
 // runConfig is the parsed `assent run` flag set. The GitLab PAT is deliberately
 // NOT a field here — it is read from the GITLAB_TOKEN env var at the boundary and
 // handed straight to the adapter, never stored where it could be logged.
 type runConfig struct {
 	endpoint  string
+	forge     string // --forge {gitlab|github}; empty autodetects from the endpoint host
 	project   string
 	mr        string
 	policy    string
@@ -52,22 +56,16 @@ type runConfig struct {
 	checkout string
 }
 
-// forgePort is the subset of behaviour `assent run` needs from a forge: the
-// full write port plus orchestration reads (GetMR, FileAtRef, Snapshot, Resolve).
-// The GitLab adapter's concrete client satisfies it; tests drive it against an
-// httptest GitLab through the same concrete client (no live network).
+// The `assent run` port is `forge.RunPort` (E10-S02): the single named,
+// forge-neutral composite interface declared in internal/forge. The GitLab
+// adapter's concrete client satisfies it; tests drive it against an httptest
+// GitLab through the same concrete client (no live network).
 //
-// AUD-S15 (ARCH-02): every type in this port is forge-NEUTRAL — no adapter
-// appears in the signatures, so a second adapter satisfies it without a line
-// changing here. Keep it that way: adding an adapter-named type to this
-// interface is the regression this story exists to remove.
-type forgePort interface {
-	forge.Forge
-	forge.Snapshotter
-	forge.Resolver
-	GetMR(project, mr string) (forge.MRInfo, error)
-	FileAtRef(project, path, ref string) ([]byte, error)
-}
+// AUD-S15 (ARCH-02) and E10-S02: keep `cmd/assent` referencing the NEUTRAL named
+// type only. Declaring a second interface here — even a smaller hand-rolled
+// subset, and even a named one like provider_host.go's retired `refFilePort` —
+// is the regression depguard's invariant guard (hack/lint/depguard_test.sh)
+// exists to fail the build on.
 
 // runClock is the injected time seam: cmd/assent binds it to time.Now and threads
 // the value down as data (never time.Now inside the engine or the receipt).
@@ -91,30 +89,52 @@ func (c clockAdapter) Now() time.Time { return c.now() }
 //	   error before the decision.
 //
 // forgeFactory builds the forge from the resolved endpoint+token+botAuthor; the
-// production path passes gitlab.New, tests pass a fake pointed at httptest.
+// production path constructs through internal/forge/factory; tests pass the
+// same adapter pointed at an httptest server.
 func runRun(args []string, getenv func(string) string, clock runClock, stdout, stderr io.Writer,
-	forgeFactory func(endpoint, token, botAuthor string) forgePort) int {
+	forgeFactory func(kind, endpoint, token, botAuthor string) forge.RunPort) int {
 	cfg, err := parseRunFlags(args, stderr)
 	if err != nil {
 		// flag parsing already printed usage; -h/--help returns a clean 2.
 		if errors.Is(err, flag.ErrHelp) {
 			return 2
 		}
-		_, _ = fmt.Fprintln(stderr, "assent run:", err)
+		_, _ = fmt.Fprintln(stderr, runErrPrefix, err)
+		return 2
+	}
+
+	// E10-S13: forge selection with remote-host autodetect; ambiguity or an
+	// unrecognised host fails closed (never a default-to-GitLab).
+	kind, endpoint, err := selectForge(cfg.forge, cfg.endpoint)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, runErrPrefix, err)
 		return 2
 	}
 
 	// The ONLY secret. Read at the boundary; handed straight to the adapter.
-	token := getenv("GITLAB_TOKEN")
+	// The token env follows the forge: GITLAB_TOKEN for GitLab, GITHUB_TOKEN
+	// for GitHub (the dossier's read-only pull_request scope for forks).
+	tokenEnv := "GITLAB_TOKEN" // #nosec G101 -- the env-var NAME, never a credential
+	if kind == factory.KindGitHub {
+		tokenEnv = "GITHUB_TOKEN" // #nosec G101 -- the env-var NAME
+	}
+	token := getenv(tokenEnv)
 	if token == "" {
-		_, _ = fmt.Fprintln(stderr, "assent run: GITLAB_TOKEN is required (the PAT is never a flag)")
+		_, _ = fmt.Fprintf(stderr, "%s %s is required (the token is never a flag)\n", runErrPrefix, tokenEnv)
 		return 2
 	}
 
-	client := forgeFactory(cfg.endpoint, token, cfg.botAuthor)
+	client := forgeFactory(string(kind), endpoint, token, cfg.botAuthor)
+	if client == nil {
+		// The construction seam reports its own error and yields a nil port
+		// (main.go's factory closure does exactly that). Fail closed — an
+		// orchestrate call on a nil port would panic, not exit 2.
+		_, _ = fmt.Fprintln(stderr, runErrPrefix, "forge construction failed")
+		return 2
+	}
 
 	if err := orchestrate(cfg, client, clock, stdout); err != nil {
-		_, _ = fmt.Fprintln(stderr, "assent run:", err)
+		_, _ = fmt.Fprintln(stderr, runErrPrefix, err)
 		return 1
 	}
 	return 0
@@ -127,6 +147,7 @@ func parseRunFlags(args []string, stderr io.Writer) (runConfig, error) {
 	fs.SetOutput(stderr)
 	var cfg runConfig
 	fs.StringVar(&cfg.endpoint, "gitlab-endpoint", "https://gitlab.com", "GitLab instance base URL")
+	fs.StringVar(&cfg.forge, "forge", "", "forge to drive: gitlab|github (E10-S13); empty autodetects from the endpoint host and FAILS CLOSED on ambiguity")
 	fs.StringVar(&cfg.project, "project", "", "GitLab numeric project id (required)")
 	fs.StringVar(&cfg.mr, "mr", "", "merge-request IID (required)")
 	fs.StringVar(&cfg.policy, "policy", ".assent/merge-policy.yaml", "MergePolicy path (loaded from the TARGET ref)")
@@ -172,7 +193,7 @@ func parseRunFlags(args []string, stderr io.Writer) (runConfig, error) {
 // touch file SOURCING (the governed base/head is still read via FileAtRef, the
 // pre-existing ADR-0008 §4 single-file API read tracked separately) nor the
 // forge write path (buildDesired/Reconcile/arming/SHA-guard/token — GUARD 2).
-func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writer) error {
+func orchestrate(cfg runConfig, client forge.RunPort, clock runClock, stdout io.Writer) error {
 	// 1. MR metadata: source/target branches + pinned SHAs.
 	info, err := client.GetMR(cfg.project, cfg.mr)
 	if err != nil {
@@ -186,16 +207,25 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	if err != nil {
 		return fmt.Errorf("forge snapshot: %w", err)
 	}
+	// E10 branch-review round 2 (finding 1): the Snapshot is a SECOND MR read —
+	// the merge-result digest and the changed-file list come from it, while the
+	// record's pins come from read 1. If the heads moved between the reads, the
+	// record would pin read 1's SHAs while judging read 2's file list against
+	// read 1's bytes — an internally inconsistent record whose merge path stays
+	// fail-closed only by accident of the digest CAS. Fail CLOSED: the forge
+	// state is mid-move and the run must be re-evaluated, never assembled from
+	// two reads.
+	if snapshot.Heads.SourceSHA != info.SourceSHA || snapshot.Heads.TargetSHA != info.TargetSHA {
+		return fmt.Errorf("forge heads moved between the MR read and the snapshot (pinned %s/%s, snapshot %s/%s) — re-evaluation required (fail-closed)",
+			info.SourceSHA, info.TargetSHA, snapshot.Heads.SourceSHA, snapshot.Heads.TargetSHA)
+	}
 	mrAuthor := snapshot.Heads.Author
-	// AUD-S15 residue, deliberately left: this is the LAST adapter-named call in
-	// the orchestration path. The merge-digest SCHEME is adapter-owned, so the fix
-	// is not to make it neutral but to stop computing it here — E10 collapses both
-	// call-sites (here and buildDesired) onto snapshot.Heads.MergeResultDigest,
-	// which Snapshot has already computed. Out of scope for the mechanical lift
-	// because it reorders what buildDesired depends on
-	// (docs/planning/design-notes/e10-forge-port-lift.md, step 4).
-	mergeDigest := gitlab.SyntheticDigest(info.SourceSHA, info.TargetSHA)
-	probe := forge.PreconditionFromCapabilities(snapshot.Capabilities)
+	// E10-S03 (design-note step 4): the merge-digest SCHEME is adapter-owned, so
+	// cmd/assent computes no forge-specific hash. The digest the adapter's
+	// Snapshot already produced is the pin: the record and the read cannot
+	// disagree because there is only one read chain.
+	mergeDigest := snapshot.Heads.MergeResultDigest
+	probe := forge.PreconditionFromReport(snapshot.Capabilities)
 
 	// 2. Load the frozen MergePolicy + RulesetBinding from the TARGET ref
 	//    (ADR-0015 §1) — NEVER the source branch — under strict decode (E2-S01).
@@ -272,17 +302,21 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	if governed == cfg.subject {
 		return fmt.Errorf("--subject %q must be a file:<path> entryRef", cfg.subject)
 	}
-	// REV1-S01 / U-04 item 1: read the governed base/head at the PINNED COMMIT
-	// SHAs, not the mutable branch names. The head read is the exploit's target:
-	// a branch-name read judges whatever the branch pointed at mid-run, while the
-	// merge CAS pins a commit, so a force-push back to the pinned SHA would merge
-	// un-evaluated bytes. Reading at the pin makes "final head == pin ⇒ final
-	// head == what was judged" true.
-	base, err := fileAtRefOrAbsent(client, cfg.project, governed, info.TargetSHA)
+	// REV1-S01 / U-04 item 1 + E10-S02 (ADR-0021 item 5): read the governed
+	// base/head through the MR-relative accessors — FileAtBase/FileAtHead — at
+	// the PINNED COMMIT SHAs the adapter itself reported (the adapter reads at
+	// its own pinned MR read, so judged bytes and record pins share one read
+	// chain). The head read is the exploit's target: a branch-name read inside
+	// the TARGET project judges whatever the branch pointed at mid-run and, on a
+	// fork, 404s — minting a fabricated whole-file DELETE the contributor never
+	// made (S00 Q1). Reading MR-relative makes "final head == pin ⇒ final head
+	// == what was judged" true, and a fork PR's head content is addressed inside
+	// the repository that holds it.
+	base, err := fileAtBaseOrAbsent(client, cfg.project, cfg.mr, governed)
 	if err != nil {
 		return fmt.Errorf("load governed base %q: %w", governed, err)
 	}
-	head, err := fileAtRefOrAbsent(client, cfg.project, governed, info.SourceSHA)
+	head, err := fileAtHeadOrAbsent(client, cfg.project, cfg.mr, governed)
 	if err != nil {
 		return fmt.Errorf("load governed head %q: %w", governed, err)
 	}
@@ -373,12 +407,42 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		return fmt.Errorf("evaluate: %w", err)
 	}
 
-	// 6. Build the DecisionRecord. GitLab plain-merge exposes no merge-result
-	//    digest, so the record honestly carries mergeResultDigest:null +
-	//    capabilityGap (ADR-0017 §1). Tool/policy digests are non-empty.
-	mergeGap, err := decision.MergeResultGap("gitlab plain-merge exposes no merge-result digest (no merge train); ADR-0017 §1 capabilityGap")
-	if err != nil {
-		return fmt.Errorf("merge-result gap: %w", err)
+	// 6. Build the DecisionRecord. The merge-result pin is capability-gated
+	//    (REQ-E10-S03-01): the digest is pinned exactly when the adapter's
+	//    capability report grades merge-result-pinning SUPPORTED and carries a
+	//    digest (GitHub's merge ref, E10); otherwise the record carries
+	//    mergeResultDigest:null + the adapter's own merge-result gap reason
+	//    (the digest scheme is adapter-owned, E10-S03 — cmd never names a
+	//    forge). Tool/policy digests are non-empty.
+	var pinsMergeResult decision.MergeResult
+	switch {
+	case snapshot.Capabilities.State(forge.CapabilityMergeResultPinning) == forge.CapabilitySupported && mergeDigest != "":
+		mergeGap, err := decision.PinnedMergeResult(mergeDigest)
+		if err != nil {
+			return fmt.Errorf("merge-result pin: %w", err)
+		}
+		pinsMergeResult = mergeGap
+	case snapshot.Capabilities.State(forge.CapabilityMergeResultPinning) == forge.CapabilitySupported:
+		// The adapter graded the capability SUPPORTED but carried no digest:
+		// the pin is unbuildable and silently taking the gap branch would
+		// contradict the adapter's own grading — fail closed.
+		return fmt.Errorf("merge-result pin: adapter graded merge-result-pinning supported but carried no digest")
+	default:
+		// The gap reason is the adapter's own capability reason for
+		// merge-result-pinning — forge-owned text, contributor-legible, never a
+		// cmd-side hardcode. When the report carries no reason (fixture-grade
+		// capabilities degrade here), the fallback is the FORGE-NEUTRAL
+		// statement of the same fact: the digest is not forge-observable on
+		// this run's merge path.
+		reason := snapshot.Capabilities.Reason(forge.CapabilityMergeResultPinning)
+		if reason == "" {
+			reason = "the merge-result digest is not forge-observable on this run's merge path (adapter-graded absent/unprobed); ADR-0017 §1 capabilityGap"
+		}
+		mergeGap, err := decision.MergeResultGap(reason)
+		if err != nil {
+			return fmt.Errorf("merge-result gap: %w", err)
+		}
+		pinsMergeResult = mergeGap
 	}
 	if factsResolvedAt == nil {
 		factsResolvedAt = map[string]string{}
@@ -389,7 +453,7 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		PolicySha:       sha256Prefix + sha256Hex(mpBytes),
 		SourceSha:       info.SourceSHA,
 		TargetSha:       info.TargetSHA,
-		MergeResult:     mergeGap,
+		MergeResult:     pinsMergeResult,
 		FactsResolvedAt: factsResolvedAt,
 	}
 	report, err := decision.Build(result, pins)
@@ -440,6 +504,7 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 		desired, pre := buildDesired(
 			cfg, info, cfg.subject, head, result, recordJSON, armEligible,
 			report.Presentation, buildRenderContext(renderOpts(conf, bind), mp, bind, changeSet, facts, info, mrAuthor),
+			mergeDigest,
 		)
 		receipt, recErr = forge.Reconcile(client, clockAdapter{now: clock}, desired, pre)
 	}
@@ -470,11 +535,29 @@ func orchestrate(cfg runConfig, client forgePort, clock runClock, stdout io.Writ
 	return nil
 }
 
-// fileAtRefOrAbsent loads a file at ref, mapping a forge 404 to nil bytes (the
-// file is ABSENT at that ref — EFE-S03 presence signal). Any other error
-// propagates. Empty-but-present content (HTTP 200 with []byte{}) stays non-nil.
-func fileAtRefOrAbsent(client forgePort, project, path, ref string) ([]byte, error) {
-	raw, err := client.FileAtRef(project, path, ref)
+// fileAtBaseOrAbsent loads the governed subject's BASE side via the MR-relative
+// accessor, mapping forge.ErrNotFound to nil bytes (absent on the base side —
+// a genuine whole-file ADD is still mintable, EFE-S03). Any other error —
+// including forge.ErrUnauthorized — propagates: a permission failure is never
+// absence (S00 Q4; forge.ErrUnauthorized is the port sentinel since E10-S02).
+// Empty-but-present content (a successful read of []byte{}) stays non-nil.
+func fileAtBaseOrAbsent(client forge.RunPort, project, mr, path string) ([]byte, error) {
+	raw, err := client.FileAtBase(project, mr, path)
+	if err != nil {
+		if errors.Is(err, forge.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return raw, nil
+}
+
+// fileAtHeadOrAbsent is fileAtBaseOrAbsent for the HEAD side. The head side is
+// where the fabricated-DELETE defect lived: the MR-relative accessor reaches the
+// fork's head inside the repository that holds it, so a fork PR's unchanged
+// governed file is read as present content — never as a 404-turned-DELETE.
+func fileAtHeadOrAbsent(client forge.RunPort, project, mr, path string) ([]byte, error) {
+	raw, err := client.FileAtHead(project, mr, path)
 	if err != nil {
 		if errors.Is(err, forge.ErrNotFound) {
 			return nil, nil
@@ -542,7 +625,7 @@ func decide(subject, subjectClass string, cs change.ChangeSet, mp *policy.MergeP
 
 // resolveRunApproval maps a require-review subject + pinned SHAs to forge-proven
 // ApprovalEvidence or an explicit capability gap (never silent APPROVE).
-func resolveRunApproval(client forgePort, cfg runConfig, info forge.MRInfo, mergeDigest, mrAuthor string) (*aggregate.ApprovalContext, error) {
+func resolveRunApproval(client forge.RunPort, cfg runConfig, info forge.MRInfo, mergeDigest, mrAuthor string) (*aggregate.ApprovalContext, error) {
 	res, err := client.Resolve(forge.ResolveRequest{
 		Project:           cfg.project,
 		MR:                cfg.mr,
@@ -638,14 +721,14 @@ func sanitizeSubjects(res aggregate.Result, fallback string) aggregate.Result {
 //     human body naming the driving rule/code. No approve/merge.
 //   - APPROVE → approve + a SHA-pinned merge, gated by arming.
 //
+// mergeDigest is the snapshot's already-produced merge-result digest
+// (E10-S03: cmd/assent computes no forge-specific hash).
+//
 // Arming: ArmEligible comes from the forge-probed PreconditionReport (E4-S05/S06),
 // NOT from --arm or readPipelineDescription() env vars (D-034/D-074). When the
 // forge probe refuses, Reconcile returns ErrArmingRefused → no write even if
 // --arm was passed.
-func buildDesired(cfg runConfig, info forge.MRInfo, subject string, head []byte, result aggregate.Result, recordJSON []byte, armEligible bool, pm decision.PresentationModel, rctx render.Context) (forge.DesiredReviewState, forge.Preconditions) {
-	// AUD-S15 residue — see the note at the other SyntheticDigest call-site: E10
-	// collapses both onto the snapshot's already-computed MergeResultDigest.
-	digest := gitlab.SyntheticDigest(info.SourceSHA, info.TargetSHA)
+func buildDesired(cfg runConfig, info forge.MRInfo, subject string, head []byte, result aggregate.Result, recordJSON []byte, armEligible bool, pm decision.PresentationModel, rctx render.Context, mergeDigest string) (forge.DesiredReviewState, forge.Preconditions) {
 	desired := forge.DesiredReviewState{Project: cfg.project, MR: cfg.mr}
 
 	summaryBody, err := render.RenderSummary(pm, rctx)
@@ -662,13 +745,13 @@ func buildDesired(cfg runConfig, info forge.MRInfo, subject string, head []byte,
 		desired.Merge = &forge.DesiredMerge{
 			SourceSha:         info.SourceSHA,
 			TargetSha:         info.TargetSHA,
-			MergeResultDigest: digest,
+			MergeResultDigest: mergeDigest,
 		}
 		pre := forge.Preconditions{
 			ArmEligible:       armEligible,
 			SourceSha:         info.SourceSHA,
 			TargetSha:         info.TargetSHA,
-			MergeResultDigest: digest,
+			MergeResultDigest: mergeDigest,
 		}
 		return desired, pre
 	}

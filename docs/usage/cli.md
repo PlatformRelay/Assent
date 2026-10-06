@@ -76,11 +76,12 @@ and is never a flag; without it the command exits `2` before contacting the forg
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `-project` | — | GitLab numeric project id (required) |
-| `-mr` | — | merge-request IID (required) |
+| `-forge` | autodetect | Forge to drive: `gitlab` or `github` (E10-S13). Empty autodetects from the endpoint host and **fails closed** on ambiguity or an unrecognised host — no default forge exists. `--forge github` reads the token from `GITHUB_TOKEN` (the read-only `pull_request` scope suffices for forks per the dossier C17); GitLab keeps `GITLAB_TOKEN`. On GitHub, `-project` is an `owner/repo` pair and `-mr` is the PR number |
+| `-project` | — | GitLab numeric project id, or GitHub `owner/repo` (required) |
+| `-mr` | — | merge-request IID / PR number (required) |
 | `-subject` | — | governed-subject entryRef (`file:<path>`) — the file diffed for evaluation (required) |
 | `-bot-author` | — | bot username for the author-identity filter (required) |
-| `-gitlab-endpoint` | `https://gitlab.com` | GitLab instance base URL |
+| `-gitlab-endpoint` | `https://gitlab.com` | Forge instance base URL (the default follows the forge: `https://api.github.com` for `--forge github`) |
 | `-policy` | `.assent/merge-policy.yaml` | MergePolicy path, loaded from the target ref |
 | `-binding` | `.assent/ruleset-binding.yaml` | RulesetBinding path, loaded from the target ref |
 | `-config` | — | Config path (loaded from the target ref) — drives provider **fact resolution**; when set, provider posture is also validated |

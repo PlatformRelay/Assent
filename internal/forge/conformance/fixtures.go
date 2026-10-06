@@ -15,7 +15,16 @@ import (
 //
 // Nothing here is new and nothing is changed: each helper is the byte-identical
 // body it had in `reconciliation_test.go`, fixture line references included, so a
-// reviewer can diff rather than re-derive.
+// reviewer can diff rather than re-derive — with ONE deliberate deviation,
+// recorded here: the finding-thread markers' slot.entryRef is
+// "file:topics/orders.yaml" (a file-shaped governed-subject identity) where the
+// P3-E5 contract yaml records the idString "topic-registry:orders.events.v1".
+// The replay assertions never inspect the entryRef, the contract yaml files
+// stay untouched, and the deviation is forced by the GitHub adapter: its
+// review-thread POST anchors on the governed FILE (commit_id + path), which
+// only a file-shaped identity can express. The scenario invariants (counts,
+// resolution, repair) are identity-shape-independent, exactly like the thread
+// id vocabulary the replay cases already adapt per backend.
 
 const decHex = "sha256:1111aaa1111aaa1111aaa1111aaa1111aaa1111aaa1111aaa1111aaa1111aaaa"
 
@@ -31,7 +40,7 @@ func rerunChallengeMarker() forge.Marker {
 			MR:       mrIID,
 			Rule:     "topic-safety/retention-shrink-challenge",
 			Effect:   "challenge",
-			EntryRef: "topic-registry:orders.events.v1",
+			EntryRef: "file:topics/orders.yaml",
 		},
 		Occurrence: occChallenge,
 		Decision:   decHex,
@@ -46,7 +55,7 @@ func rerunCommentMarker() forge.Marker {
 			MR:       mrIID,
 			Rule:     "ownership/entry-owner-required",
 			Effect:   "comment",
-			EntryRef: "topic-registry:orders.events.v1",
+			EntryRef: "file:topics/orders.yaml",
 		},
 		Occurrence: occComment,
 		Decision:   decHex,
@@ -66,7 +75,7 @@ func crashChallengeMarker() forge.Marker {
 			MR:       "551",
 			Rule:     "topic-safety/retention-shrink-challenge",
 			Effect:   "challenge",
-			EntryRef: "topic-registry:payments.events.v1",
+			EntryRef: "file:topics/orders.yaml",
 		},
 		Occurrence: occCrashChallenge,
 		Decision:   decHex,
@@ -81,7 +90,7 @@ func crashCommentMarker() forge.Marker {
 			MR:       "551",
 			Rule:     "ownership/entry-owner-required",
 			Effect:   "comment",
-			EntryRef: "topic-registry:payments.events.v1",
+			EntryRef: "file:topics/orders.yaml",
 		},
 		Occurrence: occCrashComment,
 		Decision:   decHex,
@@ -100,7 +109,7 @@ func dupMarker() forge.Marker {
 			MR:       "612",
 			Rule:     "topic-safety/retention-shrink-challenge",
 			Effect:   "challenge",
-			EntryRef: "topic-registry:orders.events.v1",
+			EntryRef: "file:topics/orders.yaml",
 		},
 		Occurrence: occDup,
 		Decision:   decHex,

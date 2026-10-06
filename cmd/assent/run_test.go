@@ -14,7 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PlatformRelay/assent/internal/forge/gitlab"
+	"github.com/PlatformRelay/assent/internal/forge"
+	"github.com/PlatformRelay/assent/internal/forge/factory"
 )
 
 // fakeGitLab is an in-process GitLab REST v4 mock for the `run` end-to-end tests.
@@ -65,6 +66,13 @@ type fakeGitLab struct {
 	changesCount string
 	diffsStatus  int
 
+	// secondPRSha + prReads model the heads moving BETWEEN the run's two MR
+	// reads (the one-read-chain check, E10 branch-review round 2 finding 1):
+	// the first MR GET serves sourceSHA, every later one serves secondPRSha.
+	// Empty secondPRSha = the heads never move.
+	secondPRSha string
+	prReads     int
+
 	freeTier            bool
 	mrAuthor            string
 	labels              []string
@@ -77,6 +85,12 @@ type fakeGitLab struct {
 
 	// forkMR models a fork workflow (source_project_id != target project_id).
 	forkMR bool
+
+	// capReportOverride, when set, replaces the adapter's capability report at
+	// the port (E10-S04 test fixture: a forge whose probe proved everything).
+	// See forgeProbesAllSupported for why this exists and what refuses arming
+	// without it.
+	capReportOverride *forge.CapabilityReport
 
 	// policyLoads records FileAtRef calls for `.assent/**` policy documents.
 	policyLoads []policyLoad
@@ -132,6 +146,12 @@ func newFakeGitLab(t *testing.T) *fakeGitLab {
 		approvalEligible:    true,
 		approvalRulesStatus: http.StatusOK,
 	}
+	// E10-S04: the run fixtures model a forge whose probe proved every
+	// capability (see forgeProbesAllSupported). The honest v1 GitLab report —
+	// protected-pipeline-source unknown, arming refused — is pinned by
+	// TestRunProtectedPipelineUnknownRefusesArming and by the adapter's own
+	// capability-report tests.
+	f.forgeProbesAllSupported()
 	f.changedFiles = []string{f.governedPath}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(f.srv.Close)
@@ -142,13 +162,18 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.EscapedPath()
 	switch {
 	case p == "/api/v4/projects/42/merge_requests/7" && r.Method == http.MethodGet:
+		f.prReads++
+		sha := f.sourceSHA
+		if f.secondPRSha != "" && f.prReads > 1 {
+			sha = f.secondPRSha
+		}
 		sourceProjectID := 42
 		if f.forkMR {
 			sourceProjectID = 99
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"iid": 7, "project_id": 42, "source_project_id": sourceProjectID,
-			"sha":           f.sourceSHA,
+			"sha":           sha,
 			"source_branch": f.sourceBranch, "target_branch": f.target,
 			"changes_count": f.changesCountBody(),
 			"labels":        f.labels,
@@ -167,6 +192,13 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 	case p == "/api/v4/user" && r.Method == http.MethodGet:
 		_, _ = w.Write([]byte(`{"id":999,"username":"` + f.botAuthor + `"}`))
 	case strings.HasPrefix(p, "/api/v4/projects/42/repository/files/") && strings.HasSuffix(p, "/raw"):
+		f.serveFile(w, r, p)
+	case strings.HasPrefix(p, "/api/v4/projects/99/repository/files/") && strings.HasSuffix(p, "/raw"):
+		// E10-S02 (ADR-0021 item 5): a fork MR's head content lives in the SOURCE
+		// repo (project 99), so FileAtHead reads there. The governed head is
+		// served for the pinned source SHA exactly as the target repo serves it —
+		// the fork's head branch is NOT addressable by name in project 42, which
+		// is the defect this route replaces.
 		f.serveFile(w, r, p)
 	case p == "/api/v4/projects/42/merge_requests/7/discussions" && r.Method == http.MethodGet:
 		f.serveDiscussions(w, r)
@@ -488,15 +520,75 @@ func (f *fakeGitLab) recordPolicyLoad(path, ref string) {
 	f.policyLoads = append(f.policyLoads, policyLoad{path: path, ref: ref})
 }
 
-// factory builds a real *gitlab.Client pointed at the fake server — the exact
-// production adapter, driven end-to-end over HTTP without a live network.
-func (f *fakeGitLab) factory() func(string, string, string) forgePort {
-	return func(_, token, botAuthor string) forgePort {
+// forgeProbesAllSupported arms the fake's forge: the adapter serves its honest
+// capability report through the HTTP harness, but this fixture OVERRIDES the
+// report at the port with the all-supported one — the shape of a forge whose
+// probe HAS proven every capability (E10-S04). The override exists because the
+// real GitLab adapter's v1 report marks protected-pipeline-source UNKNOWN (the
+// retired SEC-04 heuristic; OQ-33), which refuses arming for every fixture —
+// correct for production, but it would make these arming tests incapable of
+// pinning the write path they exist to pin. The refusal behaviour itself is
+// pinned by TestRunProtectedPipelineUnknownRefusesArming, which runs WITHOUT
+// the override.
+//
+// newFakeGitLab calls this by DEFAULT: every run fixture in this package is
+// armed-capable, matching the pre-E10 fixtures' intent; tests that pin the
+// honest refusal unset f.capReportOverride themselves.
+func (f *fakeGitLab) forgeProbesAllSupported() {
+	entries := map[forge.Capability]forge.CapabilityEntry{}
+	for _, c := range forge.AllCapabilities() {
+		entries[c] = forge.SupportedCapabilityEntry("fixture: probe proven")
+	}
+	// The merge-result pin stays the ADAPTER's honest grading (E10-S03): a
+	// synthesised CAS digest is not a forge-observable merge result, so the
+	// record keeps mergeResultDigest:null + the adapter's gap. Forcing this
+	// capability supported would make the record pin the synthesised digest —
+	// a lie the schema forbids by shape and honesty forbids by content.
+	entries[forge.CapabilityMergeResultPinning] = forge.AbsentCapabilityEntry(
+		"probe: merge_trains_enabled is false — plain merge exposes no merge-result digest; the CAS pins the adapter-synthesised digest (dossier C16)")
+	report, err := forge.NewCapabilityReport(entries)
+	if err != nil {
+		panic("capability report: " + err.Error())
+	}
+	f.capReportOverride = &report
+}
+
+// honestCapabilities removes the fixture's capability-report override, so the
+// run sees the adapter's REAL v1 GitLab report — protected-pipeline-source
+// unknown (the retired SEC-04 heuristic; OQ-33), arming refused. Every
+// refusal-polarity fixture calls this.
+func (f *fakeGitLab) honestCapabilities() { f.capReportOverride = nil }
+
+// capabilityOverridePort is the fixture-level port decorator: one honest
+// Snapshot read, with the capability report replaced by the configured fixture
+// report. It exists ONLY in tests — production cmd/assent has no such knob.
+type capabilityOverridePort struct {
+	forge.RunPort
+	report forge.CapabilityReport
+}
+
+func (o capabilityOverridePort) Snapshot(project, mr string) (forge.Snapshot, error) {
+	snap, err := o.RunPort.Snapshot(project, mr)
+	if err != nil {
+		return forge.Snapshot{}, err
+	}
+	snap.Capabilities = o.report
+	return snap, nil
+}
+
+// factory builds the production adapter (through the neutral factory — the
+// exact production construction) pointed at the fake server, driven end-to-end
+// over HTTP without a live network.
+func (f *fakeGitLab) factory() func(string, string, string, string) forge.RunPort {
+	return func(_, _, token, botAuthor string) forge.RunPort {
 		if botAuthor != "" {
 			f.botAuthor = botAuthor
 		}
-		return gitlab.New(f.srv.URL, token, botAuthor,
-			gitlab.WithSleeper(func(time.Duration) {}))
+		port := factory.GitLab(f.srv.URL, token, botAuthor, factory.NoSleep)
+		if f.capReportOverride != nil {
+			return capabilityOverridePort{RunPort: port, report: *f.capReportOverride}
+		}
+		return port
 	}
 }
 
@@ -673,6 +765,11 @@ func runArgs(extra ...string) []string {
 	return append([]string{
 		"--project", "42", "--mr", "7", "--bot-author", "assent-bot",
 		"--subject", "file:topics/orders.yaml",
+		// E10-S13: the test fixtures point at an httptest host the autodetect
+		// cannot recognise (fail-closed by design), so the explicit selection
+		// is part of the default fixture; the autodetect refusals have their
+		// own fail-closed test.
+		"--forge", "gitlab",
 	}, extra...)
 }
 
@@ -787,6 +884,7 @@ func TestRunEmptyRequireNeverApproves(t *testing.T) {
 // approve/merge writes. --arm alone cannot override (E4-S06 / D-034).
 func TestRunApproveUnarmedNoWrite(t *testing.T) {
 	f := newFakeGitLab(t)
+	f.honestCapabilities() // refusal polarity
 	f.projectJSON = fakeForgeIneligibleProjectJSON
 	f.baseFile = "partitions: 12\n"
 	f.headFile = "partitions: 24\n"
@@ -988,6 +1086,23 @@ func TestRunMissingToken(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "GITLAB_TOKEN") {
 		t.Errorf("expected token error message:\n%s", out.String())
+	}
+}
+
+// TestRunNilForgePortFailsClosed is the nil-port guard (the run factory seam
+// returns nil on a construction error — main.go's closure does): runRun must
+// print the construction failure and exit 2, never nil-panic inside
+// orchestrate.
+func TestRunNilForgePortFailsClosed(t *testing.T) {
+	var out bytes.Buffer
+	code := runRun(runArgs(), env("tok"), fixedClock(), &out, &out, func(string, string, string, string) forge.RunPort {
+		return nil // the construction-error shape main.go's factory produces
+	})
+	if code != 2 {
+		t.Fatalf("a nil forge port must fail closed with exit 2, got %d\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "forge construction failed") {
+		t.Errorf("the failure must be reported as forge construction failed, got:\n%s", out.String())
 	}
 }
 

@@ -36,6 +36,12 @@ type Case struct {
 // keyed on test-function NAMES would stay green for a case that had been
 // unhooked from the runner, which is a predicate over text standing in for a
 // property that is structural.
+// Cases returns the suite in a fixed order. This slice IS the dispatch list: the
+// catalog gate compares the catalog against what running the suite actually
+// executes, so deleting an entry here reds that gate. That is the point — a gate
+// keyed on test-function NAMES would stay green for a case that had been
+// unhooked from the runner, which is a predicate over text standing in for a
+// property that is structural.
 func Cases() []Case {
 	return []Case{
 		{ID: "sha-guard-target-advanced", Run: caseSHAGuardTargetAdvanced},
@@ -44,6 +50,18 @@ func Cases() []Case {
 		{ID: "p3e5-rerun-idempotence", Run: caseRerunIdempotence},
 		{ID: "p3e5-duplicate-repair", Run: caseDuplicateRepair},
 		{ID: "p3e5-spoofed-marker-ignored", Run: caseSpoofedMarkerIgnored},
+		// Addressing & sentinel cases (E10-S02; minted by S00's Q1/Q4 tables).
+		{ID: "fork-head-unchanged-file-no-lifecycle", Run: caseForkHeadUnchangedFileNoLifecycle},
+		{ID: "fork-head-genuine-delete-detected", Run: caseForkHeadGenuineDeleteDetected},
+		{ID: "forbidden-never-renders-as-absent", Run: caseForbiddenNeverRendersAsAbsent},
+		{ID: "absent-file-still-renders-as-absent", Run: caseAbsentFileStillRendersAsAbsent},
+		{ID: "own-markers-recognised-identity", Run: caseOwnMarkersRecognisedIdentity},
+		// Capability-model cases (E10-S04; minted by S00's Q2 table).
+		{ID: "capability-unknown-never-arms", Run: caseCapabilityUnknownNeverArms},
+		// The resolvable-threads licensing round trip (S00 Q2 row 1,
+		// REQ-E10-S07-03): post via REST, resolve, read isResolved back
+		// through the port's listing.
+		{ID: "threads-resolvable-graphql", Run: caseThreadsResolveRoundTrip},
 	}
 }
 

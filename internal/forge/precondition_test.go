@@ -1,16 +1,47 @@
 package forge
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func premiumCaps() CapabilityFlags {
-	return CapabilityFlags{
-		Tier:                        TierPremium,
-		HasApprovalRulesAPI:         true,
-		DiscussionsResolvedGate:     true,
-		ProtectedPipelineExternal:   true,
-		MergeResultDigestRecordable: true,
-		MergeTrainAvailable:         true,
+// precondition_test.go pins the neutral capability model's arming behaviour
+// (E10-S04 / REQ-E10-S04-01/02): the enum is closed, `unknown` refuses arming
+// identically to `absent` but reads differently in prose, and the all-supported
+// report arms — the mandatory positive control that keeps every refusal test
+// from being vacuously satisfied by a consult function that never arms.
+
+func supportedReport() (CapabilityReport, error) {
+	return NewCapabilityReport(map[Capability]CapabilityEntry{
+		CapabilityResolvableThreads:           SupportedCapabilityEntry("licensed by p3e5-* cases"),
+		CapabilityThreadsBlockMerge:           SupportedCapabilityEntry("probe true"),
+		CapabilityBlockingReview:              SupportedCapabilityEntry("required reviews >= 1"),
+		CapabilityReviewDismissalRestrictions: SupportedCapabilityEntry("dismissal restricted"),
+		CapabilitySHAGuardedMerge:             SupportedCapabilityEntry("sha-guard-* cases"),
+		CapabilityDeferredMergeArming:         SupportedCapabilityEntry("auto-merge allowed"),
+		CapabilityArmingRevokedOnPush:         SupportedCapabilityEntry("stale dismissal + required check"),
+		CapabilityMergeResultPinning:          SupportedCapabilityEntry("merge ref readable"),
+		CapabilityEligibleApprovalEvidence:    SupportedCapabilityEntry("approval rules"),
+		CapabilityApprovalResetOnPush:         SupportedCapabilityEntry("stale dismissal on"),
+		CapabilityProtectedPipelineSource:     SupportedCapabilityEntry("workflows from target branch"),
+	})
+}
+
+func mustReport(t *testing.T, entries map[Capability]CapabilityEntry) CapabilityReport {
+	t.Helper()
+	report, err := NewCapabilityReport(entries)
+	if err != nil {
+		t.Fatalf("build report: %v", err)
 	}
+	return report
+}
+
+func entryMapOf(report CapabilityReport) map[Capability]CapabilityEntry {
+	entries := make(map[Capability]CapabilityEntry, len(AllCapabilities()))
+	for _, c := range AllCapabilities() {
+		entries[c] = CapabilityEntry{State: report.State(c), Reason: report.Reason(c)}
+	}
+	return entries
 }
 
 func hasRefusal(probe PreconditionProbe, code PreconditionRefusalCode) bool {
@@ -22,18 +53,32 @@ func hasRefusal(probe PreconditionProbe, code PreconditionRefusalCode) bool {
 	return false
 }
 
-// Eligible Premium fixture with C3/C6/C7/C17 satisfied → arms.
-func TestPreconditionFromCapabilitiesEligible(t *testing.T) {
-	probe := PreconditionFromCapabilities(premiumCaps())
+// The arming consultation set, stated explicitly (S00 Q2's scope rule): the
+// three gates precondition has always consulted, and nothing else.
+var armingSet = []Capability{
+	CapabilityProtectedPipelineSource,
+	CapabilityThreadsBlockMerge,
+	CapabilityEligibleApprovalEvidence,
+}
+
+// TestPreconditionFromReportAllSupportedArms is the mandatory POSITIVE CONTROL
+// (REQ-E10-S04-02): the all-capabilities-supported report arms. Without it, a
+// consult function that never arms would satisfy every refusal test vacuously.
+func TestPreconditionFromReportAllSupportedArms(t *testing.T) {
+	report, err := supportedReport()
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := PreconditionFromReport(report)
 
 	if !probe.ArmEligible {
-		t.Fatalf("eligible Premium caps must arm; refusals=%+v", probe.Refusals)
+		t.Fatalf("all-capabilities-supported must arm; refusals=%+v", probe.Refusals)
 	}
 	if !probe.AutoMergeEligible {
-		t.Error("AutoMergeEligible must be true when approval-rules API is present")
+		t.Error("AutoMergeEligible must be true when eligible approval evidence is supported")
 	}
 	if !probe.ProtectedConfigVerified {
-		t.Error("ProtectedConfigVerified must be true with external CI config (C17)")
+		t.Error("ProtectedConfigVerified must be true when protected-pipeline-source is supported")
 	}
 	if len(probe.Refusals) != 0 {
 		t.Errorf("eligible probe must carry no refusals; got %+v", probe.Refusals)
@@ -47,71 +92,127 @@ func TestPreconditionFromCapabilitiesEligible(t *testing.T) {
 	}
 }
 
-// C17: author-editable in-repo CI without external config → default-deny.
-func TestPreconditionFromCapabilitiesC17Insecure(t *testing.T) {
-	caps := premiumCaps()
-	caps.ProtectedPipelineExternal = false
+// TestUnknownDoesNotArm is REQ-E10-S04-02's table: for every consultation
+// point, `absent` and `unknown` produce the identical non-arming outcome, with
+// a DISTINGUISHABLE detail string for `unknown`.
+func TestUnknownDoesNotArm(t *testing.T) {
+	for _, state := range []CapabilityState{CapabilityAbsent, CapabilityUnknown} {
+		state := state
+		for _, consulted := range armingSet {
+			t.Run(string(consulted)+"/"+string(state), func(t *testing.T) {
+				report, err := supportedReport()
+				if err != nil {
+					t.Fatal(err)
+				}
+				entries := entryMapOf(report)
+				entries[consulted] = CapabilityEntry{State: state, Reason: "why it is " + string(state)}
+				report = mustReport(t, entries)
 
-	probe := PreconditionFromCapabilities(caps)
-
-	if probe.ArmEligible {
-		t.Fatal("author-editable-only CI must not arm (C17)")
+				probe := PreconditionFromReport(report)
+				if probe.ArmEligible {
+					t.Fatalf("capability %q state %q must refuse arming; refusals=%+v", consulted, state, probe.Refusals)
+				}
+				if state == CapabilityUnknown {
+					if !strings.Contains(anyRefusalDetail(probe), "UNPROBED/UNKNOWN") {
+						t.Errorf("an unknown capability must be distinguishable in prose, refusals=%+v", probe.Refusals)
+					}
+				}
+			})
+		}
 	}
-	if !hasRefusal(probe, RefusalInsecureTopology) {
-		t.Errorf("must refuse with %q; got %+v", RefusalInsecureTopology, probe.Refusals)
+}
+
+func anyRefusalDetail(probe PreconditionProbe) string {
+	joined := ""
+	for _, r := range probe.Refusals {
+		joined += r.Detail + "\n"
+	}
+	return joined
+}
+
+// The consultation-point negative controls: each consulted capability at
+// `absent` refuses with its OWN typed code (the C17/C3/C6-C7 precedent).
+func TestPreconditionFromReportRefusalCodes(t *testing.T) {
+	base, err := supportedReport()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entries := entryMapOf(base)
+	entries[CapabilityProtectedPipelineSource] = AbsentCapabilityEntry("probe false")
+	probe := PreconditionFromReport(mustReport(t, entries))
+	if probe.ArmEligible || !hasRefusal(probe, RefusalInsecureTopology) {
+		t.Errorf("protected-pipeline-source not proven must refuse with %q; got %+v",
+			RefusalInsecureTopology, probe.Refusals)
 	}
 	if probe.ProtectedConfigVerified {
-		t.Error("ProtectedConfigVerified must be false without external CI config")
+		t.Error("ProtectedConfigVerified must be false when the capability is not proven")
 	}
-}
 
-// C3: missing discussions-resolved merge gate → default-deny.
-func TestPreconditionFromCapabilitiesC3Missing(t *testing.T) {
-	caps := premiumCaps()
-	caps.DiscussionsResolvedGate = false
-
-	probe := PreconditionFromCapabilities(caps)
-
-	if probe.ArmEligible {
-		t.Fatal("missing C3 gate must not arm")
+	entries = entryMapOf(base)
+	entries[CapabilityThreadsBlockMerge] = AbsentCapabilityEntry("probe false")
+	probe = PreconditionFromReport(mustReport(t, entries))
+	if probe.ArmEligible || !hasRefusal(probe, RefusalDiscussionsGateMissing) {
+		t.Errorf("threads not blocking merge must refuse with %q; got %+v",
+			RefusalDiscussionsGateMissing, probe.Refusals)
 	}
-	if !hasRefusal(probe, RefusalDiscussionsGateMissing) {
-		t.Errorf("must refuse with %q; got %+v", RefusalDiscussionsGateMissing, probe.Refusals)
-	}
-}
 
-// C6/C7: Free tier / absent approval-rules API → typed tier gap, never arms.
-func TestPreconditionFromCapabilitiesC6C7TierGap(t *testing.T) {
-	t.Run("free tier", func(t *testing.T) {
-		caps := premiumCaps()
-		caps.Tier = TierFree
-		caps.HasApprovalRulesAPI = false
-
-		probe := PreconditionFromCapabilities(caps)
-		assertTierGap(t, probe)
-	})
-
-	t.Run("approval rules API absent on premium-shaped caps", func(t *testing.T) {
-		caps := premiumCaps()
-		caps.HasApprovalRulesAPI = false
-
-		probe := PreconditionFromCapabilities(caps)
-		assertTierGap(t, probe)
-	})
-}
-
-func assertTierGap(t *testing.T, probe PreconditionProbe) {
-	t.Helper()
-	if probe.ArmEligible {
-		t.Fatal("tier gap must refuse arming")
-	}
-	if probe.AutoMergeEligible {
-		t.Error("AutoMergeEligible must be false on tier gap")
+	entries = entryMapOf(base)
+	entries[CapabilityEligibleApprovalEvidence] = CapabilityEntry{State: CapabilityUnknown, Reason: "unprobed eligibility"}
+	probe = PreconditionFromReport(mustReport(t, entries))
+	if probe.ArmEligible || probe.AutoMergeEligible {
+		t.Fatal("unprovable eligibility must refuse arming (require-review unsatisfiable)")
 	}
 	if !hasRefusal(probe, RefusalTierCapabilityGap) {
 		t.Errorf("must refuse with %q; got %+v", RefusalTierCapabilityGap, probe.Refusals)
 	}
 	if len(probe.CapabilityGaps) != 1 || probe.CapabilityGaps[0] != GapFreeTierRequireReview {
 		t.Errorf("CapabilityGaps = %v, want [%q]", probe.CapabilityGaps, GapFreeTierRequireReview)
+	}
+}
+
+// TestCapabilityEnumClosed is REQ-E10-S04-01: exactly eleven named flags, and
+// decoding an unknown capability name is an error, not a skip.
+func TestCapabilityEnumClosed(t *testing.T) {
+	if got := len(AllCapabilities()); got != 11 {
+		t.Fatalf("the capability enum carries %d flags, want the dossier §4 eleven", got)
+	}
+	if _, err := ParseCapability("resolvable-threads"); err != nil {
+		t.Fatalf("a known capability must decode: %v", err)
+	}
+	if _, err := ParseCapability("merge-trains"); err == nil {
+		t.Fatal("an unknown capability name must be an error, not a skip")
+	}
+	if _, err := NewCapabilityReport(map[Capability]CapabilityEntry{
+		"made-up-capability": SupportedCapabilityEntry("x"),
+	}); err == nil {
+		t.Fatal("a report naming an unknown capability must fail to build")
+	}
+}
+
+// TestCapabilityReportStrictDecode: a report missing an entry is rejected — an
+// adapter cannot dodge an answer by omission — and a zero-value entry
+// normalizes to unknown, never to a silent supported.
+func TestCapabilityReportStrictDecode(t *testing.T) {
+	if _, err := NewCapabilityReport(map[Capability]CapabilityEntry{}); err == nil {
+		t.Fatal("an empty report must be rejected — every enum member needs an answer")
+	}
+	partial := map[Capability]CapabilityEntry{CapabilityResolvableThreads: SupportedCapabilityEntry("x")}
+	if _, err := NewCapabilityReport(partial); err == nil {
+		t.Fatal("a partial report must be rejected — ten missing entries are ten unanswered questions")
+	}
+	// A zero-value entry (no state) inside a COMPLETE report normalizes to
+	// unknown, never to a silent supported.
+	entries := map[Capability]CapabilityEntry{}
+	for _, c := range AllCapabilities() {
+		entries[c] = SupportedCapabilityEntry("fixture probe")
+	}
+	entries[CapabilityProtectedPipelineSource] = CapabilityEntry{}
+	report, err := NewCapabilityReport(entries)
+	if err != nil {
+		t.Fatalf("capability report: %v", err)
+	}
+	if report.State(CapabilityProtectedPipelineSource) != CapabilityUnknown {
+		t.Fatal("an entry with no state must normalize to unknown — never silently supported")
 	}
 }

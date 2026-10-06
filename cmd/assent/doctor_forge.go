@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/PlatformRelay/assent/internal/forge/factory"
 	"io"
 	"strings"
 
@@ -11,14 +12,17 @@ import (
 const doctorEnvInsecureBanner = "INSECURE: env self-assertion — protected-source signals are spoofable by an author-editable CI job; forge probe unavailable (no GITLAB_TOKEN)"
 
 // DoctorFromForgeProbe maps a forge PreconditionProbe into cmd/assent's
-// PreconditionReport (ADR-0017 §9 additive fields).
-func DoctorFromForgeProbe(probe forge.PreconditionProbe) PreconditionReport {
+// PreconditionReport (ADR-0017 §9 additive fields), carrying the adapter's
+// typed capability report on the doctor surface (E10-S04): supported | absent
+// | unknown + reason per capability of the closed enum.
+func DoctorFromForgeProbe(probe forge.PreconditionProbe, capabilities forge.CapabilityReport) PreconditionReport {
 	report := PreconditionReport{
 		ArmEligible:         probe.ArmEligible,
 		AutoMergeEligible:   probe.AutoMergeEligible,
 		DuplicatePrevention: string(probe.DuplicatePrevention),
 		Capabilities: Capabilities{
 			ProtectedConfigVerified: probe.ProtectedConfigVerified,
+			Forge:                   capabilities.Sorted(),
 		},
 		CapabilityGaps: probe.CapabilityGaps,
 	}
@@ -43,27 +47,40 @@ func DoctorEnvOnly(desc PipelineDescription) PreconditionReport {
 // present it forge-probes via Snapshot; otherwise it runs the env-only diagnostic
 // path with an explicit INSECURE banner.
 func runDoctor(getenv func(string) string, stdout, stderr io.Writer,
-	snapshotFactory func(endpoint, token, botAuthor string) forge.Snapshotter) int {
-	token := getenv("GITLAB_TOKEN")
+	snapshotFactory func(kind, endpoint, token, botAuthor string) forge.RunPort) int {
+	// E10-S13: forge selection with autodetect from the CI endpoint; ambiguity
+	// or an unrecognised host fails closed (never a default-to-GitLab).
+	tokenEnv := "GITLAB_TOKEN" // #nosec G101 -- the env var NAME, never a credential.
+	if getenv("ASSENT_FORGE") == string(factory.KindGitHub) {
+		tokenEnv = "GITHUB_TOKEN" // #nosec G101 -- the env var NAME, never a credential.
+	}
+	token := getenv(tokenEnv)
 	if token != "" {
+		// E10-S13: forge selection with autodetect from the CI endpoint;
+		// ambiguity or an unrecognised host fails closed (never a
+		// default-to-GitLab). Only the forge-probe path needs it.
+		kind, endpoint, err := selectForge(getenv("ASSENT_FORGE"), normalizeGitLabEndpoint(getenv("CI_API_V4_URL")))
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "assent doctor:", err)
+			return 2
+		}
 		project := getenv("CI_PROJECT_ID")
 		mr := getenv("CI_MERGE_REQUEST_IID")
 		if project == "" || mr == "" {
-			_, _ = fmt.Fprintln(stderr, "assent doctor: GITLAB_TOKEN set but CI_PROJECT_ID and CI_MERGE_REQUEST_IID are required for forge probe")
+			_, _ = fmt.Fprintf(stderr, "assent doctor: %s set but CI_PROJECT_ID and CI_MERGE_REQUEST_IID are required for forge probe\n", tokenEnv)
 			return 2
 		}
-		endpoint := normalizeGitLabEndpoint(getenv("CI_API_V4_URL"))
 		bot := getenv("ASSENT_BOT_AUTHOR")
 		if bot == "" {
 			bot = "assent-bot"
 		}
-		snap := snapshotFactory(endpoint, token, bot)
+		snap := snapshotFactory(string(kind), endpoint, token, bot)
 		snapshot, err := snap.Snapshot(project, mr)
 		if err != nil {
 			_, _ = fmt.Fprintln(stderr, "assent doctor:", err)
 			return 2
 		}
-		report := DoctorFromForgeProbe(forge.PreconditionFromCapabilities(snapshot.Capabilities))
+		report := DoctorFromForgeProbe(forge.PreconditionFromReport(snapshot.Capabilities), snapshot.Capabilities)
 		return emitDoctorReport(report, stdout, stderr, false)
 	}
 

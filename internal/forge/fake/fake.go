@@ -57,8 +57,19 @@ type Forge struct {
 	TargetBranch string
 	Labels       []string
 	ChangedFiles []string
-	Capabilities forge.CapabilityFlags
+	// Capabilities is the fake's neutral capability report (E10-S04). Nil means
+	// "the all-unknown report" — which by ADR-0021 §3 refuses to arm, the
+	// fail-safe default. snapshot_resolve.go builds the explicit report from it.
+	Capabilities forge.CapabilityReport
 	ResolveMode  ResolveMode
+
+	// MR fixture knobs for GetMR (E10-S02): the identity the MR-relative
+	// accessors address. MRFork=true with a zero/empty MRSourceProjectID is the
+	// absent-means-trusted trap — GetMR errors instead of degrading to non-fork.
+	MRIID             string
+	MRProjectID       string
+	MRSourceProjectID string
+	MRFork            bool
 
 	// ChangedFilesGap, when non-empty, models a TRUNCATED / unprovable
 	// changed-file enumeration (ADR-0020 §6): Snapshot then reports
@@ -86,6 +97,18 @@ type Forge struct {
 	// first ListBotThreads call after a forge mutation within the same Reconcile
 	// (the post-write rescan — P3-E5 step 9). Used to simulate rescan mismatch.
 	RescanListBotThreads func(listed []forge.Thread) ([]forge.Thread, error)
+
+	// Files models governed-subject content (E10-S02 runport.go): path → side
+	// ("base"/"head") or explicit ref → bytes. FileAtRef keys by ref,
+	// FileAtBase/FileAtHead by side. Side-keyed storage models the MR-relative
+	// accessor contract; SeedFileAtRef is the test hook for ref-addressed reads.
+	Files map[string]map[string][]byte
+
+	// RefusedReads maps a path to the error its reads must fail with
+	// (E10-S02 forbidden≠absent seam): a refused read NEVER renders as absence,
+	// so the conformance forbidden case can prove the sentinel discrimination on
+	// the fake exactly as the real adapters map it.
+	RefusedReads map[string]error
 
 	mutationsSinceList int
 }
