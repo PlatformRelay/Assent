@@ -42,24 +42,29 @@ Requirements:
   the go-install caveat paragraph, the lint/test block, the sample-repo paragraph, the
   forge-selection block, the GitHub comment-only note and the task-check block each appear
   exactly once, in that order.
-  - Test: `hack/docs/readme_smoke_test.sh` (executes the section) + the story's diff review
-  - Verify: `bash hack/docs/readme_smoke_test.sh` and `task docs-gates`
+  - Test: the story's diff review + `hack/docs/readme_smoke_test.sh` as a regression
+    check only — the smoke gate executes the section's bash blocks and cannot itself
+    redden a prose duplication, which is why this REQ is L0 and closes on the diff review
+  - Verify: `task docs-gates`
   - Level: L0
 
 ---
 
 ## DOC2-S01 — the site home carries the README's story (audit item 9) [autonomous]
 
-**As a** newcomer landing on `platformrelay.github.io/Assent` **I want** the front door to
-answer why, how and how-fast **so that** the site home is not 18 lines of bare links while
+**As a** newcomer landing on the published site home **I want** it to answer why, how and
+how-fast **so that** the site home is not 18 lines of bare links while
 the README carries the whole narrative (GAP-2).
 
 **Goal:** rebuild `docs/index.md` around the README's Why + How-it-works + Quick start +
 status banner, links adjusted to docs-relative form, keeping the existing hero block and
-H1. The banner and quick-start wording are sourced from PR 190's corrected README (E1–E9;
-the `.tf` opaque clause; `@v0.4.0`) so the two surfaces agree once both PRs land. "Start
-here" keeps Vision, walkthrough, ADRs, architecture and the decision log; the planning
-links (meta-plan, open questions) move into a "Contributing" tail.
+H1. **The copy source is PR 190's README**, not this branch's: the branch's README still
+says `E2–E8` and `@v0.1.0` (PR 190 corrects both), so a verbatim copy from the branch would
+import the stale facts the P0 corrections exist to remove. Where the branch's README and
+PR 190's differ, PR 190's wording wins. "Start here" keeps Vision, walkthrough, ADRs,
+architecture and the decision log; the planning links (meta-plan, open questions) move
+into a "Contributing" tail; index.md's existing two-sentence intro is replaced by the
+README's intro paragraph.
 
 **Operator input:** none (audit-recommended structure).
 
@@ -76,14 +81,15 @@ Requirements:
   bottom): the status banner (alpha; the GitLab CI path is Core with the E1–E9 range;
   pre-1.0 schema/CLI warning; an API-stability link), the Why section with its three
   bullets, the How-it-works section with the mermaid flowchart and the stateless-per-
-  invocation paragraph, and the Quick start with install, caveat, lint/test, sample-repo
-  and forge-selection content.
+  invocation paragraph, and the Quick start with install, caveat, lint/test, sample-repo,
+  forge-selection and GitHub comment-only-note content.
   - Test: `mkdocs.yml` build + the story's diff review
   - Verify: `task docs-build`
   - Level: L1
 - **REQ-DOC2-S01-02** — Given every link in the new `docs/index.md`, when
   `mkdocs build --strict` runs, then no unrecognized-link or omitted-file warning fires;
-  links into `planning/**` and `adr/**` resolve (those pages build via `not_in_nav`).
+  links into `planning/**` resolve (those pages build via `not_in_nav`) and links into
+  `adr/**` and `architecture/**` resolve (those pages are navigated).
   - Test: `docs/index.md`
   - Verify: `task docs-build`
   - Level: L1
@@ -95,9 +101,12 @@ Requirements:
   - Verify: the story's diff review
   - Level: L0
 - **REQ-DOC2-S01-04** — Given the copied banner/quick-start wording, when it is read, then
-  it carries PR 190's corrected facts (E1–E9, not E2–E8; the `.tf` opaque clause;
-  `@v0.4.0`) — the P0 corrections are settled text even though PR 190 is still open.
-  - Test: `docs/index.md` vs PR 190's `README.md` hunks
+  it carries PR 190's corrected facts — E1–E9 (not E2–E8), the `.tf` opaque clause, and
+  `@v0.4.0` in the go-install caveat — exactly as PR 190's three README hunks word them;
+  the P0 corrections are settled text even though PR 190 is still open.
+  - Test: `docs/index.md` diffed against `git show pr-190:README.md`'s corresponding text
+    (the ref is fetched locally; the three hunks are the only differences from the
+    branch's README)
   - Verify: the story's diff review; after both PRs land, DOC-13's scan of
     `docs/index.md` must be green
   - Level: L1
@@ -141,51 +150,75 @@ assent advisory*, *Symlinks in the checkout tree*, *Known limitation: the checko
 bound to the evaluated commit*, *Checkout-less runs and enumeration completeness*
 (`:98–251`) — verbatim into a new `docs/usage/operating-safely.md` (as `##` sections under
 a short intro linking back to the CLI reference), add the page to the Usage nav
-(REQ-DOCSNAV-S01-01), and in `cli.md` leave one-line caveats + links per safety-relevant
-flag plus a pointer paragraph where the essays were. Retarget the two references that
-pointed into the essays: `cli.md`'s doctor section ("See *What gates approve and merge*
-above") and `walkthrough.md:212`'s `[How to keep assent advisory](cli.md#...)` link.
+(REQ-DOCSNAV-S01-01) and to the exitgate retired-phrase corpus (see REQ-DOC2-S03-04), and
+in `cli.md` leave one-line caveats + links per safety-relevant flag plus a pointer
+paragraph where the essays were. Retarget the references that pointed into the essays.
+The inventory at `3503cc0` is **three**, not two: (a) `cli.md`'s doctor section ("See
+*What gates approve and merge* above"), (b) `walkthrough.md:212`'s
+`[How to keep assent advisory](cli.md#how-to-keep-assent-advisory)`, and (c) a prose
+pointer inside accepted ADR-0009 (`docs/adr/0009-execution-modes.md:55`: "`docs/usage/cli.md`
+§*How to keep assent advisory* states this"). (c) is dispositioned, not edited: ADRs are
+immutable once accepted, the pointer names a section that still exists — on the new page —
+and it is recorded as a known limitation in this change's hand-off.
+
+Two navigation-only transformations are allowed inside the moved text (listed here so the
+verbatim fence stays honest): the advisory essay's deixis "reruns **the CI snippet above**
+— which passes no `--pack`" loses its antecedent when the essay leaves `cli.md`, so it is
+retargeted to name and link the `assent run` invocation in the CLI reference; and the
+doctor section's "above" (whose target moved to another page) is dropped when the link is
+retargeted. No other word of the moved sentences changes.
 
 **Operator input:** none.
 
 **Dependencies:** none hard, but lands after S02 so the nav row slots into the final order.
 
-**Definition of done:** the five essays read byte-identical in their new home modulo
-heading level and retargeted in-page anchors; `cli.md` keeps every flag row with the
+**Definition of done:** the five essays read unchanged in their new home modulo the
+navigation-only transformations the Goal names; `cli.md` keeps every flag row with the
 XREV-S03-06-pinned `--config` wording intact; every link into the moved sections resolves;
-all gates below green.
+the new page is in the nav and in the retired-phrase corpus; all gates below green.
 
 Requirements:
 
 - **REQ-DOC2-S03-01** — Given `docs/usage/operating-safely.md`, when its five trust/safety
   sections are diffed against their pre-move `cli.md` text, then each sentence, table and
-  code block is unchanged (heading level `###`→`##`, internal links to `#assent-doctor`
-  retargeted to `cli.md#assent-doctor`, italics "see *X* below" cross-references kept
-  verbatim — same page, same order).
+  code block is unchanged, except for the two navigation-only transformations the Goal
+  names (heading level `###`→`##`, `#assent-doctor` anchors retargeted to
+  `cli.md#assent-doctor`, the advisory essay's "the CI snippet above" deixis, italics
+  "see *X* below" cross-references kept verbatim — same page, same order).
   - Test: the story's diff review + `hack/check-sanitization.sh`
   - Verify: `bash hack/check-sanitization.sh && task docs-build`
   - Level: L1
 - **REQ-DOC2-S03-02** — Given `cli.md`'s run flag table, when it is read, then the `-arm`,
   `-checkout` and `-pack` rows each carry their one-line safety caveat with a link to the
-  moved section in `operating-safely.md`; the `--config` row's pinned wording
-  (XREV-S03-06) is untouched; a pointer paragraph where the essays were links to the new
-  page.
+  moved section in `operating-safely.md` — the rows' existing italic "see *X* below"
+  tails are replaced by those links, not left behind — with the `-pack` link targeting
+  `operating-safely.md#how-to-keep-assent-advisory` (the anchor leaves `cli.md` in this
+  same change); the `--config` row's pinned wording (XREV-S03-06) is untouched; a pointer
+  paragraph where the essays were links to the new page.
   - Test: `hack/docs/truthlag_pins_test.sh` (XREV-S03-06) + the story's diff review
   - Verify: `bash hack/docs/truthlag_pins_test.sh && task docs-build`
   - Level: L1
-- **REQ-DOC2-S03-03** — Given the two references that pointed into the essays —
-  `cli.md`'s `assent doctor` section and `walkthrough.md:212` — when they are read, then
-  they target `operating-safely.md`'s anchors, which exist in the built site.
+- **REQ-DOC2-S03-03** — Given the references that pointed into the essays, when they are
+  read after the change, then `cli.md`'s doctor section targets
+  `operating-safely.md#what-gates-approve-and-merge` without the now-false "above", and
+  `walkthrough.md:212` targets `operating-safely.md#how-to-keep-assent-advisory`; both
+  anchors exist in the built site. ADR-0009's prose pointer is left untouched (immutability)
+  and recorded in the hand-off.
   - Test: the built `site/usage/operating-safely/index.html` (anchor presence)
   - Verify: `task docs-build` + grep the built anchors
   - Level: L1
-- **REQ-DOC2-S03-04** — Given every existing gate that reads the moved or linked content
-  (`truthlag_pins_test.sh`, `readme_smoke_test.sh`, the exitgate phrase corpus over
-  `docs/usage/cli.md` and `docs/index.md`, `TestNoStaleProductClaims`, `check-sanitization.sh`,
-  `task docs-build`), when it runs after the extraction, then it is green — the pin
-  co-update duty the origin report attaches to item 11 reduces to keeping these green,
-  because no grep at `3503cc0` pins a sentence inside the five essays (measured: the only
-  `cli.md` pin is XREV-S03-06, which targets the flag-table row that stays).
+- **REQ-DOC2-S03-04** — Given every existing gate that reads the moved or linked content,
+  when it runs after the extraction, then it is green, and the new page does not leave the
+  front-of-house sensor set: `docs/usage/operating-safely.md` is added to
+  `hack/audit/exitgate_test.sh`'s PHRASE_CORPUS in the same commit as the page (the
+  shrunk-corpus mutant removes four corpus members and must still redden; 10−4 of 11 is
+  below the MIN of 8, so the mutant survives the addition). No grep at `3503cc0` pins a
+  sentence inside the five essays (measured: the only `cli.md` pin is XREV-S03-06, which
+  targets the flag-table row that stays); the pin co-update duty the origin report
+  attaches to item 11 therefore reduces to keeping these gates green. PR 190's DOC-13
+  initial-chapter list cannot be co-edited here (open PR, not in this base) — the new
+  page's absence from that list is a recorded residual, not a silent hole: the page
+  carries no `@vX.Y.Z`/`VERSION=` pin by construction.
   - Test: `task docs-gates`; `go test ./cmd/assent -run TestNoStaleProductClaims`;
     `bash hack/audit/exitgate_test.sh` (branch tip)
   - Verify: the three commands above, at branch tip

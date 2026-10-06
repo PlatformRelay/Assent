@@ -14,17 +14,19 @@ Per-task gate set (all must be green before each commit):
 
 ```
 task docs-build
-bash hack/docs/truthlag_pins_test.sh
-bash hack/docs/readme_smoke_test.sh
-bash hack/docs/example_format_inventory_test.sh
+task docs-gates
 go test ./cmd/assent -run TestNoStaleProductClaims
 ```
 
+(`task docs-gates` runs `readme_smoke_test.sh`, `truthlag_pins_test.sh`,
+`example_format_inventory_test.sh` and `check-migration-invariants.sh` — Taskfile.yml's
+`docs-gates` block.)
+
 ## T001 — S00: de-duplicate the README quick start
 
-1. Delete `README.md` lines 106–125 (the repeated go-install caveat, lint/test block,
-   "No repo of your own yet?" paragraph, second "Developers:" line), leaving the section
-   to read install → caveat → lint/test → sample-repo → forge selection → GitHub
+1. Delete `README.md` lines 106–125 (the repeated go-install caveat, lint/test prose and
+   block, "No repo of your own yet?" paragraph, second "Developers:" line), leaving the
+   section to read install → caveat → lint/test → sample-repo → forge selection → GitHub
    comment-only → "Developers: gates live in the Taskfile" → task-check block. Touch
    nothing else in the file.
 2. Verify: the per-task gate set; `git diff README.md` shows only deletions in that range.
@@ -32,18 +34,26 @@ go test ./cmd/assent -run TestNoStaleProductClaims
 
 ## T002 — S01: index.md front door
 
-1. Rewrite `docs/index.md`: keep the hero block and H1; add the README's status banner
-   (E1–E9, `.tf` opaque clause per PR 190), Why, How-it-works (mermaid + statelessness
-   paragraph), Quick start (install, caveat, lint/test, sample-repo, forge selection,
-   GitHub comment-only note) — every link docs-relative (`adr/0015-...`,
-   `architecture/c4-context.md`, `usage/install.md`, `planning/open-questions.md`,
-   `api-stability.md`); keep "Start here" (vision, walkthrough, ADR index, C4, decision
-   log) below the new content; move meta-plan + open-questions links into a
-   "Contributing" tail. Copy the README wording, do not reword it.
-2. Verify: the per-task gate set; every link resolves (mkdocs strict); REQ-DOC2-S01-04's
-   wording check against PR 190's README hunks.
-3. Record the REQ-DOCSNAV-S01-04 sanitization read in the story's evidence file.
-4. Commit: `:memo: docs(index): carry the README's story on the site home`
+1. Rewrite `docs/index.md`: keep the hero block and H1; replace the existing two-sentence
+   intro with the README's intro paragraph; add the status banner, Why, How-it-works
+   (mermaid + statelessness paragraph) and Quick start (install, caveat, lint/test,
+   sample-repo, forge selection, GitHub comment-only note). Keep "Start here" (vision,
+   walkthrough, ADR index, C4, decision log) below the new content; move meta-plan +
+   open-questions links into a "Contributing" tail.
+2. **Copy source is PR 190's README, not this branch's** (this branch's README still says
+   `E2–E8`/`@v0.1.0`): fetch it with `git fetch origin pull/190/head:pr-190` and source
+   the banner, Why bullets and quick-start wording from
+   `git show pr-190:README.md` — its three hunks against this branch's README are the
+   E1–E9 range at `:22`, the `.tf` opaque clause at `:45–46`, and `@v0.4.0` at `:76`.
+   Where the two READMEs differ, PR 190's wording wins. Links are adjusted to
+   docs-relative form (`adr/0015-...`, `architecture/c4-context.md`, `usage/install.md`,
+   `planning/open-questions.md`, `api-stability.md`); a docs-relative link wins over
+   PR 190's repo-root form wherever both express the same target.
+3. Verify: the per-task gate set; every link resolves (mkdocs strict); REQ-DOC2-S01-04's
+   wording check against `git show pr-190:README.md`.
+4. Run `bash hack/check-sanitization.sh` and record the result, with the REQ-DOCSNAV-S01-04
+   sanitization read, in the story's evidence file.
+5. Commit: `:memo: docs(index): carry the README's story on the site home`
 
 ## T003 — S02: Usage nav order
 
@@ -53,27 +63,36 @@ go test ./cmd/assent -run TestNoStaleProductClaims
 
 ## T004 — S03: operating-safely extraction
 
-1. Create `docs/usage/operating-safely.md`: one-line intro (what the page covers, links
+1. Create `docs/usage/operating-safely.md`: a short intro (what the page covers, links
    back to `cli.md` and `walkthrough.md`), then the five cli.md essays
-   (`cli.md:98–251`) moved verbatim as `##` sections; retarget `#assent-doctor`
-   in-text anchors to `cli.md#assent-doctor`; keep the `../adr/*` links (same-directory
-   relative, still valid); keep the italics "see *X* below" cross-references.
-2. In `cli.md`: delete the five sections; give the `-arm` row its caveat + link to
-   `operating-safely.md#what-gates-approve-and-merge`, the `-checkout` row links to the
-   symlink and checkout-less sections, the `-pack` row its rollout-control caveat + link
-   to `#how-to-keep-assent-advisory`; leave the `--config` row (XREV-S03-06) untouched;
-   add a pointer paragraph after the run exit codes linking to the new page; retarget the
-   doctor section's "What gates approve and merge" link.
+   (`cli.md:98–251`) moved verbatim as `##` sections, subject only to the navigation-only
+   transformations the spec's S03 Goal names: `#assent-doctor` anchors retargeted to
+   `cli.md#assent-doctor`; the advisory essay's "reruns the CI snippet above" deixis
+   retargeted to name and link the `assent run` invocation in the CLI reference; the
+   `../adr/*` links kept (same-directory relative, still valid); the italics "see *X*
+   below" cross-references kept.
+2. In `cli.md`: delete the five sections; replace the `-arm` row's trailing "see *What
+   gates approve and merge* below" and the `-checkout` row's two italic tails with links
+   to `operating-safely.md#…` (keeping each row's own caveat text); give the `-pack` row
+   a rollout-control caveat + link to `operating-safely.md#how-to-keep-assent-advisory`
+   (NOT a bare in-page anchor — that heading leaves `cli.md` in this same change); leave
+   the `--config` row (XREV-S03-06) untouched; add a pointer paragraph after the run exit
+   codes linking to the new page; retarget the doctor section's "What gates approve and
+   merge" link and drop its now-false "above".
 3. In `docs/usage/walkthrough.md:212`: retarget
    `[How to keep assent advisory](cli.md#how-to-keep-assent-advisory)` to
    `operating-safely.md#how-to-keep-assent-advisory`.
 4. In `mkdocs.yml`: add `Operating safely: usage/operating-safely.md` after CLI reference
    in Usage (REQ-DOCSNAV-S01-01 — same commit as the page, or `task docs-build` reddens).
-5. Verify: the per-task gate set; grep the built `site/usage/operating-safely/index.html`
-   for the five section anchors; confirm the two retargeted links hit existing anchors.
-6. Record the REQ-DOCSNAV-S01-04 sanitization read + `bash hack/check-sanitization.sh`
+5. In `hack/audit/exitgate_test.sh`: add `docs/usage/operating-safely.md` to
+   PHRASE_CORPUS (after `docs/usage/install.md`), in the same commit as the page
+   (REQ-DOC2-S03-04; the shrunk-corpus mutant stays red: 10−4 present of 11 < MIN 8).
+6. Verify: the per-task gate set; `bash hack/audit/exitgate_test.sh`; grep the built
+   `site/usage/operating-safely/index.html` for the five section anchors; confirm the two
+   retargeted links hit existing anchors.
+7. Record the REQ-DOCSNAV-S01-04 sanitization read + `bash hack/check-sanitization.sh`
    result in the story's evidence file.
-7. Commit: `:memo: docs(usage): extract the cli.md trust-model essays into operating-safely`
+8. Commit: `:memo: docs(usage): extract the cli.md trust-model essays into operating-safely`
 
 ## T005 — branch tip verification (no commit of its own unless a fix is needed)
 

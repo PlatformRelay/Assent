@@ -16,6 +16,10 @@ site/
 .venv*/
 .task/
 
+# Review-leg raw transcripts (ANSI, absolute paths, retries) — the register.md and
+# leg-*.md reports are the committed record; the .err streams are not (spec-loop rule).
+**/reviews/**/*.err
+
 # Editors / OS
 .DS_Store
 .idea/
