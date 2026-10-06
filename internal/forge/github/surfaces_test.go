@@ -83,11 +83,17 @@ func TestContentReadStatusMapping(t *testing.T) {
 	}
 }
 
+// dummyWriter is a minimal io.Writer for handlers that must write but whose
+// response is irrelevant to the assertion.
+type dummyWriter struct{}
+
+func (dummyWriter) Write(p []byte) (int, error) { return len(p), nil }
+
 func TestGqlDoErrorSurfaces(t *testing.T) {
 	// A GraphQL error envelope with no data errors hard; partial data passes
 	// through (the adapter's own callers grade the missing shape).
-	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"data":null,"errors":[{"message":"bad query"}]}`)
+	c, _ := newServer(t, func(_ http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(dummyWriter{}, `{"data":null,"errors":[{"message":"bad query"}]}`)
 	})
 	if _, err := c.gqlDo(context.Background(), "query {}", nil); err == nil {
 		t.Fatal("a graphql error envelope must error")
