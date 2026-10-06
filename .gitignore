@@ -19,6 +19,14 @@ site/
 # Review-leg raw transcripts (ANSI, absolute paths, retries) — the register.md and
 # leg-*.md reports are the committed record; the .err streams are not (spec-loop rule).
 **/reviews/**/*.err
+# Spec-loop task-process run logs and filled task prompts: same content class as the
+# .err streams above (tool transcripts, absolute home paths, internal tool ids) — the
+# task's evidence file and the review register are the committed record.
+openspec/changes/*/logs/
+openspec/changes/*/task-prompt-*.md
+# Gate transcripts copied into evidence dirs are replaced by named matrix rows in the
+# evidence file; raw tool output carries local paths and stays out of the tree.
+openspec/changes/*/evidence/*.log
 
 # Editors / OS
 .DS_Store
