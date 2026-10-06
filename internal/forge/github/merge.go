@@ -41,8 +41,12 @@ import (
 type MergeMethod string
 
 const (
-	MergeMethodMerge  MergeMethod = "MERGE"
+	// MergeMethodMerge is the default merge method (the composite action's
+	// and the deferred-arming mutation's value).
+	MergeMethodMerge MergeMethod = "MERGE"
+	// MergeMethodSquash arms a squash merge.
 	MergeMethodSquash MergeMethod = "SQUASH"
+	// MergeMethodRebase arms a rebase merge.
 	MergeMethodRebase MergeMethod = "REBASE"
 )
 

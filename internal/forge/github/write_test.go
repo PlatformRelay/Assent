@@ -90,21 +90,6 @@ func serveThreadsQueryOpen(w http.ResponseWriter, query string, ids ...int) {
 	_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"nodes":[`+strings.Join(nodes, ",")+`]}}}}}`)
 }
 
-// serveThreadsQueryWithStates answers the reviewThreads listing query with
-// EXPLICIT per-comment resolution states — the handlers that assert the
-// preserve-resolution reading itself.
-func serveThreadsQueryWithStates(w http.ResponseWriter, query string, states map[int64]bool) {
-	if !strings.Contains(query, "reviewThreads") {
-		http.Error(w, "unexpected graphql operation", http.StatusInternalServerError)
-		return
-	}
-	nodes := make([]string, 0, len(states))
-	for id, resolved := range states {
-		nodes = append(nodes, fmt.Sprintf(`{"id":"PRRC_node%d","isResolved":%t,"comments":{"nodes":[{"databaseId":%d}]}}`, id, resolved, id))
-	}
-	_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"nodes":[`+strings.Join(nodes, ",")+`]}}}}}`)
-}
-
 // TestMarkerOfParsesEnvelope proves the marker round-trip: the
 // render.MarkerSentinel JSON payload decodes back to the four frozen concepts,
 // a markerless body is (false, nil), and a malformed payload is an error.

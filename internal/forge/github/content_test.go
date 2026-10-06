@@ -94,11 +94,11 @@ func TestMetadataOnlyTokenNeverRendersAsAbsent(t *testing.T) {
 // budget), never a sentinel and never absence.
 func TestRateLimit403IsTransportError(t *testing.T) {
 	attempts := 0
-	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+	c, _ := newServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
 		w.Header().Set("Retry-After", "1")
 		w.Header().Set("X-RateLimit-Remaining", "0")
 		w.WriteHeader(http.StatusForbidden)
-		attempts++
 		_, _ = io.WriteString(w, `{"message":"rate limit exceeded"}`)
 	})
 

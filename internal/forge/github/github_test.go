@@ -277,7 +277,7 @@ func TestAppCredentialFailureNamesNoSecret(t *testing.T) {
 	keyPEM := testAppKeyPEM(t)
 
 	t.Run("missing PAT", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 			t.Errorf("no request must be issued without a credential, got %s %s", r.Method, r.URL.Path)
 		}))
 		t.Cleanup(srv.Close)
