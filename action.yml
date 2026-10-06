@@ -79,8 +79,8 @@ runs:
         ver="${ASSENT_VERSION#v}"
         asset="assent_${ver}_${os}_${arch}.tar.gz"
         work="$(mktemp -d)"
-        curl -fsSL --retry 3 -o "$work/$asset" "$asset_base/$asset"
-        curl -fsSL --retry 3 -o "$work/checksums.txt" "$asset_base/checksums.txt"
+        curl -fSL --retry 3 --proto "=https" -o "$work/$asset" "$asset_base/$asset"
+        curl -fSL --retry 3 --proto "=https" -o "$work/checksums.txt" "$asset_base/checksums.txt"
         (cd "$work" && grep -F "$asset" checksums.txt | sha256sum --check --status -)
         tar -xzf "$work/$asset" -C "$work" assent
         echo "$work" >> "$GITHUB_PATH"
