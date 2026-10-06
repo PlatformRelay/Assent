@@ -8,12 +8,12 @@ Hexagonal: a pure decision core, ports for everything with a side effect.
     has **no code**: it is designed, not shipped, and unlocks only when a named consumer
     commits ([D-012](../decisions/decisions.md)). Arrows follow the decision path, and
     every solid pair drawn is backed by a real import between those two packages. This is
-    not the complete edge set: `cmd/assent` is the composition root and **directly imports
-    15 of the 22 internal packages** plus the root `schemas` package; those edges are
-    omitted for legibility. It reaches two more — `internal/glob` and
-    `internal/render/locale` — only transitively. The remaining five are not linked into
-    the binary at all (see *Packages with no production importer*). Derive both sets with
-    `go list -f '{{.Imports}}' ./cmd/assent` and `go list -deps ./cmd/assent`.
+not the complete edge set: `cmd/assent` is the composition root and **directly imports
+15 of the 22 internal packages** plus the root `schemas` package; those edges are
+omitted for legibility. It reaches three more — `internal/core/hash`, `internal/glob`
+and `internal/render/locale` — only transitively. The remaining four are not linked into
+the binary at all (see *Packages with no production importer*). Derive both sets with
+`go list -f '{{.Imports}}' ./cmd/assent` and `go list -deps ./cmd/assent`.
 
 ```mermaid
 flowchart LR
@@ -119,7 +119,6 @@ they carry no solid arrow above. This section dates faster than the diagram; re-
 | Package | Reality |
 | --- | --- |
 | `internal/core` | Test-only guard package (`purity_test.go`); asserts the core does not import I/O |
-| `internal/core/hash` | Canonical JSON digests (ADR-0017). Imported by `internal/compare` (AUD-S16, landed) and `internal/change` tests |
 | `internal/schemadrift` | Drift gate; imported only by the tests of `cmd/assent`, `internal/render` and `internal/forge/conformance` |
 | `internal/forge/fake` | In-memory forge fake; test support only |
 | `internal/forge/conformance` | Port conformance suite; runs as tests, imported by none |

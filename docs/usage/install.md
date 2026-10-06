@@ -10,7 +10,7 @@ before you rely on `assent version` for provenance.
 
 ## go install
 
-Requires Go 1.25+ (see `go.mod`).
+Requires Go 1.26+ (see `go.mod`).
 
 ```bash
 go install github.com/PlatformRelay/assent/cmd/assent@latest
@@ -19,7 +19,7 @@ go install github.com/PlatformRelay/assent/cmd/assent@latest
 Pin a tag when you need a reproducible toolchain:
 
 ```bash
-go install github.com/PlatformRelay/assent/cmd/assent@v0.1.0
+go install github.com/PlatformRelay/assent/cmd/assent@v0.4.0
 ```
 
 Confirm:
@@ -34,7 +34,7 @@ assent version
     compile-time default whatever ref you build:
 
     ```console
-    $ go install github.com/PlatformRelay/assent/cmd/assent@v0.1.0
+    $ go install github.com/PlatformRelay/assent/cmd/assent@v0.4.0
     $ assent version
     assent 0.0.0-dev
     ```
@@ -72,7 +72,7 @@ Pick the archive that matches your OS/arch if the glob expands to more than one 
 Tagged releases publish under this pattern (`v0.1.0` onwards):
 
 ```bash
-VERSION=0.1.0
+VERSION=0.4.0
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 BASE="https://github.com/PlatformRelay/assent/releases/download/v${VERSION}"

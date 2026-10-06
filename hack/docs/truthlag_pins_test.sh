@@ -15,6 +15,14 @@
 #   DOC-10  the meta-plan Phase-5 epic table covers E1..E9 and does not bind a
 #           deferred-tier concept (Rego, GitHub adapter) to one of those numbers.
 #   DOC-11  the `go install` caveat names the version it actually prints.
+#   DOC-12  the docs' numeric Go floor (install.md, walkthrough CI image) equals
+#           go.mod's `go` directive.
+#   DOC-13  every copy-pasteable version pin (`@vX.Y.Z` / `VERSION=X.Y.Z`) in the
+#           initial chapters equals the latest tag.
+#   DOC-14  c4-container's package counts are derived from `go list`, not asserted,
+#           and the no-production-importer table holds exactly the derived unlinked set.
+#   DOC-15  the walkthrough's summary-comment quote matches the format pinned in a
+#           committed render fixture (examples/render/*/expect.summary.md).
 #   DOC-02  every docs-site URL in the tree — INCLUDING .go files, since the released
 #           binary prints one — carries mkdocs.yml's `site_url` prefix. The Pages path
 #           is case-sensitive (the repo is `Assent`), so a lowercase spelling 404s.
@@ -174,6 +182,141 @@ for f in README.md docs/usage/install.md; do
     fail "DOC-11: $f mentions \`go install\` without the 0.0.0-dev caveat"
   fi
 done
+
+# --- DOC-12: the docs' Go floor equals go.mod's `go` directive ---------------------
+# INACC-1 (assent-docs-audit 2026-10-06): install.md cites `go.mod` and then stated a
+# floor one minor lower than the directive it cites, and the walkthrough's CI image
+# drifted with it; the DOC-11 pin above never compares the NUMERIC floor. Derive it.
+GO_DIRECTIVE="$(awk '$1 == "go" && $2 ~ /^[0-9]+\.[0-9]+/ {print $2; exit}' go.mod)"
+if [[ -z "$GO_DIRECTIVE" ]]; then
+  fail "DOC-12: cannot read the 'go' directive from go.mod — the Go-floor pin has no authority"
+else
+  GO_FLOOR="$(printf '%s' "$GO_DIRECTIVE" | awk -F. '{print $1"."$2}')"
+  floors="$(grep -oE 'Requires Go [0-9]+\.[0-9]+' docs/usage/install.md | LC_ALL=C sort -u)"
+  if [[ "$floors" == "Requires Go ${GO_FLOOR}" ]]; then
+    pass "DOC-12: install.md's Go floor equals go.mod's go directive (${GO_FLOOR})"
+  else
+    fail "DOC-12: install.md says '${floors:-<no Go floor>}' but go.mod's go directive is ${GO_DIRECTIVE} (floor ${GO_FLOOR})"
+  fi
+  wt_images="$(grep -oE 'golang:1\.[0-9]+' "$WT" | LC_ALL=C sort -u)"
+  if [[ "$wt_images" == "golang:${GO_FLOOR}" ]]; then
+    pass "DOC-12: walkthrough CI image ${wt_images} matches go.mod's toolchain floor"
+  else
+    fail "DOC-12: walkthrough CI image '${wt_images:-<none>}' does not equal go.mod's toolchain floor ${GO_FLOOR}"
+  fi
+fi
+
+# --- DOC-13: copy-pasteable version pins equal the latest tag ----------------------
+# INACC-3: the initial chapters pinned the FIRST release (v0.1.0) as the current one
+# three releases late. Pin is derived, not asserted: read the tag set.
+LATEST_TAG="$(git for-each-ref --sort=-v:refname --format='%(refname:short)' -- 'refs/tags/v*' | head -1)"
+if [[ -z "$LATEST_TAG" ]]; then
+  fail "DOC-13: no v* tags in this checkout — the version-pin pin cannot derive the latest tag (shallow clone?)"
+else
+  LATEST_VER="${LATEST_TAG#v}"
+  pin_bad=0
+  pin_checked=0
+  for f in README.md docs/index.md docs/vision.md docs/usage/install.md docs/usage/walkthrough.md docs/usage/cli.md; do
+    if [[ ! -f "$f" ]]; then
+      fail "DOC-13: initial chapter $f missing — pin scope is wrong"
+      continue
+    fi
+    while IFS= read -r hit; do
+      [[ -z "$hit" ]] && continue
+      pin_checked=$((pin_checked + 1))
+      if [[ "$hit" != "@${LATEST_TAG}" && "$hit" != "VERSION=${LATEST_VER}" ]]; then
+        echo "      $f: stale pin $hit (latest tag $LATEST_TAG)" >&2
+        pin_bad=$((pin_bad + 1))
+      fi
+    done < <(grep -hoE '@v[0-9]+\.[0-9]+\.[0-9]+|VERSION=[0-9]+\.[0-9]+\.[0-9]+' "$f")
+  done
+  if [[ "$pin_checked" -eq 0 ]]; then
+    fail "DOC-13: no copy-pasteable version pins found in the initial chapters — the pin would be vacuous"
+  elif [[ "$pin_bad" -ne 0 ]]; then
+    fail "DOC-13: $pin_bad version pin(s) in the initial chapters do not equal the latest tag $LATEST_TAG"
+  else
+    pass "DOC-13: all $pin_checked copy-pasteable version pins equal the latest tag $LATEST_TAG"
+  fi
+fi
+
+# --- DOC-14: c4-container's package counts are derived, not asserted ----------------
+# INACC-2: the "15 of the 22 / two more / remaining five" arithmetic had drifted while
+# the XREV-S03-04 grep stayed green ("pin-satisfied, claim-stale"). Derive every number
+# with the same commands the page itself cites.
+C4=docs/architecture/c4-container.md
+INT_TOTAL="$(go list ./internal/... 2>/dev/null | wc -l | tr -d ' ')"
+LINKED="$(go list -deps ./cmd/assent 2>/dev/null | grep -c 'assent/internal/')"
+DIRECT="$(go list -f '{{range .Imports}}{{println .}}{{end}}' ./cmd/assent 2>/dev/null | grep -c 'assent/internal/')"
+if [[ -z "$INT_TOTAL" || "$INT_TOTAL" -eq 0 || -z "$LINKED" || -z "$DIRECT" ]]; then
+  fail "DOC-14: 'go list' produced nothing — the C4-count pin has no authority (broken module?)"
+else
+  TRANSITIVE=$((LINKED - DIRECT))
+  UNLINKED=$((INT_TOTAL - LINKED))
+  c4_flat="$(tr '\n' ' ' < "$C4")"
+  doc_counts="$(printf '%s' "$c4_flat" | grep -oE 'directly imports[ *]*[0-9]+ of the [0-9]+' | grep -oE '[0-9]+ of the [0-9]+')"
+  if [[ "$doc_counts" == "${DIRECT} of the ${INT_TOTAL}" ]]; then
+    pass "DOC-14: c4-container 'directly imports ${DIRECT} of the ${INT_TOTAL}' matches go list"
+  else
+    fail "DOC-14: c4-container says '${doc_counts:-<no direct/total claim>}' but go list derives ${DIRECT} of the ${INT_TOTAL}"
+  fi
+  declare -A _word2num=([one]=1 [two]=2 [three]=3 [four]=4 [five]=5 [six]=6 [seven]=7 [eight]=8 [nine]=9 [ten]=10)
+  doc_more="$(grep -oE 'It reaches [a-z]+ more' "$C4" | sed -E 's/It reaches ([a-z]+) more/\1/' | head -1)"
+  if [[ -n "$doc_more" && "${_word2num[$doc_more]:-?}" == "$TRANSITIVE" ]]; then
+    pass "DOC-14: c4-container's '${doc_more} more' transitively-linked count matches go list ($TRANSITIVE)"
+  else
+    fail "DOC-14: c4-container's 'It reaches ... more' count ('${doc_more:-<none>}') != go list's transitive-only set (${TRANSITIVE})"
+  fi
+  doc_remaining="$(grep -oE 'remaining [a-z]+ are not linked' "$C4" | sed -E 's/remaining ([a-z]+) are not linked/\1/' | head -1)"
+  if [[ -n "$doc_remaining" && "${_word2num[$doc_remaining]:-?}" == "$UNLINKED" ]]; then
+    pass "DOC-14: c4-container's 'remaining ${doc_remaining}' unlinked count matches go list ($UNLINKED)"
+  else
+    fail "DOC-14: c4-container's 'remaining ... are not linked' count ('${doc_remaining:-<none>}') != go list's unlinked set (${UNLINKED})"
+  fi
+  # The transitive-only names must be spelled out, and the no-production-importer
+  # table must hold exactly the derived unlinked set — no linked package listed.
+  table_block="$(awk '/^## Packages with no production importer/ { f = 1; next } f && /^## / { exit } f' "$C4")"
+  if [[ -z "$table_block" ]]; then
+    fail "DOC-14: c4-container has no 'Packages with no production importer' table — the membership pin would be vacuous"
+  else
+    # Only the ROW's first cell is membership; the Reality prose may legitimately name
+    # other packages (e.g. schemadrift's Reality names internal/render's tests).
+    table_set="$(printf '%s' "$table_block" | sed -n 's/^| `\([^`]*\)` |.*/\1/p' | LC_ALL=C sort)"
+    unlinked_set="$(LC_ALL=C comm -23 \
+      <(go list ./internal/... | sed 's|.*/internal/|internal/|' | LC_ALL=C sort) \
+      <(go list -deps ./cmd/assent | grep 'assent/internal/' | sed 's|.*/internal/|internal/|' | LC_ALL=C sort))"
+    if [[ -z "$table_set" ]]; then
+      fail "DOC-14: no-production-importer table has no package rows — the membership pin would be vacuous"
+    elif [[ "$table_set" == "$unlinked_set" ]]; then
+      pass "DOC-14: no-production-importer table holds exactly the $UNLINKED derived unlinked packages"
+    else
+      fail "DOC-14: no-production-importer table rows disagree with go list's unlinked set:"
+      diff <(printf '%s\n' "$table_set") <(printf '%s\n' "$unlinked_set") | sed 's/^/      /' >&2
+    fi
+  fi
+fi
+
+# --- DOC-15: the walkthrough's summary-quote format matches a committed fixture -----
+# INACC-4: the walkthrough quoted a summary-comment format the renderer never emits
+# ("APPROVE — 1 obligation proved, score 1/10"). The real format is pinned in the
+# committed render fixtures; compare the walkthrough's quote against a skeleton of it.
+wt_quote="$(grep -oE 'Decision: [A-Z]+ · Score: [0-9]+/[0-9]+ · Threshold: [0-9]+' "$WT" | head -1)"
+fixture_line="$(grep -h '^\*\*Decision:\*\*' examples/render/*/expect.summary.md 2>/dev/null | head -1)"
+_skeleton() {
+  printf '%s' "$1" | sed -e 's/\*\*//g' -e 's/Decision: [A-Z]*/Decision: <D>/' \
+    -e 's|Score: [0-9]*/[0-9]*|Score: n/m|' -e 's/Threshold: [0-9]*/Threshold: m/' \
+    -e 's/[[:space:]]*$//'
+}
+if [[ -z "$wt_quote" || -z "$fixture_line" ]]; then
+  fail "DOC-15: walkthrough quote or render fixture missing — format pin vacuous (quote='${wt_quote:-<none>}', fixture='${fixture_line:-<none>}')"
+else
+  wt_skeleton="$(_skeleton "$wt_quote")"
+  fixture_skeleton="$(_skeleton "$fixture_line")"
+  if [[ "$wt_skeleton" == "$fixture_skeleton" ]]; then
+    pass "DOC-15: walkthrough's summary quote matches the committed render fixture format ($fixture_skeleton)"
+  else
+    fail "DOC-15: walkthrough quote '$wt_quote' does not match the committed render fixture format '$fixture_line'"
+  fi
+fi
 
 # --- DOC-02: every docs-site URL agrees with mkdocs.yml's site_url ----------------
 # GitHub *repo* URLs are case-insensitive; **Pages paths are not**. The repo is named
@@ -479,10 +622,10 @@ else
 fi
 if grep -q 'imported only by `internal/change` tests' docs/architecture/c4-container.md; then
   fail "XREV-S03-04: c4-container.md still says internal/core/hash has no production importer (compare imports it)"
-elif grep 'internal/core/hash' docs/architecture/c4-container.md | grep -q 'internal/compare'; then
-  pass "XREV-S03-04: c4-container.md records internal/compare as a core/hash importer"
+elif awk '/^## Packages with no production importer/ { f = 1; next } f && /^## / { exit } f' docs/architecture/c4-container.md | grep -q 'internal/core/hash'; then
+  fail "XREV-S03-04: c4-container.md still lists internal/core/hash in the no-production-importer table (internal/compare imports it; DOC-14 derives the table membership)"
 else
-  fail "XREV-S03-04: c4-container.md core/hash row does not name internal/compare"
+  pass "XREV-S03-04: c4-container.md no longer lists core/hash as a package with no production importer"
 fi
 
 # --- XREV-S03-05: stale provenance comments ---------------------------------------
