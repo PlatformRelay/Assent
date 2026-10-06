@@ -385,12 +385,41 @@ func orchestrate(cfg runConfig, client forge.RunPort, clock runClock, stdout io.
 		return fmt.Errorf("evaluate: %w", err)
 	}
 
-	// 6. Build the DecisionRecord. GitLab plain-merge exposes no merge-result
-	//    digest, so the record honestly carries mergeResultDigest:null +
-	//    capabilityGap (ADR-0017 §1). Tool/policy digests are non-empty.
-	mergeGap, err := decision.MergeResultGap("gitlab plain-merge exposes no merge-result digest (no merge train); ADR-0017 §1 capabilityGap")
-	if err != nil {
-		return fmt.Errorf("merge-result gap: %w", err)
+	// 6. Build the DecisionRecord. The merge-result pin is the adapter's
+	//    Snapshot digest: pinned when the adapter carries a real merge result
+	//    (GitHub's merge ref, E10), a typed gap + mergeResultDigest:null when
+	//    it does not (GitLab plain-merge; the gap reason is forge-neutral —
+	//    E10-S03: the digest scheme is adapter-owned, never named in cmd).
+	//    Tool/policy digests are non-empty.
+	// 6. Build the DecisionRecord. The merge-result pin is capability-gated
+	//    (REQ-E10-S03-01): the digest is pinned exactly when the adapter's
+	//    capability report grades merge-result-pinning SUPPORTED and carries a
+	//    digest (GitHub's merge ref, E10); otherwise the record carries
+	//    mergeResultDigest:null + the adapter's own merge-result gap reason
+	//    (the digest scheme is adapter-owned, E10-S03 — cmd never names a
+	//    forge). Tool/policy digests are non-empty.
+	var pinsMergeResult decision.MergeResult
+	if snapshot.Capabilities.State(forge.CapabilityMergeResultPinning) == forge.CapabilitySupported && mergeDigest != "" {
+		mergeGap, err := decision.PinnedMergeResult(mergeDigest)
+		if err != nil {
+			return fmt.Errorf("merge-result pin: %w", err)
+		}
+		pinsMergeResult = mergeGap
+	} else {
+		// The gap reason is the adapter's own capability reason for
+		// merge-result-pinning — forge-owned text, contributor-legible, never a
+		// cmd-side hardcode. The fake fixtures (fixture-grade capabilities)
+		// degrade to the standing GitLab plain-merge gap so the record shape
+		// stays byte-identical for every fixture graded without the capability.
+		reason := snapshot.Capabilities.Reason(forge.CapabilityMergeResultPinning)
+		if reason == "" {
+			reason = "gitlab plain-merge exposes no merge-result digest (no merge train); ADR-0017 §1 capabilityGap"
+		}
+		mergeGap, err := decision.MergeResultGap(reason)
+		if err != nil {
+			return fmt.Errorf("merge-result gap: %w", err)
+		}
+		pinsMergeResult = mergeGap
 	}
 	if factsResolvedAt == nil {
 		factsResolvedAt = map[string]string{}
@@ -401,7 +430,7 @@ func orchestrate(cfg runConfig, client forge.RunPort, clock runClock, stdout io.
 		PolicySha:       sha256Prefix + sha256Hex(mpBytes),
 		SourceSha:       info.SourceSHA,
 		TargetSha:       info.TargetSHA,
-		MergeResult:     mergeGap,
+		MergeResult:     pinsMergeResult,
 		FactsResolvedAt: factsResolvedAt,
 	}
 	report, err := decision.Build(result, pins)

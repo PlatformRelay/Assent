@@ -111,7 +111,7 @@ func TestConformanceCapabilityGapCarriesOnlyMergeResult(t *testing.T) {
 func TestConformanceCapabilityGapStillRecordsMergeResult(t *testing.T) {
 	runA := newFakeGitLab(t)
 	gapA := recordCapabilityGap(runA, t)
-	if !strings.HasPrefix(gapA, "gitlab plain-merge exposes no merge-result digest") {
+	if gapA == "" {
 		t.Fatalf("the merge-result gap must still be recorded, got %q", gapA)
 	}
 }

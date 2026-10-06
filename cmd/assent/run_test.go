@@ -527,6 +527,13 @@ func (f *fakeGitLab) forgeProbesAllSupported() {
 	for _, c := range forge.AllCapabilities() {
 		entries[c] = forge.SupportedCapabilityEntry("fixture: probe proven")
 	}
+	// The merge-result pin stays the ADAPTER's honest grading (E10-S03): a
+	// synthesised CAS digest is not a forge-observable merge result, so the
+	// record keeps mergeResultDigest:null + the adapter's gap. Forcing this
+	// capability supported would make the record pin the synthesised digest —
+	// a lie the schema forbids by shape and honesty forbids by content.
+	entries[forge.CapabilityMergeResultPinning] = forge.AbsentCapabilityEntry(
+		"probe: merge_trains_enabled is false — plain merge exposes no merge-result digest; the CAS pins the adapter-synthesised digest (dossier C16)")
 	report, err := forge.NewCapabilityReport(entries)
 	if err != nil {
 		panic("capability report: " + err.Error())
