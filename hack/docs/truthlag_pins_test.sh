@@ -209,7 +209,7 @@ fi
 # --- DOC-13: copy-pasteable version pins equal the latest tag ----------------------
 # INACC-3: the initial chapters pinned the FIRST release (v0.1.0) as the current one
 # three releases late. Pin is derived, not asserted: read the tag set.
-LATEST_TAG="$(git for-each-ref --sort=-v:refname --format='%(refname:short)' -- 'refs/tags/v*' | head -1)"
+LATEST_TAG="$(git for-each-ref --sort=-v:refname --format='%(refname:short)' -- 'refs/tags/v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
 if [[ -z "$LATEST_TAG" ]]; then
   fail "DOC-13: no v* tags in this checkout — the version-pin pin cannot derive the latest tag (shallow clone?)"
 else
@@ -271,6 +271,23 @@ else
     pass "DOC-14: c4-container's 'remaining ${doc_remaining}' unlinked count matches go list ($UNLINKED)"
   else
     fail "DOC-14: c4-container's 'remaining ... are not linked' count ('${doc_remaining:-<none>}') != go list's unlinked set (${UNLINKED})"
+  fi
+  # A count word can stay right while the NAMED packages drift (the original bug hid a
+  # wrong member list behind correct-ish numbers): each derived transitive-only package
+  # must be spelled out by name (backticked, i.e. in the prose, not just the diagram).
+  names_bad=0
+  for pkg in $(LC_ALL=C comm -13 \
+      <(go list -f '{{range .Imports}}{{println .}}{{end}}' ./cmd/assent | grep 'assent/internal/' | sed 's|.*/internal/|internal/|' | LC_ALL=C sort) \
+      <(go list -deps ./cmd/assent | grep 'assent/internal/' | sed 's|.*/internal/|internal/|' | LC_ALL=C sort)); do
+    if ! grep -qF "\`$pkg\`" "$C4"; then
+      echo "      transitive-only package not named on the page: $pkg" >&2
+      names_bad=$((names_bad + 1))
+    fi
+  done
+  if [[ "$names_bad" -ne 0 ]]; then
+    fail "DOC-14: $names_bad transitive-only package(s) not named in $C4"
+  else
+    pass "DOC-14: c4-container names all $TRANSITIVE transitively-linked packages"
   fi
   # The transitive-only names must be spelled out, and the no-production-importer
   # table must hold exactly the derived unlinked set — no linked package listed.
@@ -522,6 +539,27 @@ elif [[ "$missing_rule_files" -ne 0 ]]; then
   fail "EX-S09: $WT's Step 1 rule-file list is missing $missing_rule_files real rule file name(s)"
 else
   pass "EX-S09: $WT Step 1 names all $real_rule_count real topic-registry rule files"
+fi
+
+# --- EX-S09: Step 2's inlined bounded-change rule stays byte-equal to the shipped file ---
+# The walkthrough reproduces the shipped pack rule verbatim (its only full rule-file
+# example, replacing the ADR-0010 sketch); an edit to either copy must redden here or the
+# doc and the gate-covered file drift apart silently.
+inline_rule="$(awk '
+  /^```yaml$/ { inblk = 1; buf = ""; next }
+  /^```$/ {
+    if (inblk && buf ~ /partition-change-bounds/) { printf "%s", buf; exit }
+    inblk = 0; next
+  }
+  inblk { buf = buf $0 "\n" }
+' "$WT")"
+if [[ -z "$inline_rule" ]]; then
+  fail "EX-S09: $WT no longer inlines the shipped bounded-change rule — the Step 2 sync pin would be vacuous"
+elif [[ "$inline_rule" == "$(cat "$RULE_DIR/bounded-change.yaml")" ]]; then
+  pass "EX-S09: $WT Step 2's inlined rule is byte-equal to the shipped $RULE_DIR/bounded-change.yaml"
+else
+  fail "EX-S09: $WT Step 2's inlined rule has drifted from $RULE_DIR/bounded-change.yaml:"
+  diff <(printf '%s' "$inline_rule") "$RULE_DIR/bounded-change.yaml" | sed 's/^/      /' >&2
 fi
 
 # --- XREV-S03-01: README maturity rows agree with the meta-plan --------------------

@@ -67,8 +67,8 @@ Committed starter packs: [`examples/packs/`](https://github.com/PlatformRelay/as
 > is the gate over it.
 
 Edit the starter pack (`.assent/packs/topics/rules/bounded-change.yaml`), e.g. cap
-partitions via your quota provider. The shipped rule file, reproduced here, raises a
-challenge when a partition change would decrease the count or exceed the quota:
+partitions via your quota provider. The shipped rule file, reproduced verbatim below, raises
+a challenge when a partition change would decrease the count or exceed the quota:
 
 ```yaml
 # Bounded-change — reused from examples/policies/declarative/bounded-change.yaml (S01).
@@ -288,7 +288,7 @@ when it cannot. See [Install](install.md) for the checksum-verified archive rout
 > `assent explain`, at the end of this section, does not exist.
 
 A dev bumps `partitions: 12 -> 24` on their own topic in dev: pipeline runs, the MR gets a
-summary comment (`Decision: APPROVE · Score: 1/10 · Threshold: 10`), approval, and merges. Nobody was
+summary comment (`Decision: APPROVE · Score: 0/10 · Threshold: 10`), approval, and merges. Nobody was
 interrupted.
 
 The same dev shrinks retention on a prod topic: assent opens a **resolvable thread** —
