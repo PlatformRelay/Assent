@@ -88,10 +88,10 @@ func defaultGitLabEndpoint(endpoint string) string {
 // explicit --forge gitlab (a self-hosted host is unrecognisable by design).
 func detectForge(endpoint string) (factory.Kind, error) {
 	host := hostOf(endpoint)
-	switch {
-	case host == "gitlab.com":
+	switch host {
+	case "gitlab.com":
 		return factory.KindGitLab, nil
-	case host == "api.github.com" || host == "github.com":
+	case "api.github.com", "github.com":
 		return factory.KindGitHub, nil
 	default:
 		return "", fmt.Errorf("cannot detect the forge from endpoint %q — supply --forge gitlab|github explicitly (E10-S13: ambiguity fails closed, never defaults)", endpoint)

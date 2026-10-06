@@ -503,7 +503,9 @@ func (h *githubHarness) updateNoteRow(w http.ResponseWriter, r *http.Request) {
 		if h.notes[i].id == numeric {
 			h.notes[i].body = posted.Body
 			w.WriteHeader(http.StatusOK)
-			_, _ = io.WriteString(w, fmt.Sprintf(`{"id":%d}`, numeric))
+			// The echo is the fixture's own id (a decoded int), never raw
+			// request bytes — gosec's G705 taint cannot reach it.
+			_, _ = fmt.Fprintf(w, `{"id":%d}`, numeric)
 			return
 		}
 	}

@@ -197,6 +197,8 @@ func SupportedCapabilityEntry(reason string) CapabilityEntry {
 	return CapabilityEntry{State: CapabilitySupported, Reason: reason}
 }
 
+// AbsentCapabilityEntry builds the absent-state entry (the forge verifiably
+// lacks the capability; the reason names the evidence).
 func AbsentCapabilityEntry(reason string) CapabilityEntry {
 	return CapabilityEntry{State: CapabilityAbsent, Reason: reason}
 }

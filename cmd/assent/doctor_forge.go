@@ -50,9 +50,9 @@ func runDoctor(getenv func(string) string, stdout, stderr io.Writer,
 	snapshotFactory func(kind, endpoint, token, botAuthor string) forge.RunPort) int {
 	// E10-S13: forge selection with autodetect from the CI endpoint; ambiguity
 	// or an unrecognised host fails closed (never a default-to-GitLab).
-	tokenEnv := "GITLAB_TOKEN"
+	tokenEnv := "GITLAB_TOKEN" // #nosec G101 -- the env var NAME, never a credential.
 	if getenv("ASSENT_FORGE") == string(factory.KindGitHub) {
-		tokenEnv = "GITHUB_TOKEN"
+		tokenEnv = "GITHUB_TOKEN" // #nosec G101 -- the env var NAME, never a credential.
 	}
 	token := getenv(tokenEnv)
 	if token != "" {

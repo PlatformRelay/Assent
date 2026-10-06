@@ -375,14 +375,14 @@ func (c *Client) contentRead(repo, path, ref string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case status == http.StatusOK:
+	switch status {
+	case http.StatusOK:
 		return ghContentOf(raw)
-	case status == http.StatusNotFound:
+	case http.StatusNotFound:
 		// The probe proved contents-read at this (repo, ref), so this 404 is
 		// genuine absence (S00 Q4's disambiguation, now earned).
 		return nil, fmt.Errorf("github: %w: file %q at ref %q", forge.ErrNotFound, path, ref)
-	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+	case http.StatusUnauthorized, http.StatusForbidden:
 		return nil, fmt.Errorf("github: %w: file %q at ref %q (status %d)", forge.ErrUnauthorized, path, ref, status)
 	default:
 		return nil, fmt.Errorf("github: get file %q at ref %q: unexpected status %d", path, ref, status)
@@ -485,8 +485,8 @@ func (c *Client) mergeResultDigest(project, mr string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	switch {
-	case status == http.StatusOK:
+	switch status {
+	case http.StatusOK:
 		var ref struct {
 			Object struct {
 				SHA string `json:"sha"`
@@ -500,7 +500,7 @@ func (c *Client) mergeResultDigest(project, mr string) (string, error) {
 		}
 		c.setMergeRefState(mergeRefReadable)
 		return ref.Object.SHA, nil
-	case status == http.StatusNotFound:
+	case http.StatusNotFound:
 		// Absent merge ref = the PR is not mergeable now (conflict, merge
 		// queue, draft) or the forge refuses the read; both leave the digest
 		// axis honestly UNAVAILABLE, and completeForMerge fails closed on it.
