@@ -22,17 +22,6 @@ import (
 // harnesses — the catalog rows carry that disposition, the same one the
 // transport cases carry.
 
-// sentinelConfig is the Config both sentinel shapes build their reads from.
-func sentinelConfig() Config {
-	return Config{
-		Project:          proj,
-		MR:               mrIID,
-		BotAuthor:        botID,
-		CurrentSourceSHA: pinSource,
-		CurrentTargetSHA: pinTarget,
-	}
-}
-
 // TestConformanceRateLimit403NotAbsent is S00 Q4's rate-limit row (ADR-0021
 // item 6): a 403 carrying Retry-After or X-RateLimit-Remaining: 0 is a
 // TRANSPORT error — retried/errored by the port's transport policy — never
