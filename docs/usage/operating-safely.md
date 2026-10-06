@@ -3,8 +3,9 @@
 The trust-model side of running assent: what actually gates approve and merge, how to
 keep a run advisory, and the checkout-tree caveats that decide when a verdict is
 trustworthy. These five sections moved here from the [CLI reference](cli.md) so that page
-stays a per-command, per-flag lookup; the text is unchanged apart from links retargeted
-to their new homes. The [walkthrough](walkthrough.md) walks a first adoption end to end.
+stays a per-command, per-flag lookup — word-for-word, with heading levels and the
+retargeted links as the only adjustments. The [walkthrough](walkthrough.md) walks a first
+adoption end to end.
 
 ## What gates approve and merge
 
