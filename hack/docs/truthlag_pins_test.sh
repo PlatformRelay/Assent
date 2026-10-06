@@ -401,6 +401,30 @@ else
   fail "XREV-S03-01: README task-check comment still understates the gate (D4)"
 fi
 
+# --- E10-S15-01: no document claims a GitHub capability the capability report marks unknown ---
+# The adapter's honest v1 report marks protected-pipeline-source and
+# eligible-approval-evidence UNKNOWN (OQ-33/OQ-34; ADR-0021 §3 — unknown never
+# arms), so the README maturity row must claim exactly the comment-only tier
+# with both open questions named. A row claiming auto-merge arming or
+# require-review satisfaction on GitHub would be the docs-truth defect family
+# (D4) with a production consequence: an adopter would arm on an unproven set.
+row="$(grep '^| GitHub adapter |' README.md || true)"
+if [[ "$row" == *"comment-only"* ]]; then
+  pass "E10-S15-01: README GitHub row claims the comment-only v1 tier"
+else
+  fail "E10-S15-01: README GitHub row must claim comment-only v1 (the capability report marks arming capabilities UNKNOWN)"
+fi
+if [[ "$row" == *"OQ-33"* && "$row" == *"OQ-34"* ]]; then
+  pass "E10-S15-01: README GitHub row names both open questions (OQ-33/OQ-34)"
+else
+  fail "E10-S15-01: README GitHub row must cite OQ-33 (protected-pipeline-source) and OQ-34 (eligible approval evidence)"
+fi
+if grep -q 'assent run --forge github' README.md 2>/dev/null; then
+  pass "E10-S15-01: README documents --forge github"
+else
+  fail "E10-S15-01: README must document the --forge github selection (E10-S13)"
+fi
+
 # --- XREV-S03-02: E10/E11 status surfaces must not attribute the epic to D-012 -----
 # Scoped to the user-facing STATUS surfaces (README maturity table, vision, C4) rather
 # than the whole tree: historical mentions in ADRs/openspec specs legitimately record

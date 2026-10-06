@@ -175,6 +175,10 @@ CHECK_STAGES=(
   # in the same commit as its `check:` line, which is what this array exists to
   # force: the AUD-S18/RELSE-08 incident was exactly this pin going stale.
   audit-aud2-exitgate-test
+  # E10-S17 (REQ-E10-S17-01): the E10 exit gate — every S17 condition in one
+  # invocation, citing D-140 + ADR-0021. Added in the same commit as its
+  # `check:` line, which is what this array exists to force.
+  e10-exitgate-test
 )
 
 # (2) The epic's measured-coverage bar (AUD-S13 / judgment call (e)). The D-010

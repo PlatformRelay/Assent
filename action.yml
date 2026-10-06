@@ -1,0 +1,85 @@
+name: "assent"
+# E10-S16: the composite Actions entrypoint. It is PACKAGING ONLY — no new
+# adapter behaviour (D-140's closed sub-question: last and independently
+# droppable). The action invokes the RELEASED binary at a PINNED, checksum-
+# verified version (REQ-E10-S16-01); it never installs at HEAD.
+#
+# Trust model (ADR-0015 §4 / dossier C17, REQ-E10-S16-02): the workflow example
+# runs on `pull_request`, so a fork PR executes the BASE-ref workflow with a
+# read-only, secretless token; policy loads from the TARGET ref (never the PR
+# head) inside assent itself (ADR-0015 §1). Required token scopes are documented
+# below and in docs/usage/.
+#
+# Inputs:
+#   version — the released tag to run, e.g. "v0.4.0". Pinned by the caller.
+#   token   — GITHUB_TOKEN (read-only scope suffices for forks).
+description: |
+  assent: a deterministic, policy-driven auto-merge gate for self-service
+  configuration repositories. Evaluates one PR against the repo's .assent/
+  policy tree and approves, comments, or blocks — every decision emitted as an
+  auditable DecisionRecord.
+inputs:
+  version:
+    description: "Released assent version to run (pinned; e.g. v0.4.0)"
+    required: true
+  subject:
+    description: "Governed-subject entryRef (file:<path>) — the file diffed for evaluation"
+    required: true
+  bot-author:
+    description: "Bot login the author-identity filter matches (the token's own login)"
+    required: true
+  project:
+    description: "GitHub repository as owner/repo"
+    required: false
+    default: ""
+  github-token:
+    description: "GITHUB_TOKEN with repo read + pull_requests:write; fork PRs keep the read-only base-ref workflow trust"
+    required: true
+  pull-request:
+    description: "PR number"
+    required: true
+  policy:
+    description: "MergePolicy path, loaded from the target ref"
+    required: false
+    default: ".assent/merge-policy.yaml"
+  binding:
+    description: "RulesetBinding path, loaded from the target ref"
+    required: false
+    default: ".assent/ruleset-binding.yaml"
+runs:
+  using: "composite"
+  steps:
+    # The pin is asserted by hack/release/action_pin_test.sh (E10-S16-01):
+    # `version: pinned-at-tag` — the action must never install at HEAD.
+    - name: Install the pinned, checksum-verified release
+      shell: bash
+      env:
+        ASSENT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        # The pin pattern is deliberate: a released VERSION (never the
+        # latest tag, never a branch head). go install here is the composite
+        # action's simplest hermetic route; a checksum-verified archive is the
+        # release path documented in docs/usage/install.md.
+        if [[ ! "$ASSENT_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "assent action: inputs.version must be a released tag (e.g. v0.4.0); got '$ASSENT_VERSION'" >&2
+          exit 1
+        fi
+        go install "github.com/PlatformRelay/assent/cmd/assent@${ASSENT_VERSION}"
+    - name: Run the gate
+      shell: bash
+      env:
+        # Required token scopes: repo read + pull_requests:write (comment and
+        # review-comment authoring) + read access to the target ref's policy
+        # tree. Fork PRs keep the read-only base-ref workflow trust (dossier
+        # C17) — the token never gains write authority the base branch does
+        # not already grant.
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        assent run --forge github \
+          --project "${{ inputs.project != '' && inputs.project || github.repository }}" \
+          --mr "${{ inputs.pull-request }}" \
+          --subject "file:${{ inputs.subject }}" \
+          --bot-author "${{ inputs.bot-author }}" \
+          --policy "${{ inputs.policy }}" \
+          --binding "${{ inputs.binding }}"
