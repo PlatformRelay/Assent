@@ -127,14 +127,18 @@ func TestRateLimit403IsTransportError(t *testing.T) {
 func TestRateLimitHeadersOnSuccessDoNotDiscardResult(t *testing.T) {
 	t.Run("201 write succeeds", func(t *testing.T) {
 		c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodPost && r.URL.Path == "/repos/octo-org/base-repo/pulls/7/comments" {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/repos/octo-org/base-repo/pulls/7":
+				// CreateThread reads the pinned head via mrPinned first.
+				_, _ = io.WriteString(w, sameRepoPR)
+			case r.Method == http.MethodPost && r.URL.Path == "/repos/octo-org/base-repo/pulls/7/comments":
 				w.Header().Set("X-RateLimit-Remaining", "0")
 				w.Header().Set("Retry-After", "60")
 				w.WriteHeader(http.StatusCreated)
 				_, _ = io.WriteString(w, `{"id":401,"node_id":"PRRC_node1","user":{"login":"assent-bot"}}`)
-				return
+			default:
+				unexpectedEndpoint(w, r)
 			}
-			unexpectedEndpoint(w, r)
 		})
 
 		created, err := c.CreateThread(baseRepo, "7", threadMarker(), "body")

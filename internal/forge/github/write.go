@@ -378,22 +378,61 @@ func (c *Client) editNote(project, mr, id string, marker forge.Marker, body stri
 	}, nil
 }
 
+// threadPathFromEntryRef derives the file path a GitHub review thread anchors
+// on from the marker's governed-subject identity (Slot.EntryRef). Live GitHub
+// requires commit_id and path on a create-review-comment POST — a body-only
+// body answers 422 — and the governed subject is not otherwise known to the
+// adapter. The run path's markers carry the governed subject as a
+// file:<path> entryRef; anything else is a marker the adapter cannot place on
+// a file, and it FAILS CLOSED naming the marker slot rather than posting an
+// unaddressed (or unwritable) thread.
+func threadPathFromEntryRef(m forge.Marker) (string, error) {
+	if p := strings.TrimPrefix(m.Slot.EntryRef, "file:"); p != "" && p != m.Slot.EntryRef {
+		return p, nil
+	}
+	return "", fmt.Errorf(
+		"github: marker slot (rule %q, entryRef %q, effect %q) carries no file:<path> entryRef — the governed subject is not otherwise known and the review thread cannot be anchored, refusing to create it (fail-closed)",
+		m.Slot.Rule, m.Slot.EntryRef, m.Slot.Effect)
+}
+
 // CreateThread posts a new PR review comment whose body is the marker envelope
 // followed by the human body, and returns the created forge.Thread. POST
-// /repos/{repo}/pulls/{n}/comments → 201, body only — the PR comment body
-// carries the marker envelope via render.Envelope; no commit anchor is needed
-// in this slice (the ADR-0019 envelope makes the artifact correlatable without
-// a side anchor).
+// /repos/{repo}/pulls/{n}/comments → 201.
+//
+// Live GitHub REQUIRES commit_id and path (or subject_type) on this POST and
+// answers 422 on a body-only create, so the write carries the LIVE-REQUIRED
+// fields: commit_id is the PINNED source SHA this client's own MR read
+// reported (mrPinned — first-write-wins, so the pin is the evaluated head even
+// after a CAS re-read; the same read chain Approve uses), path is the governed
+// subject's file path (threadPathFromEntryRef), and subject_type "file" makes
+// it a file-level thread (no line anchor — the ADR-0019 envelope makes the
+// artifact correlatable without one).
 func (c *Client) CreateThread(project, mr string, marker forge.Marker, body string) (forge.Thread, error) {
 	repo, err := repoParts(project)
 	if err != nil {
 		return forge.Thread{}, err
 	}
+	path, err := threadPathFromEntryRef(marker)
+	if err != nil {
+		return forge.Thread{}, err
+	}
+	// The pinned head comes from the adapter's own MR read (mrPinned fills the
+	// pin cache with GetMR on first touch) — the same read chain the evaluation
+	// judged bytes through (REV1-S01's one-read-chain rule).
+	info, err := c.mrPinned(project, mr)
+	if err != nil {
+		return forge.Thread{}, fmt.Errorf("github: pin thread head %s#%s: %w", project, mr, err)
+	}
 	fullBody, err := render.Envelope(marker, body)
 	if err != nil {
 		return forge.Thread{}, err
 	}
-	payload, err := json.Marshal(map[string]any{"body": fullBody})
+	payload, err := json.Marshal(map[string]any{
+		"body":         fullBody,
+		"commit_id":    info.SourceSHA,
+		"path":         path,
+		"subject_type": "file",
+	})
 	if err != nil {
 		return forge.Thread{}, errors.New("github: encode thread body")
 	}
@@ -489,9 +528,6 @@ func (c *Client) Approve(project, mr string) (string, error) {
 	if err != nil {
 		return "", errors.New("github: encode approve body")
 	}
-	if err != nil {
-		return "", errors.New("github: encode approve body")
-	}
 	status, _, raw, err := c.do(http.MethodPost, fmt.Sprintf("/repos/%s/pulls/%s/reviews", repo, mr), strings.NewReader(string(payload)), "application/json")
 	if err != nil {
 		return "", err
@@ -519,6 +555,11 @@ func (c *Client) Approve(project, mr string) (string, error) {
 // heads so a drifted source/target/digest fails closed with ZERO writes (the
 // gitlab.CurrentHeads mirror, which reads GetMR fresh for the same reason).
 //
+// The re-read does NOT move the evaluation pin: GetMR's pin write is
+// first-write-wins (snapshot.go), so this read returns the forge's current
+// heads while the pin stays at the SHAs the evaluation judged — Approve's
+// commit_id and the governed reads keep following the evaluated pin.
+//
 // The digest axis is the adapter-owned merge-result scheme (snapshot.go):
 // the refs/pull/{n}/merge commit's SHA when the forge mints it, "" otherwise —
 // and completeForMerge then refuses to arm (fail-closed for a non-mergeable
@@ -541,8 +582,10 @@ func (c *Client) CurrentHeads(project, mr string) (source, target, digest string
 //  1. Re-read the CURRENT heads. If the source head, the target tip OR the
 //     merge-result digest has moved from the pinned values, return
 //     forge.ErrSHAMoved with NO merge — the approval must never merge an
-//     unevaluated state (ADR-0017 §1, ADR-0015 §2; the three-pin contract is
-//     checked BEFORE any write, and again atomically by the PUT below).
+//     unevaluated state (ADR-0017 §1, ADR-0015 §2). All three pins are
+//     checked BEFORE any write; the PUT below carries only `sha`, so it
+//     re-guards the SOURCE head atomically — the target tip and the merge
+//     result are guarded by this pre-check alone, not by the PUT.
 //  2. PUT /repos/{repo}/pulls/{n}/merge with {"sha": pinnedSource}: GitHub's
 //     `sha` body parameter IS the atomic CAS guard on the source head. A
 //     moved source is refused with 409 → ErrSHAMoved, no merge. 405 (not

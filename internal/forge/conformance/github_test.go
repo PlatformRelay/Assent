@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
@@ -82,7 +84,11 @@ type githubHarness struct {
 
 	threads []ghThreadRow
 	notes   []ghNoteRow
-	nextID  int64
+	// write counters + the row allocator are atomic: handler goroutines run
+	// concurrently (the deadline-bounded transport case fires overlapping
+	// reads), and -race reds on ++ from them. Handler WRITES to the
+	// threads/notes slices stay single-flow in this suite.
+	nextID atomic.Int64
 
 	// Transport knobs (E10-S05), the mirror of the GitLab harness's: a page
 	// that never shortens, an injected write status, and a response slower
@@ -107,18 +113,29 @@ type githubHarness struct {
 	// source-moved case drives, mirroring the GitLab harness's afterMRRead.
 	afterPRRead func(h *githubHarness)
 
-	// write counters, read through the Observer surface.
-	noteCreateCalls int
-	noteUpdateCalls int
-	reviewPOSTs     int
-	approvePOSTs    int
-	mergePUTs       int
-	gqlResolveCalls int
-	armMutations    int
+	// write counters, read through the Observer surface. Atomic for the same
+	// reason as nextID (concurrent handler goroutines).
+	noteCreateCalls atomic.Int64
+	noteUpdateCalls atomic.Int64
+	reviewPOSTs     atomic.Int64
+	approvePOSTs    atomic.Int64
+	mergePUTs       atomic.Int64
+	gqlResolveCalls atomic.Int64
+	armMutations    atomic.Int64
 
 	// lastApproveCommitID records the commit_id the last approval write
 	// carried — the pinned-head assertion the approve handler enforces.
 	lastApproveCommitID string
+
+	// firstPRSHA is the head SHA the harness served on its FIRST PR read — the
+	// mirror of the adapter's first-write-wins evaluation pin. The approval
+	// handler accepts a commit_id equal to the harness's current head OR the
+	// first-served head (the pin): a move-and-restore sequence legitimately
+	// leaves the pin at the first read while the CAS merges at the restored
+	// current head. Guarded by its own mutex: the deadline-bounded case fires
+	// concurrent PR reads.
+	firstPRMu  sync.Mutex
+	firstPRSHA string
 
 	taken map[int64]bool
 }
@@ -133,7 +150,6 @@ func newGitHubHarness(project, mr string) *githubHarness {
 		governedPath:   "topics/orders.yaml",
 		changedFiles:   1, // matches the one-entry files page the harness serves
 		mergeRefSHA:    "mrgSHA",
-		nextID:         10_000,
 		taken:          map[int64]bool{},
 	}
 }
@@ -150,10 +166,10 @@ func (h *githubHarness) rowID(seedID string) int64 {
 		return numeric
 	}
 	for {
-		h.nextID++
-		if !h.taken[h.nextID] {
-			h.taken[h.nextID] = true
-			return h.nextID
+		next := h.nextID.Add(1)
+		if !h.taken[next] {
+			h.taken[next] = true
+			return next
 		}
 	}
 }
@@ -288,6 +304,11 @@ func (h *githubHarness) handle(w http.ResponseWriter, r *http.Request) {
 
 func (h *githubHarness) servePR(w http.ResponseWriter, r *http.Request) {
 	h.slow()
+	h.firstPRMu.Lock()
+	if h.firstPRSHA == "" {
+		h.firstPRSHA = h.sourceSHA
+	}
+	h.firstPRMu.Unlock()
 	headRepo := h.project
 	if h.forkMR {
 		headRepo = h.forkRepo
@@ -402,15 +423,27 @@ func (h *githubHarness) serveThreadListing(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *githubHarness) createThreadRow(w http.ResponseWriter, r *http.Request) {
-	h.reviewPOSTs++
+	h.reviewPOSTs.Add(1)
 	if h.writeStatus != 0 {
 		http.Error(w, "injected transport failure", h.writeStatus)
 		return
 	}
+	// The live-required-field shape (E10 branch-review round 2, finding 5):
+	// live GitHub refuses a body-only create-review-comment POST with 422 —
+	// commit_id and path are required (the governed subject is not otherwise
+	// known). The harness REJECTS a body-only create so the shape stays
+	// enforced, never merely asserted in prose.
 	var posted struct {
-		Body string `json:"body"`
+		Body        string `json:"body"`
+		CommitID    string `json:"commit_id"`
+		Path        string `json:"path"`
+		SubjectType string `json:"subject_type"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&posted)
+	if posted.CommitID == "" || posted.Path == "" {
+		http.Error(w, `{"message":"validation: commit_id and path are required on a create-review-comment"}`, http.StatusUnprocessableEntity)
+		return
+	}
 	row := ghThreadRow{id: h.rowID("comment/"), body: posted.Body, author: h.botAuthor}
 	row.nodeID = fmt.Sprintf("PRRC_node%d", row.id)
 	row.threadID = fmt.Sprintf("PRT_node%d", row.id)
@@ -440,7 +473,7 @@ func (h *githubHarness) serveNotes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *githubHarness) createNoteRow(w http.ResponseWriter, r *http.Request) {
-	h.noteCreateCalls++
+	h.noteCreateCalls.Add(1)
 	if h.writeStatus != 0 {
 		http.Error(w, "injected transport failure", h.writeStatus)
 		return
@@ -456,7 +489,7 @@ func (h *githubHarness) createNoteRow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *githubHarness) updateNoteRow(w http.ResponseWriter, r *http.Request) {
-	h.noteUpdateCalls++
+	h.noteUpdateCalls.Add(1)
 	if h.writeStatus != 0 {
 		http.Error(w, "injected transport failure", h.writeStatus)
 		return
@@ -478,18 +511,23 @@ func (h *githubHarness) updateNoteRow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *githubHarness) approve(w http.ResponseWriter, r *http.Request) {
-	h.approvePOSTs++
+	h.approvePOSTs.Add(1)
 	if h.writeStatus != 0 {
 		http.Error(w, "injected transport failure", h.writeStatus)
 		return
 	}
-	// ADR-0015 §2's approve-then-merge pin: the approval body must carry the
-	// PINNED source head the adapter's own MR read reported — never an absent
-	// pin (an approval without a commit_id could land on a moved head). When
-	// no drift seam is installed, the pin IS the harness's current source SHA.
-	// A drift-seeded case (DriftSourceHeadAfterRead) is exempt: its approval
-	// must carry the PRE-move pin, which the CAS refusal — not this handler —
-	// proves.
+	// ADR-0015 §2's approve-then-merge pin: the approval body must carry a
+	// PINNED source head — never an absent pin (an approval without a
+	// commit_id could land on a moved head). The pin is the adapter's
+	// FIRST-READ head (first-write-wins, E10 branch-review round 2): the
+	// evaluation pin, which may legitimately differ from the harness's current
+	// source SHA once a move-and-restore sequence (or a drift seam) has fired
+	// between the first read and the approval. So the accepted commit_id is
+	// the first-served head (the pin) or the current head; anything else
+	// proves the approval did not land on a head the adapter actually read.
+	// A drift-seeded case (DriftSourceHeadAfterRead) is exempt outright: its
+	// approval must carry the PRE-move pin, which the CAS refusal — not this
+	// handler — proves.
 	var body struct {
 		Event    string `json:"event"`
 		CommitID string `json:"commit_id"`
@@ -501,8 +539,11 @@ func (h *githubHarness) approve(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "approval carried no commit_id pin", http.StatusInternalServerError)
 			return
 		}
-		if body.CommitID != h.sourceSHA {
-			http.Error(w, "approval commit_id does not match the pinned head", http.StatusInternalServerError)
+		h.firstPRMu.Lock()
+		first := h.firstPRSHA
+		h.firstPRMu.Unlock()
+		if body.CommitID != h.sourceSHA && body.CommitID != first {
+			http.Error(w, "approval commit_id does not match any head the adapter's own read reported", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -511,7 +552,7 @@ func (h *githubHarness) approve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *githubHarness) merge(w http.ResponseWriter, r *http.Request) {
-	h.mergePUTs++
+	h.mergePUTs.Add(1)
 	if h.writeStatus != 0 {
 		http.Error(w, "injected transport failure", h.writeStatus)
 		return
@@ -610,7 +651,7 @@ func (h *githubHarness) serveGraphQL(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case strings.Contains(req.Query, "resolveReviewThread"):
-		h.gqlResolveCalls++
+		h.gqlResolveCalls.Add(1)
 		if h.writeStatus != 0 {
 			http.Error(w, "injected transport failure", h.writeStatus)
 			return
@@ -657,8 +698,8 @@ func (b githubBackend) MergesPerformed() int { return b.cp.mergesPerformed }
 func (b githubBackend) Approvals() int       { return b.cp.approvals }
 func (b githubBackend) ThreadsCreated() int  { return b.cp.threadsCreated }
 func (b githubBackend) ThreadsResolved() int { return b.cp.threadsResolved }
-func (b githubBackend) NotesCreated() int    { return b.h.noteCreateCalls }
-func (b githubBackend) NotesUpdated() int    { return b.h.noteUpdateCalls }
+func (b githubBackend) NotesCreated() int    { return int(b.h.noteCreateCalls.Load()) }
+func (b githubBackend) NotesUpdated() int    { return int(b.h.noteUpdateCalls.Load()) }
 
 func (b githubBackend) NoteBody(id string) string {
 	numeric := numericSuffixOf(id)

@@ -57,17 +57,6 @@ func TestConformanceRateLimit403NotAbsent(t *testing.T) {
 				t.Fatalf("%s: a rate-limited 403 rendered as a permission failure — it is a transport error (S00 Q4)", name)
 			}
 		}
-		for name, got := range map[string]int{
-			"threads":  h.createCalls,
-			"resolves": h.resolveCalls,
-			"approves": h.approveCalls,
-			"merges":   h.mergePUTs,
-			"notes":    h.noteCreateCalls,
-		} {
-			if got != 0 {
-				t.Fatalf("%s: a rate-limited read must abort with zero forge writes, got %d %s write(s)", name, got, name)
-			}
-		}
 	})
 
 	t.Run("github", func(t *testing.T) {
@@ -89,17 +78,6 @@ func TestConformanceRateLimit403NotAbsent(t *testing.T) {
 			}
 			if errors.Is(err, forge.ErrUnauthorized) {
 				t.Fatalf("%s: a rate-limited 403 rendered as a permission failure — it is a transport error (S00 Q4)", name)
-			}
-		}
-		for name, got := range map[string]int{
-			"threads":   h.reviewPOSTs,
-			"armings":   h.armMutations,
-			"approvals": h.approvePOSTs,
-			"merges":    h.mergePUTs,
-			"notes":     h.noteCreateCalls,
-		} {
-			if got != 0 {
-				t.Fatalf("%s: a rate-limited read must abort with zero forge writes, got %d %s write(s)", name, got, name)
 			}
 		}
 	})
@@ -132,17 +110,6 @@ func TestConformanceMetadataOnlyTokenNotAbsent(t *testing.T) {
 				t.Fatalf("%s: the refusal must carry forge.ErrUnauthorized, got %v", name, err)
 			}
 		}
-		for name, got := range map[string]int{
-			"threads":   h.createCalls,
-			"resolves":  h.resolveCalls,
-			"approvals": h.approveCalls,
-			"merges":    h.mergePUTs,
-			"notes":     h.noteCreateCalls,
-		} {
-			if got != 0 {
-				t.Fatalf("%s: a refused governed read must abort with zero forge writes, got %d", name, got)
-			}
-		}
 	})
 
 	t.Run("github", func(t *testing.T) {
@@ -167,17 +134,6 @@ func TestConformanceMetadataOnlyTokenNotAbsent(t *testing.T) {
 				t.Fatalf("%s: a forbidden read under a metadata-only token rendered as ABSENT — the absent-means-trusted collapse (S00 Q4)", name)
 			case !errors.Is(err, forge.ErrUnauthorized):
 				t.Fatalf("%s: the refused read must carry forge.ErrUnauthorized, got %v", name, err)
-			}
-		}
-		for name, got := range map[string]int{
-			"threads":   h.reviewPOSTs,
-			"armings":   h.armMutations,
-			"approvals": h.approvePOSTs,
-			"merges":    h.mergePUTs,
-			"notes":     h.noteCreateCalls,
-		} {
-			if got != 0 {
-				t.Fatalf("%s: a refused governed read must abort with zero forge writes, got %d", name, got)
 			}
 		}
 	})

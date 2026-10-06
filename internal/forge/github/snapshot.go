@@ -81,18 +81,19 @@ func (c *Client) lastMergeableState() string {
 
 // recordPRChangedFiles records the PR object's changed_files count from the
 // latest PR read (freshPR) — the enumeration count mrChangedFiles's
-// completeness decision cross-checks (ADR-0020 §2). Same mutex discipline as
-// recordMergeableState: the PR read chain holds pinMu, so this state carries
-// its own mutex.
-func (c *Client) recordPRChangedFiles(n int) {
+// completeness decision cross-checks (ADR-0020 §2). A nil pointer is the
+// forge REPORTING NO COUNT (the JSON field was absent): nil is information,
+// not a 0 count. Same mutex discipline as recordMergeableState: the PR read
+// chain holds pinMu, so this state carries its own mutex.
+func (c *Client) recordPRChangedFiles(n *int) {
 	c.stateMu.Lock()
 	c.lastChangedFiles = n
 	c.stateMu.Unlock()
 }
 
-// lastPRChangedFiles returns the changed_files count of the latest PR read,
-// 0 when this client has read no PR yet or the forge reported no count.
-func (c *Client) lastPRChangedFiles() int {
+// lastPRChangedFiles returns the changed_files count of the latest PR read;
+// nil when this client has read no PR yet or the forge reported no count.
+func (c *Client) lastPRChangedFiles() *int {
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 	return c.lastChangedFiles
@@ -125,8 +126,12 @@ type ghPR struct {
 	Labels []ghLabel `json:"labels"`
 	// ChangedFiles is the PR object's own changed_files count — the
 	// enumeration count the changed-file completeness cross-check consults
-	// (ADR-0020 §2, condition (2)'s GitHub column).
-	ChangedFiles int `json:"changed_files"`
+	// (ADR-0020 §2, condition (2)'s GitHub column). It is a POINTER: an
+	// ABSENT count is unreported (nil), and the completeness verdict grades
+	// incomplete on it — a silently-zero count would read an unreportable
+	// enumeration as "matches the count 0" (fail-open, E10 branch-review
+	// round 2, finding 7).
+	ChangedFiles *int `json:"changed_files"`
 	Base         struct {
 		Ref  string `json:"ref"`
 		SHA  string `json:"sha"`
@@ -237,9 +242,22 @@ func (c *Client) GetMR(project, mr string) (forge.MRInfo, error) {
 	// un-evaluated bytes the branch review's CRITICAL names. pinMu, not
 	// scopeMu: mrPinned consults the pin while holding pinMu, and a mutex may
 	// never be re-entered.
+	//
+	// FIRST WRITE WINS (E10 branch-review round 2, findings 2/6): the pin is
+	// written only when the cache is empty or pinned to a DIFFERENT
+	// (project, mr). A same-MR re-read — the CAS's CurrentHeads read — must NOT
+	// move the evaluation pin: Approve's commit_id and the governed reads
+	// follow the pin, and the pin must stay at the SHAs the evaluation judged,
+	// whatever the forge reports later. This is what makes CurrentHeads' "goes
+	// FRESH, deliberately not through the mrPinned cache" comment true: the
+	// re-read never rewrites the pin. A different (project, mr) evicts the pin
+	// (a stale pin would be worse than none).
+	key := project + "/" + mr
 	c.pinMu.Lock()
-	c.mrPinnedKey = project + "/" + mr
-	c.mrPinnedInfo = info
+	if c.mrPinnedKey != key {
+		c.mrPinnedKey = key
+		c.mrPinnedInfo = info
+	}
 	c.pinMu.Unlock()
 	return info, nil
 }
@@ -586,26 +604,36 @@ const pullFilesCap = 3000
 //
 //   - no terminating short page: the pagination ceiling was reached —
 //     incomplete (the ceiling gap).
+//   - the PR reported NO changed_files count (nil): the enumeration cannot
+//     cross-check completeness at all — incomplete (the unreported gap).
 //   - the PR's changed_files is at or above the endpoint cap: the pull-files
 //     endpoint can never serve the full change set — incomplete (the cap gap),
 //     however many entries the pages did yield.
-//   - the PR object reports a changed_files count and the pages yielded FEWER
-//     entries: the listing is provably short of the PR's own count —
-//     incomplete (the short-fall gap).
+//   - the entries do not EQUAL the reported count, in EITHER direction: fewer
+//     entries means the listing is provably short of the PR's own count (the
+//     short-fall gap); MORE entries means the PR changed between the PR read
+//     and the files read (the drift gap). Equality is the only honest complete.
 //   - otherwise: the enumeration terminated on a short page and matches the
-//     PR's count (or the forge reported no count) — complete.
-func changedFilesVerdict(entries, reported int, terminated bool) (bool, string) {
+//     PR's count — complete.
+func changedFilesVerdict(entries int, reported *int, terminated bool) (bool, string) {
 	if !terminated {
 		return false, fmt.Sprintf("pull-files pagination ceiling of %d pages (%d entries) reached without a terminating short page",
 			maxListPages, maxListPages*listPerPage)
 	}
-	if reported >= pullFilesCap {
-		return false, fmt.Sprintf("pull-files endpoint reports changed_files=%d and the endpoint caps at %d files — the enumeration cannot prove completeness",
-			reported, pullFilesCap)
+	if reported == nil {
+		return false, "the PR object reported no changed_files count — the enumeration completeness cross-check is unavailable"
 	}
-	if reported > 0 && entries < reported {
-		return false, fmt.Sprintf("pull-files endpoint returned %d of the PR's changed_files=%d entries (endpoint caps at %d files)",
-			entries, reported, pullFilesCap)
+	if *reported >= pullFilesCap {
+		return false, fmt.Sprintf("pull-files endpoint reports changed_files=%d and the endpoint caps at %d files — the enumeration cannot prove completeness",
+			*reported, pullFilesCap)
+	}
+	if entries != *reported {
+		if entries < *reported {
+			return false, fmt.Sprintf("pull-files endpoint returned %d of the PR's changed_files=%d entries (endpoint caps at %d files)",
+				entries, *reported, pullFilesCap)
+		}
+		return false, fmt.Sprintf("pull-files endpoint returned %d entries but the PR's changed_files=%d — the PR moved between the PR read and the files read (endpoint caps at %d files)",
+			entries, *reported, pullFilesCap)
 	}
 	return true, ""
 }
@@ -615,16 +643,19 @@ func changedFilesVerdict(entries, reported int, terminated bool) (bool, string) 
 // mrChangedFiles) and decides whether the enumeration is PROVABLY COMPLETE
 // (ADR-0020 §2, D-119).
 //
-// The completeness decision (changedFilesVerdict) rests on three axes: the
+// The completeness decision (changedFilesVerdict) rests on FOUR axes: the
 // enumeration terminated on a SHORT page below the pagination ceiling (a full
-// page at the ceiling proves nothing about the tail); the PR object's own
-// changed_files count matches the enumerated entries (the ADR-0020 §2 count
-// cross-check's GitHub column — the PR GET already decoded it); and the PR's
-// changed_files sits below the pull-files endpoint's 3000-file cap, above
-// which the endpoint can never serve the full change set. A failing axis is
-// declared incomplete with a SPECIFIC gap reason; the partial path list is
-// still returned, because an `.assent/**` path that IS visible must still
-// dominate to BLOCK (the fail-safe direction of D-119).
+// page at the ceiling proves nothing about the tail); the PR object REPORTS a
+// changed_files count at all (an unreported count cannot cross-check — an
+// absent count is information, not a zero, and is decoded as a pointer);
+// the count EQUALS the enumerated entries in BOTH directions (fewer entries is
+// the short-fall gap, more entries is the PR-moved-between-reads gap — the
+// ADR-0020 §2 count cross-check's GitHub column, the PR GET already decoded
+// it); and the PR's changed_files sits below the pull-files endpoint's
+// 3000-file cap, above which the endpoint can never serve the full change set.
+// A failing axis is declared incomplete with a SPECIFIC gap reason; the
+// partial path list is still returned, because an `.assent/**` path that IS
+// visible must still dominate to BLOCK (the fail-safe direction of D-119).
 //
 // A NON-200 on the files endpoint (INCLUDING 404) is a HARD ERROR, not a gap:
 // the PR provably exists by this point (the PR GET succeeded), so a missing

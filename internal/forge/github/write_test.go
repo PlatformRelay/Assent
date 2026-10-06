@@ -13,14 +13,18 @@ import (
 	"github.com/PlatformRelay/assent/internal/render"
 )
 
-// threadMarker is the fixture marker for finding threads.
+// threadMarker is the fixture marker for finding threads. EntryRef is
+// file-shaped: the GitHub review thread anchors on the governed FILE
+// (commit_id + path), which only a file:<path> entryRef can express — a
+// non-file marker fails closed in CreateThread.
 func threadMarker() forge.Marker {
 	return forge.Marker{
 		Slot: forge.Slot{
-			Project: baseRepo,
-			MR:      "7",
-			Rule:    "assent/policy-missing",
-			Effect:  "require-review",
+			Project:  baseRepo,
+			MR:       "7",
+			Rule:     "assent/policy-missing",
+			EntryRef: "file:topics/orders.yaml",
+			Effect:   "require-review",
 		},
 		Occurrence: "sha256:occurrence",
 		Decision:   "sha256:decision",
@@ -378,13 +382,33 @@ func TestCreateThreadAndResolveRoundTrip(t *testing.T) {
 	var gqlThreadID string
 	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/octo-org/base-repo/pulls/7":
+			// CreateThread reads the PINNED head via mrPinned — serve the PR
+			// the evaluation read reported.
+			_, _ = io.WriteString(w, sameRepoPR)
 		case r.Method == http.MethodPost && r.URL.Path == "/repos/octo-org/base-repo/pulls/7/comments":
+			// Live GitHub refuses a body-only create with 422: commit_id and
+			// path are required, and the shape this POST must carry is the
+			// pinned head + the governed subject's file path (subject_type
+			// "file" makes it a file-level thread — no line anchor).
 			var posted struct {
-				Body string `json:"body"`
+				Body        string `json:"body"`
+				CommitID    string `json:"commit_id"`
+				Path        string `json:"path"`
+				SubjectType string `json:"subject_type"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&posted)
 			if !strings.Contains(posted.Body, render.MarkerSentinel) {
 				t.Errorf("created thread body carries no marker envelope: %q", posted.Body)
+			}
+			if posted.CommitID != "srcSHA" {
+				t.Errorf("create commit_id = %q, want the PINNED source SHA the adapter's own MR read reported", posted.CommitID)
+			}
+			if posted.Path != "topics/orders.yaml" {
+				t.Errorf("create path = %q, want the governed subject (Slot.EntryRef minus the file: prefix)", posted.Path)
+			}
+			if posted.SubjectType != "file" {
+				t.Errorf("create subject_type = %q, want file (file-level thread, no line anchor)", posted.SubjectType)
 			}
 			w.WriteHeader(http.StatusCreated)
 			_, _ = io.WriteString(w, `{"id":401,"node_id":"PRRC_node1","body":"x","user":{"login":"assent-bot"}}`)

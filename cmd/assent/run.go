@@ -204,6 +204,18 @@ func orchestrate(cfg runConfig, client forge.RunPort, clock runClock, stdout io.
 	if err != nil {
 		return fmt.Errorf("forge snapshot: %w", err)
 	}
+	// E10 branch-review round 2 (finding 1): the Snapshot is a SECOND MR read —
+	// the merge-result digest and the changed-file list come from it, while the
+	// record's pins come from read 1. If the heads moved between the reads, the
+	// record would pin read 1's SHAs while judging read 2's file list against
+	// read 1's bytes — an internally inconsistent record whose merge path stays
+	// fail-closed only by accident of the digest CAS. Fail CLOSED: the forge
+	// state is mid-move and the run must be re-evaluated, never assembled from
+	// two reads.
+	if snapshot.Heads.SourceSHA != info.SourceSHA || snapshot.Heads.TargetSHA != info.TargetSHA {
+		return fmt.Errorf("forge heads moved between the MR read and the snapshot (pinned %s/%s, snapshot %s/%s) — re-evaluation required (fail-closed)",
+			info.SourceSHA, info.TargetSHA, snapshot.Heads.SourceSHA, snapshot.Heads.TargetSHA)
+	}
 	mrAuthor := snapshot.Heads.Author
 	// E10-S03 (design-note step 4): the merge-digest SCHEME is adapter-owned, so
 	// cmd/assent computes no forge-specific hash. The digest the adapter's
@@ -392,12 +404,6 @@ func orchestrate(cfg runConfig, client forge.RunPort, clock runClock, stdout io.
 		return fmt.Errorf("evaluate: %w", err)
 	}
 
-	// 6. Build the DecisionRecord. The merge-result pin is the adapter's
-	//    Snapshot digest: pinned when the adapter carries a real merge result
-	//    (GitHub's merge ref, E10), a typed gap + mergeResultDigest:null when
-	//    it does not (GitLab plain-merge; the gap reason is forge-neutral —
-	//    E10-S03: the digest scheme is adapter-owned, never named in cmd).
-	//    Tool/policy digests are non-empty.
 	// 6. Build the DecisionRecord. The merge-result pin is capability-gated
 	//    (REQ-E10-S03-01): the digest is pinned exactly when the adapter's
 	//    capability report grades merge-result-pinning SUPPORTED and carries a
@@ -406,21 +412,28 @@ func orchestrate(cfg runConfig, client forge.RunPort, clock runClock, stdout io.
 	//    (the digest scheme is adapter-owned, E10-S03 — cmd never names a
 	//    forge). Tool/policy digests are non-empty.
 	var pinsMergeResult decision.MergeResult
-	if snapshot.Capabilities.State(forge.CapabilityMergeResultPinning) == forge.CapabilitySupported && mergeDigest != "" {
+	switch {
+	case snapshot.Capabilities.State(forge.CapabilityMergeResultPinning) == forge.CapabilitySupported && mergeDigest != "":
 		mergeGap, err := decision.PinnedMergeResult(mergeDigest)
 		if err != nil {
 			return fmt.Errorf("merge-result pin: %w", err)
 		}
 		pinsMergeResult = mergeGap
-	} else {
+	case snapshot.Capabilities.State(forge.CapabilityMergeResultPinning) == forge.CapabilitySupported:
+		// The adapter graded the capability SUPPORTED but carried no digest:
+		// the pin is unbuildable and silently taking the gap branch would
+		// contradict the adapter's own grading — fail closed.
+		return fmt.Errorf("merge-result pin: adapter graded merge-result-pinning supported but carried no digest")
+	default:
 		// The gap reason is the adapter's own capability reason for
 		// merge-result-pinning — forge-owned text, contributor-legible, never a
-		// cmd-side hardcode. The fake fixtures (fixture-grade capabilities)
-		// degrade to the standing GitLab plain-merge gap so the record shape
-		// stays byte-identical for every fixture graded without the capability.
+		// cmd-side hardcode. When the report carries no reason (fixture-grade
+		// capabilities degrade here), the fallback is the FORGE-NEUTRAL
+		// statement of the same fact: the digest is not forge-observable on
+		// this run's merge path.
 		reason := snapshot.Capabilities.Reason(forge.CapabilityMergeResultPinning)
 		if reason == "" {
-			reason = "gitlab plain-merge exposes no merge-result digest (no merge train); ADR-0017 §1 capabilityGap"
+			reason = "the merge-result digest is not forge-observable on this run's merge path (adapter-graded absent/unprobed); ADR-0017 §1 capabilityGap"
 		}
 		mergeGap, err := decision.MergeResultGap(reason)
 		if err != nil {

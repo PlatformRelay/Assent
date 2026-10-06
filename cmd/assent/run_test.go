@@ -66,6 +66,13 @@ type fakeGitLab struct {
 	changesCount string
 	diffsStatus  int
 
+	// secondPRSha + prReads model the heads moving BETWEEN the run's two MR
+	// reads (the one-read-chain check, E10 branch-review round 2 finding 1):
+	// the first MR GET serves sourceSHA, every later one serves secondPRSha.
+	// Empty secondPRSha = the heads never move.
+	secondPRSha string
+	prReads     int
+
 	freeTier            bool
 	mrAuthor            string
 	labels              []string
@@ -155,13 +162,18 @@ func (f *fakeGitLab) handle(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.EscapedPath()
 	switch {
 	case p == "/api/v4/projects/42/merge_requests/7" && r.Method == http.MethodGet:
+		f.prReads++
+		sha := f.sourceSHA
+		if f.secondPRSha != "" && f.prReads > 1 {
+			sha = f.secondPRSha
+		}
 		sourceProjectID := 42
 		if f.forkMR {
 			sourceProjectID = 99
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"iid": 7, "project_id": 42, "source_project_id": sourceProjectID,
-			"sha":           f.sourceSHA,
+			"sha":           sha,
 			"source_branch": f.sourceBranch, "target_branch": f.target,
 			"changes_count": f.changesCountBody(),
 			"labels":        f.labels,

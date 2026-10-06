@@ -24,8 +24,12 @@ const (
 	patToken  = "ghp_test-token"
 	instToken = "ghs_install-token"
 
-	// sameRepoPR is the PR object for a same-repo PR (not a fork).
-	sameRepoPR = `{"number":7,"sha":"srcSHA","user":{"login":"octocat"},"labels":[{"name":"security-hold"}],` +
+	// sameRepoPR is the PR object for a same-repo PR (not a fork). It carries
+	// changed_files: 2 — the count the changed-file completeness cross-check
+	// consults, consistent with the two-entry files pages several fixtures
+	// serve (an unreported count would grade every enumeration incomplete,
+	// E10 branch-review round 2 finding 7).
+	sameRepoPR = `{"number":7,"sha":"srcSHA","user":{"login":"octocat"},"labels":[{"name":"security-hold"}],"changed_files":2,` +
 		`"base":{"ref":"main","sha":"tgtTIP","repo":{"full_name":"octo-org/base-repo"}},` +
 		`"head":{"ref":"feature","sha":"srcSHA","repo":{"full_name":"octo-org/base-repo"}},"mergeable_state":"clean"}`
 

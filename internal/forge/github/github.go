@@ -74,14 +74,20 @@ type Client struct {
 
 	// lastChangedFiles records the changed_files count of the latest PR read
 	// (snapshot.go's recordPRChangedFiles) — the enumeration count the
-	// changed-file completeness cross-check consults. Same mutex discipline
-	// as lastMergeState (recorded from the PR read chain, which holds pinMu).
-	lastChangedFiles int
+	// changed-file completeness cross-check consults; nil when the forge
+	// reported NO count (absent is information, not a zero count). Same mutex
+	// discipline as lastMergeState (recorded from the PR read chain, which
+	// holds pinMu).
+	lastChangedFiles *int
 
 	// mrPinnedKey/mrPinnedInfo are guarded by pinMu — their own mutex, for the
 	// same re-entry reason: GetMR (the run's own pinned read) WRITES the pin
 	// from inside the read chain, and mrPinned consults it while holding the
-	// same lock, so scopeMu must not carry the pin.
+	// same lock, so scopeMu must not carry the pin. The GitLab mirror keeps the
+	// same discipline: pinMu there guards the identical first-write-wins cache.
+	// Empty mrPinnedKey = never pinned (the first-write-wins gate: write only
+	// when empty or pinned to a different (project, mr); a same-MR re-read —
+	// the CAS's CurrentHeads read — never moves the evaluation pin).
 	mrPinnedKey  string
 	mrPinnedInfo forge.MRInfo
 	pinMu        sync.Mutex

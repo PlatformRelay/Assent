@@ -134,7 +134,7 @@ func TestConformanceWritesNeverRetried(t *testing.T) {
 		if _, err := c.CreateThread("42", "7", rerunChallengeMarker(), "body"); err == nil {
 			t.Fatal("a 5xx write must error")
 		}
-		if got := h.discPOSTs; got != 1 {
+		if got := h.discPOSTs.Load(); got != 1 {
 			t.Fatalf("a transient write failure must be attempted EXACTLY once, got %d attempt(s)", got)
 		}
 	})
@@ -150,7 +150,7 @@ func TestConformanceWritesNeverRetried(t *testing.T) {
 		if _, err := c.CreateThread("platform/orders-service", "482", rerunChallengeMarker(), "body"); err == nil {
 			t.Fatal("a 5xx write must error")
 		}
-		if got := h.reviewPOSTs; got != 1 {
+		if got := h.reviewPOSTs.Load(); got != 1 {
 			t.Fatalf("a transient write failure must be attempted EXACTLY once, got %d attempt(s)", got)
 		}
 	})

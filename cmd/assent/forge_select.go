@@ -23,6 +23,13 @@ const gitlabDefaultEndpoint = "https://gitlab.com"
 func selectForge(kind, endpoint string) (forgeKind factory.Kind, resolvedEndpoint string, err error) {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case string(factory.KindGitLab):
+		// The forge/host mismatch fails closed in BOTH directions (E10
+		// branch-review round 2, finding 2): GITLAB_TOKEN must never be
+		// dispatched to a GitHub host — the mirror of the GitHub arm's
+		// credential-leak guard.
+		if h := hostOf(endpoint); h == "api.github.com" || h == "github.com" {
+			return "", "", fmt.Errorf("--forge gitlab with a GitHub endpoint (%s) — refusing to send the GitLab credential to a foreign host (E10-S13)", endpoint)
+		}
 		return factory.KindGitLab, defaultGitLabEndpoint(endpoint), nil
 	case string(factory.KindGitHub):
 		// The GitLab-named flag's DEFAULT is not an operator choice: handing
@@ -32,13 +39,21 @@ func selectForge(kind, endpoint string) (forgeKind factory.Kind, resolvedEndpoin
 		if strings.TrimSpace(endpoint) == "" || endpoint == gitlabDefaultEndpoint {
 			return factory.KindGitHub, "https://api.github.com", nil
 		}
-		if h := hostOf(endpoint); h != "api.github.com" && h != "github.com" {
-			return "", "", fmt.Errorf("--forge github requires a GitHub endpoint (https://api.github.com); got %q — refusing to send the GitHub credential to a foreign host (E10-S13)", endpoint)
+		// ONLY the REST base is an acceptable override: the adapter addresses
+		// the REST API (Bearer token, /repos/...), and the web host github.com
+		// is not it — a github.com endpoint would 404 every call, the exact
+		// late-failure this error's own text exists to prevent.
+		if h := hostOf(endpoint); h != "api.github.com" {
+			return "", "", fmt.Errorf("--forge github requires the REST base https://api.github.com; got %q — refusing to send the GitHub credential to a foreign host, and refusing the github.com web host (the adapter needs the REST base) (E10-S13)", endpoint)
 		}
 		return factory.KindGitHub, strings.TrimRight(endpoint, "/"), nil
 	case "":
 		if strings.TrimSpace(endpoint) == "" {
-			return factory.KindGitLab, defaultGitLabEndpoint(endpoint), nil
+			// Nothing names a forge: there is no host to autodetect from, and
+			// defaulting to GitLab would be the fail-open REQ-E10-S13-01
+			// forbids. An unrecognised host already errors below; no host at
+			// all must not silently BE GitLab.
+			return "", "", fmt.Errorf("--forge is required: the endpoint names no forge host to autodetect from — supply --forge gitlab|github (E10-S13: ambiguity fails closed, never defaults)")
 		}
 		detected, err := detectForge(endpoint)
 		if err != nil {
@@ -66,21 +81,6 @@ func defaultGitLabEndpoint(endpoint string) string {
 		return gitlabDefaultEndpoint
 	}
 	return strings.TrimSuffix(strings.TrimRight(endpoint, "/"), "/api/v4")
-}
-
-// detectForge autodetects the forge from the endpoint host, matching EXACT
-// hosts only — a substring match (contains "gitlab") would classify an
-// attacker-chosen host, exactly the heuristic shape ADR-0021 forbids (SEC-04).
-func detectForgeFromEndpoint(endpoint string) (factory.Kind, bool) {
-	host := hostOf(endpoint)
-	switch host {
-	case "gitlab.com":
-		return factory.KindGitLab, true
-	case "api.github.com", "github.com":
-		return factory.KindGitHub, true
-	default:
-		return "", false
-	}
 }
 
 // detectForge is the fail-closed autodetect: an unrecognised host is an error,

@@ -18,15 +18,21 @@ import (
 // one merge.
 //
 // The consultation mechanics, stated exactly: the deltas are the ADAPTER's
-// arming-path capabilities (merge.go's armingConsultSet), consulted at the
-// adapter's arming verb (EnablePullRequestAutoMerge); the ENGINE's consult
-// (forge.PreconditionFromReport) is the ADR-0015 §4/§8 forge-neutral set and
-// is deliberately untouched — promoting a GitHub delta into it would change
-// GitLab's arming behaviour (the addressing model's judgment call (e)). The
-// run path composes BOTH consults into the injected precondition it passes to
-// Reconcile (the D-034 seam), which is what this table drives: the armed path
-// with the consult's outcome as the precondition. A refused consult is
-// carried in as ArmEligible=false, so Reconcile refuses with
+// arming-path capabilities (merge.go's armingConsultSet), consulted ONLY at
+// the adapter's arming verb (EnablePullRequestAutoMerge) — which v1
+// production does NOT call: the verb is not on forge.RunPort, the run path's
+// arming comes solely from forge.PreconditionFromReport (the ADR-0015 §4/§8
+// forge-neutral set), and that run is refused upstream anyway because
+// protected-pipeline-source and eligible-approval-evidence grade UNKNOWN
+// (arming is refused upstream by the capability report; D-188). So this
+// table guards the DELTAS' consultation at the verb they live on — it is not
+// a table over the production run path. A promotion of OQ-33/OQ-34 must wire
+// the delta consult into the run path or re-derive the armed-path gate
+// (D-188), or these rows become a table over dead code while the live path
+// merges unconsulted. The test composes the consult outcomes by hand (the
+// D-034 seam shape buildDesired would carry), which is what it drives: the
+// armed path with the consult's outcome as the precondition. A refused
+// consult is carried in as ArmEligible=false, so Reconcile refuses with
 // forge.ErrArmingRefused BEFORE any write and MergeCAS is never reached —
 // the count this table reads is the transport count (each real MergeCAS puts
 // exactly once; a refused one puts never), the only count an in-package

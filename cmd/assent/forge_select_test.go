@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/PlatformRelay/assent/internal/forge/factory"
@@ -45,14 +46,64 @@ func TestForgeSelection(t *testing.T) {
 			wantHost: "api.github.com",
 		},
 		{
+			// The credential-leak guard in its REAL flag shape: the operator
+			// names only --forge github and the -gitlab-endpoint default
+			// (https://gitlab.com) rides along untouched — the endpoint must
+			// still resolve to api.github.com.
+			name:     "github_with_flag_default_endpoint_targets_github",
+			forge:    "github",
+			endpoint: "https://gitlab.com",
+			wantKind: factory.KindGitHub,
+			wantHost: "api.github.com",
+		},
+		{
+			// The github.com WEB host is not an acceptable endpoint override:
+			// the adapter needs the REST base, and a github.com endpoint would
+			// 404 every REST call — the exact late-failure the error text
+			// promises to prevent.
+			name:       "github_with_web_host_fails_closed",
+			forge:      "github",
+			endpoint:   "https://github.com",
+			wantErr:    true,
+			wantErrSub: "REST base",
+		},
+		{
+			// Autodetect with the REAL flag-default shape: the operator named
+			// nothing and the endpoint is the flag default — a gitlab.com host
+			// autodetects GitLab.
 			name:     "autodetect_gitlab_com",
+			endpoint: "https://gitlab.com",
 			wantKind: factory.KindGitLab,
 			wantHost: "gitlab.com",
+		},
+		{
+			// Empty kind + empty endpoint names no forge at all: there is no
+			// host to autodetect from, and silently defaulting to GitLab is
+			// the fail-open REQ-E10-S13-01 forbids.
+			name:       "no_kind_no_endpoint_fails_closed",
+			wantErr:    true,
+			wantErrSub: "--forge is required",
+		},
+		{
+			name:     "autodetect_api_github_com",
+			endpoint: "https://api.github.com",
+			wantKind: factory.KindGitHub,
+			wantHost: "api.github.com",
 		},
 		{
 			name:     "unrecognised_host_fails_closed",
 			endpoint: "https://forge.example.org",
 			wantErr:  true,
+		},
+		{
+			// The forge/host mismatch in the OTHER direction: GITLAB_TOKEN must
+			// not be dispatched to a GitHub host (the mirror of the GitHub
+			// arm's credential-leak guard).
+			name:       "gitlab_with_github_host_fails_closed",
+			forge:      "gitlab",
+			endpoint:   "https://api.github.com",
+			wantErr:    true,
+			wantErrSub: "foreign host",
 		},
 		{
 			name:    "explicit_gitea_fails_closed",
@@ -66,6 +117,9 @@ func TestForgeSelection(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("selectForge(%q, %q) = (%q, %q), want error", tc.forge, tc.endpoint, gotKind, gotEndpoint)
+				}
+				if tc.wantErrSub != "" && !strings.Contains(err.Error(), tc.wantErrSub) {
+					t.Fatalf("the refusal must name its cause (%q), got %v", tc.wantErrSub, err)
 				}
 				return
 			}

@@ -231,17 +231,18 @@ func TestChangedFilesCompleteness(t *testing.T) {
 		for _, tc := range []struct {
 			name         string
 			entries      int
-			reported     int
+			reported     *int
 			terminated   bool
 			wantComplete bool
 			wantGapSub   string
 		}{
-			{"terminated and consistent", 2, 2, true, true, ""},
-			{"count unreported with terminating short page", 2, 0, true, true, ""},
-			{"short of the reported count", 1, 3, true, false, "returned 1 of the PR's changed_files=3 entries"},
-			{"at the pull-files cap", 3000, 3000, true, false, "caps at 3000 files"},
-			{"over the pull-files cap", 3000, 3001, true, false, "caps at 3000 files"},
-			{"pagination ceiling wins", 100, 0, false, false, "pagination ceiling"},
+			{"terminated and consistent", 2, intPtr(2), true, true, ""},
+			{"count unreported grades incomplete", 2, nil, true, false, "reported no changed_files count"},
+			{"short of the reported count", 1, intPtr(3), true, false, "returned 1 of the PR's changed_files=3 entries"},
+			{"more than the reported count grades incomplete", 3, intPtr(1), true, false, "returned 3 entries but the PR's changed_files=1"},
+			{"at the pull-files cap", 3000, intPtr(3000), true, false, "caps at 3000 files"},
+			{"over the pull-files cap", 3000, intPtr(3001), true, false, "caps at 3000 files"},
+			{"pagination ceiling wins", 100, nil, false, false, "pagination ceiling"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				complete, gap := changedFilesVerdict(tc.entries, tc.reported, tc.terminated)
@@ -261,6 +262,9 @@ func TestChangedFilesCompleteness(t *testing.T) {
 		}
 	})
 }
+
+// intPtr is the pointer the count cross-check rows need (nil = unreported).
+func intPtr(n int) *int { return &n }
 
 // prWithChangedFiles is the same-repo PR carrying the PR object's own
 // changed_files count — the cross-check input the enumeration verdict needs.

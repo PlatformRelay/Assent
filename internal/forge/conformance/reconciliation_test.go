@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,24 +34,29 @@ type gitlabNote struct {
 }
 
 type gitlabHarness struct {
-	project         string
-	mr              string
-	botAuthor       string
+	project   string
+	mr        string
+	botAuthor string
+	// discussions/notes are the handler-mutated state stores. Handler WRITES to
+	// them are single-flow in this suite (the adapter is driven serially); the
+	// COUNTERS below are the only state two handler goroutines touch at once —
+	// the deadline-bounded case fires overlapping reads, so every counter is an
+	// atomic (go test -race would red on ++ from concurrent handler goroutines).
 	discussions     []gitlabDiscussion
 	notes           []gitlabNote
-	nextID          int
-	createCalls     int
-	resolveCalls    int
-	noteCreateCalls int
-	noteUpdateCalls int
+	nextID          atomic.Int64
+	createCalls     atomic.Int64
+	resolveCalls    atomic.Int64
+	noteCreateCalls atomic.Int64
+	noteUpdateCalls atomic.Int64
 
 	// E10-S01: MR heads + merge/approve state, so the SHA-guard cases can run
 	// against GitLab instead of being fake-only.
 	sourceSHA    string
 	targetSHA    string
-	mrReads      int
-	approveCalls int
-	mergePUTs    int
+	mrReads      atomic.Int64
+	approveCalls atomic.Int64
+	mergePUTs    atomic.Int64
 
 	forkMR       bool
 	governedPath string
@@ -72,16 +78,16 @@ type gitlabHarness struct {
 	// transport error, never a sentinel).
 	rateLimited403 bool
 
-	// discRequests counts the discussions POSTs the harness received — the
+	// discPOSTs counts the discussions POSTs the harness received — the
 	// write-never-retried case reads it.
-	discPOSTs int
+	discPOSTs atomic.Int64
 
 	// afterMRRead fires once an MR read has been SERVED — the TOCTOU seam.
 	afterMRRead func(h *gitlabHarness)
 }
 
 func newGitLabHarness(project, mr string) *gitlabHarness {
-	return &gitlabHarness{project: project, mr: mr, botAuthor: botID, nextID: 9000}
+	return &gitlabHarness{project: project, mr: mr, botAuthor: botID}
 }
 
 func (h *gitlabHarness) seed(id, author string, marker forge.Marker, resolved bool) error {
@@ -293,16 +299,15 @@ func (h *gitlabHarness) serveDiscussions(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *gitlabHarness) createDiscussion(w http.ResponseWriter, r *http.Request) {
-	h.createCalls++
-	h.discPOSTs++
+	h.createCalls.Add(1)
+	h.discPOSTs.Add(1)
 	if h.writeStatus != 0 {
 		http.Error(w, "injected transport failure", h.writeStatus)
 		return
 	}
 	body, _ := io.ReadAll(r.Body)
 	form, _ := url.ParseQuery(string(body))
-	h.nextID++
-	id := fmt.Sprintf("note/%d", h.nextID)
+	id := fmt.Sprintf("note/%d", h.nextID.Add(1))
 	h.discussions = append(h.discussions, gitlabDiscussion{
 		id: id, body: form.Get("body"), resolved: false, author: h.botAuthor,
 	})
@@ -315,7 +320,7 @@ func (h *gitlabHarness) resolveDiscussion(w http.ResponseWriter, r *http.Request
 		http.Error(w, "missing resolved=true", http.StatusBadRequest)
 		return
 	}
-	h.resolveCalls++
+	h.resolveCalls.Add(1)
 	rawID := strings.TrimPrefix(path, escapedBase+"/")
 	id, err := url.PathUnescape(rawID)
 	if err != nil {
@@ -359,18 +364,17 @@ func (h *gitlabHarness) serveNotes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *gitlabHarness) createNote(w http.ResponseWriter, r *http.Request) {
-	h.noteCreateCalls++
+	h.noteCreateCalls.Add(1)
 	body, _ := io.ReadAll(r.Body)
 	form, _ := url.ParseQuery(string(body))
-	h.nextID++
-	id := h.nextID
+	id := int(h.nextID.Add(1))
 	h.notes = append(h.notes, gitlabNote{id: id, body: form.Get("body"), author: h.botAuthor})
 	w.WriteHeader(http.StatusCreated)
 	_, _ = io.WriteString(w, fmt.Sprintf(`{"id":%d}`, id))
 }
 
 func (h *gitlabHarness) updateNote(w http.ResponseWriter, r *http.Request, path, notesBase string) {
-	h.noteUpdateCalls++
+	h.noteUpdateCalls.Add(1)
 	body, _ := io.ReadAll(r.Body)
 	form, _ := url.ParseQuery(string(body))
 	rawID := strings.TrimPrefix(path, notesBase+"/")
@@ -464,8 +468,8 @@ func TestSpoofedMarkerStillIgnored(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Reconcile: %v", err)
 			}
-			if h.createCalls != 1 {
-				t.Fatalf("the spoof must not satisfy the slot; createCalls=%d, want 1", h.createCalls)
+			if got := h.createCalls.Load(); got != 1 {
+				t.Fatalf("the spoof must not satisfy the slot; createCalls=%d, want 1", got)
 			}
 			if len(receipt.Warnings) != 0 {
 				t.Fatalf("receipt must carry no warnings for a contributor note, got %v", receipt.Warnings)

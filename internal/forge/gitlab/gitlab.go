@@ -68,12 +68,21 @@ type Client struct {
 	// mrPinnedProject/mrPinnedInfo cache the LAST MR read (E10-S02). The
 	// MR-relative governed-subject accessors (FileAtBase/FileAtHead) read at the
 	// SHAs this cache carries so judged bytes and record pins share one read
-	// chain; a stale pin would be worse than none, so a different (project, mr)
-	// evicts it. The port stays stateless — the composite (project, mr) handle
-	// keys the cache, per the execution decision in the change
-	// p5-e10-github-forge-execution (REQ-E10X-01-01).
+	// chain. FIRST WRITE WINS (E10 branch-review round 2, finding 6): GetMR
+	// writes the pin only when the cache is empty or pinned to a DIFFERENT
+	// (project, mr) — a same-MR re-read (CurrentHeads' CAS re-read) never
+	// overwrites the pin, because a pin that moved with the freshest read would
+	// let a post-evaluation re-read redirect the governed reads and the approval
+	// pin to a head that moved after evaluation. A different (project, mr)
+	// evicts the pin (a stale pin would be worse than none). The port stays
+	// stateless — the composite (project, mr) handle keys the cache, per the
+	// execution decision in the change p5-e10-github-forge-execution
+	// (REQ-E10X-01-01). Guarded by pinMu (the github.Client mirror): GetMR
+	// writes the pin from inside the read chain and mrPinned consults it while
+	// holding the same lock, so scopeMu/warnMu must not carry the pin.
 	mrPinnedProject string
 	mrPinnedInfo    *MRInfo
+	pinMu           sync.Mutex
 }
 
 // warn records a non-fatal anomaly (AUD-S12 / REL-06). Duplicates collapse.
@@ -494,9 +503,20 @@ func (c *Client) GetMR(project, mr string) (MRInfo, error) {
 	// separate re-read here would let a head move between the pin (the record's
 	// SHAs) and the governed read (the judged bytes) — the move-and-restore
 	// merge of un-evaluated bytes the branch review's CRITICAL names.
-	c.mrPinnedProject = project + "/" + mr
-	c.mrPinnedInfo = &info
-	return *c.mrPinnedInfo, nil
+	//
+	// FIRST WRITE WINS: the pin is written only when the cache is empty or
+	// pinned to a different (project, mr). A same-MR re-read — the CAS's
+	// CurrentHeads read — must NOT move the evaluation pin: Approve and the
+	// governed reads follow the pin, and the pin must stay at the SHAs the
+	// evaluation actually judged, whatever the forge reports later.
+	key := project + "/" + mr
+	c.pinMu.Lock()
+	if c.mrPinnedProject != key {
+		c.mrPinnedProject = key
+		c.mrPinnedInfo = &info
+	}
+	c.pinMu.Unlock()
+	return info, nil
 }
 
 // branchTip returns the tip commit id of a branch via
@@ -597,6 +617,12 @@ func (c *Client) FileAtHead(project, mr, path string) ([]byte, error) {
 // method's returned MRInfo carries, so the judged bytes and the record's pins
 // come from the SAME read chain (REV1-S01: judged content at the pinned commit
 // SHA) and a mid-run branch move cannot decouple them — the commit the cache
+// (project, mr) handle keys the cache.
+// mrPinned returns the pinned MR read for (project, mr), populating the cache
+// on first touch. The MR-relative accessors read content AT the SHAs this
+// method's returned MRInfo carries, so the judged bytes and the record's pins
+// come from the SAME read chain (REV1-S01: judged content at the pinned commit
+// SHA) and a mid-run branch move cannot decouple them — the commit the cache
 // holds is the pin, not a re-resolved tip.
 //
 // The cache is a single pinned MR: `assent run`/`assent doctor` drive ONE merge
@@ -604,17 +630,20 @@ func (c *Client) FileAtHead(project, mr, path string) ([]byte, error) {
 // judged-bytes≠pinned-bytes defect in reverse). This is adapter-internal state
 // in service of the port contract — the PORT stays stateless; the composite
 // (project, mr) handle keys the cache.
+//
+// The miss path needs no manual cache write: GetMR IS the pin (first write
+// wins) and fills the cache itself; a same-MR miss cannot leave the cache empty.
 func (c *Client) mrPinned(project, mr string) (MRInfo, error) {
-	if c.mrPinnedProject == project+"/"+mr && c.mrPinnedInfo != nil {
-		return *c.mrPinnedInfo, nil
+	key := project + "/" + mr
+	c.pinMu.Lock()
+	if c.mrPinnedProject == key && c.mrPinnedInfo != nil {
+		info := *c.mrPinnedInfo
+		c.pinMu.Unlock()
+		return info, nil
 	}
-	info, err := c.GetMR(project, mr)
-	if err != nil {
-		return MRInfo{}, err
-	}
-	c.mrPinnedProject = project + "/" + mr
-	c.mrPinnedInfo = &info
-	return info, nil
+	c.pinMu.Unlock()
+	// GetMR takes pinMu for the write; never call it while holding pinMu.
+	return c.GetMR(project, mr)
 }
 
 // discussion is the subset of a GitLab discussion the adapter reads.
@@ -939,6 +968,11 @@ func (c *Client) Approve(project, mr string) (string, error) {
 // merge protection is still the ?sha= PUT + target re-read in MergeCAS. The
 // honest "gitlab has no merge-result digest" audit fact is recorded SEPARATELY
 // in the DecisionRecord's capabilityGap by cmd/assent — never here.
+//
+// The re-read goes FRESH and does NOT move the evaluation pin: GetMR's pin
+// write is first-write-wins, so this read returns the forge's current heads
+// while the pin stays at the SHAs the evaluation judged — the MR-relative
+// governed reads keep following the evaluated pin.
 func (c *Client) CurrentHeads(project, mr string) (source, target, digest string, err error) {
 	info, err := c.GetMR(project, mr)
 	if err != nil {

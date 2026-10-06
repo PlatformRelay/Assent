@@ -93,10 +93,13 @@ report marks that capability UNKNOWN on GitLab, so **GitLab runs decide and comm
 arm auto-merge** until `OQ-33` is answered and a decidable probe ships. Approval, threads,
 decisions and records are unchanged; only the auto-merge arming path is refused, with the typed
 `insecure-topology` reason and the open question cited in `assent doctor`. **Action required if
-you rely on GitLab auto-merge**: keep the MR available for a human (or the platform's own
-protections) until the OQ-33 predicate lands; the decision record, threads and approvals are
-unchanged. GitHub v1 ships comment-only for the same reason (rows 9 and 11 unknown per
-OQ-33/OQ-34).
+  you rely on GitLab auto-merge**: keep the MR available for a human (or the platform's own
+  protections) until the OQ-33 predicate lands; the decision record, threads and approvals are
+  unchanged. GitHub v1 ships comment-only for the same reason (rows 9 and 11 unknown per
+  OQ-33/OQ-34). The same hold covers the deferred-arming deltas (D-188, E10-S11): the
+  arming-revoked-on-push, review-dismissal-restrictions and merge-result-pinning consults live
+  only on the `enablePullRequestAutoMerge` verb that v1 production never calls, and a future
+  capability promotion MUST wire them into the run path before they become live.
 
 """
 # D-180: the committed CHANGELOG.md holds RELEASED versions only. With

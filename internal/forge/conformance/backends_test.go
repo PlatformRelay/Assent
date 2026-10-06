@@ -94,8 +94,8 @@ func (b gitlabBackend) MergesPerformed() int { return b.cp.mergesPerformed }
 func (b gitlabBackend) Approvals() int       { return b.cp.approvals }
 func (b gitlabBackend) ThreadsCreated() int  { return b.cp.threadsCreated }
 func (b gitlabBackend) ThreadsResolved() int { return b.cp.threadsResolved }
-func (b gitlabBackend) NotesCreated() int    { return b.h.noteCreateCalls }
-func (b gitlabBackend) NotesUpdated() int    { return b.h.noteUpdateCalls }
+func (b gitlabBackend) NotesCreated() int    { return int(b.h.noteCreateCalls.Load()) }
+func (b gitlabBackend) NotesUpdated() int    { return int(b.h.noteUpdateCalls.Load()) }
 
 func (b gitlabBackend) NoteBody(id string) string {
 	n, err := strconv.Atoi(strings.TrimPrefix(id, "note/"))
@@ -214,7 +214,7 @@ func gitlabFactory(t TB, cfg Config) Backend {
 // their catalog rows said `forge: gitlab`. These three routes close that gap.
 
 func (h *gitlabHarness) serveMR(w http.ResponseWriter, _ *http.Request) {
-	h.mrReads++
+	h.mrReads.Add(1)
 	// E10-S05 transport knob: a response slower than a short per-request
 	// deadline. The sleep happens BEFORE the answer, so the read must hit the
 	// per-request context deadline (the adapter's request timeout), never hang.
@@ -248,13 +248,13 @@ func (h *gitlabHarness) serveBranch(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *gitlabHarness) approve(w http.ResponseWriter, _ *http.Request) {
-	h.approveCalls++
+	h.approveCalls.Add(1)
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{"id": 1})
 }
 
 func (h *gitlabHarness) merge(w http.ResponseWriter, r *http.Request) {
-	h.mergePUTs++
+	h.mergePUTs.Add(1)
 	// ?sha= is GitLab's compare-and-swap on the SOURCE head: a moved source is
 	// 409, no merge. Modelled faithfully so the case proves the guard, not the fake.
 	if got := r.URL.Query().Get("sha"); got != h.sourceSHA {

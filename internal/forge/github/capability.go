@@ -1,9 +1,7 @@
 package github
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 
 	"github.com/PlatformRelay/assent/internal/forge"
 )
@@ -26,8 +24,7 @@ import (
 // probeCapabilities reads the forge settings the predicates need and returns
 // the report. Probe transport failures propagate as errors (never unknown).
 func (c *Client) probeCapabilities(project, mr string) (forge.CapabilityReport, error) {
-	repo, err := repoParts(project)
-	if err != nil {
+	if _, err := repoParts(project); err != nil {
 		return forge.CapabilityReport{}, err
 	}
 	caps := map[forge.Capability]forge.CapabilityEntry{
@@ -90,42 +87,18 @@ func (c *Client) probeCapabilities(project, mr string) (forge.CapabilityReport, 
 			"merge ref not probed on this run — unprobed is not proof (dossier C16)")
 	}
 
-	// Probe 1 (S00 Q2 row 6 / dossier C11): allow_auto_merge on the repo.
-	// The probe runs, but the field name is UNVERIFIED against a live response
-	// (S00 Q2 row 6) and the enablePullRequestAutoMerge preconditions are
-	// dossier "open verification items" (REQ-E10-S09-02) — so the grading
-	// stays UNKNOWN with the open item cited, in BOTH directions of the
-	// observed value: an unconfirmed field name licenses neither support nor
-	// absence, and the arming consult refuses on unknown either way.
-	status, _, raw, err := c.do(http.MethodGet, "/repos/"+repo, nil, "")
-	if err != nil {
-		return forge.CapabilityReport{}, err
-	}
-	if status == http.StatusOK {
-		var repoMeta struct {
-			AllowAutoMerge bool `json:"allow_auto_merge"`
-		}
-		if err := json.Unmarshal(raw, &repoMeta); err != nil {
-			return forge.CapabilityReport{}, fmt.Errorf("github: decode repo %s: %w", repo, err)
-		}
-		if repoMeta.AllowAutoMerge {
-			caps[forge.CapabilityDeferredMergeArming] = forge.UnknownCapabilityEntry(
-				"probe: allow_auto_merge is true (dossier C11) — but the field name is UNVERIFIED against a live response (S00 Q2 row 6) and the enablePullRequestAutoMerge preconditions are dossier open verification items (REQ-E10-S09-02): unknown until a live response confirms it")
-		} else {
-			caps[forge.CapabilityDeferredMergeArming] = forge.UnknownCapabilityEntry(
-				"probe: allow_auto_merge is false (dossier C11) — the field name is UNVERIFIED against a live response (S00 Q2 row 6), so the false reading proves neither support nor absence (REQ-E10-S09-02): unknown until confirmed")
-		}
-	} else if status != http.StatusNotFound {
-		// A non-404 error on the repo probe (an unauthorized metadata read)
-		// means every setting below it is unprovable — a hard error, never a
-		// silent unknown (REQ-E10-S04-05).
-		return forge.CapabilityReport{}, fmt.Errorf("github: get repo %s: unexpected status %d", repo, status)
-	}
-	// A 404 repo read leaves deferred-merge-arming UNKNOWN (not probed).
-	if caps[forge.CapabilityDeferredMergeArming].State == "" {
-		caps[forge.CapabilityDeferredMergeArming] = forge.UnknownCapabilityEntry(
-			fmt.Sprintf("repo settings unreadable (probe answered %d) — unprobed is not proof", status))
-	}
+	// Probe 1 (S00 Q2 row 6 / dossier C11): deferred-merge-arming. The
+	// enablePullRequestAutoMerge preconditions are dossier "open verification
+	// items" (REQ-E10-S09-02) and the allow_auto_merge field name is UNVERIFIED
+	// against a live response (S00 Q2 row 6) — and after the regrade the
+	// observed value licenses NEITHER support NOR absence. The probe that read
+	// it has been retired (E10 branch-review round 2, finding 9g): a probe
+	// whose result never affects grading is pure read traffic, and its
+	// non-200/non-404 statuses would abort the whole Snapshot for a capability
+	// that is unknown either way. The grading is therefore UNKNOWN
+	// unconditionally, with the open item cited.
+	caps[forge.CapabilityDeferredMergeArming] = forge.UnknownCapabilityEntry(
+		"allow_auto_merge is UNVERIFIED against a live response (S00 Q2 row 6) and the enablePullRequestAutoMerge preconditions are dossier open verification items (REQ-E10-S09-02) — no probe is issued for it in v1, unknown until a live response confirms it")
 
 	return forge.NewCapabilityReport(caps)
 }

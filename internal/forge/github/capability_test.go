@@ -93,7 +93,11 @@ func TestUnverifiedReportedUnknown(t *testing.T) {
 		}
 	})
 
-	t.Run("deferred-merge-arming unknown when the repo probe 404s", func(t *testing.T) {
+	t.Run("deferred-merge-arming unknown with no repo-settings probe", func(t *testing.T) {
+		// The repo-settings probe is retired (its observed value licensed
+		// neither support nor absence): the grading is unknown unconditionally
+		// — unprobed is not proof, and an unreadable repo can no longer abort
+		// the Snapshot for a capability that grades unknown either way.
 		caps := honestSnapshot(t, http.StatusNotFound, "no repo")
 		if state := caps.State(forge.CapabilityDeferredMergeArming); state != forge.CapabilityUnknown {
 			t.Fatalf("deferred-merge-arming = %q with the repo probe unreadable, want unknown (unprobed is not proof)", state)
