@@ -169,17 +169,22 @@ func TestArmingRevokeOnPush(t *testing.T) {
 		c, _ := newServer(t, h.ServeHTTP)
 
 		// The honest report comes from the adapter's own probe chain (the run
-		// path consults the same report it renders).
+		// path consults the same report it renders). Its arming-path entries
+		// are not proven (the arming consult walks armingConsultSet in order),
+		// so the v1 report refuses at the FIRST unproven member —
+		// deferred-merge-arming, whose allow_auto_merge field is unverified
+		// (S00 Q2 row 6, REQ-E10-S09-02). The revocation delta keeps its own
+		// isolated refusal row below.
 		snap, err := c.Snapshot(baseRepo, "7")
 		if err != nil {
 			t.Fatalf("Snapshot: %v", err)
 		}
 		err = c.EnablePullRequestAutoMerge(baseRepo, "7", snap.Capabilities, MergeMethodMerge)
 		if !errors.Is(err, forge.ErrArmingRefused) {
-			t.Fatalf("the v1 report (revocation signal unverified) must refuse arming, got %v", err)
+			t.Fatalf("the v1 report (arming-path capabilities unverified) must refuse arming, got %v", err)
 		}
-		if !strings.Contains(err.Error(), "arming-revoked-on-push") {
-			t.Errorf("the refusal must name the revocation capability, got %v", err)
+		if !strings.Contains(err.Error(), "deferred-merge-arming") {
+			t.Errorf("the refusal must name the first unproven arming-path capability, got %v", err)
 		}
 		if !strings.Contains(err.Error(), "unknown") {
 			t.Errorf("the refusal must carry the capability state, got %v", err)

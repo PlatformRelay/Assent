@@ -93,13 +93,10 @@ func markerSkipWarning(kind, id string, err error) string {
 }
 
 // ghIssueComment is the subset of a PR review/issue comment the adapter reads.
-// NodeID is the GraphQL node id the ResolveThread mutation needs (dossier §4:
-// thread resolution is GraphQL-only); the adapter remembers it in nodeIDs.
 type ghIssueComment struct {
-	ID     int64  `json:"id"`
-	NodeID string `json:"node_id"`
-	Body   string `json:"body"`
-	User   struct {
+	ID   int64  `json:"id"`
+	Body string `json:"body"`
+	User struct {
 		Login string `json:"login"`
 	} `json:"user"`
 }
@@ -115,28 +112,6 @@ func ghNoteID(id string) (kind, numeric string) {
 	return id[:i], id[i+1:]
 }
 
-// rememberNodeID records a review comment's GraphQL node id under its numeric
-// REST id (the ResolveThread lookup).
-func (c *Client) rememberNodeID(commentID int64, nodeID string) {
-	if nodeID == "" {
-		return
-	}
-	c.nodeMu.Lock()
-	defer c.nodeMu.Unlock()
-	if c.nodeIDs == nil {
-		c.nodeIDs = map[int64]string{}
-	}
-	c.nodeIDs[commentID] = nodeID
-}
-
-// nodeIDFor returns the GraphQL node id remembered for a review comment, ""
-// when this client has never seen it.
-func (c *Client) nodeIDFor(commentID int64) string {
-	c.nodeMu.Lock()
-	defer c.nodeMu.Unlock()
-	return c.nodeIDs[commentID]
-}
-
 // ListBotThreads returns the PR's review comments authored by the configured
 // identity, filtered by AUTHOR IDENTITY (ADR-0019): a contributor comment
 // carrying a well-formed marker is EXCLUDED — invisible to reconciliation.
@@ -149,10 +124,9 @@ func (c *Client) nodeIDFor(commentID int64) string {
 // reconcile, which duplicates findings. A 404/403 wraps forge.ErrUnauthorized
 // (S00 Q4: never an empty list — permission failure is not absence).
 //
-// Thread.ID carries the REST id as "comment/<id>"; the comment's GraphQL
-// node_id is remembered in nodeIDs, because resolution is GraphQL-only and
-// addresses threads by node id (the port's ResolveThread signature keeps
-// (project, mr, id)).
+// Thread.ID carries the REST id as "comment/<id>": resolution is GraphQL-only
+// and addresses THREADS by their own node id (the reviewThreads read maps the
+// comment id to its thread's node id for ResolveThread — dossier §4).
 func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 	repo, err := repoParts(project)
 	if err != nil {
@@ -177,7 +151,6 @@ func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 				return nil, fmt.Errorf("github: decode review comments %s#%s: %w", repo, mr, err)
 			}
 			for _, row := range rows {
-				c.rememberNodeID(row.ID, row.NodeID)
 				// AUTHOR-IDENTITY filter (ADR-0019): only the bot's own comments
 				// count. A contributor's well-formed marker is invisible here —
 				// it is never even parsed (the spoof-resistance axis).
@@ -197,8 +170,9 @@ func (c *Client) ListBotThreads(project, mr string) ([]forge.Thread, error) {
 					continue
 				}
 				out = append(out, forge.Thread{
-					// The REST id is the Thread.ID; the GraphQL node id rides
-					// in nodeIDs for ResolveThread (dossier §4).
+					// The REST id is the Thread.ID; the THREAD node id the
+					// resolve mutation needs comes from the reviewThreads read
+					// (dossier §4), not from the listing.
 					ID:     fmt.Sprintf("comment/%d", row.ID),
 					Marker: marker,
 					Author: row.User.Login,
@@ -365,7 +339,6 @@ func (c *Client) createNote(project, mr string, marker forge.Marker, body string
 	if err := json.Unmarshal(raw, &created); err != nil {
 		return forge.Note{}, fmt.Errorf("github: decode created comment %s#%s: %w", repo, mr, err)
 	}
-	c.rememberNodeID(created.ID, created.NodeID)
 	return forge.Note{
 		ID:     fmt.Sprintf("issue-comment/%d", created.ID),
 		Marker: marker,
@@ -435,9 +408,6 @@ func (c *Client) CreateThread(project, mr string, marker forge.Marker, body stri
 	if err := json.Unmarshal(raw, &created); err != nil {
 		return forge.Thread{}, fmt.Errorf("github: decode created thread %s#%s: %w", repo, mr, err)
 	}
-	// Remember the created comment's GraphQL node id so ResolveThread can
-	// address it without a re-listing.
-	c.rememberNodeID(created.ID, created.NodeID)
 	return forge.Thread{
 		ID:     fmt.Sprintf("comment/%d", created.ID),
 		Marker: marker,
@@ -448,23 +418,26 @@ func (c *Client) CreateThread(project, mr string, marker forge.Marker, body stri
 // ResolveThread marks the bot review thread resolved in place (the
 // duplicate-repair and supersede action). Thread resolution is GraphQL-only on
 // GitHub (dossier §4): resolveReviewThread(input:{threadId}) — the REST API
-// has no resolution verb, so the GraphQL node id (remembered by the listing
-// and creation) is REQUIRED; an unknown id fails closed rather than guessing.
-// The response must report isResolved:true — a forge that answers the mutation
-// but not the resolution is an error, never success. Resolving is idempotent:
-// an "already resolved" GraphQL error is success; an unparseable/unknown id is
-// an error.
+// has no resolution verb, and the mutation addresses the THREAD's GraphQL node
+// id (a PullRequestReviewThread), a DIFFERENT object from the comment's own
+// node id. The thread node id comes from the reviewThreads GraphQL read the
+// resolution states come from: the comment id the port carries ("comment/<id>")
+// is mapped to its thread's node id there; a comment no thread reports is a
+// fail-closed error rather than a guessed address. The response must report
+// isResolved:true — a forge that answers the mutation but not the resolution is
+// an error, never success. Resolving is idempotent: an "already resolved"
+// GraphQL error is success; an unparseable/unknown id is an error.
 func (c *Client) ResolveThread(project, mr, id string) error {
 	_, numeric := ghNoteID(id)
 	num, err := strconv.ParseInt(numeric, 10, 64)
 	if err != nil {
 		return fmt.Errorf("github: thread id %q carries no parseable numeric comment id — refusing to resolve an unaddressable thread", id)
 	}
-	nodeID := c.nodeIDFor(num)
-	if nodeID == "" {
-		return fmt.Errorf("github: thread %s is unknown to this client — its GraphQL node id was never observed; list bot threads (or create the thread) before resolving", id)
+	threadID, err := c.threadNodeIDFor(project, mr, num)
+	if err != nil {
+		return err
 	}
-	data, err := c.gqlDo(c.ctx, gqlResolveThread, map[string]any{"threadId": nodeID})
+	data, err := c.gqlDo(c.ctx, gqlResolveThread, map[string]any{"threadId": threadID})
 	if err != nil {
 		// Idempotence: resolving an already-resolved thread is a no-op — the
 		// forge's "already resolved" rejection IS success for this verb.
@@ -491,16 +464,31 @@ func (c *Client) ResolveThread(project, mr, id string) error {
 }
 
 // Approve records an approval via POST /repos/{repo}/pulls/{mr}/reviews with
-// {"event":"APPROVE"} and returns the review's forge id ("review/<id>") — the
-// stable non-empty target the receipt records. A 401/403 is the
-// ErrUnauthorized sentinel (an author/bot cannot self-approve, or the token
-// lacks the pull-request-write scope), never a transport failure.
+// {"event":"APPROVE","commit_id":<pinned head>} and returns the review's forge
+// id ("review/<id>") — the stable non-empty target the receipt records. The
+// commit_id is the PINNED source SHA this client's own MR read reported (the
+// GitHub mirror of ADR-0015 §2's approve-then-merge?sha= pinning): the approval
+// lands on the evaluated head, never on a head that moved after evaluation.
+// A 401/403 is the ErrUnauthorized sentinel (an author/bot cannot
+// self-approve, or the token lacks the pull-request-write scope), never a
+// transport failure.
 func (c *Client) Approve(project, mr string) (string, error) {
 	repo, err := repoParts(project)
 	if err != nil {
 		return "", err
 	}
-	payload, err := json.Marshal(map[string]any{"event": "APPROVE"})
+	// The pinned head comes from the adapter's own MR read (mrPinned fills the
+	// pin cache with GetMR on first touch) — the same read chain the
+	// evaluation judged bytes through, so the reviewed commit and the evaluated
+	// commit are one and the same (REV1-S01's one-read-chain rule).
+	info, err := c.mrPinned(project, mr)
+	if err != nil {
+		return "", fmt.Errorf("github: pin approval head %s#%s: %w", project, mr, err)
+	}
+	payload, err := json.Marshal(map[string]any{"event": "APPROVE", "commit_id": info.SourceSHA})
+	if err != nil {
+		return "", errors.New("github: encode approve body")
+	}
 	if err != nil {
 		return "", errors.New("github: encode approve body")
 	}

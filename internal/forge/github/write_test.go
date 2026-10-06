@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/PlatformRelay/assent/internal/forge"
 	"github.com/PlatformRelay/assent/internal/render"
@@ -371,9 +369,11 @@ func TestUpsertCommentRejectsNonSummary(t *testing.T) {
 }
 
 // TestCreateThreadAndResolveRoundTrip proves the full thread lifecycle: the
-// REST creation returns "comment/<id>" and remembers the GraphQL node id, and
-// ResolveThread drives the GraphQL-only resolution with that node id — no
-// re-listing needed (dossier §4).
+// REST creation returns "comment/<id>", and ResolveThread maps that comment to
+// its THREAD's GraphQL node id (a PullRequestReviewThread, served DISTINCT
+// from the comment's own node id — the reviewThreads read is the mapping the
+// dossier's resolution path rides) and resolves THAT — no REST re-listing
+// needed (dossier §4).
 func TestCreateThreadAndResolveRoundTrip(t *testing.T) {
 	var gqlThreadID string
 	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -396,13 +396,20 @@ func TestCreateThreadAndResolveRoundTrip(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Fatalf("decode graphql request: %v", err)
 			}
+			if strings.Contains(req.Query, "reviewThreads") {
+				// The reviewThreads read maps the comment's databaseId to its
+				// THREAD node id — a different object from the comment's own
+				// node id.
+				serveThreadsQueryOpen(w, req.Query, 401)
+				return
+			}
 			if !strings.Contains(req.Query, "resolveReviewThread") {
 				t.Errorf("graphql query = %q, want the resolveReviewThread mutation", req.Query)
 			}
 			threadID, _ := req.Variables["threadId"].(string)
 			gqlThreadID = threadID
-			if threadID == "PRRC_node1" {
-				_, _ = io.WriteString(w, `{"data":{"resolveReviewThread":{"thread":{"id":"PRRC_node1","isResolved":true}}}}`)
+			if threadID == "PRRC_node401" {
+				_, _ = io.WriteString(w, `{"data":{"resolveReviewThread":{"thread":{"id":"PRRC_thread401","isResolved":true}}}}`)
 				return
 			}
 			http.Error(w, "unexpected thread id", http.StatusInternalServerError)
@@ -420,10 +427,10 @@ func TestCreateThreadAndResolveRoundTrip(t *testing.T) {
 	}
 
 	if err := c.ResolveThread(baseRepo, "7", created.ID); err != nil {
-		t.Fatalf("ResolveThread (no re-listing): %v", err)
+		t.Fatalf("ResolveThread (no REST re-listing): %v", err)
 	}
-	if gqlThreadID != "PRRC_node1" {
-		t.Errorf("GraphQL threadId = %q, want the node id recorded at creation", gqlThreadID)
+	if gqlThreadID != "PRRC_node401" {
+		t.Errorf("GraphQL threadId = %q, want the THREAD node id the reviewThreads read reports for comment 401", gqlThreadID)
 	}
 }
 
@@ -497,38 +504,73 @@ func TestResolveThreadNotConfirmedFailsClosed(t *testing.T) {
 	}
 }
 
-// TestResolveThreadUnknownIDFailsClosed proves the unknown-id axis: a thread
-// this client never observed (no node id) is an error, never a guess.
+// TestResolveThreadUnknownIDFailsClosed proves the unknown-id axis: a comment
+// no review thread carries is an error, never a guess — the reviewThreads read
+// may run (it is the id lookup), but the resolveReviewThread MUTATION must
+// never be issued for an unaddressable comment, and an unparseable id must
+// fail closed with no request at all.
 func TestResolveThreadUnknownIDFailsClosed(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("no request must be issued for an unaddressable thread, got %s %s", r.Method, r.URL.Path)
-	}))
-	t.Cleanup(srv.Close)
-	c := New(srv.URL, patToken, botUser, WithSleeper(func(time.Duration) {}))
+	resolveAttempts := 0
+	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/graphql":
+			var req struct {
+				Query string `json:"query"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode graphql request: %v", err)
+			}
+			if strings.Contains(req.Query, "reviewThreads") {
+				// A thread exists — but it carries comment 402, not the one
+				// the resolve asks about.
+				serveThreadsQueryOpen(w, req.Query, 402)
+				return
+			}
+			resolveAttempts++
+			_, _ = io.WriteString(w, `{"data":{"resolveReviewThread":{"thread":{"id":"x","isResolved":true}}}}`)
+		default:
+			unexpectedEndpoint(w, r)
+		}
+	})
 
 	if err := c.ResolveThread(baseRepo, "7", "comment/999"); err == nil {
-		t.Fatal("resolving a never-seen thread must fail closed")
+		t.Fatal("resolving a comment no review thread carries must fail closed")
+	} else if !strings.Contains(err.Error(), "no review thread") {
+		t.Errorf("the failure must name the mapping, got %v", err)
 	}
 	if err := c.ResolveThread(baseRepo, "7", "bogus"); err == nil {
 		t.Fatal("an unparseable thread id must fail closed")
 	}
+	if got := resolveAttempts; got != 0 {
+		t.Fatalf("no resolveReviewThread mutation may be issued for an unaddressable thread, got %d", got)
+	}
 }
 
 // TestApproveRecordsReviewID proves the approval write: POST
-// /repos/{repo}/pulls/{n}/reviews with {"event":"APPROVE"} → 200 with a
-// review id → "review/<id>"; a refusal is ErrUnauthorized.
+// /repos/{repo}/pulls/{n}/reviews with {"event":"APPROVE","commit_id":<pin>} →
+// 200 with a review id → "review/<id>"; a refusal is ErrUnauthorized. The
+// commit_id is the PINNED source SHA the adapter's own MR read reported (the
+// ADR-0015 §2 approve-then-merge pin — the approval lands on the evaluated
+// head, never a moved one).
 func TestApproveReturnsReviewID(t *testing.T) {
 	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/repos/octo-org/base-repo/pulls/7/reviews" {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/octo-org/base-repo/pulls/7":
+			_, _ = io.WriteString(w, sameRepoPR)
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/octo-org/base-repo/pulls/7/reviews":
 			var posted map[string]string
 			_ = json.NewDecoder(r.Body).Decode(&posted)
 			if posted["event"] != "APPROVE" {
 				t.Errorf("approve body event = %q, want APPROVE", posted["event"])
 			}
+			if posted["commit_id"] != "srcSHA" {
+				t.Errorf("approve body commit_id = %q, want the PINNED source SHA the adapter's own MR read reported", posted["commit_id"])
+			}
 			_, _ = io.WriteString(w, `{"id":9001,"state":"APPROVED","user":{"login":"assent-bot"}}`)
 			return
+		default:
+			unexpectedEndpoint(w, r)
 		}
-		unexpectedEndpoint(w, r)
 	})
 
 	id, err := c.Approve(baseRepo, "7")
@@ -544,11 +586,15 @@ func TestApproveReturnsReviewID(t *testing.T) {
 // scope-less token).
 func TestApproveUnauthorized(t *testing.T) {
 	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/reviews") {
+		switch {
+		case r.URL.Path == "/repos/octo-org/base-repo/pulls/7":
+			_, _ = io.WriteString(w, sameRepoPR)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/reviews"):
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
+		default:
+			unexpectedEndpoint(w, r)
 		}
-		unexpectedEndpoint(w, r)
 	})
 	_, err := c.Approve(baseRepo, "7")
 	if !errors.Is(err, forge.ErrUnauthorized) {

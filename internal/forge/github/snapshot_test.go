@@ -183,6 +183,91 @@ func TestChangedFilesCompleteness(t *testing.T) {
 			t.Errorf("EnumerationOpaqueReason = %q, want the %q prefix", got, forge.EnumerationIncompletePrefix)
 		}
 	})
+
+	t.Run("short of the PR's changed_files is incomplete", func(t *testing.T) {
+		// ADR-0020 §2's count cross-check (the GitHub column): the PR object
+		// reports changed_files=3, the pages yielded one entry — the
+		// enumeration is provably SHORT of the PR's own count and must
+		// degrade to an honest incomplete with the specific gap.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/repos/octo-org/base-repo/pulls/7":
+				_, _ = io.WriteString(w, prWithChangedFiles(3))
+			case "/repos/octo-org/base-repo/git/ref/refs/pull/7/merge":
+				_, _ = io.WriteString(w, `{"object":{"sha":"mrgSHA","type":"commit"}}`)
+			case "/repos/octo-org/base-repo":
+				_, _ = io.WriteString(w, `{"allow_auto_merge":true}`)
+			case "/repos/octo-org/base-repo/pulls/7/files":
+				_, _ = io.WriteString(w, filePageOf(`{"filename":"pkg/a.go"}`))
+			case "/repos/octo-org/base-repo/pulls/7/comments":
+				_, _ = io.WriteString(w, "[]")
+			default:
+				http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+			}
+		}))
+		t.Cleanup(srv.Close)
+		c := New(srv.URL, patToken, botUser, WithSleeper(func(time.Duration) {}))
+
+		snap, err := c.Snapshot(baseRepo, "7")
+		if err != nil {
+			t.Fatalf("Snapshot: %v", err)
+		}
+		if snap.ChangedFilesComplete {
+			t.Error("an enumeration short of the PR's changed_files must grade incomplete")
+		}
+		if !strings.Contains(snap.ChangedFilesGap, "returned 1 of the PR's changed_files=3 entries") {
+			t.Errorf("ChangedFilesGap = %q, want the specific short-fall reason", snap.ChangedFilesGap)
+		}
+		if got := snap.EnumerationOpaqueReason(); !strings.HasPrefix(got, forge.EnumerationIncompletePrefix) {
+			t.Errorf("EnumerationOpaqueReason = %q, want the %q prefix", got, forge.EnumerationIncompletePrefix)
+		}
+	})
+
+	t.Run("changed_files verdict is a pure decision", func(t *testing.T) {
+		// The pull-files endpoint caps at 3000 files (dossier): a PR reporting
+		// changed_files at or above the cap can never be enumerated completely
+		// through it. The >=3000 shape is unit-tested directly — a forge
+		// fixture serving 3000+ entries is not needed to prove the decision.
+		for _, tc := range []struct {
+			name         string
+			entries      int
+			reported     int
+			terminated   bool
+			wantComplete bool
+			wantGapSub   string
+		}{
+			{"terminated and consistent", 2, 2, true, true, ""},
+			{"count unreported with terminating short page", 2, 0, true, true, ""},
+			{"short of the reported count", 1, 3, true, false, "returned 1 of the PR's changed_files=3 entries"},
+			{"at the pull-files cap", 3000, 3000, true, false, "caps at 3000 files"},
+			{"over the pull-files cap", 3000, 3001, true, false, "caps at 3000 files"},
+			{"pagination ceiling wins", 100, 0, false, false, "pagination ceiling"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				complete, gap := changedFilesVerdict(tc.entries, tc.reported, tc.terminated)
+				if complete != tc.wantComplete {
+					t.Fatalf("complete = %t, want %t (gap %q)", complete, tc.wantComplete, gap)
+				}
+				if tc.wantGapSub == "" {
+					if gap != "" {
+						t.Fatalf("gap = %q, want empty", gap)
+					}
+					return
+				}
+				if !strings.Contains(gap, tc.wantGapSub) {
+					t.Fatalf("gap = %q, want substring %q", gap, tc.wantGapSub)
+				}
+			})
+		}
+	})
+}
+
+// prWithChangedFiles is the same-repo PR carrying the PR object's own
+// changed_files count — the cross-check input the enumeration verdict needs.
+func prWithChangedFiles(n int) string {
+	return fmt.Sprintf(`{"number":7,"sha":"srcSHA","user":{"login":"octocat"},"labels":[],"changed_files":%d,`+
+		`"base":{"ref":"main","sha":"tgtTIP","repo":{"full_name":"octo-org/base-repo"}},`+
+		`"head":{"ref":"feature","sha":"srcSHA","repo":{"full_name":"octo-org/base-repo"}},"mergeable_state":"clean"}`, n)
 }
 
 // TestChangedFilesHardErrorOnNon200 proves the files endpoint's 404 is a HARD

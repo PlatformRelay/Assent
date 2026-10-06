@@ -317,6 +317,11 @@ func readBounded(r io.Reader, limit int64) ([]byte, error) {
 // oversized document again. It is classified like a 4xx, not like a 5xx.
 var errBodyTooLarge = errors.New("gitlab: response body over limit")
 
+// errRateLimited is the transport failure a rate-limited 403 maps to: never a
+// sentinel, never absence (S00 Q4's port-level rule, which every adapter
+// satisfies the same way).
+var errRateLimited = errors.New("gitlab: rate limited (primary/secondary limit) — transport failure")
+
 // retryableMethod reports whether an HTTP method is safe to replay
 // automatically (AUD-S11 / REL-04). ONLY the idempotent reads are: replaying a
 // POST duplicates a thread, a summary note or an approval, and replaying the
@@ -411,11 +416,32 @@ func (c *Client) doOnce(method, path string, body io.Reader, contentType string)
 		return 0, nil, fmt.Errorf("gitlab: %s %s: %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	// The rate-limit markers are consulted ONLY on the statuses they can
+	// accompany a rejection with (403 primary/secondary limit, 429): a
+	// successful response carrying X-RateLimit-Remaining: 0 is the request
+	// that CONSUMED the budget's last unit and must never be discarded.
+	if isRateLimited(resp.StatusCode, resp.Header) {
+		return resp.StatusCode, nil, errRateLimited
+	}
 	raw, err := readBounded(resp.Body, maxResponseBytes)
 	if err != nil {
 		return resp.StatusCode, nil, fmt.Errorf("gitlab: read body %s %s: %w", method, path, err)
 	}
 	return resp.StatusCode, raw, nil
+}
+
+// isRateLimited reports a response to a 403/429 carrying a primary/secondary
+// rate-limit marker (S00 Q4's transport row: a rate-limited 403 is a transport
+// failure — retried like a 429, never mapped to a sentinel, never absence).
+// GitLab conveys it via the Retry-After header; X-RateLimit-Remaining: 0 is
+// the other shape. On any other status the headers are not rate-limit
+// rejections — a 200/201 that consumed the budget's last unit must not be
+// discarded.
+func isRateLimited(status int, h http.Header) bool {
+	if status != http.StatusForbidden && status != http.StatusTooManyRequests {
+		return false
+	}
+	return h.Get("Retry-After") != "" || h.Get("X-RateLimit-Remaining") == "0"
 }
 
 // GetMR reads the MR metadata plus the target branch tip. It performs two GETs:

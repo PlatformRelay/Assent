@@ -1077,6 +1077,23 @@ func TestRunMissingToken(t *testing.T) {
 	}
 }
 
+// TestRunNilForgePortFailsClosed is the nil-port guard (the run factory seam
+// returns nil on a construction error — main.go's closure does): runRun must
+// print the construction failure and exit 2, never nil-panic inside
+// orchestrate.
+func TestRunNilForgePortFailsClosed(t *testing.T) {
+	var out bytes.Buffer
+	code := runRun(runArgs(), env("tok"), fixedClock(), &out, &out, func(string, string, string, string) forge.RunPort {
+		return nil // the construction-error shape main.go's factory produces
+	})
+	if code != 2 {
+		t.Fatalf("a nil forge port must fail closed with exit 2, got %d\n%s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "forge construction failed") {
+		t.Errorf("the failure must be reported as forge construction failed, got:\n%s", out.String())
+	}
+}
+
 func TestRunUnparseablePolicyNoWrite(t *testing.T) {
 	f := newFakeGitLab(t)
 	f.mergePolicy = "\tthis: is: not: valid: yaml: ["

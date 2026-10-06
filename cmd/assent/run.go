@@ -122,6 +122,13 @@ func runRun(args []string, getenv func(string) string, clock runClock, stdout, s
 	}
 
 	client := forgeFactory(string(kind), endpoint, token, cfg.botAuthor)
+	if client == nil {
+		// The construction seam reports its own error and yields a nil port
+		// (main.go's factory closure does exactly that). Fail closed — an
+		// orchestrate call on a nil port would panic, not exit 2.
+		_, _ = fmt.Fprintln(stderr, "assent run: forge construction failed")
+		return 2
+	}
 
 	if err := orchestrate(cfg, client, clock, stdout); err != nil {
 		_, _ = fmt.Fprintln(stderr, "assent run:", err)
@@ -512,18 +519,12 @@ func orchestrate(cfg runConfig, client forge.RunPort, clock runClock, stdout io.
 	return nil
 }
 
-// fileAtRefOrAbsent loads a file at ref, mapping a forge 404 to nil bytes (the
-// file is ABSENT at that ref — EFE-S03 presence signal). Any other error
-// propagates. Empty-but-present content (HTTP 200 with []byte{}) stays non-nil.
-//
-// E10-S02 scope note: the governed-subject path NO LONGER calls this helper —
-// it uses the MR-relative fileAtBaseOrAbsent/fileAtHeadOrAbsent below. What
-// remains here is retained for symmetry with the sentinel mapping and for any
 // fileAtBaseOrAbsent loads the governed subject's BASE side via the MR-relative
 // accessor, mapping forge.ErrNotFound to nil bytes (absent on the base side —
 // a genuine whole-file ADD is still mintable, EFE-S03). Any other error —
 // including forge.ErrUnauthorized — propagates: a permission failure is never
 // absence (S00 Q4; forge.ErrUnauthorized is the port sentinel since E10-S02).
+// Empty-but-present content (a successful read of []byte{}) stays non-nil.
 func fileAtBaseOrAbsent(client forge.RunPort, project, mr, path string) ([]byte, error) {
 	raw, err := client.FileAtBase(project, mr, path)
 	if err != nil {

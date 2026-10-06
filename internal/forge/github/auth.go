@@ -96,8 +96,10 @@ func (c *Client) Identity() (forge.Identity, error) {
 }
 
 // appJWT mints the RS256 JWT the installation-token exchange consumes:
-// {"alg":"RS256","typ":"JWT"} with {iat, exp (2 min), iss: <app id>}. The
-// signing key material never appears in an error (secret hygiene).
+// {"alg":"RS256","typ":"JWT"} with {iat, exp (2 min), iss: <app id>}. The key
+// may arrive as PKCS#1 ("BEGIN RSA PRIVATE KEY") or PKCS#8 ("BEGIN PRIVATE
+// KEY") — GitHub issues both shapes. The signing key material never appears in
+// an error (secret hygiene).
 func (a *appAuth) appJWT() (string, error) {
 	block, _ := pem.Decode([]byte(a.keyPEM))
 	if block == nil {
@@ -105,7 +107,18 @@ func (a *appAuth) appJWT() (string, error) {
 	}
 	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
-		return "", errors.New("github: app credential is not an RSA private key")
+		// GitHub also issues PKCS#8 keys ("BEGIN PRIVATE KEY"): try that
+		// shape, and require the decoded key to be RSA — the JWT is signed
+		// RS256, and a non-RSA PKCS#8 key (an EC key) cannot produce it.
+		parsed, pkcs8Err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if pkcs8Err != nil {
+			return "", errors.New("github: app credential is not an RSA private key")
+		}
+		rsaKey, ok := parsed.(*rsa.PrivateKey)
+		if !ok {
+			return "", errors.New("github: app credential is not an RSA private key")
+		}
+		key = rsaKey
 	}
 	header, err := json.Marshal(map[string]any{"alg": "RS256", "typ": "JWT"})
 	if err != nil {

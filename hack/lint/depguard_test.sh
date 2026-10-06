@@ -510,6 +510,4 @@ echo "OK: cmd/assent names zero adapter symbols from either adapter"
 echo
 echo "PASS: D-123 depguard boundary rules proven at both polarities (REQ-AUD-S07-01)"
 echo "PASS: E10-S02 adapter boundary + interface invariant proven at both polarities (REQ-E10-S02-02/04/07)"
-
-# The only gitlab.<Exported> symbols cmd/assent may name. `New`/`WithSleeper`
-# are construction; `SyntheticDigest` is the documented E10 residue (the merge
+echo "OK: cmd/assent names zero adapter symbols in production or test code (the neutral factory is the only importer)"

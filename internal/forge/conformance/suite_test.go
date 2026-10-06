@@ -6,8 +6,8 @@ import (
 	"github.com/PlatformRelay/assent/internal/forge"
 )
 
-// suite_test.go is the ENTRY POINT layer: it runs the shared suite against both
-// built-in backends.
+// suite_test.go is the ENTRY POINT layer: it runs the shared suite against all
+// three built-in backends.
 //
 // The five exported test names are unchanged from before extraction, deliberately.
 // E10-S01's definition of done forbids renaming a case, and `exitgate_test.go`'s
@@ -102,9 +102,9 @@ func TestConformanceThreadResolveRoundTrip(t *testing.T) {
 	runCaseOnAllBackends(t, "threads-resolvable-graphql")
 }
 
-// TestConformanceCapabilityReportExhaustive is S00 Q2's exhaustiveness case
+// TestCapabilityReportExhaustiveOnAllBackends is S00 Q2's exhaustiveness case
 // (REQ-E10-S04-01): every member of the closed enum carries a tri-state and a
-// reason on every backend. It is a DIRECT entry test over the two built-in
+// reason on every backend. It is a DIRECT entry test over the three built-in
 // backends, deliberately not a Cases() row: the report's shape is a property of
 // the PORT's snapshot, which the sabotage fixture does not corrupt, so the
 // can-fail gate has no purchase on it — the catalog row carries that
@@ -161,7 +161,9 @@ func TestConformanceAbsentFileIsAbsent(t *testing.T) {
 	runCaseOnAllBackends(t, "absent-file-still-renders-as-absent")
 }
 
-// TestSHAGuardObservesMergeAttempts is REQ-E10-S01-04's named proof: the extracted
+// TestSHAGuardObservesMergeAttempts is REQ-E10-S01-04's named proof: the
+// extraction's observation surface must survive — MergeAttempts and
+// MergesPerformed must remain two independent readings, not one boolean.
 //
 // It is written as a property over the observation surface rather than a re-run of
 // the cases, because the weakening it guards against is not "the case fails" — it

@@ -51,7 +51,7 @@ func TestForgeSelection(t *testing.T) {
 		},
 		{
 			name:     "unrecognised_host_fails_closed",
-			endpoint: "https://forge.internal.example",
+			endpoint: "https://forge.example.org",
 			wantErr:  true,
 		},
 		{

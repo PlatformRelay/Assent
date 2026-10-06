@@ -74,6 +74,22 @@ func testAppKeyPEM(t *testing.T) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
 }
 
+// testAppKeyPKCS8PEM mints the same fresh RSA key in PKCS#8 encoding — the
+// "BEGIN PRIVATE KEY" shape GitHub's docs and UI issue (and some tenants
+// paste). The JWT minting must accept both shapes.
+func testAppKeyPKCS8PEM(t *testing.T) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate RSA key: %v", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal PKCS8 key: %v", err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+}
+
 // TestGetMR proves the PR metadata read pins: head SHA (pr.sha), base BRANCH
 // TIP (base.sha, not the merge base), the PR's OWN head branch (head.ref, not
 // base.ref), and labels (REQ-E10-S07-01).
@@ -194,47 +210,60 @@ func TestPATIdentityAndHeader(t *testing.T) {
 	}
 }
 
+// TestAppInstalationTokenMintsAndCarriesJWT accepts BOTH private-key PEM
+// shapes GitHub issues: PKCS#1 ("BEGIN RSA PRIVATE KEY") and PKCS#8
+// ("BEGIN PRIVATE KEY").
 func TestAppInstalationTokenMintsAndCarriesJWT(t *testing.T) {
-	mintCalls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/app/installations/6789/access_tokens":
-			mintCalls++
-			auth := r.Header.Get("Authorization")
-			if !strings.HasPrefix(auth, "Bearer ") {
-				t.Fatalf("installation exchange Authorization = %q, want Bearer <jwt>", auth)
-			}
-			jwt := strings.TrimPrefix(auth, "Bearer ")
-			if parts := strings.Split(jwt, "."); len(parts) != 3 {
-				t.Fatalf("installation JWT has %d segments, want 3 (header.claims.signature)", strings.Count(jwt, ".")+1)
-			}
-			_, _ = io.WriteString(w, `{"token":"ghs_install-token","expires_at":"2026-01-01T00:00:00Z"}`)
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/octo-org/base-repo/pulls/7":
-			if got := r.Header.Get("Authorization"); got != "Bearer "+instToken {
-				t.Fatalf("request carried %q, want the minted installation token (never the JWT)", got)
-			}
-			_, _ = io.WriteString(w, sameRepoPR)
-		default:
-			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
-		}
-	}))
-	t.Cleanup(srv.Close)
-	c := New(srv.URL, "", botUser, WithApp(testAppKeyPEM(t), 12345, 6789), WithSleeper(func(time.Duration) {}))
+	for _, tc := range []struct {
+		name   string
+		keyPEM func(*testing.T) string
+	}{
+		{"pkcs1 key", testAppKeyPEM},
+		{"pkcs8 key", testAppKeyPKCS8PEM},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mintCalls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/app/installations/6789/access_tokens":
+					mintCalls++
+					auth := r.Header.Get("Authorization")
+					if !strings.HasPrefix(auth, "Bearer ") {
+						t.Fatalf("installation exchange Authorization = %q, want Bearer <jwt>", auth)
+					}
+					jwt := strings.TrimPrefix(auth, "Bearer ")
+					if parts := strings.Split(jwt, "."); len(parts) != 3 {
+						t.Fatalf("installation JWT has %d segments, want 3 (header.claims.signature)", strings.Count(jwt, ".")+1)
+					}
+					_, _ = io.WriteString(w, `{"token":"ghs_install-token","expires_at":"2026-01-01T00:00:00Z"}`)
+				case r.Method == http.MethodGet && r.URL.Path == "/repos/octo-org/base-repo/pulls/7":
+					if got := r.Header.Get("Authorization"); got != "Bearer "+instToken {
+						t.Fatalf("request carried %q, want the minted installation token (never the JWT)", got)
+					}
+					_, _ = io.WriteString(w, sameRepoPR)
+				default:
+					http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			c := New(srv.URL, "", botUser, WithApp(tc.keyPEM(t), 12345, 6789), WithSleeper(func(time.Duration) {}))
 
-	if _, err := c.GetMR(baseRepo, "7"); err != nil {
-		t.Fatalf("GetMR with App credentials: %v", err)
-	}
-	if mintCalls != 1 {
-		t.Fatalf("installation token mints = %d, want 1 (cached for the client)", mintCalls)
-	}
+			if _, err := c.GetMR(baseRepo, "7"); err != nil {
+				t.Fatalf("GetMR with App credentials: %v", err)
+			}
+			if mintCalls != 1 {
+				t.Fatalf("installation token mints = %d, want 1 (cached for the client)", mintCalls)
+			}
 
-	// Identity: an App installation is a BOT identity.
-	id, err := c.Identity()
-	if err != nil {
-		t.Fatalf("Identity: %v", err)
-	}
-	if id.Kind != forge.IdentityApp || id.Login != botUser {
-		t.Errorf("Identity = %+v, want app identity for %q", id, botUser)
+			// Identity: an App installation is a BOT identity.
+			id, err := c.Identity()
+			if err != nil {
+				t.Fatalf("Identity: %v", err)
+			}
+			if id.Kind != forge.IdentityApp || id.Login != botUser {
+				t.Errorf("Identity = %+v, want app identity for %q", id, botUser)
+			}
+		})
 	}
 }
 

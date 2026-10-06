@@ -72,6 +72,12 @@ type Client struct {
 	stateMu        sync.Mutex
 	lastMergeState string
 
+	// lastChangedFiles records the changed_files count of the latest PR read
+	// (snapshot.go's recordPRChangedFiles) — the enumeration count the
+	// changed-file completeness cross-check consults. Same mutex discipline
+	// as lastMergeState (recorded from the PR read chain, which holds pinMu).
+	lastChangedFiles int
+
 	// mrPinnedKey/mrPinnedInfo are guarded by pinMu — their own mutex, for the
 	// same re-entry reason: GetMR (the run's own pinned read) WRITES the pin
 	// from inside the read chain, and mrPinned consults it while holding the
@@ -79,16 +85,6 @@ type Client struct {
 	mrPinnedKey  string
 	mrPinnedInfo forge.MRInfo
 	pinMu        sync.Mutex
-
-	// nodeIDs remembers each review comment's GraphQL node id (REST `node_id`)
-	// keyed by its numeric REST id. Thread resolution is GraphQL-only on
-	// GitHub (dossier §4) and addresses threads by node id, while the port's
-	// ResolveThread carries the REST-derived Thread.ID ("comment/<id>") — the
-	// map, populated by every listing and creation, is how the adapter keeps
-	// the port's signature without losing the GraphQL handle. Guarded because
-	// a client may be shared across goroutines, like the warnings set.
-	nodeMu  sync.Mutex
-	nodeIDs map[int64]string
 
 	warnMu   sync.Mutex
 	warnings map[string]struct{}
@@ -335,7 +331,12 @@ func (c *Client) doOnce(method, path string, body io.Reader, contentType string)
 		return 0, nil, nil, fmt.Errorf("github: %s %s: %w", method, path, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if isRateLimited(resp.Header) {
+	// The rate-limit markers are consulted ONLY on the statuses they can
+	// accompany a rejection with (403 primary/secondary limit, 429): GitHub
+	// reports X-RateLimit-Remaining: 0 on the request that CONSUMED the last
+	// unit of the budget, which answers 200/201 — a successful response that
+	// must never be discarded as a rate-limit failure.
+	if isRateLimited(resp.StatusCode, resp.Header) {
 		return resp.StatusCode, resp.Header, nil, errRateLimited
 	}
 	raw, err := readBounded(resp.Body, maxResponseBytes)
@@ -345,11 +346,16 @@ func (c *Client) doOnce(method, path string, body io.Reader, contentType string)
 	return resp.StatusCode, resp.Header, raw, nil
 }
 
-// isRateLimited reports a response carrying a primary/secondary rate-limit
-// marker (S00 Q4: a rate-limited 403 is a transport failure — retried like a
-// 429, never mapped to a sentinel, never absence). GitHub conveys it via the
-// Retry-After header; the X-RateLimit-Remaining: 0 marker is the other shape.
-func isRateLimited(h http.Header) bool {
+// isRateLimited reports a response to a 403/429 carrying a primary/secondary
+// rate-limit marker (S00 Q4: a rate-limited 403 is a transport failure —
+// retried like a 429, never mapped to a sentinel, never absence). GitHub
+// conveys it via the Retry-After header; the X-RateLimit-Remaining: 0 marker is
+// the other shape. On any other status — notably the 200/201 that consumed the
+// budget's last unit — the headers are not rate-limit rejections.
+func isRateLimited(status int, h http.Header) bool {
+	if status != http.StatusForbidden && status != http.StatusTooManyRequests {
+		return false
+	}
 	return h.Get("Retry-After") != "" || h.Get("X-RateLimit-Remaining") == "0"
 }
 

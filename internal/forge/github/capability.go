@@ -40,13 +40,13 @@ func (c *Client) probeCapabilities(project, mr string) (forge.CapabilityReport, 
 		forge.CapabilitySHAGuardedMerge: forge.SupportedCapabilityEntry(
 			"constant supported — PUT /pulls/{n}/merge honours the sha pin (409 on mismatch, dossier C10); licensed by the sha-guard-* conformance cases"),
 
-		// Probed, but the field name is UNVERIFIED against a live response
-		// (S00 Q2 row 2): required_conversation_resolution.enabled. The probe
-		// runs; the grading stays unknown until S09/S18 confirms the field —
-		// a cell that turns out to be right is promoted then; a wrong one
-		// never armed anything.
+		// NOT probed: the branch-protection read (dossier C3) has no probe in
+		// this package, and required_conversation_resolution.enabled's shape is
+		// UNVERIFIED against a live API (S00 Q2 row 2). No phantom probe may be
+		// claimed — the grading stays unknown until a live response confirms
+		// the field (S09/S18), and a wrong cell never armed anything.
 		forge.CapabilityThreadsBlockMerge: forge.UnknownCapabilityEntry(
-			"probe attempted: GET /repos/{o}/{r}/branches/{base}/protection (dossier C3) — required_conversation_resolution.enabled's exact shape is UNVERIFIED against a live API, so the flag is unknown until confirmed (S00 Q2 row 2)"),
+			"no probe is implemented for the branch-protection read (dossier C3); required_conversation_resolution's shape is unverified against a live API — unknown until confirmed (S00 Q2 row 2)"),
 
 		// Unknown rows (S00 Q2 rows 3/4/7/9/10/11) — each reason names the open
 		// verification item, exactly the honest grading the model demands.
@@ -91,6 +91,12 @@ func (c *Client) probeCapabilities(project, mr string) (forge.CapabilityReport, 
 	}
 
 	// Probe 1 (S00 Q2 row 6 / dossier C11): allow_auto_merge on the repo.
+	// The probe runs, but the field name is UNVERIFIED against a live response
+	// (S00 Q2 row 6) and the enablePullRequestAutoMerge preconditions are
+	// dossier "open verification items" (REQ-E10-S09-02) — so the grading
+	// stays UNKNOWN with the open item cited, in BOTH directions of the
+	// observed value: an unconfirmed field name licenses neither support nor
+	// absence, and the arming consult refuses on unknown either way.
 	status, _, raw, err := c.do(http.MethodGet, "/repos/"+repo, nil, "")
 	if err != nil {
 		return forge.CapabilityReport{}, err
@@ -103,16 +109,16 @@ func (c *Client) probeCapabilities(project, mr string) (forge.CapabilityReport, 
 			return forge.CapabilityReport{}, fmt.Errorf("github: decode repo %s: %w", repo, err)
 		}
 		if repoMeta.AllowAutoMerge {
-			caps[forge.CapabilityDeferredMergeArming] = forge.SupportedCapabilityEntry(
-				"probe: allow_auto_merge is true (dossier C11) — enablePullRequestAutoMerge is available")
+			caps[forge.CapabilityDeferredMergeArming] = forge.UnknownCapabilityEntry(
+				"probe: allow_auto_merge is true (dossier C11) — but the field name is UNVERIFIED against a live response (S00 Q2 row 6) and the enablePullRequestAutoMerge preconditions are dossier open verification items (REQ-E10-S09-02): unknown until a live response confirms it")
 		} else {
-			caps[forge.CapabilityDeferredMergeArming] = forge.AbsentCapabilityEntry(
-				"probe: allow_auto_merge is false — deferred arming would be refused by the forge (dossier C11)")
+			caps[forge.CapabilityDeferredMergeArming] = forge.UnknownCapabilityEntry(
+				"probe: allow_auto_merge is false (dossier C11) — the field name is UNVERIFIED against a live response (S00 Q2 row 6), so the false reading proves neither support nor absence (REQ-E10-S09-02): unknown until confirmed")
 		}
 	} else if status != http.StatusNotFound {
-		// A 404 on the repo probe (an unauthorized metadata read) means every
-		// setting below it is unprovable — unknown, never absent (S00 Q4: no
-		// read below an unauthorized repo read may claim absence).
+		// A non-404 error on the repo probe (an unauthorized metadata read)
+		// means every setting below it is unprovable — a hard error, never a
+		// silent unknown (REQ-E10-S04-05).
 		return forge.CapabilityReport{}, fmt.Errorf("github: get repo %s: unexpected status %d", repo, status)
 	}
 	// A 404 repo read leaves deferred-merge-arming UNKNOWN (not probed).

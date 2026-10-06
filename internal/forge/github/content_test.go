@@ -117,8 +117,59 @@ func TestRateLimit403IsTransportError(t *testing.T) {
 	}
 }
 
+// TestRateLimitHeadersOnSuccessDoNotDiscardResult proves the transport
+// policy's other polarity: the rate-limit markers are consulted ONLY on a
+// 403/429. GitHub reports X-RateLimit-Remaining: 0 on the request that
+// CONSUMED the budget's last unit — a 200/201 carrying that header is a
+// SUCCESSFUL response, and discarding it would throw away a completed read or
+// a performed write (a discarded 201 on a write is indistinguishable from
+// never issuing it).
+func TestRateLimitHeadersOnSuccessDoNotDiscardResult(t *testing.T) {
+	t.Run("201 write succeeds", func(t *testing.T) {
+		c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost && r.URL.Path == "/repos/octo-org/base-repo/pulls/7/comments" {
+				w.Header().Set("X-RateLimit-Remaining", "0")
+				w.Header().Set("Retry-After", "60")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = io.WriteString(w, `{"id":401,"node_id":"PRRC_node1","user":{"login":"assent-bot"}}`)
+				return
+			}
+			unexpectedEndpoint(w, r)
+		})
+
+		created, err := c.CreateThread(baseRepo, "7", threadMarker(), "body")
+		if err != nil {
+			t.Fatalf("a 201 carrying X-RateLimit-Remaining: 0 is the request that exhausted the budget — it must succeed, got %v", err)
+		}
+		if created.ID != "comment/401" {
+			t.Errorf("created thread id = %q, want comment/401", created.ID)
+		}
+	})
+
+	t.Run("200 read succeeds", func(t *testing.T) {
+		c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/repos/octo-org/base-repo/contents":
+				_, _ = io.WriteString(w, "[]")
+			case "/repos/octo-org/base-repo/contents/.assent/config.yaml":
+				w.Header().Set("X-RateLimit-Remaining", "0")
+				_, _ = io.WriteString(w, `{"content":"Zm9v","encoding":"base64","size":3}`)
+			default:
+				unexpectedEndpoint(w, r)
+			}
+		})
+
+		got, err := c.FileAtRef(baseRepo, ".assent/config.yaml", "tgtSHA")
+		if err != nil {
+			t.Fatalf("a 200 carrying X-RateLimit-Remaining: 0 must not be discarded, got %v", err)
+		}
+		if string(got) != "foo" {
+			t.Errorf("content = %q, want foo", got)
+		}
+	})
+}
+
 // TestPlain403IsUnauthorized — a 403 WITHOUT the rate-limit marker inside a
-// readable scope is ErrUnauthorized.
 func TestPlain403IsUnauthorized(t *testing.T) {
 	c, _ := newServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

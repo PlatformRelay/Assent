@@ -37,6 +37,7 @@ const ghToken = "test-token"
 type ghThreadRow struct {
 	id       int64
 	nodeID   string
+	threadID string
 	body     string
 	author   string
 	resolved bool
@@ -63,6 +64,11 @@ type githubHarness struct {
 	mergeableState string // served in the PR JSON; "clean" by default
 	allowAutoMerge bool   // served in the repo settings probe; true by default
 
+	// changedFiles is the PR object's changed_files count, kept CONSISTENT
+	// with the files listing the harness serves (one governed-path entry, a
+	// short page) so the enumeration completeness cross-check reads true.
+	changedFiles int
+
 	forkMR       bool
 	forkRepo     string // head.repo.full_name when the MR is a fork
 	governedPath string
@@ -85,6 +91,18 @@ type githubHarness struct {
 	writeStatus int
 	slowAfter   time.Duration
 
+	// contentsStatus, when non-zero, is the status the CONTENT reads answer:
+	// the content-scope probe (the root listing) AND the specific content
+	// path. It models the token shapes the metadata-only sentinel case drives
+	// (S00 Q4): a fine-grained PAT reads the repo object (serveRepo stays
+	// 200) but not contents — every content read answers this status.
+	contentsStatus int
+
+	// rateLimitedContent marks the contents 403s above as PRIMARY/SECONDARY
+	// RATE-LIMITED responses: the transport shape S00 Q4's rate-limit row
+	// demands (a rate-limited 403 is a transport error, never a sentinel).
+	rateLimitedContent bool
+
 	// afterPRRead fires once a PR read has been SERVED — the TOCTOU seam the
 	// source-moved case drives, mirroring the GitLab harness's afterMRRead.
 	afterPRRead func(h *githubHarness)
@@ -98,6 +116,10 @@ type githubHarness struct {
 	gqlResolveCalls int
 	armMutations    int
 
+	// lastApproveCommitID records the commit_id the last approval write
+	// carried — the pinned-head assertion the approve handler enforces.
+	lastApproveCommitID string
+
 	taken map[int64]bool
 }
 
@@ -109,6 +131,7 @@ func newGitHubHarness(project, mr string) *githubHarness {
 		mergeableState: "clean",
 		allowAutoMerge: true,
 		governedPath:   "topics/orders.yaml",
+		changedFiles:   1, // matches the one-entry files page the harness serves
 		mergeRefSHA:    "mrgSHA",
 		nextID:         10_000,
 		taken:          map[int64]bool{},
@@ -154,6 +177,11 @@ func (h *githubHarness) seedThread(id, author string, marker forge.Marker, resol
 	}
 	row := ghThreadRow{id: h.rowID(id), body: body, author: author, resolved: resolved}
 	row.nodeID = fmt.Sprintf("PRRC_node%d", row.id)
+	// The THREAD node id is a DIFFERENT GraphQL object from the comment's node
+	// id (a PullRequestReviewThread, not a PullRequestReviewComment) — served
+	// distinctly so the resolve round-trip can only pass by addressing the
+	// thread the reviewThreads query reports.
+	row.threadID = fmt.Sprintf("PRT_node%d", row.id)
 	h.threads = append(h.threads, row)
 	return nil
 }
@@ -232,7 +260,16 @@ func (h *githubHarness) handle(w http.ResponseWriter, r *http.Request) {
 		// the probe answers 200 and a 404 on the specific path is genuine
 		// absence; a refused path is refused on the SPECIFIC path instead,
 		// which keeps the forbidden≠absent seam exercised through the same
-		// status mapping the real forge's refusal produces.
+		// status mapping the real forge's refusal produces. The sentinel
+		// cases override both shapes through the contentsStatus knob.
+		if h.contentsStatus != 0 {
+			if h.rateLimitedContent {
+				w.Header().Set("Retry-After", "60")
+				w.Header().Set("X-RateLimit-Remaining", "0")
+			}
+			http.Error(w, "contents refused", h.contentsStatus)
+			return
+		}
 		_, _ = io.WriteString(w, "[]")
 	case r.Method == http.MethodGet && strings.HasPrefix(path, repoBase+"/contents/"):
 		h.serveContent(w, r)
@@ -262,6 +299,7 @@ func (h *githubHarness) servePR(w http.ResponseWriter, r *http.Request) {
 		"sha":             h.sourceSHA,
 		"user":            map[string]any{"login": "octocat"},
 		"labels":          []ghLabelView{},
+		"changed_files":   h.changedFiles,
 		"mergeable_state": h.mergeableState,
 		"base": map[string]any{
 			"ref":  "main",
@@ -375,6 +413,7 @@ func (h *githubHarness) createThreadRow(w http.ResponseWriter, r *http.Request) 
 	_ = json.NewDecoder(r.Body).Decode(&posted)
 	row := ghThreadRow{id: h.rowID("comment/"), body: posted.Body, author: h.botAuthor}
 	row.nodeID = fmt.Sprintf("PRRC_node%d", row.id)
+	row.threadID = fmt.Sprintf("PRT_node%d", row.id)
 	h.threads = append(h.threads, row)
 	w.WriteHeader(http.StatusCreated)
 	_, _ = io.WriteString(w, fmt.Sprintf(`{"id":%d,"node_id":%q,"user":{"login":%q}}`, row.id, row.nodeID, row.author))
@@ -438,11 +477,34 @@ func (h *githubHarness) updateNoteRow(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func (h *githubHarness) approve(w http.ResponseWriter, _ *http.Request) {
+func (h *githubHarness) approve(w http.ResponseWriter, r *http.Request) {
 	h.approvePOSTs++
 	if h.writeStatus != 0 {
 		http.Error(w, "injected transport failure", h.writeStatus)
 		return
+	}
+	// ADR-0015 §2's approve-then-merge pin: the approval body must carry the
+	// PINNED source head the adapter's own MR read reported — never an absent
+	// pin (an approval without a commit_id could land on a moved head). When
+	// no drift seam is installed, the pin IS the harness's current source SHA.
+	// A drift-seeded case (DriftSourceHeadAfterRead) is exempt: its approval
+	// must carry the PRE-move pin, which the CAS refusal — not this handler —
+	// proves.
+	var body struct {
+		Event    string `json:"event"`
+		CommitID string `json:"commit_id"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	h.lastApproveCommitID = body.CommitID
+	if h.afterPRRead == nil {
+		if body.CommitID == "" {
+			http.Error(w, "approval carried no commit_id pin", http.StatusInternalServerError)
+			return
+		}
+		if body.CommitID != h.sourceSHA {
+			http.Error(w, "approval commit_id does not match the pinned head", http.StatusInternalServerError)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]any{"id": 1, "state": "APPROVED"})
@@ -483,6 +545,14 @@ func (h *githubHarness) merge(w http.ResponseWriter, r *http.Request) {
 // refusal is exercised on the same permission the specific read uses).
 func (h *githubHarness) serveContent(w http.ResponseWriter, r *http.Request) {
 	ref := r.URL.Query().Get("ref")
+	if h.contentsStatus != 0 {
+		if h.rateLimitedContent {
+			w.Header().Set("Retry-After", "60")
+			w.Header().Set("X-RateLimit-Remaining", "0")
+		}
+		http.Error(w, "contents refused", h.contentsStatus)
+		return
+	}
 	if h.refusedPath != "" && strings.Contains(r.URL.Path, h.refusedPath) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -525,9 +595,10 @@ func (h *githubHarness) slow() {
 // serveGraphQL serves the two GraphQL operations the adapter uses: the
 // reviewThreads listing (thread resolution state, dossier C1) and the
 // resolveReviewThread mutation (dossier C2). A thread row IS a review comment
-// in this harness; the thread's node id is the comment's node id, which is the
-// handle resolveReviewThread addresses threads by (dossier §4, adapter-internal
-// seam — the node id is remembered by every listing and creation).
+// in this harness — but the THREAD's GraphQL node id (reviewThreads.nodes.id,
+// the handle resolveReviewThread addresses threads by, dossier §4) is served
+// DISTINCT from the comment's own node id, exactly as the forge models them:
+// the mutation resolves the thread object, never the comment.
 func (h *githubHarness) serveGraphQL(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Query     string         `json:"query"`
@@ -546,7 +617,7 @@ func (h *githubHarness) serveGraphQL(w http.ResponseWriter, r *http.Request) {
 		}
 		threadID, _ := req.Variables["threadId"].(string)
 		for i := range h.threads {
-			if h.threads[i].nodeID == threadID {
+			if h.threads[i].threadID == threadID {
 				if h.threads[i].resolved {
 					// Resolving an already-resolved thread is a no-op: the
 					// forge's "already resolved" rejection IS success for this
@@ -566,7 +637,7 @@ func (h *githubHarness) serveGraphQL(w http.ResponseWriter, r *http.Request) {
 		for _, row := range h.threads {
 			nodes = append(nodes, fmt.Sprintf(
 				`{"id":%q,"isResolved":%t,"comments":{"nodes":[{"databaseId":%d}]}}`,
-				row.nodeID, row.resolved, row.id))
+				row.threadID, row.resolved, row.id))
 		}
 		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"pageInfo":{"hasNextPage":false},"nodes":[`+strings.Join(nodes, ",")+`]}}}}}`)
 	default:

@@ -83,6 +83,7 @@ cases:
     package: cmd/assent
     forge: gitlab
     adapters: [gitlab]
+    note: GitHub disposition — the cmd-level run-path cases run through the forge-agnostic orchestration; the forge-specific shape (refs/pull, GITHUB_TOKEN scopes) is exercised by the GitHub adapter unit tests + conformance factory; the live-pull_request workflow trust proof remains S18 (catalog row github-pull-request-fork-advisory)
 
   # --- REV1-S01 / U-04 item 1: the run path reads judged bytes at the pin ---
   - id: run-judges-pinned-sha
@@ -93,7 +94,7 @@ cases:
     package: cmd/assent
     forge: gitlab
     adapters: [gitlab]
-    note: source branch points at benign bytes while the pinned SHA carries a violating shrink; the decision follows the pin
+    note: source branch points at benign bytes while the pinned SHA carries a violating shrink; the decision follows the pin. GitHub disposition — the cmd-level run-path cases run through the forge-agnostic orchestration; the forge-specific shape (refs/pull, GITHUB_TOKEN scopes) is exercised by the GitHub adapter unit tests + conformance factory; the live-pull_request workflow trust proof remains S18 (catalog row github-pull-request-fork-advisory)
 
   # --- AUD-S01 changed-file enumeration completeness (ADR-0020, D-119) ---
   # REQUIRED, not optional: in checkout-less runs the snapshot changed-file list
@@ -107,7 +108,7 @@ cases:
     package: cmd/assent
     forge: gitlab
     adapters: [gitlab]
-    note: truncated enumeration → REVIEW changeset.undecidable, one thread, zero approve/merge
+    note: truncated enumeration → REVIEW changeset.undecidable, one thread, zero approve/merge. GitHub disposition — the cmd-level run-path cases run through the forge-agnostic orchestration; the forge-specific shape (refs/pull, GITHUB_TOKEN scopes) is exercised by the GitHub adapter unit tests + conformance factory; the live-pull_request workflow trust proof remains S18 (catalog row github-pull-request-fork-advisory)
 
   - id: enumeration-incomplete-visible-policy-block
     adr: ADR-0015 §1
@@ -148,6 +149,7 @@ cases:
     package: cmd/assent
     forge: gitlab
     adapters: [gitlab]
+    note: GitHub disposition — the cmd-level run-path cases run through the forge-agnostic orchestration; the forge-specific shape (refs/pull, GITHUB_TOKEN scopes) is exercised by the GitHub adapter unit tests + conformance factory; the live-pull_request workflow trust proof remains S18 (catalog row github-pull-request-fork-advisory)
 
   # --- E7-S03 new hermetic adversarial cases ---
   - id: fork-context-advisory-only
@@ -158,6 +160,7 @@ cases:
     package: cmd/assent
     forge: gitlab
     adapters: [gitlab]
+    note: GitHub disposition — the cmd-level run-path cases run through the forge-agnostic orchestration; the forge-specific shape (refs/pull, GITHUB_TOKEN scopes) is exercised by the GitHub adapter unit tests + conformance factory; the live-pull_request workflow trust proof remains S18 (catalog row github-pull-request-fork-advisory)
 
   - id: expired-fact-blocks-arming
     adr: ADR-0017 §4
@@ -219,7 +222,7 @@ cases:
     adapters: [fake, gitlab, github]
     note: PAT shape (identity is a User) on all three factories; the App-installation shape joins when an App-auth adapter does (E10-S06+)
 
-  # --- S00 Q4's remaining sentinels: deferred until their story's factory/transport cases land ---
+  # --- S00 Q4's remaining sentinels: direct entry tests over the transport-bearing factories ---
   - id: ratelimit-403-is-transport-error
     adr: ADR-0021 item 6
     level: L1
@@ -227,8 +230,8 @@ cases:
     test: TestConformanceRateLimit403NotAbsent
     package: internal/forge/conformance
     forge: github-deferred
-    adapters: [fake, gitlab, github]
-    note: deferred to E10-S05 (port transport cases) — a rate-limited 403 is retried/errored, never a sentinel
+    adapters: [gitlab, github]
+    note: S00 Q4 table row 403-with-x-ratelimit-remaining-0-or-Retry-After — a rate-limited 403 is a transport error is a transport error (retried and errored, never forge.ErrNotFound nor forge.ErrUnauthorized). Executed as a direct entry test a direct entry test (sentinel_cases_test.go) over the GitLab and GitHub factories — the fake has no transport to violate — so the row is not a RunSuite row and keeps this package's not-in-denominator marker (the transport-rows disposition).
 
   - id: metadata-only-token-is-not-absence
     adr: ADR-0021 item 6
@@ -237,10 +240,9 @@ cases:
     test: TestConformanceMetadataOnlyTokenNotAbsent
     package: internal/forge/conformance
     forge: github-deferred
-    adapters: [github]
-    note: deferred to E10-S07 — the fine-grained-PAT shape (repo read 200, every content read 404) is a GitHub token shape
+    adapters: [gitlab, github]
+    note: S00 Q4's content-scope-probe rows — a token that reads the repo object but not contents (the fine-grained-PAT shape, modelled by the GitHub conformance factory) renders forge.ErrUnauthorized on every governed read, never absence. Direct entry test (sentinel_cases_test.go) over the GitLab and GitHub factories, not a RunSuite row (the fake has no content-scope probe to violate).
 
-  # --- S00 Q2/Q3 capability cases ---
   # --- S00 Q2/Q3 capability cases ---
   - id: threads-resolvable-graphql
     adr: ADR-0021 §3
@@ -302,28 +304,6 @@ cases:
     forge: github-deferred
     adapters: [fake, gitlab]
     note: deferred to E10-S04's cmd rows — the merge-result gap itself IS still recorded
-
-  # --- GitHub-deferred (E10) — catalog stubs only ---
-
-  - id: capability-gap-string-is-merge-result-only
-    adr: ADR-0021 item 8
-    level: L1
-    req: REQ-E10-S04-04
-    test: TestConformanceCapabilityGapCarriesOnlyMergeResult
-    package: internal/forge/conformance
-    forge: github-deferred
-    adapters: [fake, gitlab]
-    note: deferred to E10-S04 — N extra absent/unknown capabilities leave pins.capabilityGap byte-identical; the doctor report carries all N
-
-  - id: capability-gap-positive-control
-    adr: ADR-0021 item 8
-    level: L1
-    req: REQ-E10-S04-04
-    test: TestConformanceCapabilityGapStillRecordsMergeResult
-    package: internal/forge/conformance
-    forge: github-deferred
-    adapters: [fake, gitlab]
-    note: deferred to E10-S04 — the merge-result gap itself IS still recorded
 
   # --- GitHub-deferred (E10) — catalog stubs only ---
   - id: github-pull-request-fork-advisory

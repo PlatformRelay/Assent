@@ -67,6 +67,11 @@ type gitlabHarness struct {
 	writeStatus int           // when non-200, every write endpoint answers this status
 	slowAfter   time.Duration // when non-zero, the MR read sleeps this long before answering
 
+	// rateLimited403 marks the file raw reads as RATE-LIMITED 403s (the
+	// transport shape S00 Q4's rate-limit row drives: a rate-limited 403 is a
+	// transport error, never a sentinel).
+	rateLimited403 bool
+
 	// discRequests counts the discussions POSTs the harness received — the
 	// write-never-retried case reads it.
 	discPOSTs int
@@ -201,6 +206,12 @@ func isFileRawOf(h *gitlabHarness, path string) bool {
 // the forbidden≠absent seam the sentinel cases prove.
 func (h *gitlabHarness) serveFile(w http.ResponseWriter, r *http.Request, p string) {
 	ref := r.URL.Query().Get("ref")
+	if h.rateLimited403 {
+		w.Header().Set("Retry-After", "60")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		http.Error(w, "rate limit exceeded", http.StatusForbidden)
+		return
+	}
 	if h.refusedPath != "" && strings.Contains(p, url.PathEscape(h.refusedPath)) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
