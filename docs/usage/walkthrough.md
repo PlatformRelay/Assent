@@ -1,7 +1,7 @@
 # Walkthrough — adopting assent on a topic registry
 
 > **Mixed status — read the per-step banner.** This page began life as a UX sketch
-> written before any code existed. Most of it now describes the shipped v0.1.0 binary; the steps
+> written before any code existed. Most of it now describes the shipped binary; the steps
 > that still describe unbuilt commands are labelled **Planned**, and each one names what
 > you can do today instead. The authority for what exists is
 > [the CLI reference](cli.md), which is pinned byte-for-byte to `assent --help`.
@@ -67,8 +67,44 @@ Committed starter packs: [`examples/packs/`](https://github.com/PlatformRelay/as
 > is the gate over it.
 
 Edit the starter pack (`.assent/packs/topics/rules/bounded-change.yaml`), e.g. cap
-partitions via your quota provider and challenge retention shrinks — see the full rule
-file example in ADR-0010. Wire your company's permission source in `config.yaml`:
+partitions via your quota provider. The shipped rule file, reproduced here, raises a
+challenge when a partition change would decrease the count or exceed the quota:
+
+```yaml
+# Bounded-change — reused from examples/policies/declarative/bounded-change.yaml (S01).
+# Over-quota is acknowledgement (challenge), not authorization.
+# Pointer is /*/partitions because map-at-root nests the topic under its identity key.
+apiVersion: assent.dev/v1alpha1
+kind: MergePolicy
+metadata:
+  name: topics-bounded-change
+spec:
+  entries:
+    kafka-topic:
+      mode: map
+      root: ""
+  rules:
+    - name: partition-change-bounds
+      phase: enforce
+      match:
+        valueChanges:
+          pointers: ["/*/partitions"]
+          kinds: [modify]
+      prove:
+        obligation: bounded-change
+        when:
+          all:
+            - cel: new >= old
+              message: "partitions may not decrease ({{ old }} -> {{ new }})"
+            - cel: new <= facts.quota.max_partitions.value
+              message: "partitions {{ new }} exceeds quota {{ facts.quota.max_partitions.value }}"
+      points: 1
+      onFailure:
+        effect: challenge
+        code: bounded-change.out-of-band
+```
+
+Wire your company's permission source in `config.yaml`:
 
 ```yaml
 providers:
@@ -193,7 +229,7 @@ placement allow-list (C6, `vars/placement`), referenced-resource ownership (C7,
 ## Step 4 — backtest before trusting it
 
 > **Planned — `assent scan` and `assent stats` do not exist.** There is no historical
-> backtest over closed MRs in v0.1.0, and no "would-have-automerged %" report.
+> backtest over closed MRs in the shipped binary, and no "would-have-automerged %" report.
 
 What ships instead is **`assent compare`**: replay a comparison suite of a *baseline*
 versus a *candidate* policy over a fixed corpus and apply the promotion gates, so you can
@@ -223,7 +259,7 @@ never reaches this evidence-gathering step — see
 # One-publisher-per-MR (ADR-0019 §3): resource_group keyed per MR IID serializes concurrent
 # assent jobs for the same MR. Without it, duplicates converge only on the next reconcile.
 assent:
-  image: golang:1.25            # no ghcr.io/…/assent image is published yet — install in-job
+  image: golang:1.26            # no ghcr.io/…/assent image is published yet — install in-job
   rules: [{ if: $CI_MERGE_REQUEST_IID }]
   resource_group: assent-mr-$CI_MERGE_REQUEST_IID
   before_script:
@@ -232,7 +268,7 @@ assent:
     # `pins.toolVersion` (`pins.toolDigest` still identifies the build, D-120).
     # For a record that names the real tag, install the checksum-verified release
     # archive instead — the full URL pattern is in the install guide.
-    - go install github.com/PlatformRelay/assent/cmd/assent@v0.1.0
+    - go install github.com/PlatformRelay/assent/cmd/assent@v0.4.0
   script:
     - assent run --project "$CI_PROJECT_ID" --mr "$CI_MERGE_REQUEST_IID"
         --subject "file:$SUBJECT" --bot-author "$ASSENT_BOT"
@@ -252,7 +288,7 @@ when it cannot. See [Install](install.md) for the checksum-verified archive rout
 > `assent explain`, at the end of this section, does not exist.
 
 A dev bumps `partitions: 12 -> 24` on their own topic in dev: pipeline runs, the MR gets a
-summary comment ("APPROVE — 1 obligation proved, score 1/10"), approval, and merges. Nobody was
+summary comment (`Decision: APPROVE · Score: 1/10 · Threshold: 10`), approval, and merges. Nobody was
 interrupted.
 
 The same dev shrinks retention on a prod topic: assent opens a **resolvable thread** —

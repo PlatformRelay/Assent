@@ -19,7 +19,7 @@
 <p align="center"><em>Deterministic, policy-driven auto-merge for self-service repos</em></p>
 
 > **Canonical repo:** GitHub ([PlatformRelay/assent](https://github.com/PlatformRelay/assent)).
-> **Status: alpha** — the GitLab CI path is **Core** (E2–E8 engine, forge, provider, renderer).
+> **Status: alpha** — the GitLab CI path is **Core** (E1–E9 engine, forge, provider, renderer).
 > Pre-1.0: policy schema and CLI flags may change between releases; see
 > [API stability](API_STABILITY.md).
 
@@ -43,7 +43,8 @@ it destructive, which policy applies. assent encodes that reasoning as policy so
 - **Fail-safe decisions** — every run emits an auditable `DecisionRecord`; ambiguous policy
   fails closed ([ADR-0015](docs/adr/0015-trust-boundaries-merge-integrity.md)).
 - **Semantic diffs** — JSON, YAML, and HCL/tfvars parse into field-level adds/modifies/deletes,
-  not line noise ([ADR-0003](docs/adr/0003-canonical-change-model.md)).
+  not line noise; `.tf` files are governed but opaque (whole-file REVIEW, never a partial
+  parse) ([ADR-0003](docs/adr/0003-canonical-change-model.md)).
 - **Testable policies** — fixture changes in, expected decision out; policies without tests
   are a lint error ([ADR-0014](docs/adr/0014-adopter-test-format.md)).
 
@@ -73,7 +74,7 @@ assent version
 ```
 
 `go install` compiles without link-time stamping, so the binary it produces reports
-`assent 0.0.0-dev` — even when you pin a tag (`@v0.1.0`). For a **version-stamped**
+`assent 0.0.0-dev` — even when you pin a tag (`@v0.4.0`). For a **version-stamped**
 binary take the Homebrew tap or a release archive: goreleaser injects the version
 (`-X main.version`) and the archives are checksum- and signature-verifiable. Both
 routes are in [docs/usage/install.md](https://platformrelay.github.io/Assent/usage/install/).
