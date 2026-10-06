@@ -114,3 +114,7 @@ go test ./cmd/assent -run TestNoStaleProductClaims
 2. If any gate reddens, classify (this change vs pre-existing baseline) before touching
    anything; the pre-existing coverage-below-floor failure is baseline, not this change's.
 3. Report the gate matrix in the branch review evidence.
+
+## T005 — branch tip verification
+
+- [x] — closed 2026-10-07, evidence: evidence/T005.md (gate matrix all green at `85eb7c8`; no fix needed)
