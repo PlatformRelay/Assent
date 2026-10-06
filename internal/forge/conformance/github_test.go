@@ -121,7 +121,6 @@ type githubHarness struct {
 	approvePOSTs    atomic.Int64
 	mergePUTs       atomic.Int64
 	gqlResolveCalls atomic.Int64
-	armMutations    atomic.Int64
 
 	// lastApproveCommitID records the commit_id the last approval write
 	// carried — the pinned-head assertion the approve handler enforces.
@@ -302,7 +301,7 @@ func (h *githubHarness) handle(w http.ResponseWriter, r *http.Request) {
 
 // ---- read routes ----
 
-func (h *githubHarness) servePR(w http.ResponseWriter, r *http.Request) {
+func (h *githubHarness) servePR(w http.ResponseWriter, _ *http.Request) {
 	h.slow()
 	h.firstPRMu.Lock()
 	if h.firstPRSHA == "" {
@@ -768,7 +767,7 @@ func (b githubBackend) MoveSourceHead(sha string) { b.h.sourceSHA = sha }
 // request: the base side is served at the pinned target SHA, the head side at
 // the pinned source SHA — in the BASE repository, which is where the adapter
 // reads a fork's head content (the head SHA is reachable there).
-func (b githubBackend) SeedFile(path, side string, content []byte) {
+func (b githubBackend) SeedFile(_ string, side string, content []byte) {
 	switch side {
 	case FileSideBase:
 		b.h.baseFile = append([]byte(nil), content...)

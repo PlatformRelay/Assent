@@ -103,7 +103,7 @@ func captureRunDoctor(t *testing.T, h http.HandlerFunc) (code int, stdout, stder
 		t.Fatal(err)
 	}
 
-	code = runDoctor(os.Getenv, wOut, wErr, func(kind, endpoint, token, botAuthor string) forge.RunPort {
+	code = runDoctor(os.Getenv, wOut, wErr, func(_ string, endpoint, token, botAuthor string) forge.RunPort {
 		return factory.GitLab(endpoint, token, botAuthor, factory.NoSleep)
 	})
 	_ = wOut.Close()

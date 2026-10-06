@@ -23,7 +23,7 @@ import (
 
 // probeCapabilities reads the forge settings the predicates need and returns
 // the report. Probe transport failures propagate as errors (never unknown).
-func (c *Client) probeCapabilities(project, mr string) (forge.CapabilityReport, error) {
+func (c *Client) probeCapabilities(project, _ string) (forge.CapabilityReport, error) {
 	if _, err := repoParts(project); err != nil {
 		return forge.CapabilityReport{}, err
 	}

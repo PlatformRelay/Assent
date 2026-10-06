@@ -111,9 +111,9 @@ func runRun(args []string, getenv func(string) string, clock runClock, stdout, s
 	// The ONLY secret. Read at the boundary; handed straight to the adapter.
 	// The token env follows the forge: GITLAB_TOKEN for GitLab, GITHUB_TOKEN
 	// for GitHub (the dossier's read-only pull_request scope for forks).
-	tokenEnv := "GITLAB_TOKEN"
+	tokenEnv := "GITLAB_TOKEN" // #nosec G101 -- the env-var NAME, never a credential
 	if kind == factory.KindGitHub {
-		tokenEnv = "GITHUB_TOKEN"
+		tokenEnv = "GITHUB_TOKEN" // #nosec G101 -- the env-var NAME
 	}
 	token := getenv(tokenEnv)
 	if token == "" {
