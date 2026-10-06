@@ -93,3 +93,14 @@ func fullEntries(t *testing.T) map[Capability]CapabilityEntry {
 	}
 	return entries
 }
+
+func TestEnumerationOpaqueReasonShape(t *testing.T) {
+	complete := Snapshot{ChangedFilesComplete: true}
+	if got := complete.EnumerationOpaqueReason(); got != "" {
+		t.Fatalf("a complete enumeration has no opaque reason, got %q", got)
+	}
+	incomplete := Snapshot{ChangedFilesComplete: false, ChangedFilesGap: "the reason"}
+	if got := incomplete.EnumerationOpaqueReason(); got != EnumerationIncompletePrefix+"the reason" {
+		t.Fatalf("EnumerationOpaqueReason = %q", got)
+	}
+}

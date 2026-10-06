@@ -19,7 +19,7 @@ import (
 // GitHub v1 — never evidence, never silent APPROVE.
 
 // reviewRow builds one PR review listing row.
-func reviewRow(id int, login, state string) string {
+func reviewRow(id int64, login, state string) string {
 	return fmt.Sprintf(`{"id":%d,"user":{"login":%q},"state":%q}`, id, login, state)
 }
 
