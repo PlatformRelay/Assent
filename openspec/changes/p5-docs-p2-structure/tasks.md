@@ -73,6 +73,8 @@ go test ./cmd/assent -run TestNoStaleProductClaims
 
 ## T004 — S03: operating-safely extraction
 
+- [x] — closed 2026-10-07, evidence: evidence/T004.md
+
 1. Create `docs/usage/operating-safely.md`: a short intro (what the page covers, links
    back to `cli.md` and `walkthrough.md`), then the five cli.md essays
    (`cli.md:98–251`) moved verbatim as `##` sections, subject only to the navigation-only
