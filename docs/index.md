@@ -71,8 +71,9 @@ assent test .
 ```
 
 No repo of your own yet? A clone of this one ships runnable sample policy trees; run the
-two commands above from `examples/packs/service-catalog` (that is the fixture
-`hack/docs/readme_smoke_test.sh` executes this block against).
+two commands above from `examples/packs/service-catalog` (that is the fixture the README's
+quick-start block is smoke-tested against — `hack/docs/readme_smoke_test.sh` reads the
+README, not this page).
 
 Runs on a real merge request select their forge explicitly (E10-S13 — no default forge):
 

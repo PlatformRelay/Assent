@@ -917,6 +917,12 @@ caller (`release-exitgate`) is guarded off `pull_request`, so the deletion merge
 `main`: the RELSE-08 visibility class, pre-existing and repo-wide, restated here because D-174 added
 a stage that inherits it.
 
+## Phase 5 — SANITIZE-HOME sanitizer blind spots (found 2026-10-07 by the docs-P2 branch review)
+
+| ID | Item | Status | Needs operator | Notes |
+| --- | --- | --- | --- | --- |
+| SANITIZE-HOME | `hack/check-sanitization.sh` cannot catch the defect class its own lane shipped: (a) no home-path pattern (`/Users/<name>`, `/home/<name>`), (b) `host_pat` matches only `.internal`-suffixed hostnames, so the hyphenated `internal-*` form of the employer's internal tool identifiers sails through, (c) CI (`.github/workflows/verify.yaml`) runs the script bare — the employer-catching layer is the workspace-local `ASSENT_SANITIZE_DENYLIST`, designed never to be committed, so CI's layer is denylist-free by construction. **Proof from the incident:** the docs-P2 lane (spec change `p5-docs-p2-structure`) committed task-process transcripts carrying a home path ~150× and the internal model-registry id; every gate including sanitization passed with the violation in-tree; the leak was found by branch review and excised before push (branch unpushed at discovery). | **OPEN** `[autonomous]` | no (agent lane) | Origin: branch-review round 1 CRITICALs C2/C4 + round 2 finding 2 of `p5-docs-p2-structure`. The lane's scope was docs-only; hardening the sanitizer is a security-gate change with its own mutation-control obligations (this repo's gate-culture standard: every check carries a control proving it can fail). Suggested shape: add a home-path regex and a hyphenated-internal-hostname pattern to `host_pat`, each with a positive control; decide deliberately whether any denylist term may be committed (the D-002 posture question the round-2 review raised) or the CI-bare gap is accepted with the risk named. The reviews also flagged that `.gitignore`'s new transcript-exclusion patterns narrow the sanitizer's scan surface by construction — the hardening should state that trade explicitly |
+
 ## Phase 5 — REDMAIN-N changelog classifier integrity (D-168)
 
 Full spec in [p5-redmain-changelog-integrity/spec.md](p5-redmain-changelog-integrity/spec.md).

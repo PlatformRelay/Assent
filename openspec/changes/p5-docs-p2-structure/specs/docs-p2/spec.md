@@ -107,8 +107,13 @@ Requirements:
   E2–E8), the `.tf` opaque clause, and `@v0.4.0` in the go-install caveat — and the
   branch's E10-era quick-start content (forge selection, GitHub comment-only note) is
   carried as-is; the P0 corrections are settled text even though PR 190 is still open.
+  One navigation-only deixis adjustment is sanctioned for the site home (review finding,
+  branch round 2): the sample-repo paragraph's smoke-test parenthetical says "this block"
+  on the README, where it is true, but the smoke gate executes the README's block, not
+  the site home's — index.md's copy names that plainly instead of inheriting the deixis.
   - Test: `docs/index.md` diffed against the branch README with those three hunks applied
-    by hand (they are the only wording differences the copy introduces)
+    by hand (the three hunks plus the sanctioned deixis adjustment are the only wording
+    differences the copy introduces)
   - Verify: the story's diff review; after both PRs land, DOC-13's scan of
     `docs/index.md` must be green
   - Level: L1
