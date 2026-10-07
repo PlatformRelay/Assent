@@ -118,7 +118,7 @@ change's own spec set, not to any published surface.
 | # | Finding (legs) | Disposition |
 | --- | --- | --- |
 | C1 | README↔index quick-start divergence gate-invisible until PR 190 (6 legs; spec legs hold S01-04 spec-sanctioned) | **defer** — merge-order recommendation in the proposal is the closure; follow-up README↔index sync pin recorded in the hand-off |
-| C2 | <redacted: operator home path> ~149× + temp paths committed in logs/evidence/prompts (2 legs) | **fix (orchestrator, commit `e9a1ca6` lineage)** — untracked logs/, task-prompt-*.md, t005-*.log; .gitignore patterns added; evidence replaced by a named matrix. Sanitizer hardening (home-path pattern, CI-bare-layer gap) = hand-off proposal |
+| C2 | <redacted: operator home path> ~149× + temp paths committed in logs/evidence/prompts (2 legs) | **fix (orchestrator, untrack commit `fe8fea7` after rewrite; cited pre-rewrite as 49d573f)** — untracked logs/, task-prompt-*.md, t005-*.log; .gitignore patterns added; evidence replaced by a named matrix. Sanitizer hardening (home-path pattern, CI-bare-layer gap) = deferral with a named place: backlog row `SANITIZE-HOME` |
 | C3 | corpus permits silent coverage loss of the new page: MIN headroom 2, required-surface loop omits operating-safely.md (2 legs) | **fix** — required-surface list gains `docs/usage/operating-safely.md` (T006, `a74076e`); missing-required mutant extended to remove it too (pre-round-2 batch); MIN stays 8 (spec-settled) |
 | C4 | <redacted: internal model registry id> committed in logs (1 leg CRITICAL, 95) | **fix** — same untrack as C2; the string now appears only where it IS the finding (register rows), the quoted-pattern precedent the exitgate documents |
 | W5 | spec inventory short: fourth pointer in p4-e1-s11 record (4 legs) | **fix** — T006 extended it to five (adds D-134's row); proposal mirror reconciled in the pre-round-2 batch |
@@ -134,3 +134,42 @@ Loop-made pre-round-2 batch (mechanical, verified by run): proposal.md inventory
 T006 deferral accepted: no per-entry mutation control beyond the extended
 missing-required mutant — one mutant proving the mechanism reddens on this entry is
 enough; per-member controls for every list row is over-engineering (logged decision).
+
+## B round-2 dispositions (register: reviews/branch-round2/register.md, 4/5 legs; two-round cap reached — fixes verified by the orchestrator, no third round)
+
+| # | Finding (legs) | Disposition |
+| --- | --- | --- |
+| F1 | the C2/C4 leak not closed: blobs reachable at the ancestor and literals in review records; a push would ship them (4 legs) | **fix, verified mechanically** — (a) blobs: two `git filter-branch` passes over `b7cf7cb~1..HEAD` excised the logs/prompts/t005 transcripts from every reachable commit and redacted the literals from the review records in every reachable version; a full `git rev-list HEAD` × `git grep` sweep for the literals over the branch's openspec tree is EMPTY, and the offending paths appear in no commit; `refs/original` deleted + reflog expired. Shas cited in registers/evidence are pre-rewrite values (noted in evidence/T005.md); the living sha references in this file name the post-rewrite values. (b) the records that quote the finding's string are redacted to `<redacted: …>` markers — the finding text survives, the literal does not |
+| F2 | sanitizer blind spots: no home-path pattern, `host_pat` misses hyphenated `internal-*`, CI runs bare (4 legs) | **defer, named place: backlog row `SANITIZE-HOME`** (openspec/specs/backlog.md) — hardening a security gate with mutation-control obligations is a security-gate owner's change, not a docs PR's; the row carries the incident as evidence |
+| F3 | loop.md cited a phantom commit sha (`git cat-file` fails) | **fix** — corrected to the real post-rewrite sha of the untrack commit in this table |
+| F4 | committed gate evidence trails tip (2 legs, 85) | **fix** — full gate matrix re-executed at the final tip `57120cc` (docs-build 0, docs-gates 0, TestNoStaleProductClaims `-v` named PASS, exitgate --text-only 0, sanitization 0), recorded in evidence/T005.md |
+| F5 | exitgate per-member coverage unpinned (2 legs) | **accept (logged deferral)** — the extended missing-required mutant proves the mechanism reddens on this entry; per-member controls for every list row is over-engineering |
+| F6 | .gitignore widened + scanner excludes ignored files (1 leg, 80) | **accept** — round-1 logged trade, now also recorded in SANITIZE-HOME's notes |
+| F7 | C1/sanitizer deferrals name a closer not yet written (1 leg, 80) | **fix** — the deferrals now have a committed place (backlog row SANITIZE-HOME) and the PR body carries the hand-off |
+| F8 | index.md:82 deixis: "this block" claims the smoke gate executes the site home's block (1 leg, 75) | **fix** — index.md's copy names the README-only scope plainly; sanctioned in REQ-DOC2-S01-04 as a navigation-only transformation |
+
+**History rewrite note (2026-10-07):** two `git filter-branch` passes excised the
+transcript leak (path excision, then literal redaction across the review records) from the
+branch's history before push. Commits `247187a..85eb7c8` (T001–T004 records) are unchanged;
+`780e60b` (the gate-matrix commit, post-excision) and every descendant sha in the reviewed
+range changed. Registers and evidence files that cite the pre-rewrite shas
+(`49d573f`, `a74076e`, `d003e96`, …) are records of the review as it ran; the post-rewrite
+values are: untrack = `fe8fea7`, T006 task = `9a4e3e9`, T006 register = `bd4e4dc`,
+proposal reconcile = `e701a75`, redaction/deixis/backlog commit = `57120cc`. The branch was
+never pushed before the rewrite, so no remote carries the leaked blobs.
+
+## Hand-off (the delivery contract's residuals, for the PR body)
+
+- **Merge order:** land this branch before open PR 190 (190's DOC-13 pin reddens on the
+  README duplicate until S00 lands here; the two PRs' hunks are disjoint otherwise).
+- **Deferred to the named places:** C1's README↔index sync pin (numbered after PR 190's
+  DOC-12..15 land); sanitizer hardening → backlog row `SANITIZE-HOME`; anchor rot →
+  DOCSNAV-R01; ADR-0009:55 + the p4-e1-s11 record + D-134's "published in cli.md" row →
+  their owners' next touch (immutable records, dispositioned in REQ-DOC2-S03-03);
+  the two Go-test comments pointing readers at cli.md sections
+  (`run_checkout_containment_test.go:215`, `run_arming_test.go:116`) — engine-comment
+  sweep, outside docs scope; DOC-13's initial-chapter list cannot gain
+  `operating-safely.md` until PR 190 lands (the page carries no version pin).
+- **Pre-existing baseline red:** `task check` coverage stage (90.5% < 91%, D-010/D-128)
+  at `3503cc0` — E10's merge introduced `internal/forge/github` at 84.1%; needs its own
+  lane, not this one.
