@@ -73,8 +73,8 @@ Measured at `3503cc0` (= `origin/main`), 2026-10-06:
       - WARNING (both legs): S03-04's mutant arithmetic notation garbled
         ("10−4 of 11"); conclusion unaffected. FIX: reworded with the true counts
         (11 listed, 10 present — quickstart.md is a pre-existing dead entry; 10−4=6 < 8).
-- [ ] L task loop — T001..T005.
-- [ ] B branch review.
+- [x] L task loop — T001..T005 closed (T001-T004 via fresh task processes; T005 the orchestrator's gate matrix; T006 the B-fix task).
+- [x] B branch review — round 1 (9 legs, 4 CRITICALs) + round 2 (4/5 legs, BLOCK on the leak + sanitizer); dispositions above; round-2 fixes verified by the orchestrator (two-round cap reached, disclosed).
 - [ ] Hand-off — push branch, open NON-DRAFT PR with gh-axi (delivery contract:
       direct-PR; the brief's Definition of done overrides spec-loop's draft default).
 
