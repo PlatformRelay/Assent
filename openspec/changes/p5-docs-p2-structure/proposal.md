@@ -50,11 +50,15 @@ change's item 9 (it copies the quick start) and PR 190's clean landing.
   `docs/usage/operating-safely.md` (Usage nav, per REQ-DOCSNAV-S01-01), leaving the flag
   table plus a one-line caveat + link per safety-relevant flag and a pointer paragraph;
   retarget the references that point at the essays. The reference inventory at `3503cc0`
-  is three, not two: `cli.md`'s doctor section, `walkthrough.md:212`, and a prose pointer
-  inside accepted ADR-0009 (`docs/adr/0009-execution-modes.md:55`) — the ADR is immutable
-  and stays untouched; the disposition is recorded in S03. In the same commit, the new
-  page joins the exitgate retired-phrase corpus so the trust content does not leave the
-  front-of-house sensor set (review finding, see loop.md dispositions).
+  is five published/reachable pointers: `cli.md`'s doctor section, `walkthrough.md:212`,
+  a prose pointer inside accepted ADR-0009 (`docs/adr/0009-execution-modes.md:55`), one in
+  the frozen decision-evidence record
+  (`docs/decisions/evidence/p4-e1-s11-adoption/README.md:27`) and one in the decision
+  log's D-134 row (`docs/decisions/decisions.md:141`) — the ADR, the evidence record and
+  the decision-log row are immutable records and stay untouched; the disposition is
+  recorded in S03. In the same commit, the new page joins the exitgate retired-phrase
+  corpus and its required-surface list so the trust content does not leave the
+  front-of-house sensor set (review findings, see loop.md dispositions).
 
 ## Non-goals (deliberate)
 

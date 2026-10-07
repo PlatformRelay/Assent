@@ -112,3 +112,25 @@ change's own spec set, not to any published surface.
 ## Lessons
 
 - (empty — first tasks pending)
+
+## B round-1 dispositions (register: reviews/branch/register.md, 9/9 legs)
+
+| # | Finding (legs) | Disposition |
+| --- | --- | --- |
+| C1 | README↔index quick-start divergence gate-invisible until PR 190 (6 legs; spec legs hold S01-04 spec-sanctioned) | **defer** — merge-order recommendation in the proposal is the closure; follow-up README↔index sync pin recorded in the hand-off |
+| C2 | <redacted: operator home path> ~149× + temp paths committed in logs/evidence/prompts (2 legs) | **fix (orchestrator, commit `e9a1ca6` lineage)** — untracked logs/, task-prompt-*.md, t005-*.log; .gitignore patterns added; evidence replaced by a named matrix. Sanitizer hardening (home-path pattern, CI-bare-layer gap) = hand-off proposal |
+| C3 | corpus permits silent coverage loss of the new page: MIN headroom 2, required-surface loop omits operating-safely.md (2 legs) | **fix** — required-surface list gains `docs/usage/operating-safely.md` (T006, `a74076e`); missing-required mutant extended to remove it too (pre-round-2 batch); MIN stays 8 (spec-settled) |
+| C4 | <redacted: internal model registry id> committed in logs (1 leg CRITICAL, 95) | **fix** — same untrack as C2; the string now appears only where it IS the finding (register rows), the quoted-pattern precedent the exitgate documents |
+| W5 | spec inventory short: fourth pointer in p4-e1-s11 record (4 legs) | **fix** — T006 extended it to five (adds D-134's row); proposal mirror reconciled in the pre-round-2 batch |
+| W6 | .gitignore widens exclusion register (**/reviews/**/*.err); ignored files leave the sanitization scan surface (4 legs; all judged the trade sound) | **accept** — logged trade: tool transcripts are not the committed record; sanitization's scan surface is deliberately the committed tree |
+| W7 | cross-page anchors have no fitness function (2 legs) | **defer → DOCSNAV-R01** (existing residual, fenced) |
+| W8 | TestNoStaleProductClaims evidence vacuous (bare ok) (1 leg, 80) | **fix** — T006 replaced it with the named `-v` PASS record |
+| NOTE | T006 round-2: T005 smoke-quote cell un-emittable | **fix** — corrected by T006 in-scope |
+
+Loop-made pre-round-2 batch (mechanical, verified by run): proposal.md inventory mirror
+(three → five); exitgate missing-required mutant extended to operating-safely.md
+(exitgate --text-only rc=0, truthlag green, docs-build green).
+
+T006 deferral accepted: no per-entry mutation control beyond the extended
+missing-required mutant — one mutant proving the mechanism reddens on this entry is
+enough; per-member controls for every list row is over-engineering (logged decision).

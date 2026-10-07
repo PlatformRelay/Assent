@@ -1921,7 +1921,7 @@ expect_red check_retired_phrases "the DOC-06 'fileEvents not yet implemented' cl
 # "swept an empty set" defect: a REQUIRED surface vanishing, and the corpus as a
 # whole shrinking below the point where a clean sweep means anything.
 cm="$(phrase_mutant missing-required)"
-rm -f "$cm/docs/usage/walkthrough.md"
+rm -f "$cm/docs/usage/walkthrough.md" "$cm/docs/usage/operating-safely.md"
 expect_red check_retired_phrases "a required front-of-house surface disappeared" \
   'is missing from the corpus root' "$cm"
 
