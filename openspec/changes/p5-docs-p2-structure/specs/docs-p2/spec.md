@@ -214,10 +214,16 @@ Requirements:
   read after the change, then `cli.md`'s doctor section targets
   `operating-safely.md#what-gates-approve-and-merge` without the now-false "above", and
   `walkthrough.md:212` targets `operating-safely.md#how-to-keep-assent-advisory`; both
-  anchors exist in the built site. ADR-0009's prose pointer is left untouched (immutability)
-  and recorded in the hand-off.
-  - Test: the built `site/usage/operating-safely/index.html` (anchor presence)
-  - Verify: `task docs-build` + grep the built anchors
+  anchors exist in the built site. The three unretargeted pointers — ADR-0009's
+  (`docs/adr/0009-execution-modes.md:55`, immutable), the frozen decision-evidence
+  record's (`docs/decisions/evidence/p4-e1-s11-adoption/README.md:27`) and the decision
+  log's D-134 row (`docs/decisions/decisions.md:141`) — are left untouched (dispositions
+  in the Goal, (c)/(d)/(e)) and recorded in the hand-off; the three files are
+  byte-unchanged by this change.
+  - Test: the built `site/usage/operating-safely/index.html` (anchor presence) + a grep
+    that the three pointer files carry their pre-move pointer lines unchanged
+  - Verify: `task docs-build` + grep the built anchors + diff the three files against
+    the base
   - Level: L1
 - **REQ-DOC2-S03-04** — Given every existing gate that reads the moved or linked content,
   when it runs after the extraction, then it is green, and the new page does not leave the
