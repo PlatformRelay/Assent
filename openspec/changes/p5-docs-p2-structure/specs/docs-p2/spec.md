@@ -155,13 +155,23 @@ a short intro linking back to the CLI reference), add the page to the Usage nav
 (REQ-DOCSNAV-S01-01) and to the exitgate retired-phrase corpus (see REQ-DOC2-S03-04), and
 in `cli.md` leave one-line caveats + links per safety-relevant flag plus a pointer
 paragraph where the essays were. Retarget the references that pointed into the essays.
-The inventory at `3503cc0` is **three**, not two: (a) `cli.md`'s doctor section ("See
+The inventory at `3503cc0` is **five**, not two: (a) `cli.md`'s doctor section ("See
 *What gates approve and merge* above"), (b) `walkthrough.md:212`'s
-`[How to keep assent advisory](cli.md#how-to-keep-assent-advisory)`, and (c) a prose
-pointer inside accepted ADR-0009 (`docs/adr/0009-execution-modes.md:55`: "`docs/usage/cli.md`
-§*How to keep assent advisory* states this"). (c) is dispositioned, not edited: ADRs are
-immutable once accepted, the pointer names a section that still exists — on the new page —
-and it is recorded as a known limitation in this change's hand-off.
+`[How to keep assent advisory](cli.md#how-to-keep-assent-advisory)`, (c) a prose pointer
+inside accepted ADR-0009 (`docs/adr/0009-execution-modes.md:55`: "`docs/usage/cli.md`
+§*How to keep assent advisory* states this"), (d) a prose pointer inside a frozen
+decision-evidence record (`docs/decisions/evidence/p4-e1-s11-adoption/README.md:27`:
+"and the CLI reference's *What gates approve and merge*"), and (e) a prose pointer inside
+the decision log's D-134 row (`docs/decisions/decisions.md:141`: "The decision matrix
+above is now published in `cli.md` rather than summarised"), which this move makes stale.
+(c) is dispositioned, not edited: ADRs are immutable once accepted, the pointer names a
+section that still exists — on the new page — and it is recorded as a known limitation in
+this change's hand-off. (d) is dispositioned like ADR-0009: the record is frozen and left
+untouched, the pointer names the section by title, and it is recorded as a hand-off
+residual. (e) is dispositioned like the others: the decision-log row is left untouched
+(rows are reconciled by their own owner, not as a side effect of a docs move), the
+pointer names the matrix that still exists — on the new page — and it is recorded as a
+hand-off residual.
 
 Two navigation-only transformations are allowed inside the moved text (listed here so the
 verbatim fence stays honest): the advisory essay's deixis "reruns **the CI snippet above**
