@@ -827,7 +827,8 @@ check_retired_phrases() { # <root>
     echo "  DOC-08: only ${#present[@]} of ${#PHRASE_CORPUS[@]} front-of-house surfaces exist under $root (minimum $PHRASE_CORPUS_MIN) — the corpus shrank, so every 'phrase absent' assertion below would be vacuous" >&2
     return 1
   fi
-  for f in README.md API_STABILITY.md docs/usage/walkthrough.md cmd/assent/main.go; do
+  for f in README.md API_STABILITY.md docs/usage/walkthrough.md \
+           docs/usage/operating-safely.md cmd/assent/main.go; do
     [[ -f "$root/$f" ]] || {
       echo "  DOC-08: required front-of-house surface $f is missing from the corpus root $root — the pins that cover it cannot fire" >&2
       rc=1
