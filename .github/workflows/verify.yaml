@@ -31,9 +31,12 @@ permissions:
 # minimum Go version must always be latest-1", so a release whose go.mod says
 # `go 1.N` supports Go 1.N+1. Failure signature: `(typecheck) could not import`
 # on paths rooted in /opt/hostedtoolcache/go/1.N.0/. Fix = bump this line.
+# A Go PATCH release can trip it too: go1.27.2 raised the export-data version to 5,
+# which v2.13.1 cannot decode although it was built with go1.27.0; v2.14.0 (also
+# built with go1.27.0) reads it. Reproduce with the failing patch release on PATH.
 env:
   TASK_VERSION: v3.52.0
-  GOLANGCI_LINT_VERSION: v2.13.1
+  GOLANGCI_LINT_VERSION: v2.14.0
 jobs:
   verify:
     runs-on: ubuntu-latest
