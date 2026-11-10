@@ -8,7 +8,7 @@ require (
 	github.com/google/cel-go v0.31.0
 	github.com/hashicorp/hcl/v2 v2.25.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
-	github.com/zclconf/go-cty v1.19.0
+	github.com/zclconf/go-cty v1.20.0
 	golang.org/x/text v0.42.0
 	gopkg.in/yaml.v3 v3.0.1
 )
